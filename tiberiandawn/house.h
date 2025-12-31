@@ -39,6 +39,10 @@
 #include "region.h"
 #include "vector.h"
 #include "credits.h"
+#include "ftimer.h"   // For TCountDownTimerClass
+#include "super.h"    // For SuperClass
+#include "utracker.h" // For UnitTrackerClass
+#include "heap.h"     // For TFixedIHeapClass
 #include "common/miscasm.h"
 #include "common/fixed.h"
 

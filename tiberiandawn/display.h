@@ -37,6 +37,7 @@
 
 #include "map.h"
 #include "layer.h"
+#include "common/gadget.h" // For GadgetClass
 
 #define ICON_PIXEL_W  24
 #define ICON_PIXEL_H  24

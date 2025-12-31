@@ -35,6 +35,9 @@
 #ifndef RADIO_H
 #define RADIO_H
 
+// Forward declaration for LParam (defined in function.h)
+extern long LParam;
+
 //#include "object.h"
 #include "mission.h"
 //#include	"flasher.h"

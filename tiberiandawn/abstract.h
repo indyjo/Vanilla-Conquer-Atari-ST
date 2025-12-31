@@ -35,6 +35,12 @@
 #ifndef ABSTRACT_H
 #define ABSTRACT_H
 
+// Include defines.h for DirType, CELL, COORDINATE, HousesType, TARGET, etc.
+#include "defines.h"
+
+// Forward declaration for Coord_Cell function
+CELL Coord_Cell(COORDINATE coord);
+
 DirType Direction(CELL cell1, CELL cell2);
 DirType Direction(COORDINATE coord1, COORDINATE coord2);
 int Distance(COORDINATE coord1, COORDINATE coord2);

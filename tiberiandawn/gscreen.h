@@ -35,6 +35,9 @@
 #ifndef GSCREEN_H
 #define GSCREEN_H
 
+// Forward declaration for GadgetClass
+class GadgetClass;
+
 #include "function.h"
 #include "cell.h"
 

@@ -35,6 +35,7 @@
 #ifndef TECHNO_H
 #define TECHNO_H
 
+#include "facing.h" // For FacingClass
 #include "radio.h"
 #include "stage.h"
 #include "cargo.h"

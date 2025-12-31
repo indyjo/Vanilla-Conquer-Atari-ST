@@ -35,11 +35,17 @@
 #ifndef FACING_H
 #define FACING_H
 
+// Include defines.h to get DirType definition
+#include "defines.h"
+
 /*
 **	This is a general facing handler class. It is used in those cases where facing needs to be
 **	kept track of, but there could also be an associated desired facing. The current facing
 **	is supposed to transition to the desired state over time. Using this class facilitates this
 **	processing as well as isolating the rest of the code from the internals.
+**
+**	Note: This class requires DirType to be defined (typically in defines.h).
+**	Make sure defines.h is included before this header.
 */
 class FacingClass
 {
@@ -92,6 +98,24 @@ public:
         return (signed char)(*((signed char*)&facing) - *((signed char*)&CurrentFacing));
     };
     int Rotation_Adjust(int rate);
+
+    // Assignment operator
+    FacingClass& operator=(DirType dir)
+    {
+        Set(dir);
+        return *this;
+    }
+
+    // Comparison operators
+    bool operator==(DirType dir) const
+    {
+        return CurrentFacing == dir;
+    }
+
+    bool operator!=(DirType dir) const
+    {
+        return CurrentFacing != dir;
+    }
 
 private:
     DirType CurrentFacing;

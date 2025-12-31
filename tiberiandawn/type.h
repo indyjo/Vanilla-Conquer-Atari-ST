@@ -35,6 +35,8 @@
 #ifndef TYPE_H
 #define TYPE_H
 
+#include <string.h> // For strncpy
+
 #include "mission.h"
 #include "target.h"
 #include "noinit.h"

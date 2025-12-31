@@ -35,6 +35,7 @@
 #ifndef TARGET_H
 #define TARGET_H
 
+// Include defines.h for TARGET, CELL, COORDINATE, etc.
 #include "defines.h"
 
 /**************************************************************************

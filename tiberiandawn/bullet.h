@@ -35,6 +35,12 @@
 #ifndef BULLET_H
 #define BULLET_H
 
+// Forward declaration for FacingClass
+class FacingClass;
+
+// Forward declaration for GameActive (defined in function.h)
+extern bool GameActive;
+
 #include "object.h"
 #include "fly.h"
 #include "fuse.h"

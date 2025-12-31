@@ -37,6 +37,7 @@
 
 #include "object.h"
 #include "monoc.h"
+#include "ftimer.h" // For TCountDownTimerClass
 
 /****************************************************************************
 **	This handles order assignment and tracking. The order is used to guide

@@ -36,6 +36,8 @@
 #define OBJECT_H
 
 #include "abstract.h"
+// Forward declaration for MonoClass (used in Debug_Dump)
+class MonoClass;
 
 class ObjectClass;
 class TechnoClass;

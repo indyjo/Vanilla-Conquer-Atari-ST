@@ -35,6 +35,8 @@
 #ifndef TURRET_H
 #define TURRET_H
 
+#include "facing.h" // For FacingClass
+
 #include "drive.h"
 
 class TurretClass : public DriveClass

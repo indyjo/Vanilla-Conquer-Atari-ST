@@ -155,8 +155,7 @@ ROOT_CPP_SOURCES = \
 	checkbox.cpp cheklist.cpp colrlist.cpp combat.cpp combuf.cpp \
 	comqueue.cpp confdlg.cpp connect.cpp conquer.cpp const.cpp \
 	control.cpp coord.cpp credits.cpp crew.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),dde.cpp,) debug.cpp \
-	descdlg.cpp dial8.cpp dialog.cpp display.cpp DLLInterface.cpp \
-	DLLInterfaceEditor.cpp door.cpp dpmi.cpp drive.cpp edit.cpp \
+	descdlg.cpp dial8.cpp dialog.cpp display.cpp door.cpp dpmi.cpp drive.cpp edit.cpp \
 	ending.cpp event.cpp expand.cpp facing.cpp factory.cpp field.cpp \
 	findpath.cpp flasher.cpp fly.cpp foot.cpp fuse.cpp gadget.cpp \
 	gamedlg.cpp gauge.cpp globals.cpp goptions.cpp gscreen.cpp \
@@ -173,7 +172,7 @@ ROOT_CPP_SOURCES = \
 	radio.cpp rand.cpp rawfile.cpp reinf.cpp rules.cpp saveload.cpp \
 	scenario.cpp score.cpp scroll.cpp sdata.cpp seqconn.cpp Shape.cpp \
 	shapebtn.cpp sidebar.cpp SIDEBARGlyphx.CPP slider.cpp smudge.cpp \
-	sounddlg.cpp special.cpp startup.cpp stats.cpp super.cpp tab.cpp \
+	sounddlg.cpp special.cpp stats.cpp super.cpp tab.cpp \
 	tarcom.cpp target.cpp tdata.cpp team.cpp teamtype.cpp \
 	techno.cpp template.cpp terrain.cpp textbtn.cpp theme.cpp \
 	toggle.cpp trigger.cpp turret.cpp txtlabel.cpp udata.cpp unit.cpp \
@@ -191,7 +190,9 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/regionsz.cpp $(PLATFORM_LIB)/set_font.cpp \
 	$(PLATFORM_LIB)/timer.cpp $(PLATFORM_LIB)/timerdwn.cpp $(PLATFORM_LIB)/timerini.cpp \
 	$(PLATFORM_LIB)/windows.cpp $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
+	$(PLATFORM_LIB)/startup.cpp \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
+	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
 	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/windows_time.cpp,) \
 	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
 

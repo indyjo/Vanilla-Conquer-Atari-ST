@@ -1,120 +1,118 @@
-/*
- * mouse.h - Mouse input header for Atari ST/MiNT
- * 
- * Provides function declarations for mouse input functions.
- */
+//
+// Copyright 2020 Electronic Arts Inc.
+//
+// TiberianDawn.DLL and RedAlert.dll and corresponding source code is free 
+// software: you can redistribute it and/or modify it under the terms of 
+// the GNU General Public License as published by the Free Software Foundation, 
+// either version 3 of the License, or (at your option) any later version.
 
-#ifndef MOUSE_H
-#define MOUSE_H
+// TiberianDawn.DLL and RedAlert.dll and corresponding source code is distributed 
+// in the hope that it will be useful, but with permitted additional restrictions 
+// under Section 7 of the GPL. See the GNU General Public License in LICENSE.TXT 
+// distributed with this program. You should have received a copy of the 
+// GNU General Public License along with permitted additional restrictions 
+// with this program. If not, see https://github.com/electronicarts/CnC_Remastered_Collection
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/***********************************************************************************************
+ *                                                                                             *
+ *                 Project Name : Westwood 32 Bit Library                                      *
+ *                                                                                             *
+ *                    File Name : MOUSE.H                                                      *
+ *                                                                                             *
+ *                   Programmer : Philip W. Gorrow                                             *
+ *                                                                                             *
+ *                   Start Date : 12/12/95                                                     *
+ *                                                                                             *
+ *                  Last Update : December 12, 1995 [PWG]                                      *
+ *                                                                                             *
+ *---------------------------------------------------------------------------------------------*
+ * Functions:                                                                                  *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-// Mouse function declarations
-int Get_Mouse_X(void);
-int Get_Mouse_Y(void);
+#ifndef WW_MOUSE_H
+#define WW_MOUSE_H
+
+#include <gbuffer.h>
+
+class WWMouseClass {
+	public:
+		WWMouseClass(GraphicViewPortClass *scr, int mouse_max_width, int mouse_max_height);
+		~WWMouseClass();
+		void *Set_Cursor(int xhotspot, int yhotspot, void *cursor);
+		void Process_Mouse(void);
+		void Hide_Mouse(void);
+		void Show_Mouse(void);
+		void Conditional_Hide_Mouse(int x1, int y1, int x2, int y2);
+		void Conditional_Show_Mouse(void);
+		int Get_Mouse_State(void);
+		int Get_Mouse_X(void);
+		int Get_Mouse_Y(void);
+		void Get_Mouse_XY(int &x, int &y);
+		//
+		// The following two routines can be used to render the mouse onto a graphicbuffer
+		// other than the hidpage.
+		//
+		void Draw_Mouse(GraphicViewPortClass *scr);
+		void Erase_Mouse(GraphicViewPortClass *scr, int forced = FALSE);
+
+		void Block_Mouse(GraphicBufferClass *buffer);
+		void Unblock_Mouse(GraphicBufferClass *buffer);
+		void Set_Cursor_Clip(void);
+		void Clear_Cursor_Clip(void);
+
+	private:
+		enum 	{
+			CONDHIDE		= 1,
+			CONDHIDDEN 	= 2,
+		};
+		void Low_Hide_Mouse(void);
+		void Low_Show_Mouse(int x, int y);
+
+		char						*MouseCursor;	// pointer to the mouse cursor in memory
+		int						MouseXHot;		// X hot spot of the current mouse cursor
+		int						MouseYHot;		// Y hot spot of the current mouse cursor
+		int						CursorWidth;	// width of the mouse cursor in pixels
+		int						CursorHeight;	// height of the mouse cursor in pixels
+
+		char						*MouseBuffer;	// pointer to background buffer in memory
+		int						MouseBuffX;		// pixel x mouse buffer was preserved at
+		int						MouseBuffY;		// pixel y mouse buffer was preserved at
+		int						MaxWidth;		// maximum width of mouse background buffer
+		int						MaxHeight;		// maximum height of mouse background buffer
+
+		int						MouseCXLeft;	// left x pos if conditional hide mouse in effect
+		int						MouseCYUpper;	// upper y pos if conditional hide mouse in effect
+		int						MouseCXRight;	// right x pos if conditional hide mouse in effect
+		int						MouseCYLower;	// lower y pos if conditional hide mouse in effect
+		char						MCFlags;			// conditional hide mouse flags
+		char						MCCount;			// nesting count for conditional hide mouse
+
+		GraphicViewPortClass	*Screen;			// pointer to the surface mouse was init'd with
+		char *					PrevCursor;		// pointer to previous cursor shape
+		int						MouseUpdate;
+		int						State;
+
+		char						*EraseBuffer;	// Buffer which holds background to restore to hidden page
+		int						EraseBuffX;		// X position of the hidden page background
+		int						EraseBuffY;		// Y position of the hidden page background
+		int						EraseBuffHotX;	// X position of the hidden page background
+		int						EraseBuffHotY;	// Y position of the hidden page background
+
+		int						EraseFlags;		// Records whether mutex has been released
+
+		// Note: CRITICAL_SECTION and TimerHandle are Windows-specific
+		// For Atari ST, these will need platform-specific equivalents
+		// void*						MouseCriticalSection;  // Control for mouse re-enterancy (stub for Atari ST)
+		// unsigned					TimerHandle;  // Timer handle (stub for Atari ST)
+};
+
 void Hide_Mouse(void);
 void Show_Mouse(void);
 void Conditional_Hide_Mouse(int x1, int y1, int x2, int y2);
 void Conditional_Show_Mouse(void);
 int Get_Mouse_State(void);
 void *Set_Mouse_Cursor(int hotx, int hoty, void *cursor);
+int Get_Mouse_X(void);
+int Get_Mouse_Y(void);
 
-#ifdef __cplusplus
-}
 #endif
-
-// Forward declarations (CELL and COORDINATE are typedefs, not classes)
-class HouseClass;
-class ObjectClass;
-class CellClass;
-
-#ifdef __cplusplus
-// Include power.h so MouseClass can inherit from PowerClass
-// The #ifndef POWER_H guard in power.h will prevent multiple inclusions
-#include "power.h"
-
-// Minimal MouseClass definition for use in main source
-// This is used as a type alias in externs.h: extern MouseClass Map;
-// MouseClass inherits from DisplayClass which inherits from MapClass
-// So it needs all MapClass and DisplayClass methods
-// Note: CELL and COORDINATE are typedefs defined in defines.h
-// MouseClass also inherits from PowerClass (through ScrollClass->HelpClass->TabClass->SidebarClass->PowerClass)
-class MouseClass : public PowerClass {
-public:
-	// ID method - returns cell number for a given pointer (from MapClass)
-	template<class T> int ID(T const * ptr) const { return 0; } // Stub implementation
-	template<class T> int ID(T const & ptr) const { return 0; } // Stub implementation
-	
-	// MapClass methods (CELL is a typedef, will be defined when includes are processed)
-	bool In_Radar(int cell) const { return false; } // Stub - using int to avoid incomplete type
-	void Sight_From(HouseClass *house, int cell, int sightrange, bool incremental=false) {} // Stub
-	void Place_Down(int cell, ObjectClass * object) {} // Stub
-	void Pick_Up(int cell, ObjectClass * object) {} // Stub (from MapClass)
-	void Remove(ObjectClass * object, int layer) {} // Stub (from DisplayClass/LayerClass)
-	void Submit(ObjectClass * object, int layer) {} // Stub (from DisplayClass/LayerClass)
-	bool In_View(int cell) const { return false; } // Stub (from DisplayClass)
-	void Flag_To_Redraw(bool complete=false) {} // Stub (from DisplayClass)
-	void Refresh_Cells(int cell1, int cell2, bool and_for_allies=false) {} // Stub (from DisplayClass)
-	
-	// DisplayClass members that are accessed directly
-	unsigned IsToRedraw:1; // Stub member from DisplayClass
-	// Note: PowerClass::IsToRedraw is available through inheritance from PowerClass
-	
-	// DisplayClass methods
-	// COORDINATE is a typedef (unsigned long), using unsigned long for now
-	unsigned long Pixel_To_Coord(int x, int y) { return 0; } // Stub
-	
-	// DisplayClass/MapClass members for map cell dimensions
-	int MapCellX;
-	int MapCellY;
-	int MapCellWidth;
-	int MapCellHeight;
-	
-	// MapClass methods
-	template<class T> void Add(T type, int id, bool something=false) {} // Stub
-	void Recalc(void) {} // Stub
-	
-	// operator[] for cell access (from MapClass/GScreenClass)
-	CellClass & operator[](int cell);
-	CellClass const & operator[](int cell) const;
-	
-	// Static members from DisplayClass
-	static unsigned char FadingShade[256];
-	static unsigned char UnitShadow[256*256]; // Large enough for USHADOW_COL_COUNT
-	static unsigned char WhiteTranslucentTable[256*2];
-	static unsigned char TranslucentTable[256*256]; // Large enough for MAGIC_COL_COUNT
-	static unsigned char RemapTables[8][3][256]; // HOUSE_COUNT * 3 * 256 (HOUSE_COUNT is typically 8)
-	static void const *TransIconset;
-	
-	// MapClass methods
-	// COORDINATE is a typedef (unsigned long), using unsigned long for now
-	// Note: This needs to match the actual signature when COORDINATE is defined
-	unsigned long Closest_Free_Spot(unsigned long coord, bool check_occupied=false) const { return coord; } // Stub
-	
-	// TabClass method (MouseClass inherits from TabClass through the hierarchy)
-	int Get_Tab_Height(void) { return 0; } // Stub - TabClass method
-	
-	// SidebarClass member - Column array (from SidebarClass)
-	// Minimal StripClass definition for compatibility
-	class StripClass {
-	public:
-		void Flag_To_Redraw(void) {} // Stub
-		void Init_Clear(void) {} // Stub
-		void AI(KeyNumType & input, int x, int y) {} // Stub
-		void Set_Parent_Sidebar(void * parent) {} // Stub
-	};
-	StripClass Column[2]; // COLUMNS = 2
-};
-
-// WWMouseClass used in externs.h
-class GraphicViewPortClass; // Forward declaration
-class WWMouseClass {
-public:
-	void Erase_Mouse(GraphicViewPortClass *scr, int forced = FALSE) {} // Stub
-};
-
-#endif // __cplusplus
-
-#endif /* MOUSE_H */

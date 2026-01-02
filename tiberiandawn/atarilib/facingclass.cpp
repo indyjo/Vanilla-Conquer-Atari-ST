@@ -2,7 +2,7 @@
  * facingclass.cpp - FacingClass implementation for Atari ST/MiNT
  */
 
-#include "facing.h"
+#include "../facing.h"  // Use root facing.h which includes defines.h for DirType
 
 FacingClass::FacingClass(void)
 {

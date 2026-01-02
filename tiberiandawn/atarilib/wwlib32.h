@@ -39,7 +39,17 @@
 #include "rawfile.h"
 #include "audio.h"
 #include "dipthong.h"
-#include "facing.h"
+// Include root facing.h for FacingClass definition
+#include "../facing.h"
+// Declare facing calculation functions (implemented in ATARILIB/facing.cpp)
+#ifdef __cplusplus
+extern "C" {
+#endif
+int Desired_Facing256(long srcx, long srcy, long dstx, long dsty);
+int Desired_Facing8(long x1, long y1, long x2, long y2);
+#ifdef __cplusplus
+}
+#endif
 #include "palette.h"
 #include "playcd.h"
 #include "shape.h"

@@ -4,8 +4,18 @@
  * Simplified implementations of Desired_Facing256 and Desired_Facing8
  */
 
-#include "facing.h"
+#include "../facing.h"  // For FacingClass if needed, but mainly for consistency
 #include <math.h>
+
+// Function declarations (matching wwlib32.h)
+#ifdef __cplusplus
+extern "C" {
+#endif
+int Desired_Facing256(long srcx, long srcy, long dstx, long dsty);
+int Desired_Facing8(long x1, long y1, long x2, long y2);
+#ifdef __cplusplus
+}
+#endif
 
 /*
  * Desired_Facing256 - Calculate facing direction (0-255 resolution)

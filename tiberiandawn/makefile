@@ -72,11 +72,13 @@ endif
 #=============================================================================
 
 # Common preprocessor definitions
-DEFINES = TRUE_FALSE_DEFINED WIN32 _WINDOWS _USRDLL TIBERIANDAWN_EXPORTS
+DEFINES = TRUE_FALSE_DEFINED _USRDLL TIBERIANDAWN_EXPORTS
 
-# Add POSIX for Atari ST/MiNT builds
+# Platform-specific definitions
 ifeq ($(PLATFORM_LIB),ATARILIB)
 DEFINES += POSIX
+else
+DEFINES += WIN32 _WINDOWS
 endif
 
 # Include directories (platform-specific + common)

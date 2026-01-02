@@ -23,6 +23,8 @@ typedef unsigned char      BYTE;
 typedef unsigned short     WORD;
 typedef unsigned long      DWORD;
 typedef unsigned long      ULONG;  // Windows unsigned long type
+typedef long long          __int64;  // 64-bit integer type
+typedef unsigned long long uint64;   // 64-bit unsigned integer type
 typedef unsigned int       UINT;
 typedef int                BOOL;
 typedef long               LONG;

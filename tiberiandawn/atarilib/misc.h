@@ -23,9 +23,20 @@ void Prog_End(const char *why = NULL, bool fatal = false);
 /* Wait for vertical blank */
 void Wait_Vert_Blank(void);
 
+/* Confine rectangle function */
+int Confine_Rect(int *x, int *y, int dw, int dh, int width, int height);
+
+/* Clip rectangle function */
+int Clip_Rect(int *x, int *y, int *dw, int *dh, int width, int height);
+
 #ifdef __cplusplus
 }
 #endif
+
+/* External variables */
+extern BOOL OverlappedVideoBlits;	// Can video driver blit overlapped regions?
+extern int CachedIconsDrawn;
+extern int UnCachedIconsDrawn;
 
 /*=========================================================================*/
 /* Definition of surface monitor class                                     */

@@ -93,6 +93,9 @@ public:
 	// Note: This needs to match the actual signature when COORDINATE is defined
 	unsigned long Closest_Free_Spot(unsigned long coord, bool check_occupied=false) const { return coord; } // Stub
 	
+	// TabClass method (MouseClass inherits from TabClass through the hierarchy)
+	int Get_Tab_Height(void) { return 0; } // Stub - TabClass method
+	
 	// SidebarClass member - Column array (from SidebarClass)
 	// Minimal StripClass definition for compatibility
 	class StripClass {

@@ -34,5 +34,88 @@ inline ShapeFlags_Type operator&(ShapeFlags_Type a, ShapeFlags_Type b)
 inline ShapeFlags_Type operator~(ShapeFlags_Type a)
 {return static_cast<ShapeFlags_Type>(~static_cast<int>(a));}
 
+/*
+------------------------------- Shape header --------------------------------
+*/
+typedef struct {
+	unsigned short		ShapeType;			// 0 = normal, 1 = 16 colors,
+										//  2 = uncompressed, 4 = 	<16 colors
+	unsigned char		Height;				// Height of the shape in scan lines
+	unsigned short		Width;				// Width of the shape in bytes
+	unsigned char		OriginalHeight;	// Original height of shape in scan lines
+	unsigned short		ShapeSize;			// Size of the shape, including header
+	unsigned short		DataLength;			// Size of the uncompressed shape (just data)
+	unsigned char		Colortable[16];	// Optional color table for compact shape
+} Shape_Type;
+
+/*
+------------------------------- Shape block ---------------------------------
+*/
+typedef struct {
+	unsigned short		NumShapes;			// number of shapes in the block
+	long		Offsets[];			// array of offsets to shape data
+										//  (offsets within the shape block, with
+										//  0 being the first offset value, not the
+										//  start of the shape block)
+} ShapeBlock_Type;
+
+/*
+******************************** Prototypes *********************************
+*/
+
+/*
+-------------------------------- prioinit.c ---------------------------------
+*/
+
+extern "C" {
+extern void  *MaskPage;
+extern void  *BackGroundPage;
+extern long  _ShapeBufferSize;
+extern char  *_ShapeBuffer;
+}
+
+class GraphicBufferClass;
+void Init_Priority_System (GraphicBufferClass *mask,
+											GraphicBufferClass *back);
+
+/*
+-------------------------------- drawshp.asm --------------------------------
+*/
+
+class GraphicViewPortClass;
+extern "C" {
+int Draw_Shape(GraphicViewPortClass *gvp, void const *shape, long x, long y, long flags, ...);
+}
+
+/*
+---------------------------------- shape.c ----------------------------------
+*/
+short Get_Shape_Data(void const *shape, int data);
+int Extract_Shape_Count(void const *buffer);
+void * Extract_Shape(void const *buffer, int shape);
+int Restore_Shape_Height(void *shape);
+int Set_Shape_Height(void const *shape, int newheight);
+
+extern "C" {
+int Get_Shape_Width(void const *shape);
+int Get_Shape_Height(void const *shape);
+int Get_Shape_Original_Height(void const *shape);
+int Get_Shape_Uncomp_Size(void const *shape);
+}
+
+/*
+------------------------------- setshape.asm --------------------------------
+*/
+extern "C" {
+void Set_Shape_Buffer(void const *buffer, int size);
+}
+/*
+------------------------------- shapeinf.asm --------------------------------
+*/
+int Get_Shape_Flags(void const *shape);
+int  Get_Shape_Size(void const *shape);
+int  Get_Shape_Scaled_Width(void const *shape, int scale);
+int  Get_Shape_Scaled_Height(void const *shape, int scale);
+
 #endif /* SHAPE_H */
 

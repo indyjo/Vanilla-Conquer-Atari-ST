@@ -106,8 +106,10 @@ public:
 };
 
 // WWMouseClass used in externs.h
+class GraphicViewPortClass; // Forward declaration
 class WWMouseClass {
-	// Stub - needs implementation
+public:
+	void Erase_Mouse(GraphicViewPortClass *scr, int forced = FALSE) {} // Stub
 };
 
 #endif // __cplusplus

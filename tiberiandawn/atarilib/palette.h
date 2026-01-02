@@ -9,6 +9,9 @@
 extern "C" {
 #endif
 
+/* Set the current palette */
+void Set_Palette(void *palette);
+
 /* Palette fading function - matches WIN32LIB signature */
 void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)());
 

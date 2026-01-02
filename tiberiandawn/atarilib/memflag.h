@@ -30,7 +30,7 @@ typedef enum {
 extern "C" {
 #endif
 
-void __cdecl Mem_Copy(void const *source, void *dest, unsigned long bytes_to_copy);
+void Mem_Copy(void const *source, void *dest, unsigned long bytes_to_copy);
 
 #ifdef __cplusplus
 }
@@ -50,6 +50,14 @@ extern void (*Memory_Error_Exit)(char *string);
 
 extern unsigned long MinRam;		// Record of least memory at worst case.
 extern unsigned long MaxRam;		// Record of total allocated at worst case.
+
+/*=========================================================================
+ * Memory allocation functions
+ *=========================================================================*/
+long Ram_Free(MemoryFlagType flag);
+long Heap_Size(MemoryFlagType flag);
+long Total_Ram_Free(MemoryFlagType flag);
+
 #endif
 
 #endif /* MEMFLAG_H */

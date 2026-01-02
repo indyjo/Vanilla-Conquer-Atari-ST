@@ -5,10 +5,16 @@
 #ifndef TIMER_H
 #define TIMER_H
 
+/*=========================================================================*/
+typedef enum BaseTimerEnum {
+	BT_SYSTEM,			// System timer (60 / second).
+	BT_USER				// User controllable timer (? / second).
+} BaseTimerEnum;
+
 // Minimal class definitions for types used in main source
 class TimerClass {
 public:
-	TimerClass(int timer = 0, int start = 0) {}
+	TimerClass(BaseTimerEnum timer = BT_SYSTEM, int start = 0) {}
 	long Set(long value, int start = 1) { return 0; }
 	long Stop(void) { return 0; }
 	long Start(void) { return 0; }
@@ -18,7 +24,8 @@ public:
 
 class CountDownTimerClass : private TimerClass {
 public:
-	CountDownTimerClass(int timer = 0, int start = 0) : TimerClass(timer, start) {}
+	CountDownTimerClass(BaseTimerEnum timer = BT_SYSTEM, int start = 0) : TimerClass(timer, start) {}
+	CountDownTimerClass(BaseTimerEnum timer, long set, int on = 0) : TimerClass(timer, on) {}
 	long Set(long value, int start = 1) { return TimerClass::Set(value, start); }
 	long Time(void) { return TimerClass::Time(); }
 };

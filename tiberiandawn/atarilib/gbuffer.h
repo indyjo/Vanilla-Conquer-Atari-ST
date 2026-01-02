@@ -162,6 +162,8 @@ class GraphicBufferClass : public GraphicViewPortClass, public BufferClass {
 		BOOL Lock(void);
 		BOOL Unlock(void);
 
+		// Get_Buffer is inherited from BufferClass
+
 	protected:
 		void	*VideoSurfacePtr;		//Pointer to the related direct draw surface (stub)
 

@@ -7,7 +7,14 @@
 
 // Minimal BufferClass definition for use in main source
 class BufferClass {
-	// Stub - needs implementation
+public:
+	void *Get_Buffer(void) { return Buffer; }
+	long Get_Size(void) { return Size; }
+
+protected:
+	void *Buffer;
+	long Size;
+	BOOL Allocated;
 };
 
 #endif /* BUFFER_H */

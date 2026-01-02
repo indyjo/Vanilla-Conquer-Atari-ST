@@ -18,7 +18,10 @@ extern "C" {
 int IRandom(int minval, int maxval);
 
 /* Program exit function */
-void __cdecl Prog_End(const char *why = NULL, bool fatal = false);
+void Prog_End(const char *why = NULL, bool fatal = false);
+
+/* Wait for vertical blank */
+void Wait_Vert_Blank(void);
 
 #ifdef __cplusplus
 }

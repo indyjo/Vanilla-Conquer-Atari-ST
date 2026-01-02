@@ -37,6 +37,9 @@
 #include "function.h"
 #include <stdarg.h>
 #include "common/filepcx.h"
+#ifndef POSIX
+#include <io.h>
+#endif
 #ifdef CHEAT_KEYS
 
 extern bool ScreenRecording;

@@ -74,6 +74,11 @@ endif
 # Common preprocessor definitions
 DEFINES = TRUE_FALSE_DEFINED WIN32 _WINDOWS _USRDLL TIBERIANDAWN_EXPORTS
 
+# Add POSIX for Atari ST/MiNT builds
+ifeq ($(PLATFORM_LIB),ATARILIB)
+DEFINES += POSIX
+endif
+
 # Include directories (platform-specific + common)
 # Put platform lib first so platform-specific headers take precedence over root headers
 INCLUDES = -I./$(PLATFORM_LIB_LOWER) -I./$(PLATFORM_LIB) -I. -I./COMMONLIB
@@ -171,7 +176,7 @@ ROOT_CPP_SOURCES = \
 	scenario.cpp score.cpp scroll.cpp sdata.cpp seqconn.cpp Shape.cpp \
 	shapebtn.cpp sidebar.cpp SIDEBARGlyphx.CPP slider.cpp smudge.cpp \
 	sounddlg.cpp special.cpp startup.cpp stats.cpp super.cpp tab.cpp \
-	tarcom.cpp target.cpp tcpip.cpp tdata.cpp team.cpp teamtype.cpp \
+	tarcom.cpp target.cpp tdata.cpp team.cpp teamtype.cpp \
 	techno.cpp template.cpp terrain.cpp textbtn.cpp theme.cpp \
 	toggle.cpp trigger.cpp turret.cpp txtlabel.cpp udata.cpp unit.cpp \
 	utracker.cpp vector.cpp visudlg.cpp winstub.cpp
@@ -188,6 +193,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB_LOWER)/palette.cpp $(PLATFORM_LIB_LOWER)/regionsz.cpp $(PLATFORM_LIB_LOWER)/set_font.cpp \
 	$(PLATFORM_LIB_LOWER)/timer.cpp $(PLATFORM_LIB_LOWER)/timerdwn.cpp $(PLATFORM_LIB_LOWER)/timerini.cpp \
 	$(PLATFORM_LIB_LOWER)/windows.cpp $(PLATFORM_LIB_LOWER)/winhide.cpp $(PLATFORM_LIB_LOWER)/writepcx.cpp \
+	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB_LOWER)/tcpip.cpp,) \
 	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB_LOWER)/direct.cpp $(PLATFORM_LIB_LOWER)/facing.cpp $(PLATFORM_LIB_LOWER)/facingclass.cpp $(PLATFORM_LIB_LOWER)/dipthong.cpp $(PLATFORM_LIB_LOWER)/irandom.cpp $(PLATFORM_LIB_LOWER)/palette.cpp $(PLATFORM_LIB_LOWER)/windows_time.cpp,) \
 	$(PLATFORM_LIB_LOWER)/wsa.cpp $(PLATFORM_LIB_LOWER)/_diptabl.cpp
 

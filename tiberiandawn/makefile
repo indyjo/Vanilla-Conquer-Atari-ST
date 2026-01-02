@@ -30,27 +30,23 @@ AR = $(CROSS_PREFIX)/$(CROSS_TARGET)-ar
 # If not available, resource files will be skipped in the build rule
 RC = $(CROSS_PREFIX)/$(CROSS_TARGET)-windres
 
-# Platform (Win32, x64, or AtariST)
-PLATFORM ?= Win32
-
 # Detect target platform from cross-compiler
 # If using m68k-atari-mint, default to AtariST platform
+# PLATFORM can be overridden on command line: make PLATFORM=Win32
 ifeq ($(CROSS_TARGET),m68k-atari-mint)
+PLATFORM ?= AtariST
 PLATFORM_LIB = ATARILIB
-PLATFORM_LIB_LOWER = atarilib
 else
+PLATFORM ?= Win32
 PLATFORM_LIB = WIN32LIB
-PLATFORM_LIB_LOWER = win32lib
 endif
 
 # Allow manual override
 ifdef USE_ATARILIB
 PLATFORM_LIB = ATARILIB
-PLATFORM_LIB_LOWER = atarilib
 endif
 ifdef USE_WIN32LIB
 PLATFORM_LIB = WIN32LIB
-PLATFORM_LIB_LOWER = win32lib
 endif
 
 # Output directory
@@ -83,7 +79,7 @@ endif
 
 # Include directories (platform-specific + common)
 # Put platform lib first so platform-specific headers take precedence over root headers
-INCLUDES = -I./$(PLATFORM_LIB_LOWER) -I./$(PLATFORM_LIB) -I. -I./COMMONLIB
+INCLUDES = -I./$(PLATFORM_LIB) -I. -I./COMMONLIB
 
 # Common compiler flags (GCC style)
 CXXFLAGS_COMMON = -Wall -Wextra -fno-exceptions -fpack-struct=1
@@ -159,7 +155,7 @@ ROOT_CPP_SOURCES = \
 	checkbox.cpp cheklist.cpp colrlist.cpp combat.cpp combuf.cpp \
 	comqueue.cpp confdlg.cpp connect.cpp conquer.cpp const.cpp \
 	control.cpp coord.cpp credits.cpp crew.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),dde.cpp,) debug.cpp \
-	descdlg.cpp DIAL8.cpp dialog.cpp display.cpp DLLInterface.cpp \
+	descdlg.cpp dial8.cpp dialog.cpp display.cpp DLLInterface.cpp \
 	DLLInterfaceEditor.cpp door.cpp dpmi.cpp drive.cpp edit.cpp \
 	ending.cpp event.cpp expand.cpp facing.cpp factory.cpp field.cpp \
 	findpath.cpp flasher.cpp fly.cpp foot.cpp fuse.cpp gadget.cpp \
@@ -185,25 +181,25 @@ ROOT_CPP_SOURCES = \
 
 # Platform library C++ sources (WIN32LIB or ATARILIB)
 PLATFORM_LIB_CPP_SOURCES = \
-	$(PLATFORM_LIB_LOWER)/alloc.cpp $(PLATFORM_LIB_LOWER)/buffer.cpp $(PLATFORM_LIB_LOWER)/buffglbl.cpp \
-	$(PLATFORM_LIB_LOWER)/ddraw.cpp $(PLATFORM_LIB_LOWER)/dipthong.cpp $(PLATFORM_LIB_LOWER)/DrawMisc.cpp \
-	$(PLATFORM_LIB_LOWER)/drawrect.cpp $(PLATFORM_LIB_LOWER)/font.cpp $(PLATFORM_LIB_LOWER)/gbuffer.cpp \
-	$(PLATFORM_LIB_LOWER)/getshape.cpp $(PLATFORM_LIB_LOWER)/iconset.cpp $(PLATFORM_LIB_LOWER)/iff.cpp \
-	$(PLATFORM_LIB_LOWER)/irandom.cpp $(PLATFORM_LIB_LOWER)/keyboard.cpp $(PLATFORM_LIB_LOWER)/load.cpp \
-	$(PLATFORM_LIB_LOWER)/loadfont.cpp $(PLATFORM_LIB_LOWER)/loadpal.cpp $(PLATFORM_LIB_LOWER)/mem.cpp \
-	$(PLATFORM_LIB_LOWER)/morphpal.cpp $(PLATFORM_LIB_LOWER)/mouseww.cpp $(PLATFORM_LIB_LOWER)/newdel.cpp \
-	$(PLATFORM_LIB_LOWER)/palette.cpp $(PLATFORM_LIB_LOWER)/regionsz.cpp $(PLATFORM_LIB_LOWER)/set_font.cpp \
-	$(PLATFORM_LIB_LOWER)/timer.cpp $(PLATFORM_LIB_LOWER)/timerdwn.cpp $(PLATFORM_LIB_LOWER)/timerini.cpp \
-	$(PLATFORM_LIB_LOWER)/windows.cpp $(PLATFORM_LIB_LOWER)/winhide.cpp $(PLATFORM_LIB_LOWER)/writepcx.cpp \
-	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB_LOWER)/tcpip.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB_LOWER)/direct.cpp $(PLATFORM_LIB_LOWER)/facing.cpp $(PLATFORM_LIB_LOWER)/facingclass.cpp $(PLATFORM_LIB_LOWER)/dipthong.cpp $(PLATFORM_LIB_LOWER)/irandom.cpp $(PLATFORM_LIB_LOWER)/palette.cpp $(PLATFORM_LIB_LOWER)/windows_time.cpp,) \
-	$(PLATFORM_LIB_LOWER)/wsa.cpp $(PLATFORM_LIB_LOWER)/_diptabl.cpp
+	$(PLATFORM_LIB)/alloc.cpp $(PLATFORM_LIB)/buffer.cpp $(PLATFORM_LIB)/buffglbl.cpp \
+	$(PLATFORM_LIB)/ddraw.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/DrawMisc.cpp \
+	$(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp \
+	$(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/load.cpp \
+	$(PLATFORM_LIB)/loadfont.cpp $(PLATFORM_LIB)/loadpal.cpp $(PLATFORM_LIB)/mem.cpp \
+	$(PLATFORM_LIB)/morphpal.cpp $(PLATFORM_LIB)/mouseww.cpp $(PLATFORM_LIB)/newdel.cpp \
+	$(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/regionsz.cpp $(PLATFORM_LIB)/set_font.cpp \
+	$(PLATFORM_LIB)/timer.cpp $(PLATFORM_LIB)/timerdwn.cpp $(PLATFORM_LIB)/timerini.cpp \
+	$(PLATFORM_LIB)/windows.cpp $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
+	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/windows_time.cpp,) \
+	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)
 ASM_SOURCES = \
 	ipxprot.asm ipxreal.asm keyfbuff.asm mmx.asm pagfault.asm \
 	support.asm txtprnt.asm winasm.asm \
-	$(PLATFORM_LIB_LOWER)/facingff.asm $(PLATFORM_LIB_LOWER)/tobuff.asm $(PLATFORM_LIB_LOWER)/xordelta.asm
+	$(PLATFORM_LIB)/facingff.asm $(PLATFORM_LIB)/tobuff.asm $(PLATFORM_LIB)/xordelta.asm
 
 # Resource files
 RC_SOURCES = \
@@ -220,7 +216,7 @@ COMMONLIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(COMMONLIB_CPP_SOURCES:.cp
 ROOT_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(ROOT_CPP_SOURCES:.cpp=.o)))
 PLATFORM_LIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(PLATFORM_LIB_CPP_SOURCES:.cpp=.o)))
 # Handle alloc.cpp conflict: root version becomes alloc.o, platform lib version becomes alloc_platformlib.o
-PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LIB_LOWER).o,$(PLATFORM_LIB_CPP_OBJS))
+PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
 ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(ASM_SOURCES:.asm=.o)))
 RC_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(RC_SOURCES:.rc=.o)))
@@ -270,13 +266,13 @@ $(INTDIR)/%.o: %.cpp | $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 # C++ compilation rules for platform library files
-$(INTDIR)/%.o: $(PLATFORM_LIB_LOWER)/%.cpp | $(INTDIR)
+$(INTDIR)/%.o: $(PLATFORM_LIB)/%.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 # Special rule for platform lib alloc.cpp to avoid conflict with root alloc.cpp
-$(INTDIR)/alloc_$(PLATFORM_LIB_LOWER).o: $(PLATFORM_LIB_LOWER)/alloc.cpp | $(INTDIR)
+$(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/alloc.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
@@ -295,7 +291,7 @@ $(INTDIR)/%.o: %.asm | $(INTDIR)
 	@touch $@
 
 # Assembly compilation rules for platform library files
-$(INTDIR)/%.o: $(PLATFORM_LIB_LOWER)/%.asm | $(INTDIR)
+$(INTDIR)/%.o: $(PLATFORM_LIB)/%.asm | $(INTDIR)
 	@echo "Assembling $<..."
 	@mkdir -p $(INTDIR)
 	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \
@@ -358,7 +354,7 @@ help:
 	@echo "  USE_WIN32LIB   - Force use of WIN32LIB (default: auto-detect)"
 	@echo ""
 	@echo "Platform Library:"
-	@echo "  Using: $(PLATFORM_LIB) ($(PLATFORM_LIB_LOWER))"
+	@echo "  Using: $(PLATFORM_LIB)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make                    - Build release version"

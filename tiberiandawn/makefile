@@ -142,9 +142,9 @@ LDFLAGS += -Wl,-soname,$(TARGET_NAME).dll
 COMMONLIB_CPP_SOURCES = \
 	COMMONLIB/coorda.cpp
 
-# IPX sources - IPX95.cpp is used for all modern builds
+# IPX sources - ipx95.cpp is used for all modern builds
 # ipx.cpp was removed as it only contained DOS/DPMI-specific code
-IPX_SOURCES = IPX95.cpp
+IPX_SOURCES = ipx95.cpp
 
 # Root directory C++ sources
 # Note: dde.cpp and ccdde.cpp are Windows-only (DDE is Windows-specific)

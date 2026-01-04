@@ -42,6 +42,12 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 // TCP/IP networking disabled for Atari ST - stub declarations only
+
+// Constants matching WIN32LIB/tcpip.h
+#define PLANET_WESTWOOD_PASSWORD_MAX 20
+#define IP_ADDRESS_MAX 40
+#define PORT_NUMBER_MAX 6
+
 extern bool Server;
 
 // Stub class for TcpipManagerClass

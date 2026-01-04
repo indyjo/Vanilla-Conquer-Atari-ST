@@ -40,6 +40,17 @@
 // DDE is Windows-specific, provide stub for Atari ST
 class DDEServerClass {
 public:
+	/*
+	** Enumeration for DDE packet types from WChat
+	*/
+	enum {
+		DDE_PACKET_START_MPLAYER_GAME,		//Start game packet. This includes game options
+		DDE_PACKET_GAME_RESULTS,				//Game results packet. The game statistics.
+		DDE_PACKET_HEART_BEAT,					//Heart beat packet so we know WChat is still there.
+		DDE_TICKLE,									//Message to prompt other app to take focus.
+		DDE_CONNECTION_FAILED
+	};
+
 	DDEServerClass(void) {}
 	~DDEServerClass(void) {}
 	char *Get_MPlayer_Game_Info(void) { return NULL; }

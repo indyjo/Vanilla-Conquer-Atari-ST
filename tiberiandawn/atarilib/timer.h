@@ -27,6 +27,9 @@ public:
 	CountDownTimerClass(BaseTimerEnum timer = BT_SYSTEM, int start = 0) : TimerClass(timer, start) {}
 	CountDownTimerClass(BaseTimerEnum timer, long set, int on = 0) : TimerClass(timer, on) {}
 	long Set(long value, int start = 1) { return TimerClass::Set(value, start); }
+	long Reset(int start = 1) { return TimerClass::Reset(start); }
+	long Stop(void) { TimerClass::Stop(); return Time(); }
+	long Start(void) { TimerClass::Start(); return Time(); }
 	long Time(void) { return TimerClass::Time(); }
 };
 

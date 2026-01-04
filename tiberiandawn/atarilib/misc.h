@@ -29,6 +29,9 @@ int Confine_Rect(int *x, int *y, int dw, int dh, int width, int height);
 /* Clip rectangle function */
 int Clip_Rect(int *x, int *y, int *dw, int *dh, int width, int height);
 
+/* CRC calculation function - matches WIN32LIB signature */
+long Calculate_CRC(void *buffer, long length);
+
 #ifdef __cplusplus
 }
 #endif

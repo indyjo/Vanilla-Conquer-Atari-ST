@@ -15,6 +15,9 @@ void Set_Palette(void *palette);
 /* Palette fading function - matches WIN32LIB signature */
 void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)());
 
+/* Current palette buffer - copy of current DAC register values */
+extern unsigned char CurrentPalette[768];
+
 #ifdef __cplusplus
 }
 #endif

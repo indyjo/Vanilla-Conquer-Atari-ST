@@ -193,7 +193,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/startup.cpp \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/windows_time.cpp,) \
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/windows_time.cpp,) \
 	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)

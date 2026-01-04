@@ -20,7 +20,7 @@
 /*   Returns CRC value as a long                                           */
 /*=========================================================================*/
 
-extern "C" long __cdecl Calculate_CRC(void *buffer, long length)
+extern "C" long Calculate_CRC(void *buffer, long length)
 {
 	if (!buffer || length <= 0) {
 		return 0;
@@ -69,5 +69,36 @@ extern "C" long __cdecl Calculate_CRC(void *buffer, long length)
 	}
 	
 	return (long)crc;
+}
+
+/*=========================================================================*/
+/* Build_Fading_Table -- Builds a fading table for palette remapping      */
+/*                                                                         */
+/* This is a stub implementation matching WIN32LIB signature            */
+/*                                                                         */
+/* INPUT:                                                                  */
+/*   palette  -- Source palette (256 colors * 3 bytes = 768 bytes)        */
+/*   dest     -- Destination buffer for fading table (256 bytes)          */
+/*   color    -- Target color index                                       */
+/*   frac     -- Fading fraction (0-255)                                  */
+/*                                                                         */
+/* OUTPUT:                                                                 */
+/*   Returns pointer to dest                                              */
+/*=========================================================================*/
+
+extern "C" void *Build_Fading_Table(void const *palette, void const *dest, long int color, long int frac)
+{
+	if (!palette || !dest) {
+		return (void *)dest;
+	}
+
+	// Stub implementation - just copy palette indices for now
+	// A full implementation would calculate faded colors and find closest matches
+	unsigned char *dest_ptr = (unsigned char *)dest;
+	for (int i = 0; i < 256; i++) {
+		dest_ptr[i] = (unsigned char)i;
+	}
+
+	return (void *)dest;
 }
 

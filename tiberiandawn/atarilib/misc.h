@@ -32,6 +32,9 @@ int Clip_Rect(int *x, int *y, int *dw, int *dh, int width, int height);
 /* CRC calculation function - matches WIN32LIB signature */
 long Calculate_CRC(void *buffer, long length);
 
+/* Build fading table function - matches WIN32LIB signature */
+void *Build_Fading_Table(void const *palette, void const *dest, long int color, long int frac);
+
 #ifdef __cplusplus
 }
 #endif

@@ -13,6 +13,7 @@
 // POSIX string functions for Windows compatibility
 #ifdef POSIX
 #include <strings.h>  // For strcasecmp
+#include <stddef.h>   // For size_t
 #endif
 
 #ifdef __cplusplus
@@ -206,6 +207,28 @@ LONG WINAPI RegQueryValueEx(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, L
 #ifdef POSIX
 // _stricmp is Windows-specific, use POSIX strcasecmp instead
 #define _stricmp strcasecmp
+
+// memicmp is Windows-specific, provide portable implementation
+// Case-insensitive memory comparison
+static inline int memicmp(const void *s1, const void *s2, size_t n)
+{
+	const unsigned char *p1 = (const unsigned char *)s1;
+	const unsigned char *p2 = (const unsigned char *)s2;
+	
+	for (size_t i = 0; i < n; i++) {
+		unsigned char c1 = p1[i];
+		unsigned char c2 = p2[i];
+		
+		// Convert to lowercase for comparison
+		if (c1 >= 'A' && c1 <= 'Z') c1 += ('a' - 'A');
+		if (c2 >= 'A' && c2 <= 'Z') c2 += ('a' - 'A');
+		
+		if (c1 != c2) {
+			return (c1 < c2) ? -1 : 1;
+		}
+	}
+	return 0;
+}
 #endif
 
 /* Note: Get_Registry_Sub_Key appears to be a custom wrapper function,

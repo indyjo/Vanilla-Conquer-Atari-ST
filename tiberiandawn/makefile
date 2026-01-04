@@ -164,7 +164,7 @@ ROOT_CPP_SOURCES = \
 	ioobj.cpp $(IPX_SOURCES) ipxaddr.cpp ipxconn.cpp ipxgconn.cpp \
 	ipxmgr.cpp jshell.cpp keyframe.cpp layer.cpp link.cpp list.cpp \
 	loaddlg.cpp logic.cpp map.cpp mapeddlg.cpp mapedit.cpp mapedplc.cpp \
-	mapedsel.cpp mapedtm.cpp mapsel.cpp menus.cpp MiscAsm.cpp \
+	mapedsel.cpp mapedtm.cpp mapsel.cpp menus.cpp \
 	mission.cpp mixfile.cpp monoc.cpp mouse.cpp mplayer.cpp \
 	msgbox.cpp msglist.cpp netdlg.cpp noseqcon.cpp nullconn.cpp \
 	nulldlg.cpp nullmgr.cpp object.cpp odata.cpp options.cpp \
@@ -191,6 +191,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/timer.cpp $(PLATFORM_LIB)/timerdwn.cpp $(PLATFORM_LIB)/timerini.cpp \
 	$(PLATFORM_LIB)/windows.cpp $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
 	$(PLATFORM_LIB)/startup.cpp \
+	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
 	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/windows_time.cpp,) \

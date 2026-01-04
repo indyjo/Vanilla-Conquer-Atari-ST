@@ -209,4 +209,11 @@ class VideoBufferClass {
 	// Stub - needs implementation
 };
 
+/*=========================================================================*/
+/* Define the screen width and height to make portability to other modules	*/
+/*		easier.																					*/
+/*=========================================================================*/
+#define	DEFAULT_SCREEN_WIDTH		320
+#define	DEFAULT_SCREEN_HEIGHT	200
+
 #endif /* GBUFFER_H */

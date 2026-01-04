@@ -10,6 +10,11 @@
 #ifndef WINDOWS_H
 #define WINDOWS_H
 
+// POSIX string functions for Windows compatibility
+#ifdef POSIX
+#include <strings.h>  // For strcasecmp
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -196,6 +201,12 @@ BOOL WINAPI DllMain(HINSTANCE instance, unsigned int fdwReason, void *lpvReserve
 /* Registry Functions - used in internet.cpp */
 typedef BYTE* LPBYTE;
 LONG WINAPI RegQueryValueEx(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData);
+
+/* String Functions - Windows compatibility */
+#ifdef POSIX
+// _stricmp is Windows-specific, use POSIX strcasecmp instead
+#define _stricmp strcasecmp
+#endif
 
 /* Note: Get_Registry_Sub_Key appears to be a custom wrapper function,
  * not a standard Windows API, so it's not declared here.

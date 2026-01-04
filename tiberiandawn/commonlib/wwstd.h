@@ -156,6 +156,18 @@ template<class T> inline  T Max(T a, T b)
 	return (a>b ? a : b);
 }
 
+// C++98 compatibility: provide min/max aliases for Min/Max
+// Only define if not already defined (Windows may define these as macros)
+// Support mixed types by using the common type (C++98 compatible)
+#ifndef min
+template<class T> inline T min(T a, T b) { return Min(a, b); }
+template<class T1, class T2> inline T1 min(T1 a, T2 b) { return (a < (T1)b) ? a : (T1)b; }
+#endif
+#ifndef max
+template<class T> inline T max(T a, T b) { return Max(a, b); }
+template<class T1, class T2> inline T1 max(T1 a, T2 b) { return (a > (T1)b) ? a : (T1)b; }
+#endif
+
 template<class T> T Abs(T a)
 {
 	return ((a<0) ? -(a) : a);

@@ -54,6 +54,9 @@ extern unsigned long MaxRam;		// Record of total allocated at worst case.
 /*=========================================================================
  * Memory allocation functions
  *=========================================================================*/
+void *Alloc(unsigned long bytes_to_alloc, MemoryFlagType flags);
+void Free(void const *pointer);
+void *Resize_Alloc(void const *original_ptr, unsigned long new_size_in_bytes);
 long Ram_Free(MemoryFlagType flag);
 long Heap_Size(MemoryFlagType flag);
 long Total_Ram_Free(MemoryFlagType flag);

@@ -182,7 +182,7 @@ ROOT_CPP_SOURCES = \
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp $(PLATFORM_LIB)/buffer.cpp $(PLATFORM_LIB)/buffglbl.cpp \
 	$(PLATFORM_LIB)/ddraw.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/DrawMisc.cpp \
-	$(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp \
 	$(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/load.cpp \
 	$(PLATFORM_LIB)/loadfont.cpp $(PLATFORM_LIB)/loadpal.cpp $(PLATFORM_LIB)/mem.cpp \

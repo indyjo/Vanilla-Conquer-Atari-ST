@@ -102,7 +102,7 @@ void Stop_Sample(int handle);
 BOOL Sample_Status(int handle);
 BOOL Is_Sample_Playing(void const * sample);
 void Stop_Sample_Playing(void const * sample);
-int Play_Sample(void const *sample, int priority, int volume, signed short panloc);
+int Play_Sample(void const *sample, int priority=0xFF, int volume=0xFF, signed short panloc=0x0);
 int Play_Sample_Handle(void const *sample, int priority, int volume, signed short panloc, int id);
 int Set_Sound_Vol(int volume);
 int Set_Score_Vol(int volume);

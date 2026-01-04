@@ -1,10 +1,172 @@
 /*
- * wsa.cpp - Windows Sockets API functions for Atari ST/MiNT
+ * wsa.cpp - WSA (Westwood Animation) and XOR Delta functions for Atari ST/MiNT
  * 
- * This provides implementations for XOR delta functions
+ * This provides implementations for WSA animation and XOR delta functions
  */
 
 #include "wsa.h"
+#include "file.h"
+#include "rawfile.h"
+#include <string.h>
+#include <stdlib.h>
+
+/*=========================================================================*/
+/* WSA Animation Functions - Stub implementations                          */
+/*=========================================================================*/
+
+/* Forward declaration for WSA handle structure */
+struct WSAHandle {
+	char *filename;
+	void *buffer;
+	long buffer_size;
+	int frame_count;
+	int width;
+	int height;
+	unsigned char *palette;
+};
+
+/*=========================================================================*/
+/* Open_Animation -- Opens an animation file                               */
+/*=========================================================================*/
+extern "C" void *Open_Animation(char const *file_name, char *user_buffer, long user_buffer_size, WSAOpenType user_flags, unsigned char *palette)
+{
+	// Stub implementation - returns a dummy handle
+	// A full implementation would load the WSA file and parse its header
+	(void)user_buffer;
+	(void)user_buffer_size;
+	(void)user_flags;
+	
+	WSAHandle *handle = (WSAHandle *)malloc(sizeof(WSAHandle));
+	if (!handle) return NULL;
+	
+	memset(handle, 0, sizeof(WSAHandle));
+	
+	if (file_name) {
+		handle->filename = strdup(file_name);
+	}
+	
+	// Default values - would be read from WSA file header
+	handle->frame_count = 1;
+	handle->width = 320;
+	handle->height = 200;
+	
+	if (palette) {
+		handle->palette = palette;
+	}
+	
+	return handle;
+}
+
+/*=========================================================================*/
+/* Close_Animation -- Closes an animation                                  */
+/*=========================================================================*/
+extern "C" void Close_Animation(void *handle)
+{
+	if (!handle) return;
+	
+	WSAHandle *wsa = (WSAHandle *)handle;
+	
+	if (wsa->filename) {
+		free(wsa->filename);
+	}
+	
+	if (wsa->buffer) {
+		free(wsa->buffer);
+	}
+	
+	free(wsa);
+}
+
+/*=========================================================================*/
+/* Animate_Frame -- Displays a frame of an animation                        */
+/*=========================================================================*/
+extern "C" BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int frame_number, int x_pixel, int y_pixel, WSAType flags_and_prio, void *magic_cols, void *magic)
+{
+	// Stub implementation
+	(void)handle;
+	(void)view;
+	(void)frame_number;
+	(void)x_pixel;
+	(void)y_pixel;
+	(void)flags_and_prio;
+	(void)magic_cols;
+	(void)magic;
+	
+	return FALSE;
+}
+
+/*=========================================================================*/
+/* Get_Animation_Frame_Count -- Returns number of frames                   */
+/*=========================================================================*/
+extern "C" int Get_Animation_Frame_Count(void *handle)
+{
+	if (!handle) return 0;
+	
+	WSAHandle *wsa = (WSAHandle *)handle;
+	return wsa->frame_count;
+}
+
+/*=========================================================================*/
+/* Get_Animation_X -- Returns X position                                    */
+/*=========================================================================*/
+extern "C" int Get_Animation_X(void const *handle)
+{
+	if (!handle) return 0;
+	return 0;
+}
+
+/*=========================================================================*/
+/* Get_Animation_Y -- Returns Y position                                    */
+/*=========================================================================*/
+extern "C" int Get_Animation_Y(void const *handle)
+{
+	if (!handle) return 0;
+	return 0;
+}
+
+/*=========================================================================*/
+/* Get_Animation_Width -- Returns animation width                           */
+/*=========================================================================*/
+extern "C" int Get_Animation_Width(void const *handle)
+{
+	if (!handle) return 0;
+	
+	WSAHandle *wsa = (WSAHandle *)handle;
+	return wsa->width;
+}
+
+/*=========================================================================*/
+/* Get_Animation_Height -- Returns animation height                         */
+/*=========================================================================*/
+extern "C" int Get_Animation_Height(void const *handle)
+{
+	if (!handle) return 0;
+	
+	WSAHandle *wsa = (WSAHandle *)handle;
+	return wsa->height;
+}
+
+/*=========================================================================*/
+/* Get_Animation_Palette -- Returns palette pointer                        */
+/*=========================================================================*/
+extern "C" int Get_Animation_Palette(void const *handle)
+{
+	if (!handle) return 0;
+	
+	WSAHandle *wsa = (WSAHandle *)handle;
+	return (int)wsa->palette;
+}
+
+/*=========================================================================*/
+/* Get_Animation_Size -- Returns animation size                            */
+/*=========================================================================*/
+extern "C" unsigned long Get_Animation_Size(void const *handle)
+{
+	if (!handle) return 0;
+	
+	WSAHandle *wsa = (WSAHandle *)handle;
+	return wsa->buffer_size;
+}
 
 /*=========================================================================*/
 /* Apply_XOR_Delta -- Apply XOR delta data to a linear buffer              */

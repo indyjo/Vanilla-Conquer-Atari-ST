@@ -42,6 +42,21 @@ void Buffer_Draw_Stamp_Clip(void const *thisptr, void const *icondata, int icon,
 }
 #endif
 
+/*=========================================================================*/
+/* Inline C++ overload for Buffer_To_Page (takes reference instead of pointer) */
+/*=========================================================================*/
+#ifdef __cplusplus
+inline long Buffer_To_Page(int x, int y, int w, int h, void *Buffer, GraphicViewPortClass &view)
+{
+	long	return_code=0;
+	if (view.Lock()){
+		return_code = (Buffer_To_Page(x, y, w, h, Buffer, &view));
+	}
+	view.Unlock();
+	return ( return_code );
+}
+#endif
+
 extern GraphicViewPortClass *LogicPage;
 extern BOOL AllowHardwareBlitFills;
 

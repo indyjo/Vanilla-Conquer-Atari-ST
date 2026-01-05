@@ -16,6 +16,7 @@ extern "C" {
 
 /* Random number generation */
 int IRandom(int minval, int maxval);
+unsigned char Random(void);
 
 /* Program exit function */
 void Prog_End(const char *why = NULL, bool fatal = false);

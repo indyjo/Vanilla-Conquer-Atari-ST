@@ -54,7 +54,8 @@ BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel);
 bool VideoBackBufferAllowed = true;
 bool SpawnedFromWChat = false;
 bool ProgEndCalled = false;
-bool RunningAsDLL = false; // Atari ST version is standalone, not a DLL
+// RunningAsDLL is defined in globals.cpp, just declare it here
+extern bool RunningAsDLL;
 
 extern bool ReadyToQuit;
 

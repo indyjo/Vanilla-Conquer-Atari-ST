@@ -182,9 +182,9 @@ ROOT_CPP_SOURCES = \
 	cargo.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),ccdde.cpp,) ccfile.cpp cdata.cpp cdfile.cpp cell.cpp \
 	checkbox.cpp cheklist.cpp colrlist.cpp combat.cpp combuf.cpp \
 	comqueue.cpp confdlg.cpp connect.cpp conquer.cpp const.cpp \
-	control.cpp coord.cpp credits.cpp crew.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),dde.cpp,) debug.cpp \
+	control.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),coord.cpp,) credits.cpp crew.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),dde.cpp,) debug.cpp \
 	descdlg.cpp dial8.cpp dialog.cpp display.cpp door.cpp dpmi.cpp drive.cpp edit.cpp \
-	ending.cpp event.cpp expand.cpp facing.cpp factory.cpp field.cpp \
+	ending.cpp event.cpp expand.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),facing.cpp,) factory.cpp field.cpp \
 	findpath.cpp flasher.cpp fly.cpp foot.cpp fuse.cpp gadget.cpp \
 	gamedlg.cpp gauge.cpp globals.cpp goptions.cpp gscreen.cpp \
 	hdata.cpp heap.cpp help.cpp house.cpp idata.cpp infantry.cpp \
@@ -222,7 +222,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/windows_time.cpp,) \
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp,) \
 	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)
@@ -249,9 +249,19 @@ ROOT_CPP_OBJS = $(ROOT_CPP_OBJS_TMP:.CPP=.o)
 PLATFORM_LIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(PLATFORM_LIB_CPP_SOURCES:.cpp=.o)))
 # Handle alloc.cpp conflict: root version becomes alloc.o, platform lib version becomes alloc_platformlib.o
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
+# Handle facing.cpp conflict: ATARILIB version becomes facing_ATARILIB.o to avoid conflict with root facing.cpp
+PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/facing.o,$(INTDIR)/facing_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
 ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(ASM_SOURCES:.asm=.o)))
+# Filter out truncated x86 assembly object files for ATARILIB (they can't be assembled for m68k)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+ASM_OBJECTS := $(filter-out $(INTDIR)/ipxprot.o $(INTDIR)/ipxreal.o $(INTDIR)/keyfbuff.o $(INTDIR)/mmx.o $(INTDIR)/pagfault.o $(INTDIR)/support.o $(INTDIR)/txtprnt.o $(INTDIR)/winasm.o,$(ASM_OBJECTS))
+endif
 RC_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(RC_SOURCES:.rc=.o)))
+# Filter out resource object files for ATARILIB (windres not available/needed for m68k)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+RC_OBJECTS :=
+endif
 
 ALL_OBJECTS = $(CPP_OBJECTS) $(ASM_OBJECTS) $(RC_OBJECTS)
 
@@ -330,6 +340,12 @@ $(INTDIR)/%.o: $(PLATFORM_LIB)/%.cpp | $(INTDIR)
 
 # Special rule for platform lib alloc.cpp to avoid conflict with root alloc.cpp
 $(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/alloc.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+# Special rule for ATARILIB facing.cpp to avoid conflict with root facing.cpp
+$(INTDIR)/facing_ATARILIB.o: ATARILIB/facing.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<

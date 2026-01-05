@@ -7,6 +7,8 @@
 #ifndef MEMFLAG_H
 #define MEMFLAG_H
 
+#include <stddef.h>  // For size_t
+
 // Memory Flags
 /*
 **	Memory allocation flags.  These are the flags that are passed into Alloc

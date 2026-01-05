@@ -56,11 +56,20 @@ INTDIR ?= $(PLATFORM)/$(CONFIG)
 # Project name
 PROJECT_NAME = TiberianDawn
 
-# Target name (Debug adds 'I' suffix)
+# Target name (config specific - same convention for all platforms)
 ifeq ($(CONFIG),Debug)
-TARGET_NAME = $(PROJECT_NAME)I
+TARGET_NAME = $(PROJECT_NAME)d
 else
 TARGET_NAME = $(PROJECT_NAME)
+endif
+
+# Platform-specific target name override for Atari ST
+ifeq ($(PLATFORM_LIB),ATARILIB)
+ifeq ($(CONFIG),Debug)
+TARGET_NAME = cncd
+else
+TARGET_NAME = cnc
+endif
 endif
 
 #=============================================================================
@@ -68,13 +77,13 @@ endif
 #=============================================================================
 
 # Common preprocessor definitions
-DEFINES = TRUE_FALSE_DEFINED _USRDLL TIBERIANDAWN_EXPORTS
+DEFINES = TRUE_FALSE_DEFINED
 
 # Platform-specific definitions
 ifeq ($(PLATFORM_LIB),ATARILIB)
 DEFINES += POSIX
 else
-DEFINES += WIN32 _WINDOWS
+DEFINES += WIN32 _WINDOWS _USRDLL TIBERIANDAWN_EXPORTS
 endif
 
 # Include directories (platform-specific + common)
@@ -91,12 +100,23 @@ CXXFLAGS_COMMON += -std=c++17 -fpermissive
 # You may need to provide alternatives or stub implementations
 WINDOWS_LIBS = -lwinmm -lws2_32
 
+# Platform-specific libraries
+ifeq ($(PLATFORM_LIB),ATARILIB)
+# Atari ST/MiNT libraries
+# Standard C and math libraries are linked automatically by default
+# Only add if we need specific libraries
+PLATFORM_LIBS = 
+else
+# Windows libraries
+PLATFORM_LIBS = $(WINDOWS_LIBS)
+endif
+
 # Debug configuration
 ifeq ($(CONFIG),Debug)
 DEFINES += _DEBUG
 CXXFLAGS = $(CXXFLAGS_COMMON) -O0 -g -DDEBUG
 LDFLAGS = -g
-LIBS = $(WINDOWS_LIBS)
+LIBS = $(PLATFORM_LIBS)
 else
 # Release configuration
 DEFINES += NDEBUG
@@ -106,7 +126,7 @@ CXXFLAGS = $(CXXFLAGS_COMMON) -O2 -DNDEBUG
 LDFLAGS = -s
 # Note: --gc-sections may not be supported for m68k
 # LDFLAGS += -Wl,--gc-sections -Wl,--strip-all
-LIBS = $(WINDOWS_LIBS)
+LIBS = $(PLATFORM_LIBS)
 endif
 
 # Convert defines to compiler flags
@@ -128,9 +148,17 @@ RCFLAGS += -DNDEBUG=1
 endif
 
 # Linker flags (GCC style)
-# Note: For Windows DLLs on m68k, you may need different flags
+# Platform-specific linking
+ifeq ($(PLATFORM_LIB),ATARILIB)
+# Atari ST: Build as TOS executable, not DLL
+# Note: -nostdlib removed - we need standard library for TOS executables
+# Entry point will be main() from startup.cpp
+# No special entry point needed - standard C++ main() is fine
+else
+# Windows: Build as DLL
 LDFLAGS += -shared
 LDFLAGS += -Wl,-soname,$(TARGET_NAME).dll
+endif
 # Generate import library (may not be supported on all targets)
 # Will be handled separately if needed
 
@@ -227,10 +255,20 @@ RC_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(RC_SOURCES:.rc=.o)))
 
 ALL_OBJECTS = $(CPP_OBJECTS) $(ASM_OBJECTS) $(RC_OBJECTS)
 
-# Output files
+# Output files - platform-specific
+ifeq ($(PLATFORM_LIB),ATARILIB)
+# Atari ST: TOS executable (lowercase .tos extension)
+TARGET_EXE = $(OUTDIR)/$(TARGET_NAME).tos
+TARGET_DLL = $(TARGET_EXE)  # Alias for compatibility
+TARGET_LIB = $(OUTDIR)/$(TARGET_NAME).lib
+TARGET_EXP = $(OUTDIR)/$(TARGET_NAME).exp
+else
+# Windows: DLL
 TARGET_DLL = $(OUTDIR)/$(TARGET_NAME).dll
 TARGET_LIB = $(OUTDIR)/$(TARGET_NAME).lib
 TARGET_EXP = $(OUTDIR)/$(TARGET_NAME).exp
+TARGET_EXE = $(TARGET_DLL)  # Alias for compatibility
+endif
 
 #=============================================================================
 # BUILD RULES
@@ -239,15 +277,24 @@ TARGET_EXP = $(OUTDIR)/$(TARGET_NAME).exp
 .PHONY: all clean cleanall help
 
 # Default target
-all: $(TARGET_DLL)
-	@echo "Build complete: $(TARGET_DLL)"
+all: $(TARGET_EXE)
+	@echo "Build complete: $(TARGET_EXE)"
 
-# Main DLL target
+# Main executable/DLL target
+ifeq ($(PLATFORM_LIB),ATARILIB)
+# Atari ST: Build TOS executable
+$(TARGET_EXE): $(ALL_OBJECTS) | $(OUTDIR)
+	@echo "Linking $(TARGET_EXE)..."
+	$(CXX) $(LDFLAGS) -o $(TARGET_EXE) $(ALL_OBJECTS) $(LIBS)
+	@echo "TOS executable created: $(TARGET_EXE)"
+else
+# Windows: Build DLL
 $(TARGET_DLL): $(ALL_OBJECTS) | $(OUTDIR)
 	@echo "Linking $(TARGET_DLL)..."
 	$(CXX) $(LDFLAGS) -o $(TARGET_DLL) $(ALL_OBJECTS) $(LIBS)
 	@echo "Creating import library $(TARGET_LIB)..."
 	@$(AR) rcs $(TARGET_LIB) $(ALL_OBJECTS) 2>/dev/null || echo "Note: Import library creation skipped"
+endif
 
 # Create output directory
 $(OUTDIR):
@@ -330,11 +377,18 @@ clean:
 	@echo "Cleaning $(CONFIG) build..."
 	@rm -rf $(INTDIR)
 	@rm -f $(OUTDIR)/$(TARGET_NAME).dll
+	@rm -f $(OUTDIR)/$(TARGET_NAME).tos
 	@rm -f $(OUTDIR)/$(TARGET_NAME).lib
 	@rm -f $(OUTDIR)/$(TARGET_NAME).exp
-	@rm -f $(OUTDIR)/$(TARGET_NAME)I.dll
-	@rm -f $(OUTDIR)/$(TARGET_NAME)I.lib
-	@rm -f $(OUTDIR)/$(TARGET_NAME)I.exp
+	# Clean both release and debug builds (using d suffix for debug)
+	@rm -f $(OUTDIR)/$(PROJECT_NAME).dll
+	@rm -f $(OUTDIR)/$(PROJECT_NAME)d.dll
+	@rm -f $(OUTDIR)/$(PROJECT_NAME).lib
+	@rm -f $(OUTDIR)/$(PROJECT_NAME)d.lib
+	@rm -f $(OUTDIR)/$(PROJECT_NAME).exp
+	@rm -f $(OUTDIR)/$(PROJECT_NAME)d.exp
+	@rm -f $(OUTDIR)/cnc.tos
+	@rm -f $(OUTDIR)/cncd.tos
 
 # Clean all configurations
 cleanall:
@@ -350,7 +404,11 @@ help:
 	@echo "  make [CONFIG=Debug|Release] [target]"
 	@echo ""
 	@echo "Targets:"
+ifeq ($(PLATFORM_LIB),ATARILIB)
+	@echo "  all      - Build the TOS executable (default)"
+else
 	@echo "  all      - Build the DLL (default)"
+endif
 	@echo "  clean    - Remove build artifacts for current configuration"
 	@echo "  cleanall - Remove all build artifacts"
 	@echo "  help     - Show this help message"
@@ -384,10 +442,12 @@ help:
 	@echo "Important Notes:"
 	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \
 		echo "  - Using ATARILIB for Atari ST platform"; \
+		echo "  - Building TOS executable (.tos file)"; \
 		echo "  - Assembly files (.asm) should be m68k-compatible"; \
-		echo "  - Windows libraries (winmm, ws2_32) may need alternatives for m68k"; \
+		echo "  - Linking with MiNT libraries (-lm -lc)"; \
 	else \
 		echo "  - Using WIN32LIB for Windows platform"; \
+		echo "  - Building Windows DLL (.dll file)"; \
 		echo "  - Assembly files (.asm) are x86-specific"; \
 		echo "  - Windows libraries (winmm, ws2_32) required"; \
 	fi

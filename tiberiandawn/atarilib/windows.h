@@ -240,4 +240,9 @@ static inline int memicmp(const void *s1, const void *s2, size_t n)
 }
 #endif
 
+// Windows API compatibility stubs
+#ifdef POSIX
+#define IsBadReadPtr(ptr, size) (0)  // Always return false (valid) on POSIX
+#endif
+
 #endif /* WINDOWS_H */

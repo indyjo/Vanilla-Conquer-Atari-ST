@@ -3,6 +3,7 @@
  */
 
 #include "dipthong.h"
+#include <stddef.h>  // For NULL
 
 /*
  * Extract_String - Extract a string pointer from a string data block

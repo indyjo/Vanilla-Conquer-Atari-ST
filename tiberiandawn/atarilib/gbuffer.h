@@ -7,6 +7,8 @@
 #ifndef GBUFFER_H
 #define GBUFFER_H
 
+#include "windows.h"  // For BOOL type
+
 #include "../COMMONLIB/wwstd.h"
 #include "buffer.h"
 

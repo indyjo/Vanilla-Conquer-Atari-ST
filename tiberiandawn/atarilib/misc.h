@@ -36,6 +36,10 @@ long Calculate_CRC(void *buffer, long length);
 /* Build fading table function - matches WIN32LIB signature */
 void *Build_Fading_Table(void const *palette, void const *dest, long int color, long int frac);
 
+/* Icon cache functions - stubs for ATARILIB */
+void Restore_Cached_Icons(void);
+void Invalidate_Cached_Icons(void);
+
 #ifdef __cplusplus
 }
 #endif

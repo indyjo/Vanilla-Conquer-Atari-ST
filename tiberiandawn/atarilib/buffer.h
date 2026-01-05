@@ -5,6 +5,8 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
+#include "windows.h"  // For BOOL type
+
 // Minimal BufferClass definition for use in main source
 class BufferClass {
 public:

@@ -214,8 +214,10 @@ ALL_CPP_SOURCES = $(COMMONLIB_CPP_SOURCES) $(ROOT_CPP_SOURCES) $(PLATFORM_LIB_CP
 # All object files go to $(INTDIR) with just the basename
 # NOTE: alloc.cpp exists in both root and platform lib. The project uses both.
 # We'll use unique names: alloc.o for root, alloc_platformlib.o for platform lib
+# Handle both .cpp and .CPP extensions
 COMMONLIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(COMMONLIB_CPP_SOURCES:.cpp=.o)))
-ROOT_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(ROOT_CPP_SOURCES:.cpp=.o)))
+ROOT_CPP_OBJS_TMP = $(addprefix $(INTDIR)/,$(notdir $(ROOT_CPP_SOURCES:.cpp=.o)))
+ROOT_CPP_OBJS = $(ROOT_CPP_OBJS_TMP:.CPP=.o)
 PLATFORM_LIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(PLATFORM_LIB_CPP_SOURCES:.cpp=.o)))
 # Handle alloc.cpp conflict: root version becomes alloc.o, platform lib version becomes alloc_platformlib.o
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
@@ -263,6 +265,12 @@ $(INTDIR)/%.o: COMMONLIB/%.cpp | $(INTDIR)
 
 # C++ compilation rules for root directory files
 $(INTDIR)/%.o: %.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+# C++ compilation rules for root directory files with .CPP extension
+$(INTDIR)/%.o: %.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<

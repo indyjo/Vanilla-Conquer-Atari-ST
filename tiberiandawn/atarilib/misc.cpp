@@ -102,3 +102,14 @@ extern "C" void *Build_Fading_Table(void const *palette, void const *dest, long 
 	return (void *)dest;
 }
 
+// Icon cache stubs - not needed for ATARILIB
+void Restore_Cached_Icons(void)
+{
+	// Stub - no icon caching on Atari ST
+}
+
+void Invalidate_Cached_Icons(void)
+{
+	// Stub - no icon caching on Atari ST
+}
+

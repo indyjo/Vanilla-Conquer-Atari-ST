@@ -38,13 +38,18 @@
 #include	"function.h"
 #include	<stdio.h>
 #include	<stdlib.h>
+#include	<string.h>
 
+// Local function declarations (not in headers)
 bool Read_Private_Config_Struct(char *profile, NewConfigType *config);
 void Delete_Swap_Files(void);
 void Print_Error_End_Exit(char *string);
 void Print_Error_Exit(char *string);
 void Check_Use_Compressed_Shapes (void);
 void Move_Point(short &x, short &y, register DirType dir, unsigned short distance);
+void Prog_End(const char *why, bool fatal);
+void Read_Setup_Options(RawFileClass *config_file);
+BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel);
 
 bool VideoBackBufferAllowed = true;
 bool SpawnedFromWChat = false;
@@ -84,10 +89,12 @@ int main(int argc, char *argv[])
 	/*
 	** Check for sufficient RAM
 	*/
+#ifdef WIN32
 	if (Ram_Free(MEM_NORMAL) < 5000000) {
 		printf("Insufficient RAM available.\n");
 		return(EXIT_FAILURE);
 	}
+#endif
 
 	/*
 	** Parse command line arguments
@@ -228,7 +235,7 @@ int main(int argc, char *argv[])
 			*/
 			char tempbuff[5];
 			WWGetPrivateProfileString("Intro", "PlayIntro", "Yes", tempbuff, 4, buffer);
-			if ((stricmp(tempbuff, "No") == 0) || SpawnedFromWChat) {
+			if ((_stricmp(tempbuff, "No") == 0) || SpawnedFromWChat) {
 				Special.IsFromInstall = false;
 			}else{
 				Special.IsFromInstall = true;
@@ -275,7 +282,7 @@ int main(int argc, char *argv[])
 			/*
 			** Cleanup
 			*/
-			Prog_End();
+			Prog_End(NULL, false);
 
 			return (EXIT_SUCCESS);
 
@@ -320,16 +327,18 @@ void Prog_End(const char *why, bool fatal)
 	}
 	
 #ifndef DEMO
-	if (GameToPlay == GAME_MODEM || GameToPlay == GAME_NULL_MODEM) {
-//		NullModem.Change_IRQ_Priority(0);
-	}
+	// Modem/Null-modem cleanup (not needed for Atari ST)
+	// if (GameToPlay == GAME_MODEM || GameToPlay == GAME_NULL_MODEM) {
+	//		NullModem.Change_IRQ_Priority(0);
+	// }
 #endif
 	printf("C&C - About to call Sound_End.\n");
 	Sound_End();
 	printf("C&C - Returned from Sound_End.\n");
 	if (WWMouse){
 		printf("C&C - Deleting mouse object.\n");
-		delete WWMouse;
+		WWMouseClass *mouse_ptr = WWMouse;
+		delete mouse_ptr;
 		WWMouse = NULL;
 	}
 
@@ -370,7 +379,7 @@ void Print_Error_End_Exit(char *string)
 {
 	printf( "%s\n", string );
 	Get_Key();
-	Prog_End();
+	Prog_End(string, true);
 	printf( "%s\n", string );
 	if (!RunningAsDLL) {
 		exit(1);
@@ -384,5 +393,108 @@ void Print_Error_Exit(char *string)
 	if (!RunningAsDLL) {
 		exit(1);
 	}
+}
+
+/***********************************************************************************************
+ * Read_Setup_Options -- Read stuff in from the INI file that we need to know sooner           *
+ *                                                                                             *
+ * INPUT:    config_file -- Pointer to the config file                                        *
+ *                                                                                             *
+ * OUTPUT:   Nothing                                                                           *
+ *                                                                                             *
+ * WARNINGS: None                                                                              *
+ *                                                                                             *
+ * HISTORY:                                                                                    *
+ *    6/7/96 4:09PM ST : Created                                                               *
+ *=============================================================================================*/
+void Read_Setup_Options( RawFileClass *config_file )
+{
+	char *buffer = new char [config_file->Size()];
+
+	if (config_file->Is_Available()){
+
+		config_file->Read (buffer, config_file->Size());
+
+		VideoBackBufferAllowed = WWGetPrivateProfileInt ("Options", "VideoBackBuffer", 1, buffer);
+		AllowHardwareBlitFills = WWGetPrivateProfileInt ("Options", "HardwareFills", 1, buffer);
+		ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
+		IsV107 = WWGetPrivateProfileInt ("Options", "Compatibility", 0, buffer);
+
+		/*
+		** See if an alternative socket number has been specified
+		*/
+		int socket = WWGetPrivateProfileInt ("Options", "Socket", 0, buffer);
+		if (socket >0 ){
+			socket += 0x4000;
+			if (socket >= 0x4000 && socket < 0x8000) {
+				Ipx.Set_Socket (socket);
+			}
+		}
+
+		/*
+		** See if a destination network has been specified
+		*/
+		char netbuf [512];
+		memset (netbuf, 0, sizeof (netbuf) );
+		char *netptr = WWGetPrivateProfileString ("Options", "DestNet", NULL, netbuf, sizeof (netbuf), buffer);
+
+		if (netptr && strlen (netbuf)){
+			NetNumType net;
+			NetNodeType node;
+
+			/*
+			** Scan the string, pulling off each address piece
+			*/
+			int i = 0;
+			char * p = strtok(netbuf,".");
+			int x;
+			while (p) {
+				sscanf(p,"%x",&x);			// convert from hex string to int
+				if (i < 4) {
+					net[i] = (char)x;			// fill NetNum
+				} else {
+					node[i-4] = (char)x;		// fill NetNode
+				}
+				i++;
+				p = strtok(NULL,".");
+			}
+
+			/*
+			** If all the address components were successfully read, fill in the
+			** BridgeNet with a broadcast address to the network across the bridge.
+			*/
+			if (i >= 4) {
+				IsBridge = 1;
+				memset(node, 0xff, 6);
+				BridgeNet = IPXAddressClass(net, node);
+			}
+		}
+
+	}
+
+	delete [] buffer;
+}
+
+/***********************************************************************************************
+ * Set_Video_Mode -- Sets the video mode for Atari ST                                          *
+ *                                                                                             *
+ * INPUT:   hwnd            -- Window handle (unused on Atari ST)                             *
+ *         w                -- Width in pixels                                                 *
+ *         h                -- Height in pixels                                                 *
+ *         bits_per_pixel   -- Bits per pixel (8 for 256 colors)                              *
+ *                                                                                             *
+ * OUTPUT:  TRUE if successful, FALSE otherwise                                                *
+ *                                                                                             *
+ * WARNINGS: None                                                                              *
+ *                                                                                             *
+ * HISTORY:                                                                                    *
+ *    Created for Atari ST port                                                               *
+ *=============================================================================================*/
+BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel)
+{
+	// TODO: Implement video mode setting for Atari ST (VDI/XBIOS)
+	// For now, just return TRUE to allow compilation
+	(void)hwnd; (void)w; (void)h; (void)bits_per_pixel;
+	return TRUE;
 }
 

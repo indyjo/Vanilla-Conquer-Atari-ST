@@ -189,7 +189,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/morphpal.cpp $(PLATFORM_LIB)/mouseww.cpp $(PLATFORM_LIB)/newdel.cpp \
 	$(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/regionsz.cpp $(PLATFORM_LIB)/set_font.cpp \
 	$(PLATFORM_LIB)/timer.cpp $(PLATFORM_LIB)/timerdwn.cpp $(PLATFORM_LIB)/timerini.cpp \
-	$(PLATFORM_LIB)/windows.cpp $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
+	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/windows.cpp,) $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
 	$(PLATFORM_LIB)/startup.cpp \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \

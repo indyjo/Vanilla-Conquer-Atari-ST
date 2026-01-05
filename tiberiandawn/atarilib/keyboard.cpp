@@ -7,9 +7,6 @@
 
 #include "keyboard.h"
 
-// Global keyboard object pointer (stub - needs implementation)
-extern void* _Kbd;
-
 // Key constants
 #define KN_NONE 0
 #define KA_NONE 0
@@ -62,5 +59,16 @@ void Stuff_Key_Num(int key)
 {
 	// TODO: Implement key stuffing for Atari ST
 	(void)key; // Suppress unused parameter warning
+}
+
+// Stub: Get a key (compatibility function)
+int Get_Key(void)
+{
+	if (!_Kbd) return KN_NONE;
+	int retval = _Kbd->Get() & ~WWKEY_SHIFT_BIT;
+	if (retval & WWKEY_RLS_BIT) {
+		retval = KN_NONE;
+	}
+	return retval;
 }
 

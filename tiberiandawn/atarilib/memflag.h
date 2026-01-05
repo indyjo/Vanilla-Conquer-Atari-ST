@@ -61,6 +61,21 @@ long Ram_Free(MemoryFlagType flag);
 long Heap_Size(MemoryFlagType flag);
 long Total_Ram_Free(MemoryFlagType flag);
 
+/*=========================================================================
+ * Operator new overloads for memory flags
+ *=========================================================================*/
+void * operator new(size_t size, MemoryFlagType flag);
+void * operator new[] (size_t size, MemoryFlagType flag);
+
+inline void * operator new(size_t size, MemoryFlagType flag)
+{
+	return(Alloc(size, flag));
+}
+inline void * operator new[] (size_t size, MemoryFlagType flag)
+{
+	return(Alloc(size, flag));
+}
+
 #endif
 
 #endif /* MEMFLAG_H */

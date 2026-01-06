@@ -87,4 +87,19 @@ class SurfaceMonitorClass {
 
 extern	SurfaceMonitorClass	AllSurfaces;				//List of all direct draw surfaces
 
+/*=========================================================================*/
+/* Bit manipulation functions - ported from WIN32LIB/MiscAsm.cpp          */
+/*=========================================================================*/
+#ifdef __cplusplus
+extern "C" {
+#endif
+void Set_Bit(void * array, int bit, int value);
+int Get_Bit(void const * array, int bit);
+int First_True_Bit(void const * array);
+int First_False_Bit(void const * array);
+int Bound(int original, int min, int max);
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* MISC_H */

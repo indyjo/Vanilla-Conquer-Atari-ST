@@ -499,3 +499,65 @@ BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel)
 	return TRUE;
 }
 
+// Global variable: Share ally visibility (from WIN32LIB/DLLInterface.cpp)
+bool ShareAllyVisibility = true;
+
+// Global variable: Window number (from display.cpp) - matches ww_win.h declaration
+unsigned int Window = WINDOW_MAIN;
+
+// Global variable: GlyphX client sidebar width (from WIN32LIB/DLLInterface.cpp)
+int GlyphXClientSidebarWidthInLeptons = 0;
+
+// Global variable: Total locks (from conquer.cpp)
+int TotalLocks = 0;
+
+/***************************************************************************
+ * Change_Window -- Change the current window                              *
+ *                                                                         *
+ * INPUT:		int windnum - window number                                *
+ *                                                                         *
+ * OUTPUT:     int - window number (matches ww_win.h declaration)        *
+ *                                                                         *
+ * HISTORY:                                                                *
+ *   Stub for Atari ST                                                    *
+ *=========================================================================*/
+int Change_Window(int windnum)
+{
+	Window = (unsigned int)windnum;
+	// TODO: Implement actual window switching for Atari ST
+	return windnum;
+}
+
+/***************************************************************************
+ * Window_Hide_Mouse -- Hide mouse for a specific window                   *
+ *                                                                         *
+ * INPUT:		int window - window number                                 *
+ *                                                                         *
+ * OUTPUT:     none                                                        *
+ *                                                                         *
+ * HISTORY:                                                                *
+ *   Stub for Atari ST                                                    *
+ *=========================================================================*/
+void Window_Hide_Mouse(int window)
+{
+	// Stub for Atari ST - just hide the mouse
+	(void)window;
+	Hide_Mouse();
+}
+
+/***************************************************************************
+ * Window_Show_Mouse -- Show mouse for current window                      *
+ *                                                                         *
+ * INPUT:		none                                                        *
+ *                                                                         *
+ * OUTPUT:     none                                                        *
+ *                                                                         *
+ * HISTORY:                                                                *
+ *   Stub for Atari ST                                                    *
+ *=========================================================================*/
+void Window_Show_Mouse(void)
+{
+	// Stub for Atari ST - just show the mouse
+	Show_Mouse();
+}
+

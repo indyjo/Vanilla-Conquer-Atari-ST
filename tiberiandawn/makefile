@@ -182,7 +182,7 @@ ROOT_CPP_SOURCES = \
 	cargo.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),ccdde.cpp,) ccfile.cpp cdata.cpp cdfile.cpp cell.cpp \
 	checkbox.cpp cheklist.cpp colrlist.cpp combat.cpp combuf.cpp \
 	comqueue.cpp confdlg.cpp connect.cpp conquer.cpp const.cpp \
-	control.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),coord.cpp,) credits.cpp crew.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),dde.cpp,) debug.cpp \
+	control.cpp coord.cpp credits.cpp crew.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),dde.cpp,) debug.cpp \
 	descdlg.cpp dial8.cpp dialog.cpp display.cpp door.cpp dpmi.cpp drive.cpp edit.cpp \
 	ending.cpp event.cpp expand.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),facing.cpp,) factory.cpp field.cpp \
 	findpath.cpp flasher.cpp fly.cpp foot.cpp fuse.cpp gadget.cpp \

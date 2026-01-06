@@ -38,8 +38,14 @@ void  * Set_Font(void const *fontptr);
 /* The following prototypes are for the file: FONT.CPP						*/
 /*=========================================================================*/
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 int Char_Pixel_Width(char chr);
 unsigned int String_Pixel_Width(char const *string);
+#ifdef __cplusplus
+}
+#endif
 void Get_Next_Text_Print_XY(GraphicViewPortClass& vp, unsigned long offset, int *x, int *y);
 
 /*=========================================================================*/

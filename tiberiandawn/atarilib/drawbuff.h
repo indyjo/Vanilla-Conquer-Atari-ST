@@ -31,12 +31,14 @@ LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int fcolor, int 
 
 /* Graphic buffer class only functions */
 VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, unsigned char color);
+VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, unsigned char color);
 VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, unsigned char color);
 VOID Buffer_Remap(void *thisptr, int sx, int sy, int width, int height, void *remap);
 VOID Buffer_Fill_Quad(void *thisptr, VOID *span_buff, int x0, int y0, int x1, int y1,
 						int x2, int y2, int x3, int y3, int color);
 void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap);
 void Buffer_Draw_Stamp_Clip(void const *thisptr, void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap, int, int, int, int);
+void Fat_Put_Pixel(int x, int y, int color, int siz, GraphicViewPortClass &gpage);
 
 #ifdef __cplusplus
 }

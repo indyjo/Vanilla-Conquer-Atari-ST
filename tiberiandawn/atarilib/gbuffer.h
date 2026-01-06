@@ -12,6 +12,16 @@
 #include "../COMMONLIB/wwstd.h"
 #include "buffer.h"
 
+// Forward declaration for Buffer_Fill_Quad
+#ifdef __cplusplus
+extern "C" {
+#endif
+VOID Buffer_Fill_Quad(void *thisptr, VOID *span_buff, int x0, int y0, int x1, int y1,
+						int x2, int y2, int x3, int y3, int color);
+#ifdef __cplusplus
+}
+#endif
+
 // Type definitions for compatibility
 typedef int HRESULT;
 #ifndef VOID
@@ -23,6 +33,9 @@ class GraphicViewPortClass;
 class GraphicBufferClass;
 class VideoViewPortClass;
 class VideoBufferClass;
+
+// Global LogicPage pointer
+extern GraphicViewPortClass *LogicPage;
 
 GraphicViewPortClass *Set_Logic_Page(GraphicViewPortClass *ptr);
 GraphicViewPortClass *Set_Logic_Page(GraphicViewPortClass &ptr);
@@ -181,6 +194,8 @@ inline BOOL GraphicViewPortClass::Get_IsDirectDraw(void)
 {
 	return (IsDirectDraw);
 }
+
+
 
 inline BOOL GraphicViewPortClass::Lock(void)
 {

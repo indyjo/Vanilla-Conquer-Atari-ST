@@ -47,6 +47,52 @@ extern "C" void Buffer_Put_Pixel(void *thisptr, int x, int y, unsigned char colo
 	buffer[offset] = color;
 }
 
+/***************************************************************************
+ * Fat_Put_Pixel -- Draws a fat pixel (larger than 1x1)                    *
+ *                                                                         *
+ * INPUT:   x, y - coordinates of upper left corner                        *
+ *          color - color value                                            *
+ *          siz - size of pixel (square)                                  *
+ *          gpage - graphic viewport reference                            *
+ *                                                                         *
+ * OUTPUT:  none                                                           *
+ *                                                                         *
+ * HISTORY:                                                                *
+ *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to C)                 *
+ *=========================================================================*/
+extern "C" void Fat_Put_Pixel(int x, int y, int color, int siz, GraphicViewPortClass &gpage)
+{
+	if (siz <= 0) return;
+	
+	// Verify bounds
+	if (y < 0 || y >= gpage.Get_Height()) return;
+	if (x < 0 || x >= gpage.Get_Width()) return;
+	
+	// Calculate pixel offset
+	long offset = gpage.Get_Offset();
+	offset += x;
+	offset += y * (gpage.Get_Pitch() + gpage.Get_XAdd());
+	
+	// Get buffer pointer
+	GraphicBufferClass *gb = gpage.Get_Graphic_Buffer();
+	if (!gb) return;
+	
+	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
+	if (!buffer) return;
+	
+	// Calculate row stride
+	int row_stride = gpage.Get_Pitch() + gpage.Get_XAdd();
+	
+	// Draw fat pixel (square)
+	unsigned char color_byte = (unsigned char)color;
+	for (int row = 0; row < siz && (y + row) < gpage.Get_Height(); row++) {
+		for (int col = 0; col < siz && (x + col) < gpage.Get_Width(); col++) {
+			buffer[offset + col] = color_byte;
+		}
+		offset += row_stride;
+	}
+}
+
 /*=========================================================================*/
 /* Buffer_Get_Pixel -- Gets a pixel from a graphic viewport                */
 /*                                                                         */
@@ -181,6 +227,17 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
 	vp->Draw_Line(sx, sy, dx, dy, color);
+}
+
+/*=========================================================================*/
+/* Buffer_Draw_Rect -- Draws a rectangle on a buffer                       */
+/*=========================================================================*/
+extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, unsigned char color)
+{
+	if (!thisptr) return;
+	
+	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
+	vp->Draw_Rect(sx, sy, dx, dy, color);
 }
 
 /*=========================================================================*/

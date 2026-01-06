@@ -8,6 +8,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*=========================================================================*/
+/* Mem_Copy -- Copies memory from source to destination                   */
+/*                                                                         */
+/* INPUT:                                                                  */
+/*   source         -- Source memory pointer                               */
+/*   dest           -- Destination memory pointer                        */
+/*   bytes_to_copy  -- Number of bytes to copy                            */
+/*                                                                         */
+/* OUTPUT:                                                                 */
+/*   none                                                                  */
+/*=========================================================================*/
+extern "C" void Mem_Copy(void const *source, void *dest, unsigned long bytes_to_copy)
+{
+	memcpy(dest, source, bytes_to_copy);
+}
+
 // External variables
 void (*Memory_Error)(void) = NULL;
 void (*Memory_Error_Exit)(char *string) = NULL;

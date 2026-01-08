@@ -55,6 +55,29 @@
 #include	<errno.h>
 #include	"mixfile.h"
 
+// Endianness detection - MIX files are always little-endian
+// BIG_ENDIAN is defined in Makefile only for big-endian platforms
+
+// Inline byte-swapping functions for little-endian file format
+static inline short SwapLE16(short val) {
+#ifdef BIG_ENDIAN
+	return ((val & 0xFF) << 8) | ((val >> 8) & 0xFF);
+#else
+	return val;  // No swap needed on little-endian
+#endif
+}
+
+static inline long SwapLE32(long val) {
+#ifdef BIG_ENDIAN
+	return ((val & 0xFF) << 24) |
+	       ((val & 0xFF00) << 8) |
+	       ((val & 0xFF0000) >> 8) |
+	       ((val & 0xFF000000) >> 24);
+#else
+	return val;  // No swap needed on little-endian
+#endif
+}
+
 
 template<class T> int Compare(T const *obj1, T const *obj2) {
 	if (*obj1 < *obj2) return(-1);
@@ -173,64 +196,107 @@ MixFileClass::~MixFileClass(void)
  *=============================================================================================*/
 MixFileClass::MixFileClass(char const *filename)
 {
-	CCFileClass file;		// Working file object.
+	CCFileClass file;
+	char error_msg[256];
+	long bytes_read;
+	size_t buffer_size;
+	FileHeader fileheader;
+	int i;
 
-	/*
-	**	Load in the control block. It always remains resident.
-	*/
 	Data = 0;
 	Count = 0;
 	Buffer = 0;
 	file.Set_Name(filename);
 	Filename = strdup(file.File_Name());
+	if (!Filename) {
+		snprintf(error_msg, sizeof(error_msg), "MixFileClass: Memory allocation failed for filename: %s", 
+			file.File_Name() ? file.File_Name() : "(unknown)");
+		goto error;
+	}
 
-	// If RequiredCD == -2, we're using local files, so skip CD availability check
-	// This prevents infinite loops when files don't exist
-	if (RequiredCD != -2) {
-		if (!Force_CD_Available(RequiredCD)) {
-			Prog_End("MixFileClass::MixFileClass CD not found", true);
-			if (!RunningAsDLL) {
-				exit(EXIT_FAILURE);
-			}
-			return;
+	if (RequiredCD != -2 && !Force_CD_Available(RequiredCD)) {
+		snprintf(error_msg, sizeof(error_msg), "MixFileClass: CD not found");
+		goto error;
+	}
+
+	if (!file.Is_Available(false)) {
+		return; // File doesn't exist - OK for some mixfiles
+	}
+
+	memset(&fileheader, 0, sizeof(fileheader));
+	if (!file.Is_Open()) {
+		file.Open(READ);
+		if (!file.Is_Open()) {
+			snprintf(error_msg, sizeof(error_msg), "MixFileClass: Failed to open file: %s", 
+				Filename ? Filename : "(unknown)");
+			goto error;
 		}
 	}
 
-	if (file.Is_Available(true)) {
-		FileHeader fileheader;
-
-		file.Open();
-		file.Read(&fileheader, sizeof(fileheader));
-		Count = fileheader.count;
-		DataSize = fileheader.size;
-
-		/*
-		**	Load up the offset control array. This could be located in
-		**	EMS if possible.
-		*/
-		Buffer = new SubBlock [Count];
-		if (Buffer) {
-			file.Read(Buffer, Count * sizeof(SubBlock));
-		}
-		file.Close();
-	} else {
-//		delete this;
-		return;
+	bytes_read = file.Read(&fileheader, sizeof(fileheader));
+	if (bytes_read != sizeof(fileheader)) {
+		snprintf(error_msg, sizeof(error_msg), "MixFileClass: Failed to read file header for %s (read %ld bytes, expected %lu)", 
+			Filename ? Filename : "(unknown)", bytes_read, (unsigned long)sizeof(fileheader));
+		goto error_close;
 	}
 
-	/*
-	**	Raw data block starts uncached.
-	*/
+	// MIX files are little-endian - swap if host is big-endian
+	Count = SwapLE16(fileheader.count);
+	DataSize = SwapLE32(fileheader.size);
+
+	if (Count <= 0 || Count > 1000000 || DataSize < 0 || DataSize > 0x7FFFFFFF) {
+		snprintf(error_msg, sizeof(error_msg), "MixFileClass: Invalid file header for %s (Count=%d, DataSize=%ld)", 
+			Filename ? Filename : "(unknown)", Count, DataSize);
+		goto error_close;
+	}
+
+	buffer_size = (size_t)Count * sizeof(SubBlock);
+	if (buffer_size / sizeof(SubBlock) != (size_t)Count) {
+		snprintf(error_msg, sizeof(error_msg), "MixFileClass: Buffer size overflow for %s (Count=%d)", 
+			Filename ? Filename : "(unknown)", Count);
+		goto error_close;
+	}
+
+	Buffer = new SubBlock [Count];
+	if (!Buffer) {
+		snprintf(error_msg, sizeof(error_msg), "MixFileClass: Memory allocation failed for %s (Count=%d, size=%lu bytes)", 
+			Filename ? Filename : "(unknown)", Count, (unsigned long)buffer_size);
+		goto error_close;
+	}
+
+	bytes_read = file.Read(Buffer, buffer_size);
+	if (bytes_read != (long)buffer_size) {
+		snprintf(error_msg, sizeof(error_msg), "MixFileClass: Failed to read buffer for %s (read %ld bytes, expected %lu)", 
+			Filename ? Filename : "(unknown)", bytes_read, (unsigned long)buffer_size);
+		goto error_close_buffer;
+	}
+
+	// Byte-swap SubBlock entries if host is big-endian
+	for (i = 0; i < Count; i++) {
+		Buffer[i].CRC = SwapLE32(Buffer[i].CRC);
+		Buffer[i].Offset = SwapLE32(Buffer[i].Offset);
+		Buffer[i].Size = SwapLE32(Buffer[i].Size);
+	}
+
+	file.Close();
 	Data = 0;
-
-	/*
-	**	Attach to list of mixfiles.
-	*/
 	Zap();
 	if (!First) {
 		First = this;
 	} else {
 		Add_Tail(*First);
+	}
+	return;
+
+error_close_buffer:
+	delete [] Buffer;
+	Buffer = 0;
+error_close:
+	file.Close();
+error:
+	Prog_End(error_msg, true);
+	if (!RunningAsDLL) {
+		exit(EXIT_FAILURE);
 	}
 }
 

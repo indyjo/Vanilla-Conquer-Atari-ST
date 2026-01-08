@@ -184,12 +184,16 @@ MixFileClass::MixFileClass(char const *filename)
 	file.Set_Name(filename);
 	Filename = strdup(file.File_Name());
 
-	if (!Force_CD_Available(RequiredCD)) {
-		Prog_End("MixFileClass::MixFileClass CD not found", true);
-		if (!RunningAsDLL) {
-			exit(EXIT_FAILURE);
+	// If RequiredCD == -2, we're using local files, so skip CD availability check
+	// This prevents infinite loops when files don't exist
+	if (RequiredCD != -2) {
+		if (!Force_CD_Available(RequiredCD)) {
+			Prog_End("MixFileClass::MixFileClass CD not found", true);
+			if (!RunningAsDLL) {
+				exit(EXIT_FAILURE);
+			}
+			return;
 		}
-		return;
 	}
 
 	if (file.Is_Available(true)) {

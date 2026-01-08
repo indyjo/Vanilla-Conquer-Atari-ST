@@ -248,23 +248,28 @@ SurfaceMonitorClass AllSurfaces;
  *                                                                         *
  * HISTORY:                                                                *
  *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
+ *   Modified to work with byte arrays (for BooleanVectorClass)           *
  *=========================================================================*/
 extern "C" void Set_Bit(void * array, int bit, int value)
 {
 	if (!array) return;
+	if (bit < 0) return;  // Invalid bit index
 	
-	unsigned long *dword_array = (unsigned long *)array;
-	int dword_index = bit >> 5;  // Divide by 32
-	int bit_index = bit & 0x1F;   // Modulo 32 (0-31)
+	unsigned char *byte_array = (unsigned char *)array;
+	int byte_index = bit >> 3;  // Divide by 8 (bits per byte)
+	int bit_index = bit & 0x7;   // Modulo 8 (0-7)
+	
+	// Note: We can't check bounds here without knowing array size,
+	// but the caller (BooleanVectorClass) should ensure valid access
 	
 	// Clear the bit first
-	unsigned long mask = ~(1UL << bit_index);
-	dword_array[dword_index] &= mask;
+	unsigned char mask = ~(1U << bit_index);
+	byte_array[byte_index] &= mask;
 	
 	// Set the bit if value is non-zero
 	if (value) {
-		mask = (1UL << bit_index);
-		dword_array[dword_index] |= mask;
+		mask = (1U << bit_index);
+		byte_array[byte_index] |= mask;
 	}
 }
 
@@ -278,16 +283,21 @@ extern "C" void Set_Bit(void * array, int bit, int value)
  *                                                                         *
  * HISTORY:                                                                *
  *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
+ *   Modified to work with byte arrays (for BooleanVectorClass)           *
  *=========================================================================*/
 extern "C" int Get_Bit(void const * array, int bit)
 {
 	if (!array) return 0;
+	if (bit < 0) return 0;  // Invalid bit index
 	
-	unsigned long *dword_array = (unsigned long *)array;
-	int dword_index = bit >> 5;  // Divide by 32
-	int bit_index = bit & 0x1F;   // Modulo 32 (0-31)
+	unsigned char const *byte_array = (unsigned char const *)array;
+	int byte_index = bit >> 3;  // Divide by 8 (bits per byte)
+	int bit_index = bit & 0x7;   // Modulo 8 (0-7)
 	
-	return (dword_array[dword_index] >> bit_index) & 1;
+	// Note: We can't check bounds here without knowing array size,
+	// but the caller (BooleanVectorClass) should ensure valid access
+	
+	return (byte_array[byte_index] >> bit_index) & 1;
 }
 
 /***************************************************************************
@@ -299,30 +309,30 @@ extern "C" int Get_Bit(void const * array, int bit)
  *                                                                         *
  * HISTORY:                                                                *
  *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
+ *   Modified to work with byte arrays (for BooleanVectorClass)           *
+ *   Note: This function searches up to 256 bytes (2048 bits)              *
  *=========================================================================*/
 extern "C" int First_True_Bit(void const * array)
 {
 	if (!array) return -1;
 	
-	unsigned long *dword_array = (unsigned long *)array;
-	int bit_offset = -32;
+	unsigned char const *byte_array = (unsigned char const *)array;
 	
-	// Search through dwords until we find a set bit
-	for (int i = 0; ; i++) {
-		bit_offset += 32;
-		unsigned long dword = dword_array[i];
+	// Search through bytes (up to 256 bytes = 2048 bits to prevent infinite loop)
+	for (int byte_idx = 0; byte_idx < 256; byte_idx++) {
+		unsigned char byte = byte_array[byte_idx];
 		
-		if (dword != 0) {
-			// Find the first set bit in this dword
-			for (int j = 0; j < 32; j++) {
-				if (dword & (1UL << j)) {
-					return bit_offset + j;
+		if (byte != 0) {
+			// Find the first set bit in this byte
+			for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
+				if (byte & (1U << bit_idx)) {
+					return (byte_idx * 8) + bit_idx;
 				}
 			}
 		}
 	}
 	
-	return -1;  // Should never reach here
+	return -1;  // No set bit found
 }
 
 /***************************************************************************
@@ -334,30 +344,31 @@ extern "C" int First_True_Bit(void const * array)
  *                                                                         *
  * HISTORY:                                                                *
  *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
+ *   Modified to work with byte arrays (for BooleanVectorClass)           *
+ *   Note: This function searches up to 256 bytes (2048 bits)              *
  *=========================================================================*/
 extern "C" int First_False_Bit(void const * array)
 {
 	if (!array) return -1;
 	
-	unsigned long *dword_array = (unsigned long *)array;
-	int bit_offset = -32;
+	unsigned char const *byte_array = (unsigned char const *)array;
 	
-	// Search through dwords until we find a clear bit
-	for (int i = 0; ; i++) {
-		bit_offset += 32;
-		unsigned long dword = ~dword_array[i];  // Invert to find clear bits
+	// Search through bytes (up to 256 bytes = 2048 bits to prevent infinite loop)
+	for (int byte_idx = 0; byte_idx < 256; byte_idx++) {
+		unsigned char byte = byte_array[byte_idx];
 		
-		if (dword != 0) {
-			// Find the first set bit in the inverted dword
-			for (int j = 0; j < 32; j++) {
-				if (dword & (1UL << j)) {
-					return bit_offset + j;
+		// Check if this byte has any clear bits (not all bits are set)
+		if (byte != 0xFF) {
+			// Find the first clear bit in this byte
+			for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
+				if (!(byte & (1U << bit_idx))) {
+					return (byte_idx * 8) + bit_idx;
 				}
 			}
 		}
 	}
 	
-	return -1;  // Should never reach here
+	return -1;  // No clear bit found
 }
 
 /***************************************************************************

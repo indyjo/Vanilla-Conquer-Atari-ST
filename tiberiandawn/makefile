@@ -293,7 +293,7 @@ all: $(TARGET_EXE)
 # Main executable/DLL target
 ifeq ($(PLATFORM_LIB),ATARILIB)
 # Atari ST: Build TOS executable
-$(TARGET_EXE): $(ALL_OBJECTS) | $(OUTDIR)
+$(TARGET_EXE): $(ALL_OBJECTS) | $(OUTDIR) $(INTDIR)
 	@echo "Linking $(TARGET_EXE)..."
 	$(CXX) $(LDFLAGS) -o $(TARGET_EXE) $(ALL_OBJECTS) $(LIBS)
 	@echo "TOS executable created: $(TARGET_EXE)"
@@ -346,6 +346,12 @@ $(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/alloc.cpp | $(INTDIR)
 
 # Special rule for ATARILIB facing.cpp to avoid conflict with root facing.cpp
 $(INTDIR)/facing_ATARILIB.o: ATARILIB/facing.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+# Explicit rule for mixfile.cpp to work around pattern matching issue with path separators in INTDIR
+$(INTDIR)/mixfile.o: mixfile.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<

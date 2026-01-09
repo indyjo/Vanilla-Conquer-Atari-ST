@@ -30,14 +30,22 @@ extern "C" long Calculate_CRC(void *buffer, long length)
 	unsigned char *data = (unsigned char *)buffer;
 	unsigned long local_length = (unsigned long)length;
 	
-	// Calculate number of 4-byte chunks and remainder bytes
-	unsigned long num_chunks = local_length >> 2;  // Divide by 4
-	unsigned long remainder = local_length & 3;    // Modulo 4 (0-3 bytes)
+	// Calculate number of 4-byte chunks (round up by padding with zeros)
+	unsigned long num_chunks = (local_length + 3) >> 2;  // Divide by 4, rounding up
 	
-	// Process 4-byte chunks
-	unsigned long *dword_ptr = (unsigned long *)data;
+	// Process all chunks uniformly (remainder bytes are implicitly zero-padded)
+	// IMPORTANT: Read bytes individually and construct dword in little-endian order
+	// to match the x86 assembly behavior (lodsd loads in little-endian)
 	for (unsigned long i = 0; i < num_chunks; i++) {
-		unsigned long value = dword_ptr[i];
+		unsigned char *chunk_ptr = data + (i * 4);
+		unsigned long bytes_available = local_length - (i * 4);
+		
+		// Construct dword from bytes in little-endian order
+		// Missing bytes (if any) are implicitly zero, matching the padding behavior
+		unsigned long value = ((bytes_available > 0) ? (unsigned long)chunk_ptr[0] : 0UL) |
+		                     ((bytes_available > 1) ? ((unsigned long)chunk_ptr[1] << 8) : 0UL) |
+		                     ((bytes_available > 2) ? ((unsigned long)chunk_ptr[2] << 16) : 0UL) |
+		                     ((bytes_available > 3) ? ((unsigned long)chunk_ptr[3] << 24) : 0UL);
 		
 		// Rotate CRC left by 1 bit
 		unsigned long high_bit = (crc & 0x80000000UL) ? 1UL : 0UL;
@@ -45,27 +53,6 @@ extern "C" long Calculate_CRC(void *buffer, long length)
 		
 		// Add the 4-byte value
 		crc += value;
-	}
-	
-	// Handle remainder bytes (1-3 bytes)
-	if (remainder > 0) {
-		unsigned long remainder_value = 0;
-		unsigned char *remainder_ptr = data + (num_chunks * 4);
-		
-		// Load remainder bytes, rotating right by 8 bits each time
-		for (unsigned long i = 0; i < remainder; i++) {
-			remainder_value = (remainder_value >> 8) | ((unsigned long)remainder_ptr[i] << 24);
-		}
-		
-		// Rotate the remainder value to align it properly
-		// This matches the assembly: neg ecx, add ecx, 4, shl ecx, 3, ror eax, cl
-		unsigned long shift = (4 - remainder) * 8;
-		remainder_value = (remainder_value >> shift) | (remainder_value << (32 - shift));
-		
-		// Rotate CRC left by 1 bit and add remainder
-		unsigned long high_bit = (crc & 0x80000000UL) ? 1UL : 0UL;
-		crc = (crc << 1) | high_bit;
-		crc += remainder_value;
 	}
 	
 	return (long)crc;

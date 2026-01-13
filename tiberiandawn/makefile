@@ -172,41 +172,43 @@ COMMONLIB_CPP_SOURCES = \
 
 # IPX sources - ipx95.cpp is used for all modern builds
 # ipx.cpp was removed as it only contained DOS/DPMI-specific code
-IPX_SOURCES = ipx95.cpp
+IPX_SOURCES = IPX95.CPP
 
 # Root directory C++ sources
 # Note: dde.cpp and ccdde.cpp are Windows-only (DDE is Windows-specific)
+# All files use uppercase .CPP extension (case-insensitive filesystem handles this)
 ROOT_CPP_SOURCES = \
-	aadata.cpp abstract.cpp adata.cpp aircraft.cpp alloc.cpp anim.cpp \
-	audio.cpp base.cpp bbdata.cpp bdata.cpp building.cpp bullet.cpp \
-	cargo.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),ccdde.cpp,) ccfile.cpp cdata.cpp cdfile.cpp cell.cpp \
-	checkbox.cpp cheklist.cpp colrlist.cpp combat.cpp combuf.cpp \
-	comqueue.cpp confdlg.cpp connect.cpp conquer.cpp const.cpp \
-	control.cpp coord.cpp credits.cpp crew.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),dde.cpp,) debug.cpp \
-	descdlg.cpp dial8.cpp dialog.cpp display.cpp door.cpp dpmi.cpp drive.cpp edit.cpp \
-	ending.cpp event.cpp expand.cpp $(if $(filter WIN32LIB,$(PLATFORM_LIB)),facing.cpp,) factory.cpp field.cpp \
-	findpath.cpp flasher.cpp fly.cpp foot.cpp fuse.cpp gadget.cpp \
-	gamedlg.cpp gauge.cpp globals.cpp goptions.cpp gscreen.cpp \
-	hdata.cpp heap.cpp help.cpp house.cpp idata.cpp infantry.cpp \
-	ini.cpp init.cpp internet.cpp interpal.cpp intro.cpp iomap.cpp \
-	ioobj.cpp $(IPX_SOURCES) ipxaddr.cpp ipxconn.cpp ipxgconn.cpp \
-	ipxmgr.cpp jshell.cpp keyframe.cpp layer.cpp link.cpp list.cpp \
-	loaddlg.cpp logic.cpp map.cpp mapeddlg.cpp mapedit.cpp mapedplc.cpp \
-	mapedsel.cpp mapedtm.cpp mapsel.cpp menus.cpp \
-	mission.cpp mixfile.cpp monoc.cpp mouse.cpp mplayer.cpp \
-	msgbox.cpp msglist.cpp netdlg.cpp noseqcon.cpp nullconn.cpp \
-	nulldlg.cpp nullmgr.cpp object.cpp odata.cpp options.cpp \
-	overlay.cpp packet.cpp power.cpp profile.cpp queue.cpp radar.cpp \
-	radio.cpp rand.cpp rawfile.cpp reinf.cpp rules.cpp saveload.cpp \
-	scenario.cpp score.cpp scroll.cpp sdata.cpp seqconn.cpp Shape.cpp \
-	shapebtn.cpp sidebar.cpp SIDEBARGlyphx.CPP slider.cpp smudge.cpp \
-	sounddlg.cpp special.cpp stats.cpp super.cpp tab.cpp \
-	tarcom.cpp target.cpp tdata.cpp team.cpp teamtype.cpp \
-	techno.cpp template.cpp terrain.cpp textbtn.cpp theme.cpp \
-	toggle.cpp trigger.cpp turret.cpp txtlabel.cpp udata.cpp unit.cpp \
-	utracker.cpp vector.cpp visudlg.cpp winstub.cpp
+	AADATA.CPP ABSTRACT.CPP ADATA.CPP AIRCRAFT.CPP ALLOC.CPP ANIM.CPP \
+	AUDIO.CPP BASE.CPP BBDATA.CPP BDATA.CPP BUILDING.CPP BULLET.CPP \
+	CARGO.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),CCDDE.CPP,) CCFILE.CPP CDATA.CPP CDFILE.CPP CELL.CPP \
+	CHECKBOX.CPP CHEKLIST.CPP COLRLIST.CPP COMBAT.CPP COMBUF.CPP \
+	COMQUEUE.CPP CONFDLG.CPP CONNECT.CPP CONQUER.CPP CONST.CPP \
+	CONTROL.CPP COORD.CPP CREDITS.CPP CREW.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),DDE.CPP,) DEBUG.CPP \
+	DESCDLG.CPP DIAL8.CPP DIALOG.CPP DISPLAY.CPP DOOR.CPP DPMI.CPP DRIVE.CPP EDIT.CPP \
+	ENDING.CPP EVENT.CPP EXPAND.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),FACING.CPP,) FACTORY.CPP FIELD.CPP \
+	FINDPATH.CPP FLASHER.CPP FLY.CPP FOOT.CPP FUSE.CPP GADGET.CPP \
+	GAMEDLG.CPP GAUGE.CPP GLOBALS.CPP GOPTIONS.CPP GSCREEN.CPP \
+	HDATA.CPP HEAP.CPP HELP.CPP HOUSE.CPP IDATA.CPP INFANTRY.CPP \
+	INI.CPP INIT.CPP INTERNET.CPP INTERPAL.CPP INTRO.CPP IOMAP.CPP \
+	IOOBJ.CPP $(IPX_SOURCES) IPXADDR.CPP IPXCONN.CPP IPXGCONN.CPP \
+	IPXMGR.CPP JSHELL.CPP KEYFRAME.CPP LAYER.CPP LINK.CPP LIST.CPP \
+	LOADDLG.CPP LOGIC.CPP MAP.CPP MAPEDDLG.CPP MAPEDIT.CPP MAPEDPLC.CPP \
+	MAPEDSEL.CPP MAPEDTM.CPP MAPSEL.CPP MENUS.CPP \
+	MISSION.CPP MIXFILE.CPP MONOC.CPP MOUSE.CPP MPLAYER.CPP \
+	MSGBOX.CPP MSGLIST.CPP NETDLG.CPP NOSEQCON.CPP NULLCONN.CPP \
+	NULLDLG.CPP NULLMGR.CPP OBJECT.CPP ODATA.CPP OPTIONS.CPP \
+	OVERLAY.CPP PACKET.CPP POWER.CPP PROFILE.CPP QUEUE.CPP RADAR.CPP \
+	RADIO.CPP RAND.CPP RAWFILE.CPP REINF.CPP RULES.CPP SAVELOAD.CPP \
+	SCENARIO.CPP SCORE.CPP SCROLL.CPP SDATA.CPP SEQCONN.CPP Shape.cpp \
+	SHAPEBTN.CPP SIDEBAR.CPP SIDEBARGlyphx.CPP SLIDER.CPP SMUDGE.CPP \
+	SOUNDDLG.CPP SPECIAL.CPP STATS.CPP SUPER.CPP TAB.CPP \
+	TARCOM.CPP TARGET.CPP TDATA.CPP TEAM.CPP TEAMTYPE.CPP \
+	TECHNO.CPP TEMPLATE.CPP TERRAIN.CPP TEXTBTN.CPP THEME.CPP \
+	TOGGLE.CPP TRIGGER.CPP TURRET.CPP TXTLABEL.CPP UDATA.CPP UNIT.CPP \
+	UTRACKER.CPP VECTOR.CPP VISUDLG.CPP WINSTUB.CPP
 
 # Platform library C++ sources (WIN32LIB or ATARILIB)
+# ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp $(PLATFORM_LIB)/buffer.cpp $(PLATFORM_LIB)/buffglbl.cpp \
 	$(PLATFORM_LIB)/ddraw.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/DrawMisc.cpp \
@@ -217,7 +219,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/morphpal.cpp $(PLATFORM_LIB)/mouseww.cpp $(PLATFORM_LIB)/newdel.cpp \
 	$(PLATFORM_LIB)/palette.cpp $(PLATFORM_LIB)/regionsz.cpp $(PLATFORM_LIB)/set_font.cpp \
 	$(PLATFORM_LIB)/timer.cpp $(PLATFORM_LIB)/timerdwn.cpp $(PLATFORM_LIB)/timerini.cpp \
-	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/windows.cpp,) $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
+	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/WINDOWS.CPP,) $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
 	$(PLATFORM_LIB)/startup.cpp \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
@@ -226,9 +228,10 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)
+# Root directory files use uppercase .ASM, ATARILIB files use lowercase .asm (as tracked in git)
 ASM_SOURCES = \
-	ipxprot.asm ipxreal.asm keyfbuff.asm mmx.asm pagfault.asm \
-	support.asm txtprnt.asm winasm.asm \
+	IPXPROT.ASM IPXREAL.ASM KEYFBUFF.ASM MMX.ASM PAGFAULT.ASM \
+	SUPPORT.ASM TXTPRNT.ASM WINASM.ASM \
 	$(PLATFORM_LIB)/facingff.asm $(PLATFORM_LIB)/tobuff.asm $(PLATFORM_LIB)/xordelta.asm
 
 # Resource files
@@ -242,20 +245,20 @@ ALL_CPP_SOURCES = $(COMMONLIB_CPP_SOURCES) $(ROOT_CPP_SOURCES) $(PLATFORM_LIB_CP
 # All object files go to $(INTDIR) with just the basename
 # NOTE: alloc.cpp exists in both root and platform lib. The project uses both.
 # We'll use unique names: alloc.o for root, alloc_platformlib.o for platform lib
-# Handle both .cpp and .CPP extensions
+# All source files now use uppercase .CPP extension (case-insensitive filesystem handles this)
+# Handle both .cpp and .CPP extensions in object file generation
 COMMONLIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(COMMONLIB_CPP_SOURCES:.cpp=.o)))
-ROOT_CPP_OBJS_TMP = $(addprefix $(INTDIR)/,$(notdir $(ROOT_CPP_SOURCES:.cpp=.o)))
-ROOT_CPP_OBJS = $(ROOT_CPP_OBJS_TMP:.CPP=.o)
-PLATFORM_LIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(PLATFORM_LIB_CPP_SOURCES:.cpp=.o)))
+ROOT_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.CPP,%.o,$(patsubst %.cpp,%.o,$(ROOT_CPP_SOURCES)))))
+PLATFORM_LIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.CPP,%.o,$(patsubst %.cpp,%.o,$(PLATFORM_LIB_CPP_SOURCES)))))
 # Handle alloc.cpp conflict: root version becomes alloc.o, platform lib version becomes alloc_platformlib.o
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 # Handle facing.cpp conflict: ATARILIB version becomes facing_ATARILIB.o to avoid conflict with root facing.cpp
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/facing.o,$(INTDIR)/facing_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
-ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(ASM_SOURCES:.asm=.o)))
+ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.ASM,%.o,$(patsubst %.asm,%.o,$(ASM_SOURCES)))))
 # Filter out truncated x86 assembly object files for ATARILIB (they can't be assembled for m68k)
 ifeq ($(PLATFORM_LIB),ATARILIB)
-ASM_OBJECTS := $(filter-out $(INTDIR)/ipxprot.o $(INTDIR)/ipxreal.o $(INTDIR)/keyfbuff.o $(INTDIR)/mmx.o $(INTDIR)/pagfault.o $(INTDIR)/support.o $(INTDIR)/txtprnt.o $(INTDIR)/winasm.o,$(ASM_OBJECTS))
+ASM_OBJECTS := $(filter-out $(INTDIR)/IPXPROT.o $(INTDIR)/IPXREAL.o $(INTDIR)/KEYFBUFF.o $(INTDIR)/MMX.o $(INTDIR)/PAGFAULT.o $(INTDIR)/SUPPORT.o $(INTDIR)/TXTPRNT.o $(INTDIR)/WINASM.o,$(ASM_OBJECTS))
 endif
 RC_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(RC_SOURCES:.rc=.o)))
 # Filter out resource object files for ATARILIB (windres not available/needed for m68k)
@@ -315,31 +318,40 @@ $(INTDIR):
 	@mkdir -p $(INTDIR)
 
 # C++ compilation rules for common library files
+# Handle both .cpp and .CPP extensions (case-insensitive filesystem)
 $(INTDIR)/%.o: COMMONLIB/%.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/%.o: COMMONLIB/%.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 # C++ compilation rules for root directory files
+# Handle both .cpp and .CPP extensions (case-insensitive filesystem)
 $(INTDIR)/%.o: %.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
-
-# C++ compilation rules for root directory files with .CPP extension
 $(INTDIR)/%.o: %.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 # C++ compilation rules for platform library files
+# Handle both .cpp and .CPP extensions (case-insensitive filesystem)
 $(INTDIR)/%.o: $(PLATFORM_LIB)/%.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/%.o: $(PLATFORM_LIB)/%.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 # Special rule for platform lib alloc.cpp to avoid conflict with root alloc.cpp
-$(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/alloc.cpp | $(INTDIR)
+$(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/ALLOC.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
@@ -351,22 +363,22 @@ $(INTDIR)/facing_ATARILIB.o: ATARILIB/facing.cpp | $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 # Explicit rules for files to work around pattern matching issue with path separators in INTDIR
-$(INTDIR)/mixfile.o: mixfile.cpp | $(INTDIR)
+$(INTDIR)/mixfile.o: MIXFILE.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
-$(INTDIR)/ccfile.o: ccfile.cpp | $(INTDIR)
+$(INTDIR)/ccfile.o: CCFILE.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
-$(INTDIR)/init.o: init.cpp | $(INTDIR)
+$(INTDIR)/init.o: INIT.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
-$(INTDIR)/jshell.o: jshell.cpp | $(INTDIR)
+$(INTDIR)/jshell.o: JSHELL.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
@@ -377,7 +389,14 @@ $(INTDIR)/jshell.o: jshell.cpp | $(INTDIR)
 # 1. Convert them to m68k assembly, or
 # 2. Rewrite the functions in C/C++, or
 # 3. Skip them if not critical
+# Handle both .asm and .ASM extensions (case-insensitive filesystem)
 $(INTDIR)/%.o: %.asm | $(INTDIR)
+	@echo "Assembling $< (WARNING: x86 assembly on m68k target)..."
+	@mkdir -p $(INTDIR)
+	@echo "Error: x86 assembly files cannot be assembled for m68k target"
+	@echo "Skipping $< - you may need to convert or rewrite in C/C++"
+	@touch $@
+$(INTDIR)/%.o: %.ASM | $(INTDIR)
 	@echo "Assembling $< (WARNING: x86 assembly on m68k target)..."
 	@mkdir -p $(INTDIR)
 	@echo "Error: x86 assembly files cannot be assembled for m68k target"
@@ -385,7 +404,20 @@ $(INTDIR)/%.o: %.asm | $(INTDIR)
 	@touch $@
 
 # Assembly compilation rules for platform library files
+# Handle both .asm and .ASM extensions (case-insensitive filesystem)
+# ATARILIB uses lowercase .asm, WIN32LIB uses uppercase .ASM
 $(INTDIR)/%.o: $(PLATFORM_LIB)/%.asm | $(INTDIR)
+	@echo "Assembling $<..."
+	@mkdir -p $(INTDIR)
+	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \
+		$(ASM) $(ASMFLAGS) -o $@ $<; \
+	else \
+		echo "WARNING: x86 assembly on m68k target"; \
+		echo "Error: x86 assembly files cannot be assembled for m68k target"; \
+		echo "Skipping $< - you may need to convert or rewrite in C/C++"; \
+		touch $@; \
+	fi
+$(INTDIR)/%.o: $(PLATFORM_LIB)/%.ASM | $(INTDIR)
 	@echo "Assembling $<..."
 	@mkdir -p $(INTDIR)
 	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \

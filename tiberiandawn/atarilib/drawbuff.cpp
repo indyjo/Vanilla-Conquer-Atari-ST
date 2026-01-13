@@ -6,6 +6,7 @@
 
 #include "drawbuff.h"
 #include "gbuffer.h"
+#include <string.h>  // For memset
 
 /*=========================================================================*/
 /* Buffer_Put_Pixel -- Puts a pixel on a graphic viewport                  */
@@ -140,7 +141,30 @@ extern "C" void Buffer_Clear(void *thisptr, unsigned char color)
 	if (!thisptr) return;
 	
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Clear(color);
+	
+	// Get viewport dimensions
+	int width = vp->Get_Width();
+	int height = vp->Get_Height();
+	if (width <= 0 || height <= 0) return;
+	
+	// Get buffer pointer
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	if (!gb) return;
+	
+	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
+	if (!buffer) return;
+	
+	// Calculate row stride (pitch + xadd)
+	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	
+	// Get starting offset
+	long offset = vp->Get_Offset();
+	
+	// Clear each row
+	for (int row = 0; row < height; row++) {
+		memset(buffer + offset, color, width);
+		offset += row_stride;
+	}
 }
 
 /*=========================================================================*/

@@ -91,7 +91,7 @@ endif
 INCLUDES = -I./$(PLATFORM_LIB) -I. -I./COMMONLIB
 
 # Common compiler flags (GCC style)
-CXXFLAGS_COMMON = -Wall -Wextra -fno-exceptions -fpack-struct=1
+CXXFLAGS_COMMON = -Wall -Wextra -fno-exceptions
 CXXFLAGS_COMMON += $(INCLUDES)
 CXXFLAGS_COMMON += -Wno-unused-parameter -Wno-sign-compare -Wno-deprecated-declarations
 CXXFLAGS_COMMON += -std=c++17 -fpermissive
@@ -350,8 +350,23 @@ $(INTDIR)/facing_ATARILIB.o: ATARILIB/facing.cpp | $(INTDIR)
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
-# Explicit rule for mixfile.cpp to work around pattern matching issue with path separators in INTDIR
+# Explicit rules for files to work around pattern matching issue with path separators in INTDIR
 $(INTDIR)/mixfile.o: mixfile.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/ccfile.o: ccfile.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/init.o: init.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/jshell.o: jshell.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<

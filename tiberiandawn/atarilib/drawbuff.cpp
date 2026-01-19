@@ -212,8 +212,46 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 	GraphicViewPortClass *src_vp = (GraphicViewPortClass *)thisptr;
 	GraphicViewPortClass *dest_vp = (GraphicViewPortClass *)dest;
 	
-	HRESULT result = src_vp->Blit(*dest_vp, x_pixel, y_pixel, dx_pixel, dy_pixel, pixel_width, pixel_height, trans);
-	return (result == 0) ? TRUE : FALSE;
+	// Get buffer pointers and dimensions
+	GraphicBufferClass *src_gb = src_vp->Get_Graphic_Buffer();
+	GraphicBufferClass *dest_gb = dest_vp->Get_Graphic_Buffer();
+	if (!src_gb || !dest_gb) return FALSE;
+	
+	unsigned char *src_buffer = (unsigned char *)src_gb->Get_Buffer();
+	unsigned char *dest_buffer = (unsigned char *)dest_gb->Get_Buffer();
+	if (!src_buffer || !dest_buffer) return FALSE;
+	
+	// Calculate source and destination offsets
+	long src_offset = src_vp->Get_Offset() + (src_vp->Get_Pitch() + src_vp->Get_XAdd()) * y_pixel + x_pixel;
+	long dest_offset = dest_vp->Get_Offset() + (dest_vp->Get_Pitch() + dest_vp->Get_XAdd()) * dy_pixel + dx_pixel;
+	
+	// Calculate source and destination strides
+	int src_stride = src_vp->Get_Pitch() + src_vp->Get_XAdd();
+	int dest_stride = dest_vp->Get_Pitch() + dest_vp->Get_XAdd();
+	
+	// Perform the blit
+	if (trans) {
+		// Transparent blit: skip pixels with value 0
+		for (int y = 0; y < pixel_height; y++) {
+			for (int x = 0; x < pixel_width; x++) {
+				unsigned char pixel = src_buffer[src_offset + x];
+				if (pixel != 0) {
+					dest_buffer[dest_offset + x] = pixel;
+				}
+			}
+			src_offset += src_stride;
+			dest_offset += dest_stride;
+		}
+	} else {
+		// Opaque blit: copy all pixels
+		for (int y = 0; y < pixel_height; y++) {
+			memcpy(&dest_buffer[dest_offset], &src_buffer[src_offset], pixel_width);
+			src_offset += src_stride;
+			dest_offset += dest_stride;
+		}
+	}
+	
+	return TRUE;
 }
 
 /*=========================================================================*/

@@ -50,7 +50,7 @@ PLATFORM_LIB = WIN32LIB
 endif
 
 # Output directory
-OUTDIR ?= ../bin/$(PLATFORM)
+OUTDIR ?= ./bin/$(PLATFORM)
 INTDIR ?= $(PLATFORM)/$(CONFIG)
 
 # Project name

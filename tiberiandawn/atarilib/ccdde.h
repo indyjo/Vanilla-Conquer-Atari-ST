@@ -38,6 +38,10 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 // DDE is Windows-specific, provide stub for Atari ST
+
+#include "windows.h" // For BOOL
+#include <stddef.h>  // For NULL
+
 class DDEServerClass {
 public:
 	/*

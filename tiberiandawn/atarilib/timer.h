@@ -34,6 +34,8 @@ public:
 };
 
 // Stub - needs implementation
+extern TimerClass TickCount;
+extern CountDownTimerClass CountDown;
 
 #endif /* TIMER_H */
 

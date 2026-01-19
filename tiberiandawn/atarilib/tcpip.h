@@ -43,6 +43,8 @@
 
 // TCP/IP networking disabled for Atari ST - stub declarations only
 
+#include "windows.h" // For BOOL
+
 // Constants matching WIN32LIB/tcpip.h
 #define PLANET_WESTWOOD_PASSWORD_MAX 20
 #define IP_ADDRESS_MAX 40

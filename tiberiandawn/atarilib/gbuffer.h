@@ -199,6 +199,7 @@ inline BOOL GraphicViewPortClass::Get_IsDirectDraw(void)
 
 inline BOOL GraphicViewPortClass::Lock(void)
 {
+	if (!GraphicBuff) return(FALSE);
 	BOOL lock = GraphicBuff->Lock();
 	if ( !lock ) return(FALSE);
 
@@ -210,6 +211,7 @@ inline BOOL GraphicViewPortClass::Lock(void)
 
 inline BOOL GraphicViewPortClass::Unlock(void)
 {
+	if (!GraphicBuff) return(FALSE);
 	BOOL unlock = GraphicBuff->Unlock();
 	if (!unlock) return(FALSE);
 	if (this != GraphicBuff && IsDirectDraw && !GraphicBuff->LockCount) {

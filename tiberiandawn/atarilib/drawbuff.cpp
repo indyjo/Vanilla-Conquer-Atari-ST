@@ -276,8 +276,11 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 {
 	if (!thisptr || !str) return 0;
 	
-	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	return vp->Print(str, x, y, fcolor, bcolor);
+	// FIXME: This is a stub to prevent infinite recursion.
+	// Buffer_Print was calling vp->Print(), which calls Buffer_Print() again.
+	// TODO: Implement proper text rendering here using FontPtr and font structures.
+	// For now, return 0 to allow the program to continue.
+	return 0;
 }
 
 /*=========================================================================*/
@@ -288,7 +291,75 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (!thisptr) return;
 	
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Draw_Line(sx, sy, dx, dy, color);
+	
+	// Get viewport dimensions
+	int width = vp->Get_Width();
+	int height = vp->Get_Height();
+	if (width <= 0 || height <= 0) return;
+	
+	// Clip coordinates to viewport bounds
+	if (sx < 0) sx = 0;
+	if (sy < 0) sy = 0;
+	if (dx < 0) dx = 0;
+	if (dy < 0) dy = 0;
+	if (sx >= width) sx = width - 1;
+	if (sy >= height) sy = height - 1;
+	if (dx >= width) dx = width - 1;
+	if (dy >= height) dy = height - 1;
+	
+	// Get buffer pointer
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	if (!gb) return;
+	
+	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
+	if (!buffer) return;
+	
+	// Calculate row stride (pitch + xadd)
+	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	
+	// Get starting offset
+	long offset = vp->Get_Offset();
+	
+	// Simple line drawing using Bresenham's algorithm
+	int x0 = sx, y0 = sy, x1 = dx, y1 = dy;
+	int dx_abs = (x1 > x0) ? (x1 - x0) : (x0 - x1);
+	int dy_abs = (y1 > y0) ? (y1 - y0) : (y0 - y1);
+	int x_inc = (x1 > x0) ? 1 : -1;
+	int y_inc = (y1 > y0) ? 1 : -1;
+	
+	int x = x0, y = y0;
+	
+	if (dx_abs >= dy_abs) {
+		// More horizontal than vertical
+		int error = dx_abs / 2;
+		for (int i = 0; i <= dx_abs; i++) {
+			if (x >= 0 && x < width && y >= 0 && y < height) {
+				long pixel_offset = offset + x + y * row_stride;
+				buffer[pixel_offset] = color;
+			}
+			error -= dy_abs;
+			if (error < 0) {
+				y += y_inc;
+				error += dx_abs;
+			}
+			x += x_inc;
+		}
+	} else {
+		// More vertical than horizontal
+		int error = dy_abs / 2;
+		for (int i = 0; i <= dy_abs; i++) {
+			if (x >= 0 && x < width && y >= 0 && y < height) {
+				long pixel_offset = offset + x + y * row_stride;
+				buffer[pixel_offset] = color;
+			}
+			error -= dx_abs;
+			if (error < 0) {
+				x += x_inc;
+				error += dy_abs;
+			}
+			y += y_inc;
+		}
+	}
 }
 
 /*=========================================================================*/
@@ -299,7 +370,53 @@ extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (!thisptr) return;
 	
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Draw_Rect(sx, sy, dx, dy, color);
+	
+	// Clip coordinates to viewport bounds
+	int width = vp->Get_Width();
+	int height = vp->Get_Height();
+	if (sx < 0) sx = 0;
+	if (sy < 0) sy = 0;
+	if (dx >= width) dx = width - 1;
+	if (dy >= height) dy = height - 1;
+	
+	// Check if rectangle is valid
+	if (sx > dx || sy > dy) return;
+	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
+	
+	// Get buffer pointer
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	if (!gb) return;
+	
+	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
+	if (!buffer) return;
+	
+	// Calculate row stride (pitch + xadd)
+	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	
+	// Get starting offset
+	long base_offset = vp->Get_Offset();
+	
+	// Draw top and bottom horizontal lines
+	int rect_width = dx - sx + 1;
+	long top_offset = base_offset + sx + sy * row_stride;
+	long bottom_offset = base_offset + sx + dy * row_stride;
+	for (int x = 0; x < rect_width; x++) {
+		if (sx + x < width) {
+			buffer[top_offset + x] = color;
+			buffer[bottom_offset + x] = color;
+		}
+	}
+	
+	// Draw left and right vertical lines
+	int rect_height = dy - sy + 1;
+	for (int y = 0; y < rect_height; y++) {
+		if (sy + y < height) {
+			long left_offset = base_offset + sx + (sy + y) * row_stride;
+			long right_offset = base_offset + dx + (sy + y) * row_stride;
+			buffer[left_offset] = color;
+			buffer[right_offset] = color;
+		}
+	}
 }
 
 /*=========================================================================*/
@@ -310,7 +427,43 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (!thisptr) return;
 	
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Fill_Rect(sx, sy, dx, dy, color);
+	
+	// Clip coordinates to viewport bounds
+	int width = vp->Get_Width();
+	int height = vp->Get_Height();
+	if (sx < 0) sx = 0;
+	if (sy < 0) sy = 0;
+	if (dx >= width) dx = width - 1;
+	if (dy >= height) dy = height - 1;
+	
+	// Check if rectangle is valid
+	if (sx > dx || sy > dy) return;
+	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
+	
+	// Get buffer pointer
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	if (!gb) return;
+	
+	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
+	if (!buffer) return;
+	
+	// Calculate dimensions
+	int rect_width = dx - sx + 1;
+	int rect_height = dy - sy + 1;
+	
+	// Calculate row stride (pitch + xadd)
+	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	
+	// Get starting offset
+	long offset = vp->Get_Offset();
+	offset += sx;
+	offset += sy * row_stride;
+	
+	// Fill each row
+	for (int row = 0; row < rect_height; row++) {
+		memset(buffer + offset, color, rect_width);
+		offset += row_stride;
+	}
 }
 
 /*=========================================================================*/

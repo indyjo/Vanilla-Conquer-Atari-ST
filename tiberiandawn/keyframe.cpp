@@ -91,6 +91,15 @@ typedef struct tShapeHeaderType{
 
 static int Length;
 
+// Helper functions to read little-endian values from file data
+static inline unsigned short ReadLE16(const unsigned char* ptr) {
+	return ptr[0] | (ptr[1] << 8);
+}
+
+static inline unsigned long ReadLE32(const unsigned char* ptr) {
+	return ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
+}
+
 void *Get_Shape_Header_Data(void *ptr)
 {
 	if (UseBigShapeBuffer){
@@ -245,6 +254,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 	keyfr = (KeyFrameHeaderType *) dataptr;
 
 	unsigned short total_frames = Get_Build_Frame_Count(dataptr);
+	
 	if ( framenumber >= total_frames ) {
 		return(0);
 	}
@@ -272,24 +282,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		static bool show_info = true;
 
 		if ((Frame & 0xff) == 0){
-
 			if (show_info){
-
-				char debugstr [128];
-				sprintf (debugstr, "C&C95 - Big shape buffer is now %d Kb.\n", BigShapeBufferLength / 1024);
-				CCDebugString (debugstr);
-
-				sprintf (debugstr, "C&C95 - %d Kb Used in big shape buffer.\n", (unsigned)((unsigned)BigShapeBufferPtr - (unsigned)BigShapeBufferStart)/1024);
-				CCDebugString (debugstr);
-
-				sprintf (debugstr, "C&C95 - %d Kb Used in theater shape buffer.\n", (unsigned)((unsigned)TheaterShapeBufferPtr - (unsigned)TheaterShapeBufferStart)/1024);
-				CCDebugString (debugstr);
 				show_info = false;
 			}
-
-			}else{
+		} else {
 			show_info = true;
-
 		}
 
 
@@ -347,18 +344,26 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 	buffsize = width * height;
 
 	// get offset into data
-	ptr = (char *)Add_Long_To_Pointer( dataptr, (((unsigned long)framenumber << 3) + sizeof(KeyFrameHeaderType)) );
-	Mem_Copy( ptr, &offset[0], 12L );
+	unsigned long frame_offset = (((unsigned long)framenumber << 3) + sizeof(KeyFrameHeaderType));
+	
+	ptr = (char *)Add_Long_To_Pointer( dataptr, frame_offset );
+	
+	// Read 12 bytes (3 unsigned longs) as little-endian from potentially unaligned ptr
+	const unsigned char* offset_bytes = (const unsigned char*)ptr;
+	offset[0] = ReadLE32(offset_bytes);
+	offset[1] = ReadLE32(offset_bytes + 4);
+	offset[2] = ReadLE32(offset_bytes + 8);
+	
 	frameflags = (char)(offset[0] >> 24);
 
-
-	// Read flags safely
-	short flags;
-	memcpy(&flags, (const char*)dataptr + offsetof(KeyFrameHeaderType, flags), sizeof(short));
+	// Read flags safely (little-endian)
+	const unsigned char* flags_bytes = (const unsigned char*)dataptr + offsetof(KeyFrameHeaderType, flags);
+	short flags = (short)ReadLE16(flags_bytes);
 
 	if ( (frameflags & KF_KEYFRAME) ) {
-
-		ptr = (char *)Add_Long_To_Pointer( dataptr, (offset[0] & 0x00FFFFFFL) );
+		unsigned long data_offset = (offset[0] & 0x00FFFFFFL);
+		
+		ptr = (char *)Add_Long_To_Pointer( dataptr, data_offset );
 
 		if (flags & 1 ) {
 			ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
@@ -370,7 +375,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			currframe = (unsigned short)offset[1];
 
 			ptr = (char *)Add_Long_To_Pointer( dataptr, (((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)) );
-			Mem_Copy( ptr, &offset[0], (long)(SUBFRAMEOFFS * sizeof(unsigned long)) );
+			// Read subframe offsets as little-endian
+			const unsigned char* offset_bytes = (const unsigned char*)ptr;
+			for (int i = 0; i < SUBFRAMEOFFS; i++) {
+				offset[i] = ReadLE32(offset_bytes + i * 4);
+			}
 		}
 
 		// key frame
@@ -458,7 +467,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			** Shape is a theater specific shape
 			*/
 			return_value = (unsigned long) TheaterShapeBufferPtr;
-			temp_shape_ptr = TheaterShapeBufferPtr + keyfr->height+sizeof(ShapeHeaderType);
+			unsigned short height = Get_Build_Frame_Height(dataptr);
+			temp_shape_ptr = TheaterShapeBufferPtr + height+sizeof(ShapeHeaderType);
 			/*
 			** align the actual shape data
 			*/
@@ -470,7 +480,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			((ShapeHeaderType *)TheaterShapeBufferPtr)->draw_flags = -1;						//Flag that headers need to be generated
 			((ShapeHeaderType *)TheaterShapeBufferPtr)->shape_data = temp_shape_ptr - (unsigned)TheaterShapeBufferStart;		//pointer to old raw shape data
 			((ShapeHeaderType *)TheaterShapeBufferPtr)->shape_buffer = 1;	//Theater buffer
-			*(KeyFrameSlots[keyfr->y]+framenumber) = TheaterShapeBufferPtr - (unsigned)TheaterShapeBufferStart;
+			unsigned short y = Get_Build_Frame_Y(dataptr);
+			*(KeyFrameSlots[y]+framenumber) = TheaterShapeBufferPtr - (unsigned)TheaterShapeBufferStart;
 			TheaterShapeBufferPtr = (char*)(length + (unsigned)temp_shape_ptr);
 			/*
 			** Align the next shape
@@ -485,7 +496,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 
 
 			return_value=(unsigned long)BigShapeBufferPtr;
-			temp_shape_ptr = BigShapeBufferPtr + keyfr->height+sizeof(ShapeHeaderType);
+			unsigned short height = Get_Build_Frame_Height(dataptr);
+			temp_shape_ptr = BigShapeBufferPtr + height+sizeof(ShapeHeaderType);
 			/*
 			** align the actual shape data
 			*/
@@ -496,7 +508,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			((ShapeHeaderType *)BigShapeBufferPtr)->draw_flags = -1;						//Flag that headers need to be generated
 			((ShapeHeaderType *)BigShapeBufferPtr)->shape_data = temp_shape_ptr - (unsigned)BigShapeBufferStart;		//pointer to old raw shape data
 			((ShapeHeaderType *)BigShapeBufferPtr)->shape_buffer = 0;	//Normal Big Shape Buffer
-			*(KeyFrameSlots[keyfr->y]+framenumber) = BigShapeBufferPtr - (unsigned)BigShapeBufferStart;
+			unsigned short y = Get_Build_Frame_Y(dataptr);
+			*(KeyFrameSlots[y]+framenumber) = BigShapeBufferPtr - (unsigned)BigShapeBufferStart;
 			BigShapeBufferPtr = (char*)(length + (unsigned)temp_shape_ptr);
 			// Align the next shape
 			if (3 & (unsigned)BigShapeBufferPtr){
@@ -514,7 +527,9 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 
 static inline unsigned short Get_Build_Frame_Field(void const *dataptr, size_t offset)
 {
-	unsigned short r; return dataptr ? (memcpy(&r, (const char*)dataptr + offset, sizeof r), r) : 0;
+	if (!dataptr) return 0;
+	const unsigned char* bytes = (const unsigned char*)dataptr + offset;
+	return ReadLE16(bytes);
 }
 
 /***********************************************************************************************
@@ -595,8 +610,9 @@ bool Get_Build_Frame_Palette(void const * dataptr, void * palette)
 {
 	if (!dataptr) return(false);
 	
-	short flags;
-	memcpy(&flags, (const char*)dataptr + offsetof(KeyFrameHeaderType, flags), sizeof(short));
+	// Read flags as little-endian
+	const unsigned char* flags_bytes = (const unsigned char*)dataptr + offsetof(KeyFrameHeaderType, flags);
+	short flags = (short)ReadLE16(flags_bytes);
 	if (!(flags & 1)) return(false);
 	
 	unsigned short frames = Get_Build_Frame_Count(dataptr);

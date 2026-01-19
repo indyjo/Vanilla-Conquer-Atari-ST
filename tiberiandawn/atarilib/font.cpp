@@ -96,6 +96,12 @@ extern "C" unsigned int String_Pixel_Width(char const *string)
  * HISTORY:                                                                *
  *   Ported from WIN32LIB/set_font.cpp                                    *
  *=========================================================================*/
+
+// Helper to read little-endian unsigned short from font file data
+static inline unsigned short ReadLE16(const unsigned char* ptr) {
+	return ptr[0] | (ptr[1] << 8);
+}
+
 void * Set_Font(void const *fontptr)
 {
 	void *oldfont;
@@ -108,10 +114,15 @@ void * Set_Font(void const *fontptr)
 
 		/*
 		**	Inform the system about the new font.
+		**	Font file offsets are stored as little-endian unsigned shorts.
 		*/
 
-		FontWidthBlockPtr = (char*)fontptr + *(unsigned short *)((char*)fontptr + FONTWIDTHBLOCK);
-		blockptr  = (char*)fontptr + *(unsigned short *)((char*)fontptr + FONTINFOBLOCK);
+		const unsigned char* font_bytes = (const unsigned char*)fontptr;
+		unsigned short width_block_offset = ReadLE16(font_bytes + FONTWIDTHBLOCK);
+		unsigned short info_block_offset = ReadLE16(font_bytes + FONTINFOBLOCK);
+		
+		FontWidthBlockPtr = (char*)fontptr + width_block_offset;
+		blockptr  = (char*)fontptr + info_block_offset;
 		FontHeight = *(blockptr + FONTINFOMAXHEIGHT);
 		FontWidth  = *(blockptr + FONTINFOMAXWIDTH);
 	}

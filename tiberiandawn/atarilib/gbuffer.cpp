@@ -140,6 +140,24 @@ void GraphicViewPortClass::Attach(GraphicBufferClass *gbuffer, int x, int y, int
 	}
 
 	/*======================================================================*/
+	/* Protect against NULL gbuffer - would cause bus error when accessing	*/
+	/*		members.																					*/
+	/*======================================================================*/
+	if (!gbuffer) {
+		// If gbuffer is NULL, just initialize to safe defaults
+		Offset = 0;
+		Width = w;
+		Height = h;
+		XAdd = 0;
+		XPos = x;
+		YPos = y;
+		Pitch = 0;
+		GraphicBuff = NULL;
+		IsDirectDraw = FALSE;
+		return;
+	}
+
+	/*======================================================================*/
 	/* Verify that the x and y coordinates are valid and placed within the	*/
 	/*		physical buffer.																	*/
 	/*======================================================================*/

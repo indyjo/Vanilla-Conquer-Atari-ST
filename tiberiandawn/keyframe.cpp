@@ -499,6 +499,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 }
 
 
+static inline unsigned short Get_Build_Frame_Field(void const *dataptr, size_t offset)
+{
+	unsigned short r; return dataptr ? (memcpy(&r, (const char*)dataptr + offset, sizeof r), r) : 0;
+}
+
 /***********************************************************************************************
  * Get_Build_Frame_Count -- Fetches the number of frames in data block.                        *
  *                                                                                             *
@@ -515,28 +520,19 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
  *=============================================================================================*/
 unsigned short Get_Build_Frame_Count(void const *dataptr)
 {
-	if (dataptr) {
-		return(((KeyFrameHeaderType const *)dataptr)->frames);
-	}
-	return(0);
+	return Get_Build_Frame_Field(dataptr, offsetof(KeyFrameHeaderType, frames));
 }
 
 
 unsigned short Get_Build_Frame_X(void const *dataptr)
 {
-	if (dataptr) {
-		return(((KeyFrameHeaderType const *)dataptr)->x);
-	}
-	return(0);
+	return Get_Build_Frame_Field(dataptr, offsetof(KeyFrameHeaderType, x));
 }
 
 
 unsigned short Get_Build_Frame_Y(void const *dataptr)
 {
-	if (dataptr) {
-		return(((KeyFrameHeaderType const *)dataptr)->y);
-	}
-	return(0);
+	return Get_Build_Frame_Field(dataptr, offsetof(KeyFrameHeaderType, y));
 }
 
 
@@ -557,10 +553,7 @@ unsigned short Get_Build_Frame_Y(void const *dataptr)
  *=============================================================================================*/
 unsigned short Get_Build_Frame_Width(void const *dataptr)
 {
-	if (dataptr) {
-		return(((KeyFrameHeaderType const *)dataptr)->width);
-	}
-	return(0);
+	return Get_Build_Frame_Field(dataptr, offsetof(KeyFrameHeaderType, width));
 }
 
 
@@ -581,10 +574,7 @@ unsigned short Get_Build_Frame_Width(void const *dataptr)
  *=============================================================================================*/
 unsigned short Get_Build_Frame_Height(void const *dataptr)
 {
-	if (dataptr) {
-		return(((KeyFrameHeaderType const *)dataptr)->height);
-	}
-	return(0);
+	return Get_Build_Frame_Field(dataptr, offsetof(KeyFrameHeaderType, height));
 }
 
 

@@ -220,7 +220,7 @@ int main(int argc, char *argv[])
 
 			printf("C&C - Creating mouse class.\n");
 			WWMouse = new WWMouseClass(&SeenBuff, 32, 32);
-			MouseInstalled = TRUE;
+			MouseInstalled = false;	// TODO: Detect actual mouse installation status
 
 			/*
 			** See if we should run the intro

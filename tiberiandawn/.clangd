@@ -1,0 +1,18 @@
+CompileFlags:
+  Add: [
+    "-DTRUE_FALSE_DEFINED",
+    "-DPOSIX",
+    "-DBIG_ENDIAN",
+    "-std=c++11",
+  ]
+---
+If:
+  PathExclude: /.*LIB/.*
+CompileFlags:
+  Add: -I./ATARILIB
+---
+If:
+  PathMatch: [ATARILIB/.*, WIN32LIB/.*]
+CompileFlags:
+  Add: -I..
+

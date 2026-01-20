@@ -4,6 +4,7 @@ CompileFlags:
     "-DPOSIX",
     "-DBIG_ENDIAN",
     "-std=c++11",
+    "-I${HOME}/opt/cross-mint/m68k-atari-mint/include",
   ]
 ---
 If:

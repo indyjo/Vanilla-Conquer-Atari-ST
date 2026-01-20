@@ -39,6 +39,24 @@
 #include	<stdio.h>
 #include	<stdlib.h>
 #include	<string.h>
+#include	<mint/osbind.h>  // For XBIOS functions: Getrez
+
+// Atari ST palette hardware register addresses
+// Palette registers are at $FF8240-$FF825E (16 registers, 16-bit each, 2 bytes apart)
+#define PALETTE_BASE_ADDR 0xFF8240
+#define PALETTE_REG_COUNT 16
+
+// Pointer to palette hardware registers (volatile because hardware can change them)
+static volatile unsigned short *PaletteRegs = (volatile unsigned short *)PALETTE_BASE_ADDR;
+
+// Global variable to store original palette for restoration
+// Atari ST palette is 16 words (16-bit each)
+static unsigned short SavedOriginalPalette[16];
+static bool OriginalPaletteSaved = false;
+
+// Global variable to store original resolution for restoration
+static int OriginalResolution = -1;
+static bool ResolutionChanged = false;
 
 // Local function declarations (not in headers)
 bool Read_Private_Config_Struct(char *profile, NewConfigType *config);
@@ -50,6 +68,15 @@ void Move_Point(short &x, short &y, register DirType dir, unsigned short distanc
 void Prog_End(const char *why, bool fatal);
 void Read_Setup_Options(RawFileClass *config_file);
 BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel);
+
+// Atari ST palette helper functions
+static void Save_Original_Palette(void);
+static void Restore_Original_Palette(void);
+static void Init_Greyscale_Palette(void);
+
+// Atari ST resolution helper functions
+static void Switch_To_LoRes(void);
+static void Restore_Original_Resolution(void);
 
 bool VideoBackBufferAllowed = true;
 bool SpawnedFromWChat = false;
@@ -80,6 +107,12 @@ extern bool ReadyToQuit;
 int main(int argc, char *argv[])
 {
 	printf("C&C - Starting up.\n");
+
+	/*
+	** Enable supervisor mode early for Atari ST
+	** This is required for direct hardware access (palette registers, etc.)
+	*/
+	Super(0L);
 
 	/*
 	** If we are already running then switch to the existing process and exit
@@ -343,6 +376,12 @@ void Prog_End(const char *why, bool fatal)
 		WWMouse = NULL;
 	}
 
+	// Restore original palette before cleanup
+	Restore_Original_Palette();
+	
+	// Restore original resolution before cleanup
+	Restore_Original_Resolution();
+
 	if (Palette){
 		printf("C&C - Deleting palette object.\n");
 		delete [] Palette;
@@ -477,6 +516,164 @@ void Read_Setup_Options( RawFileClass *config_file )
 }
 
 /***********************************************************************************************
+ * Save_Original_Palette -- Save the current palette for later restoration                     *
+ *                                                                                             *
+ * Reads directly from hardware palette registers at $FF8240-$FF825E                          *
+ *=============================================================================================*/
+static void Save_Original_Palette(void)
+{
+	if (!OriginalPaletteSaved) {
+		// Read directly from hardware palette registers
+		for (int i = 0; i < PALETTE_REG_COUNT; i++) {
+			SavedOriginalPalette[i] = PaletteRegs[i];
+		}
+		OriginalPaletteSaved = true;
+	}
+}
+
+/***********************************************************************************************
+ * Restore_Original_Palette -- Restore the original palette                                   *
+ *                                                                                             *
+ * Writes directly to hardware palette registers at $FF8240-$FF825E                           *
+ *=============================================================================================*/
+static void Restore_Original_Palette(void)
+{
+	if (OriginalPaletteSaved) {
+		// Write directly to hardware palette registers
+		for (int i = 0; i < PALETTE_REG_COUNT; i++) {
+			PaletteRegs[i] = SavedOriginalPalette[i];
+		}
+		OriginalPaletteSaved = false;
+	}
+}
+
+/***********************************************************************************************
+ * Init_Greyscale_Palette -- Initialize a 16-color greyscale palette                          *
+ *                                                                                             *
+ * Creates 16 shades from black (0,0,0) to white (15,15,15) in equal steps                     *
+ * Note: Atari STE uses 12-bit color (4 bits per RGB component), so values are 0-15           *
+ *       Format: rRRR gGGG bBBB where:                                                          *
+ *       - r = LSB of red at bit 11, RRR = higher 3 bits of red at bits 14-12                *
+ *       - g = LSB of green at bit 7, GGG = higher 3 bits of green at bits 10-8              *
+ *       - b = LSB of blue at bit 0, BBB = higher 3 bits of blue at bits 3-1                 *
+ *=============================================================================================*/
+static void Init_Greyscale_Palette(void)
+{
+	// Create 16 greyscale colors from black to white
+	// Each color has R=G=B, ranging from 0 to 15 (4-bit per component on Atari STE)
+	// Format: rRRR gGGG bBBB
+	for (int i = 0; i < PALETTE_REG_COUNT; i++) {
+		unsigned short channel = ((i >> 1) & 0x7) | ((i & 0x1) << 3);
+		unsigned short color = (unsigned short)(
+			(channel << 8) |   // Red:   bits 11-8
+			(channel << 4) |   // Green: bits 7-4
+			(channel << 0)     // Blue:  bits 3-0
+		);
+		
+		// Write directly to hardware palette register
+		PaletteRegs[i] = color;
+	}
+	
+	// Draw an 8-pixel high bar containing all 16 colors in the vertical middle of the screen
+	// The bar fills the screen horizontally
+	unsigned char *screen = (unsigned char *)Physbase();
+	if (screen) {
+		// LoRes mode: 320x200, 16 colors (4 bitplanes)
+		// Memory layout: word-interleaved bitplanes
+		// For each group of 16 pixels: 4 words (one per bitplane), each word is 2 bytes
+		// So 16 pixels = 8 bytes (4 words × 2 bytes)
+		// Each scan line: 320 pixels / 16 = 20 groups × 8 bytes = 160 bytes per line
+		const int screen_width = 320;
+		const int screen_height = 200;
+		const int bytes_per_line = 160;  // 20 groups × 8 bytes per group
+		const int pixels_per_group = 16;  // 16 pixels per group
+		const int bytes_per_group = 8;   // 4 words × 2 bytes per word
+		const int bar_height = 8;
+		const int bar_y = (screen_height - bar_height) / 2;  // Vertical middle
+		const int pixels_per_color = screen_width / PALETTE_REG_COUNT;  // 20 pixels per color
+		
+		// Draw the bar: 8 lines high, each color taking pixels_per_color pixels horizontally
+		for (int y = 0; y < bar_height; y++) {
+			int line_y = bar_y + y;
+			unsigned char *line_base = screen + (line_y * bytes_per_line);
+			
+			for (int color = 0; color < PALETTE_REG_COUNT; color++) {
+				// Each color occupies pixels_per_color pixels
+				for (int px = 0; px < pixels_per_color; px++) {
+					int x = color * pixels_per_color + px;
+					int group_index = x / pixels_per_group;  // Which group of 16 pixels (0-19)
+					int bit_in_group = x % pixels_per_group;  // Which bit within the group (0-15)
+					int bit_in_word = 15 - bit_in_group;  // Bit position in word (MSB = leftmost pixel)
+					
+					// Calculate base address for this group
+					unsigned char *group_base = line_base + (group_index * bytes_per_group);
+					
+					// Each bitplane is a word (2 bytes) at offset: plane * 2
+					unsigned short *bp0_word = (unsigned short *)(group_base + 0 * 2);  // Bitplane 0 (LSB)
+					unsigned short *bp1_word = (unsigned short *)(group_base + 1 * 2);  // Bitplane 1
+					unsigned short *bp2_word = (unsigned short *)(group_base + 2 * 2);  // Bitplane 2
+					unsigned short *bp3_word = (unsigned short *)(group_base + 3 * 2);  // Bitplane 3 (MSB)
+					
+					// Set the bit in each bitplane based on the color value
+					unsigned short bit_mask = 1 << bit_in_word;
+					if (color & 0x01) *bp0_word |= bit_mask; else *bp0_word &= ~bit_mask;  // Bitplane 0
+					if (color & 0x02) *bp1_word |= bit_mask; else *bp1_word &= ~bit_mask;  // Bitplane 1
+					if (color & 0x04) *bp2_word |= bit_mask; else *bp2_word &= ~bit_mask;  // Bitplane 2
+					if (color & 0x08) *bp3_word |= bit_mask; else *bp3_word &= ~bit_mask;  // Bitplane 3
+				}
+			}
+		}
+	}
+}
+
+/***********************************************************************************************
+ * Switch_To_LoRes -- Switch to low resolution mode if possible                              *
+ *                                                                                             *
+ * Attempts to switch to LoRes (320x200) mode. Saves original resolution for restoration.    *
+ *=============================================================================================*/
+static void Switch_To_LoRes(void)
+{
+	// Get current resolution
+	int current_rez = Getrez();
+	
+	// Save original resolution if not already saved
+	if (OriginalResolution == -1) {
+		OriginalResolution = current_rez;
+	}
+	
+	// If already in LoRes, nothing to do
+	if (current_rez == 0) {
+		return;
+	}
+	
+	// Try to switch to LoRes (resolution 0)
+	// Setscreen parameters: lscrn=-1 (keep current logical), pscrn=-1 (keep current physical), rez=0 (LoRes)
+	Setscreen(-1L, -1L, 0);
+	
+	// Verify the switch was successful
+	int new_rez = Getrez();
+	if (new_rez == 0) {
+		ResolutionChanged = true;
+		printf("C&C - Switched to LoRes mode (320x200).\n");
+	} else {
+		printf("C&C - Warning: Could not switch to LoRes mode. Current mode: %d\n", new_rez);
+	}
+}
+
+/***********************************************************************************************
+ * Restore_Original_Resolution -- Restore the original screen resolution                      *
+ *=============================================================================================*/
+static void Restore_Original_Resolution(void)
+{
+	if (ResolutionChanged && OriginalResolution != -1) {
+		// Restore original resolution
+		Setscreen(-1L, -1L, OriginalResolution);
+		ResolutionChanged = false;
+		printf("C&C - Restored original resolution mode: %d\n", OriginalResolution);
+	}
+}
+
+/***********************************************************************************************
  * Set_Video_Mode -- Sets the video mode for Atari ST                                          *
  *                                                                                             *
  * INPUT:   hwnd            -- Window handle (unused on Atari ST)                             *
@@ -486,16 +683,32 @@ void Read_Setup_Options( RawFileClass *config_file )
  *                                                                                             *
  * OUTPUT:  TRUE if successful, FALSE otherwise                                                *
  *                                                                                             *
- * WARNINGS: None                                                                              *
+ * WARNINGS: Fails if not in Lorez (low resolution) mode                                       *
  *                                                                                             *
  * HISTORY:                                                                                    *
  *    Created for Atari ST port                                                               *
  *=============================================================================================*/
 BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel)
 {
-	// TODO: Implement video mode setting for Atari ST (VDI/XBIOS)
-	// For now, just return TRUE to allow compilation
 	(void)hwnd; (void)w; (void)h; (void)bits_per_pixel;
+	
+	// Try to switch to LoRes mode if not already in it
+	Switch_To_LoRes();
+	
+	// Check that we're in Lorez (low resolution) mode
+	int rez = Getrez();
+	if (rez != 0) {
+		printf("C&C - Error: Not in Lorez (low resolution) mode. Current mode: %d\n", rez);
+		printf("C&C - Please switch to low resolution (320x200) mode.\n");
+		return FALSE;
+	}
+	
+	// Save original palette before we modify it
+	Save_Original_Palette();
+	
+	// Initialize greyscale palette
+	Init_Greyscale_Palette();
+	
 	return TRUE;
 }
 

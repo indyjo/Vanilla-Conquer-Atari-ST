@@ -50,22 +50,6 @@
 #ifndef VECTOR_H
 #define VECTOR_H
 
-// Forward declarations for bit manipulation functions
-// These are typically defined in wwstd.h or similar
-inline int Get_Bit(unsigned long value, int bit) { return (value >> bit) & 1; }
-inline int First_False_Bit(unsigned long value) {
-	for (int i = 0; i < 32; i++) {
-		if (!((value >> i) & 1)) return i;
-	}
-	return -1;
-}
-inline int First_True_Bit(unsigned long value) {
-	for (int i = 0; i < 32; i++) {
-		if ((value >> i) & 1) return i;
-	}
-	return -1;
-}
-
 #ifndef false
 #define false 0
 #endif
@@ -75,6 +59,7 @@ inline int First_True_Bit(unsigned long value) {
 
 #include	<stdlib.h>
 #include	<stddef.h>
+#include	"misc.h"
 
 inline void * operator new(size_t , void * pointer) {return(pointer);}
 inline void * operator new[](size_t , void * pointer) {return(pointer);}
@@ -817,7 +802,7 @@ template<class T>
 int DynamicVectorClass<T>::Resize(unsigned newsize, T const * array)
 {
 	if (VectorClass<T>::Resize(newsize, array)) {
-		if (Length() < (unsigned)ActiveCount) ActiveCount = Length();
+		if (VectorClass<T>::Length() < (unsigned)ActiveCount) ActiveCount = VectorClass<T>::Length();
 		return(true);
 	}
 	return(false);
@@ -872,9 +857,9 @@ int DynamicVectorClass<T>::ID(T const & object)
 template<class T>
 int DynamicVectorClass<T>::Add(T const & object)
 {
-	if ((unsigned)ActiveCount >= Length()) {
+	if ((unsigned)ActiveCount >= VectorClass<T>::Length()) {
 		if ((this->IsAllocated || !this->VectorMax) && GrowthStep > 0) {
-			if (!Resize(Length() + GrowthStep)) {
+			if (!Resize(VectorClass<T>::Length() + GrowthStep)) {
 
 				/*
 				**	Failure to increase the size of the vector is an error condition.
@@ -903,9 +888,9 @@ int DynamicVectorClass<T>::Add(T const & object)
 template<class T>
 int DynamicVectorClass<T>::Add_Head(T const & object)
 {
-	if ((unsigned)ActiveCount >= Length()) {
+	if ((unsigned)ActiveCount >= VectorClass<T>::Length()) {
 		if ((this->IsAllocated || !this->VectorMax) && GrowthStep > 0) {
-			if (!Resize(Length() + GrowthStep)) {
+			if (!Resize(VectorClass<T>::Length() + GrowthStep)) {
 
 				/*
 				**	Failure to increase the size of the vector is an error condition.

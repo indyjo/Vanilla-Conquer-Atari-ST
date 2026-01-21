@@ -4,16 +4,20 @@ CompileFlags:
     "-DPOSIX",
     "-DBIG_ENDIAN",
     "-std=c++11",
-    "-I${HOME}/opt/cross-mint/m68k-atari-mint/include",
+    # Adapt to your workspace location
+    "-I/Users/jonas/opt/cross-mint/m68k-atari-mint/sys-root/usr/include",
   ]
 ---
 If:
-  PathExclude: /.*LIB/.*
+  PathExclude: .*LIB/.*
 CompileFlags:
   Add: -I./ATARILIB
 ---
 If:
-  PathMatch: [ATARILIB/.*, WIN32LIB/.*]
+  PathMatch: .*LIB/.*
 CompileFlags:
-  Add: -I..
+  Add: [
+    "-I..",
+    "-I."
+  ]
 

@@ -7,6 +7,7 @@
 #include "drawbuff.h"
 #include "gbuffer.h"
 #include <string.h>  // For memset
+#include <stdio.h>  // For printf
 
 /*=========================================================================*/
 /* Buffer_Put_Pixel -- Puts a pixel on a graphic viewport                  */
@@ -32,20 +33,18 @@ extern "C" void Buffer_Put_Pixel(void *thisptr, int x, int y, unsigned char colo
 	if (x < 0 || x >= vp->Get_Width()) return;
 	if (y < 0 || y >= vp->Get_Height()) return;
 	
-	// Calculate pixel offset
-	long offset = vp->Get_Offset();
-	offset += x;
-	offset += y * (vp->Get_Pitch() + vp->Get_XAdd());
+	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) return;
 	
-	// Get buffer pointer
-	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (!gb) return;
+	// Calculate row stride (pitch + xadd)
+	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
 	
-	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
-	if (!buffer) return;
+	// Calculate pixel pointer using pointer arithmetic
+	unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
 	
 	// Write pixel
-	buffer[offset] = color;
+	*pixel_ptr = color;
 }
 
 /***************************************************************************
@@ -69,17 +68,9 @@ extern "C" void Fat_Put_Pixel(int x, int y, int color, int siz, GraphicViewPortC
 	if (y < 0 || y >= gpage.Get_Height()) return;
 	if (x < 0 || x >= gpage.Get_Width()) return;
 	
-	// Calculate pixel offset
-	long offset = gpage.Get_Offset();
-	offset += x;
-	offset += y * (gpage.Get_Pitch() + gpage.Get_XAdd());
-	
-	// Get buffer pointer
-	GraphicBufferClass *gb = gpage.Get_Graphic_Buffer();
-	if (!gb) return;
-	
-	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
-	if (!buffer) return;
+	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
+	unsigned char *viewport_base = (unsigned char *)gpage.Get_Offset();
+	if (!viewport_base) return;
 	
 	// Calculate row stride
 	int row_stride = gpage.Get_Pitch() + gpage.Get_XAdd();
@@ -87,10 +78,10 @@ extern "C" void Fat_Put_Pixel(int x, int y, int color, int siz, GraphicViewPortC
 	// Draw fat pixel (square)
 	unsigned char color_byte = (unsigned char)color;
 	for (int row = 0; row < siz && (y + row) < gpage.Get_Height(); row++) {
+		unsigned char *row_ptr = viewport_base + x + (y + row) * row_stride;
 		for (int col = 0; col < siz && (x + col) < gpage.Get_Width(); col++) {
-			buffer[offset + col] = color_byte;
+			row_ptr[col] = color_byte;
 		}
-		offset += row_stride;
 	}
 }
 
@@ -117,20 +108,18 @@ extern "C" int Buffer_Get_Pixel(void *thisptr, int x, int y)
 	if (x < 0 || x >= vp->Get_Width()) return 0;
 	if (y < 0 || y >= vp->Get_Height()) return 0;
 	
-	// Calculate pixel offset
-	long offset = vp->Get_Offset();
-	offset += x;
-	offset += y * (vp->Get_Pitch() + vp->Get_XAdd());
+	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) return 0;
 	
-	// Get buffer pointer
-	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (!gb) return 0;
+	// Calculate row stride (pitch + xadd)
+	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
 	
-	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
-	if (!buffer) return 0;
+	// Calculate pixel pointer using pointer arithmetic
+	unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
 	
 	// Read pixel
-	return (int)buffer[offset];
+	return (int)*pixel_ptr;
 }
 
 /*=========================================================================*/
@@ -147,23 +136,17 @@ extern "C" void Buffer_Clear(void *thisptr, unsigned char color)
 	int height = vp->Get_Height();
 	if (width <= 0 || height <= 0) return;
 	
-	// Get buffer pointer
-	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (!gb) return;
-	
-	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
-	if (!buffer) return;
+	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) return;
 	
 	// Calculate row stride (pitch + xadd)
 	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
 	
-	// Get starting offset
-	long offset = vp->Get_Offset();
-	
 	// Clear each row
 	for (int row = 0; row < height; row++) {
-		memset(buffer + offset, color, width);
-		offset += row_stride;
+		unsigned char *row_ptr = viewport_base + row * row_stride;
+		memset(row_ptr, color, width);
 	}
 }
 
@@ -217,37 +200,38 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 	GraphicBufferClass *dest_gb = dest_vp->Get_Graphic_Buffer();
 	if (!src_gb || !dest_gb) return FALSE;
 	
-	unsigned char *src_buffer = (unsigned char *)src_gb->Get_Buffer();
-	unsigned char *dest_buffer = (unsigned char *)dest_gb->Get_Buffer();
-	if (!src_buffer || !dest_buffer) return FALSE;
-	
-	// Calculate source and destination offsets
-	long src_offset = src_vp->Get_Offset() + (src_vp->Get_Pitch() + src_vp->Get_XAdd()) * y_pixel + x_pixel;
-	long dest_offset = dest_vp->Get_Offset() + (dest_vp->Get_Pitch() + dest_vp->Get_XAdd()) * dy_pixel + dx_pixel;
+	// Get viewport base pointers (Get_Offset returns pointer value cast to long)
+	unsigned char *src_base = (unsigned char *)src_vp->Get_Offset();
+	unsigned char *dest_base = (unsigned char *)dest_vp->Get_Offset();
+	if (!src_base || !dest_base) return FALSE;
 	
 	// Calculate source and destination strides
 	int src_stride = src_vp->Get_Pitch() + src_vp->Get_XAdd();
 	int dest_stride = dest_vp->Get_Pitch() + dest_vp->Get_XAdd();
+	
+	// Calculate source and destination starting pointers
+	unsigned char *src_ptr = src_base + x_pixel + y_pixel * src_stride;
+	unsigned char *dest_ptr = dest_base + dx_pixel + dy_pixel * dest_stride;
 	
 	// Perform the blit
 	if (trans) {
 		// Transparent blit: skip pixels with value 0
 		for (int y = 0; y < pixel_height; y++) {
 			for (int x = 0; x < pixel_width; x++) {
-				unsigned char pixel = src_buffer[src_offset + x];
+				unsigned char pixel = src_ptr[x];
 				if (pixel != 0) {
-					dest_buffer[dest_offset + x] = pixel;
+					dest_ptr[x] = pixel;
 				}
 			}
-			src_offset += src_stride;
-			dest_offset += dest_stride;
+			src_ptr += src_stride;
+			dest_ptr += dest_stride;
 		}
 	} else {
 		// Opaque blit: copy all pixels
 		for (int y = 0; y < pixel_height; y++) {
-			memcpy(&dest_buffer[dest_offset], &src_buffer[src_offset], pixel_width);
-			src_offset += src_stride;
-			dest_offset += dest_stride;
+			memcpy(dest_ptr, src_ptr, pixel_width);
+			src_ptr += src_stride;
+			dest_ptr += dest_stride;
 		}
 	}
 	
@@ -307,18 +291,12 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (dx >= width) dx = width - 1;
 	if (dy >= height) dy = height - 1;
 	
-	// Get buffer pointer
-	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (!gb) return;
-	
-	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
-	if (!buffer) return;
+	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) return;
 	
 	// Calculate row stride (pitch + xadd)
 	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
-	
-	// Get starting offset
-	long offset = vp->Get_Offset();
 	
 	// Simple line drawing using Bresenham's algorithm
 	int x0 = sx, y0 = sy, x1 = dx, y1 = dy;
@@ -334,8 +312,8 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 		int error = dx_abs / 2;
 		for (int i = 0; i <= dx_abs; i++) {
 			if (x >= 0 && x < width && y >= 0 && y < height) {
-				long pixel_offset = offset + x + y * row_stride;
-				buffer[pixel_offset] = color;
+				unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
+				*pixel_ptr = color;
 			}
 			error -= dy_abs;
 			if (error < 0) {
@@ -349,8 +327,8 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 		int error = dy_abs / 2;
 		for (int i = 0; i <= dy_abs; i++) {
 			if (x >= 0 && x < width && y >= 0 && y < height) {
-				long pixel_offset = offset + x + y * row_stride;
-				buffer[pixel_offset] = color;
+				unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
+				*pixel_ptr = color;
 			}
 			error -= dx_abs;
 			if (error < 0) {
@@ -370,7 +348,6 @@ extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (!thisptr) return;
 	
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	
 	// Clip coordinates to viewport bounds
 	int width = vp->Get_Width();
 	int height = vp->Get_Height();
@@ -383,27 +360,20 @@ extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (sx > dx || sy > dy) return;
 	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
 	
-	// Get buffer pointer
-	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (!gb) return;
-	
-	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
-	if (!buffer) return;
+	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
 	
 	// Calculate row stride (pitch + xadd)
 	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
 	
-	// Get starting offset
-	long base_offset = vp->Get_Offset();
-	
 	// Draw top and bottom horizontal lines
 	int rect_width = dx - sx + 1;
-	long top_offset = base_offset + sx + sy * row_stride;
-	long bottom_offset = base_offset + sx + dy * row_stride;
 	for (int x = 0; x < rect_width; x++) {
 		if (sx + x < width) {
-			buffer[top_offset + x] = color;
-			buffer[bottom_offset + x] = color;
+			unsigned char *top_ptr = viewport_base + (sx + x) + sy * row_stride;
+			unsigned char *bottom_ptr = viewport_base + (sx + x) + dy * row_stride;
+			*top_ptr = color;
+			*bottom_ptr = color;
 		}
 	}
 	
@@ -411,10 +381,10 @@ extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	int rect_height = dy - sy + 1;
 	for (int y = 0; y < rect_height; y++) {
 		if (sy + y < height) {
-			long left_offset = base_offset + sx + (sy + y) * row_stride;
-			long right_offset = base_offset + dx + (sy + y) * row_stride;
-			buffer[left_offset] = color;
-			buffer[right_offset] = color;
+			unsigned char *left_ptr = viewport_base + sx + (sy + y) * row_stride;
+			unsigned char *right_ptr = viewport_base + dx + (sy + y) * row_stride;
+			*left_ptr = color;
+			*right_ptr = color;
 		}
 	}
 }
@@ -440,12 +410,9 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (sx > dx || sy > dy) return;
 	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
 	
-	// Get buffer pointer
-	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (!gb) return;
-	
-	unsigned char *buffer = (unsigned char *)gb->Get_Buffer();
-	if (!buffer) return;
+	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) return;
 	
 	// Calculate dimensions
 	int rect_width = dx - sx + 1;
@@ -454,15 +421,10 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	// Calculate row stride (pitch + xadd)
 	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
 	
-	// Get starting offset
-	long offset = vp->Get_Offset();
-	offset += sx;
-	offset += sy * row_stride;
-	
 	// Fill each row
 	for (int row = 0; row < rect_height; row++) {
-		memset(buffer + offset, color, rect_width);
-		offset += row_stride;
+		unsigned char *row_ptr = viewport_base + sx + (sy + row) * row_stride;
+		memset(row_ptr, color, rect_width);
 	}
 }
 

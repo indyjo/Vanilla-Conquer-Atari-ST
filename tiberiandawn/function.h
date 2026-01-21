@@ -316,6 +316,7 @@ TheaterType Theater_From_Name(char const* name);
 void Main_Game(int argc, char* argv[]);
 int VQ_Call_Back(unsigned char* buffer = NULL, int frame = 0);
 void Call_Back(void);
+void Render_Logical_To_ST_Screen(void);
 char const* Language_Name(char const* basename);
 SourceType Source_From_Name(char const* name);
 char const* Name_From_Source(SourceType source);

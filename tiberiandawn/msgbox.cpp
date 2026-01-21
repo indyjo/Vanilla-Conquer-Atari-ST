@@ -318,6 +318,11 @@ int WWMessageBox::Process(const char* msg, const char* b1txt, const char* b2txt,
             Call_Back();
 
             /*
+            **	Render logical screen to ST physical screen.
+            */
+            Render_Logical_To_ST_Screen();
+
+            /*
             **	Fetch and process input.
             */
             input = buttonlist->Input();
@@ -433,6 +438,7 @@ int WWMessageBox::Process(const char* msg, const char* b1txt, const char* b2txt,
         timer.Set(TICKS_PER_SECOND * 4);
         while (timer.Time() > 0) {
             Call_Back();
+            Render_Logical_To_ST_Screen();
         }
         Keyboard->Clear();
     }

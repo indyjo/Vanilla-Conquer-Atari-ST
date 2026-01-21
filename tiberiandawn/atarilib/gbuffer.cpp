@@ -268,7 +268,7 @@ void GraphicBufferClass::Init(int w, int h, void *buffer, long size, int flags)
 	Offset			= (long)Buffer;				// Get offset to the buffer
 	IsDirectDraw	= FALSE;
 
-	Pitch			= 0;										// Record width of Buffer
+	Pitch			= w;										// Record width of Buffer
 	XAdd			= 0;										// Record XAdd of Buffer
 	XPos			= 0;										// Record XPos of Buffer
 	YPos			= 0;										// Record YPos of Buffer

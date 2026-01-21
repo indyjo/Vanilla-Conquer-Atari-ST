@@ -217,25 +217,20 @@ int main(int argc, char *argv[])
 			}
 
 			printf("C&C - Initialising video surfaces.\n");
+			printf("C&C - ScreenWidth: %d, ScreenHeight: %d\n", ScreenWidth, ScreenHeight);
 
 			/*
 			** Initialize video buffers
 			*/
-			if (ScreenWidth==320){
-				VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
-				ModeXBuff.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)(GBC_VISIBLE | GBC_VIDEOMEM));
-			} else {
-				VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
-				HiddenPage.Init (ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
-			}
-			ScreenHeight = 1536;
+			VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
+			HiddenPage.Init (ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
 
 			if (VisiblePage.Get_Height() == 480){
-				SeenBuff.Attach(&VisiblePage,0, 40, 1536, 1536);
-				HidPage.Attach(&HiddenPage, 0, 40, 1536, 1536);
+				SeenBuff.Attach(&VisiblePage,0, 40, ScreenWidth, 400);
+				HidPage.Attach(&HiddenPage, 0, 40, ScreenWidth, 400);
 			}else{
-				SeenBuff.Attach(&VisiblePage,0, 0, 1536, 1536);
-				HidPage.Attach(&HiddenPage, 0, 0, 1536, 1536);
+				SeenBuff.Attach(&VisiblePage,0, 0, ScreenWidth, ScreenHeight);
+				HidPage.Attach(&HiddenPage, 0, 0, ScreenWidth, ScreenHeight);
 			}
 			printf("C&C - Adjusting variables for resolution.\n");
 			Options.Adjust_Variables_For_Resolution();
@@ -457,7 +452,7 @@ void Read_Setup_Options( RawFileClass *config_file )
 
 		VideoBackBufferAllowed = WWGetPrivateProfileInt ("Options", "VideoBackBuffer", 1, buffer);
 		AllowHardwareBlitFills = WWGetPrivateProfileInt ("Options", "HardwareFills", 1, buffer);
-		ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
+		//ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
 		IsV107 = WWGetPrivateProfileInt ("Options", "Compatibility", 0, buffer);
 
 		/*
@@ -772,5 +767,90 @@ void Window_Show_Mouse(void)
 {
 	// Stub for Atari ST - just show the mouse
 	Show_Mouse();
+}
+
+/***********************************************************************************************
+ * Render_Logical_To_ST_Screen -- Renders logical screen to ST physical screen                *
+ *                                                                                             *
+ * Converts the logical screen (256 colors, byte-per-pixel) to ST's physical screen           *
+ * (16 colors, interleaved bitplanes). Takes lowest 4 bits of source color index.             *
+ *                                                                                             *
+ * INPUT:   none                                                                               *
+ *                                                                                             *
+ * OUTPUT:  none                                                                               *
+ *                                                                                             *
+ * WARNINGS: Assumes LoRes mode (320x200)                                                      *
+ *                                                                                             *
+ * HISTORY:                                                                                    *
+ *    Created for Atari ST port                                                               *
+ *=============================================================================================*/
+void Render_Logical_To_ST_Screen(void)
+{
+	// Draw_Caption and other drawing functions render to SeenBuff (via Set_Logic_Page)
+	// SeenBuff is a viewport attached to VisiblePage, so the actual buffer is in VisiblePage
+	// We should read from VisiblePage's buffer, accounting for SeenBuff's viewport position
+	
+	// Lock VisiblePage to access its buffer
+	if (!SeenBuff.Lock()) return;
+	
+	unsigned char *base_buffer = (unsigned char *)SeenBuff.Get_Offset();
+	if (!base_buffer) {
+		SeenBuff.Unlock();
+		return;
+	}
+	
+	int seen_pitch = SeenBuff.Get_Pitch();
+	if (seen_pitch == 0) seen_pitch = SeenBuff.Get_Width();
+	
+	// Get ST physical screen base address
+	unsigned char *st_screen = (unsigned char *)Physbase();
+	if (!st_screen) {
+		SeenBuff.Unlock();
+		return;
+	}
+	
+	// LoRes mode: 320x200, 16 colors (4 bitplanes)
+	// Memory layout: word-interleaved bitplanes
+	// For each group of 16 pixels: 4 words (one per bitplane), each word is 2 bytes
+	const int screen_width = 320;
+	const int screen_height = 200;
+	const int bytes_per_line = 160;  // 20 groups × 8 bytes per group
+	const int pixels_per_group = 16;  // 16 pixels per group
+	const int bytes_per_group = 8;   // 4 words × 2 bytes per word
+	// Convert each pixel from logical screen to ST screen
+	for (int y = 0; y < screen_height; y++) {
+		unsigned char *logical_line = base_buffer + (y * seen_pitch);
+		unsigned char *st_line = st_screen + (y * bytes_per_line);
+		
+		for (int x = 0; x < screen_width; x++) {
+			// Get source color index (0-255) and take lowest 4 bits (0-15)
+			unsigned char src_color = logical_line[x];
+			unsigned char st_color = src_color & 0x0F;  // Lowest 4 bits
+			
+			// Calculate position in ST's interleaved bitplane format
+			int group_index = x / pixels_per_group;  // Which group of 16 pixels (0-19)
+			int bit_in_group = x % pixels_per_group;  // Which bit within the group (0-15)
+			int bit_in_word = 15 - bit_in_group;  // Bit position in word (MSB = leftmost pixel)
+			
+			// Calculate base address for this group
+			unsigned char *group_base = st_line + (group_index * bytes_per_group);
+			
+			// Each bitplane is a word (2 bytes) at offset: plane * 2
+			unsigned short *bp0_word = (unsigned short *)(group_base + 0 * 2);  // Bitplane 0 (LSB)
+			unsigned short *bp1_word = (unsigned short *)(group_base + 1 * 2);  // Bitplane 1
+			unsigned short *bp2_word = (unsigned short *)(group_base + 2 * 2);  // Bitplane 2
+			unsigned short *bp3_word = (unsigned short *)(group_base + 3 * 2);  // Bitplane 3 (MSB)
+			
+			// Set the bit in each bitplane based on the color value
+			unsigned short bit_mask = 1 << bit_in_word;
+			if (st_color & 0x01) *bp0_word |= bit_mask; else *bp0_word &= ~bit_mask;  // Bitplane 0
+			if (st_color & 0x02) *bp1_word |= bit_mask; else *bp1_word &= ~bit_mask;  // Bitplane 1
+			if (st_color & 0x04) *bp2_word |= bit_mask; else *bp2_word &= ~bit_mask;  // Bitplane 2
+			if (st_color & 0x08) *bp3_word |= bit_mask; else *bp3_word &= ~bit_mask;  // Bitplane 3
+		}
+		
+	}
+	
+	SeenBuff.Unlock();
 }
 

@@ -62,5 +62,8 @@ inline long Buffer_To_Page(int x, int y, int w, int h, void *Buffer, GraphicView
 extern GraphicViewPortClass *LogicPage;
 extern BOOL AllowHardwareBlitFills;
 
+// Color translation table for font rendering (declared in drawbuff.cpp)
+extern unsigned char ColorXlat[256];
+
 #endif /* DRAWBUFF_H */
 

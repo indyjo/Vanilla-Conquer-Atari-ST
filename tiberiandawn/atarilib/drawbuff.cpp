@@ -6,8 +6,67 @@
 
 #include "drawbuff.h"
 #include "gbuffer.h"
+#include "font.h"
 #include <string.h>  // For memset
 #include <stdio.h>  // For printf
+
+// Color translation table for font rendering
+// This maps font palette indices (0-15) to actual color values
+// Made non-static so it can be accessed from font.cpp
+unsigned char ColorXlat[256] = {
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+	0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+	
+	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	
+	0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+// Helper to read little-endian unsigned short
+static inline unsigned short ReadLE16(const unsigned char* ptr) {
+	return ptr[0] | (ptr[1] << 8);
+}
 
 /*=========================================================================*/
 /* Buffer_Put_Pixel -- Puts a pixel on a graphic viewport                  */
@@ -258,13 +317,194 @@ extern "C" BOOL Linear_Scale_To_Linear(void *src, void *dest, int src_x, int src
 /*=========================================================================*/
 extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int fcolor, int bcolor)
 {
-	if (!thisptr || !str) return 0;
+	if (!thisptr || !str || !FontPtr) return 0;
 	
-	// FIXME: This is a stub to prevent infinite recursion.
-	// Buffer_Print was calling vp->Print(), which calls Buffer_Print() again.
-	// TODO: Implement proper text rendering here using FontPtr and font structures.
-	// For now, return 0 to allow the program to continue.
-	return 0;
+	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
+	
+	// Get viewport dimensions
+	int vpwidth = vp->Get_Width();
+	int vpheight = vp->Get_Height();
+	if (vpwidth <= 0 || vpheight <= 0) return 0;
+	
+	// Calculate buffer width (pitch + xadd)
+	int bufferwidth = vp->Get_Pitch() + vp->Get_XAdd();
+	
+	// Get viewport base pointer
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) return 0;
+	
+	// Set up color translation table
+	ColorXlat[0] = (unsigned char)bcolor;
+	ColorXlat[1] = (unsigned char)fcolor;
+	ColorXlat[16] = (unsigned char)fcolor;
+	
+	// Get font structure pointers
+	const unsigned char *font_bytes = (const unsigned char *)FontPtr;
+	unsigned short info_block_offset = ReadLE16(font_bytes + FONTINFOBLOCK);
+	unsigned short offset_block_offset = ReadLE16(font_bytes + FONTOFFSETBLOCK);
+	unsigned short width_block_offset = ReadLE16(font_bytes + FONTWIDTHBLOCK);
+	unsigned short height_block_offset = ReadLE16(font_bytes + FONTHEIGHTBLOCK);
+	
+	const unsigned char *infoblock = font_bytes + info_block_offset;
+	const unsigned char *offsetblock = font_bytes + offset_block_offset;
+	const unsigned char *widthblock = font_bytes + width_block_offset;
+	const unsigned char *heightblock = font_bytes + height_block_offset;
+	
+	// Get max height from info block
+	unsigned char maxheight = infoblock[FONTINFOMAXHEIGHT];
+	
+	// Check if text will fit vertically
+	if (y + maxheight > (unsigned)vpheight) return 0;
+	
+	// Current position
+	int cur_x = x;
+	int cur_y = y;
+	int original_x = x;
+	
+	// Calculate starting position in buffer
+	unsigned char *curline = viewport_base + cur_y * bufferwidth;
+	unsigned char *startdraw = curline + cur_x;
+	
+	// Process each character
+	const char *string = str;
+	while (*string) {
+		unsigned char ch = (unsigned char)*string++;
+		
+		// Handle line feed (LF = 10) or carriage return (CR = 13)
+		if (ch == 10 || ch == 13) {
+			cur_y += maxheight + FontYSpacing;
+			if (cur_y + maxheight > (unsigned)vpheight) break;
+			
+			curline = viewport_base + cur_y * bufferwidth;
+			
+			// CR returns to original x, LF goes to x=0
+			if (ch == 13) {
+				cur_x = original_x;
+			} else {
+				cur_x = 0;
+			}
+			
+			startdraw = curline + cur_x;
+			continue;
+		}
+		
+		// Get character width
+		unsigned char charwidth = widthblock[ch];
+		int next_x = cur_x + charwidth + FontXSpacing;
+		
+		// Check if character fits horizontally
+		if (next_x > vpwidth) {
+			// Force line feed
+			string--;  // Back up to re-process this character
+			cur_y += maxheight + FontYSpacing;
+			if (cur_y + maxheight > (unsigned)vpheight) break;
+			
+			curline = viewport_base + cur_y * bufferwidth;
+			cur_x = original_x;
+			startdraw = curline + cur_x;
+			continue;
+		}
+		
+		// Get character data offset
+		unsigned short char_offset = ReadLE16(offsetblock + (ch * 2));
+		const unsigned char *chardata = font_bytes + char_offset;
+		
+		// Get character height info
+		const unsigned char *charheight_ptr = heightblock + (ch * 2);
+		unsigned char topblank = charheight_ptr[0];
+		unsigned char charheight = charheight_ptr[1];
+		unsigned char bottomblank = maxheight - (topblank + charheight);
+		
+		// Calculate next draw position for next character
+		int nextdraw = bufferwidth - charwidth;
+		
+		unsigned char *draw_ptr = startdraw;
+		
+		// Draw top blank area
+		if (topblank > 0) {
+			unsigned char bgcolor = ColorXlat[0];
+			if (bgcolor != 0) {  // Not transparent
+				for (unsigned char row = 0; row < topblank; row++) {
+					unsigned char *row_ptr = draw_ptr;
+					for (unsigned char col = 0; col < charwidth; col++) {
+						if (cur_x + col < (unsigned)vpwidth && cur_y + row < (unsigned)vpheight) {
+							row_ptr[col] = bgcolor;
+						}
+					}
+					draw_ptr += bufferwidth;
+				}
+			} else {
+				// Transparent - just advance pointer
+				draw_ptr += topblank * bufferwidth;
+			}
+		}
+		
+		// Draw character data
+		if (charheight > 0) {
+			const unsigned char *data_ptr = chardata;
+			for (unsigned char row = 0; row < charheight; row++) {
+				unsigned char *row_ptr = draw_ptr;
+				unsigned char col = 0;
+				unsigned char remaining_width = charwidth;
+				
+				while (remaining_width > 0) {
+					// Read a byte containing 2 pixels
+					unsigned char data_byte = *data_ptr++;
+					
+					// Process low nibble (first pixel)
+					unsigned char pixel = data_byte & 0x0F;
+					unsigned char color = ColorXlat[pixel];
+					if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + row < (unsigned)vpheight) {
+						if (color != 0) {  // Not transparent
+							row_ptr[col] = color;
+						}
+					}
+					col++;
+					remaining_width--;
+					
+					// Process high nibble (second pixel) if width remaining
+					if (remaining_width > 0) {
+						pixel = (data_byte >> 4) & 0x0F;
+						color = ColorXlat[pixel];
+						if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + row < (unsigned)vpheight) {
+							if (color != 0) {  // Not transparent
+								row_ptr[col] = color;
+							}
+						}
+						col++;
+						remaining_width--;
+					}
+				}
+				
+				draw_ptr += bufferwidth;
+			}
+		}
+		
+		// Draw bottom blank area
+		if (bottomblank > 0) {
+			unsigned char bgcolor = ColorXlat[0];
+			if (bgcolor != 0) {  // Not transparent
+				for (unsigned char row = 0; row < bottomblank; row++) {
+					unsigned char *row_ptr = draw_ptr;
+					for (unsigned char col = 0; col < charwidth; col++) {
+						if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + charheight + row < (unsigned)vpheight) {
+							row_ptr[col] = bgcolor;
+						}
+					}
+					draw_ptr += bufferwidth;
+				}
+			}
+		}
+		
+		// Update position for next character
+		cur_x = next_x;
+		// Recalculate curline in case we're still on the same line (it shouldn't have changed)
+		curline = viewport_base + cur_y * bufferwidth;
+		startdraw = curline + cur_x;
+	}
+	
+	// Return pointer to next draw position (cast to long for compatibility)
+	return (LONG)(startdraw);
 }
 
 /*=========================================================================*/

@@ -133,7 +133,7 @@ void * Set_Font(void const *fontptr)
 /***************************************************************************
  * Set_Font_Palette_Range -- Sets font palette range                      *
  *                                                                         *
- * INPUT:   palette  -- Pointer to palette data                            *
+ * INPUT:   palette  -- Pointer to palette data (16 bytes for indices 0-15) *
  *          start_idx -- Starting palette index                            *
  *          end_idx   -- Ending palette index                             *
  *                                                                         *
@@ -142,13 +142,22 @@ void * Set_Font(void const *fontptr)
  * WARNINGS:   none                                                        *
  *                                                                         *
  * HISTORY:                                                                *
- *   Stub for Atari ST - palette handling not needed                      *
+ *   Ported from WIN32LIB - updates ColorXlat table                      *
  *=========================================================================*/
 extern "C" void Set_Font_Palette_Range(void const *palette, int start_idx, int end_idx)
 {
-	// Stub for Atari ST - palette handling not needed
-	(void)palette;
-	(void)start_idx;
-	(void)end_idx;
+	if (!palette) return;
+	
+	// Import ColorXlat from drawbuff.cpp
+	extern unsigned char ColorXlat[256];
+	
+	const unsigned char *pal = (const unsigned char *)palette;
+	
+	// Update ColorXlat table for the specified range
+	// The palette array contains color values for indices 0-15
+	// Each palette index maps directly to ColorXlat[index]
+	for (int i = start_idx; i <= end_idx && i < 16; i++) {
+		ColorXlat[i] = pal[i];
+	}
 }
 

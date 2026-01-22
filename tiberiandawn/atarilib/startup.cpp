@@ -40,6 +40,7 @@
 #include	<stdlib.h>
 #include	<string.h>
 #include	<mint/osbind.h>  // For XBIOS functions: Getrez
+#include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
 
 // Atari ST palette hardware register addresses
 // Palette registers are at $FF8240-$FF825E (16 registers, 16-bit each, 2 bytes apart)
@@ -113,6 +114,12 @@ int main(int argc, char *argv[])
 	** This is required for direct hardware access (palette registers, etc.)
 	*/
 	Super(0L);
+
+	/*
+	** Initialize LINE-A system immediately after supervisor mode
+	** This sets up __aline which is required for CUR_X/CUR_Y mouse position access
+	*/
+	linea0();
 
 	/*
 	** If we are already running then switch to the existing process and exit
@@ -248,7 +255,7 @@ int main(int argc, char *argv[])
 
 			printf("C&C - Creating mouse class.\n");
 			WWMouse = new WWMouseClass(&SeenBuff, 32, 32);
-			MouseInstalled = false;	// TODO: Detect actual mouse installation status
+			MouseInstalled = TRUE;
 
 			/*
 			** See if we should run the intro

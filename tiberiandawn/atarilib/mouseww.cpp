@@ -6,6 +6,7 @@
 
 #include "mouse.h"
 #include "gbuffer.h"
+#include <mint/linea.h>  // For CUR_X and CUR_Y mouse position macros
 
 // Global mouse object pointer
 void* _Mouse = NULL;
@@ -50,7 +51,7 @@ WWMouseClass::WWMouseClass(GraphicViewPortClass *scr, int mouse_max_width, int m
 	Screen			= scr;
 	PrevCursor		= NULL;
 	MouseUpdate		= 0;
-	State				= 1;
+	State				= 1;  // Start hidden (Windows compatibility: State=0 is visible, State>0 is hidden)
 
 	EraseBuffer		= new char[mouse_max_width * mouse_max_height];
 	EraseBuffX		= -1;
@@ -152,7 +153,11 @@ void *WWMouseClass::Set_Cursor(int xhotspot, int yhotspot, void *cursor)
 void WWMouseClass::Show_Mouse(void)
 {
 	MouseUpdate++;
-	State = 1;  // Mark mouse as visible
+	// Windows compatibility: State=0 is visible, State>0 is hidden
+	// Decrement State to make mouse more visible (but don't go below 0)
+	if (State > 0) {
+		State--;
+	}
 	// TODO: Implement actual mouse showing for Atari ST
 	MouseUpdate--;
 }
@@ -170,7 +175,9 @@ void WWMouseClass::Show_Mouse(void)
 void WWMouseClass::Hide_Mouse(void)
 {
 	MouseUpdate++;
-	State = 0;  // Mark mouse as hidden
+	// Windows compatibility: State=0 is visible, State>0 is hidden
+	// Increment State to make mouse more hidden
+	State++;
 	// TODO: Implement actual mouse hiding for Atari ST
 	MouseUpdate--;
 }
@@ -259,8 +266,11 @@ int WWMouseClass::Get_Mouse_State(void)
  *=========================================================================*/
 int WWMouseClass::Get_Mouse_X(void)
 {
-	// TODO: Implement actual mouse position tracking for Atari ST
-	return MouseBuffX >= 0 ? MouseBuffX : 0;
+	if (DLLForceMouseX >= 0) {
+		return DLLForceMouseX;
+	}
+	// Use CUR_X from LINE-A system variables (voxel-st style)
+	return MouseBuffX >= 0 ? MouseBuffX : CUR_X;
 }
 
 /***************************************************************************
@@ -275,8 +285,11 @@ int WWMouseClass::Get_Mouse_X(void)
  *=========================================================================*/
 int WWMouseClass::Get_Mouse_Y(void)
 {
-	// TODO: Implement actual mouse position tracking for Atari ST
-	return MouseBuffY >= 0 ? MouseBuffY : 0;
+	if (DLLForceMouseY >= 0) {
+		return DLLForceMouseY;
+	}
+	// Use CUR_Y from LINE-A system variables (voxel-st style)
+	return MouseBuffY >= 0 ? MouseBuffY : CUR_Y;
 }
 
 /***************************************************************************
@@ -291,34 +304,56 @@ int WWMouseClass::Get_Mouse_Y(void)
  *=========================================================================*/
 void WWMouseClass::Process_Mouse(void)
 {
-	// TODO: Implement actual mouse processing for Atari ST
-	// This would typically update mouse position, handle clicks, etc.
+	// Skip if forced position is set
+	if (DLLForceMouseX >= 0 || DLLForceMouseY >= 0) {
+		return;
+	}
+	
+	// Simple voxel-st style: Read mouse position from LINE-A system variables
+	// CUR_X and CUR_Y are macros from mint/linea.h that access __aline structure
+	int mouse_x = CUR_X;
+	int mouse_y = CUR_Y;
+	
+	// Clamp to screen bounds if Screen is set
+	if (Screen) {
+		int max_x = Screen->Get_Width() - 1;
+		int max_y = Screen->Get_Height() - 1;
+		
+		if (mouse_x < 0) mouse_x = 0;
+		if (mouse_x > max_x) mouse_x = max_x;
+		if (mouse_y < 0) mouse_y = 0;
+		if (mouse_y > max_y) mouse_y = max_y;
+	}
+	
+	// Update buffer position
+	MouseBuffX = mouse_x;
+	MouseBuffY = mouse_y;
 }
 
-// Stub: Get mouse X position
+// Get mouse X position
 int Get_Mouse_X(void)
 {
-	// TODO: Implement actual mouse input for Atari ST
-	// For now, return forced position or 0
 	if (DLLForceMouseX >= 0) {
 		return DLLForceMouseX;
 	}
-	if (!_Mouse) return 0;
-	// TODO: Call actual mouse object method
-	return 0;
+	if (!_Mouse) {
+		// Fallback to LINE-A if no mouse object
+		return CUR_X;
+	}
+	return ((WWMouseClass *)_Mouse)->Get_Mouse_X();
 }
 
-// Stub: Get mouse Y position
+// Get mouse Y position
 int Get_Mouse_Y(void)
 {
-	// TODO: Implement actual mouse input for Atari ST
-	// For now, return forced position or 0
 	if (DLLForceMouseY >= 0) {
 		return DLLForceMouseY;
 	}
-	if (!_Mouse) return 0;
-	// TODO: Call actual mouse object method
-	return 0;
+	if (!_Mouse) {
+		// Fallback to LINE-A if no mouse object
+		return CUR_Y;
+	}
+	return ((WWMouseClass *)_Mouse)->Get_Mouse_Y();
 }
 
 /***************************************************************************

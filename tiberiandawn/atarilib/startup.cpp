@@ -41,6 +41,7 @@
 #include	<string.h>
 #include	<mint/osbind.h>  // For XBIOS functions: Getrez
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
+#include	"palette.h"  // For PaletteToST mapping array
 
 // Atari ST palette hardware register addresses
 // Palette registers are at $FF8240-$FF825E (16 registers, 16-bit each, 2 bytes apart)
@@ -830,9 +831,9 @@ void Render_Logical_To_ST_Screen(void)
 		unsigned char *st_line = st_screen + (y * bytes_per_line);
 		
 		for (int x = 0; x < screen_width; x++) {
-			// Get source color index (0-255) and take lowest 4 bits (0-15)
+			// Get source color index (0-255) and map to ST color using brightness-based mapping
 			unsigned char src_color = logical_line[x];
-			unsigned char st_color = src_color & 0x0F;  // Lowest 4 bits
+			unsigned char st_color = PaletteToST[src_color];
 			
 			// Calculate position in ST's interleaved bitplane format
 			int group_index = x / pixels_per_group;  // Which group of 16 pixels (0-19)

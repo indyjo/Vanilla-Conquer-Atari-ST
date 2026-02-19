@@ -27,8 +27,15 @@ char *Extract_String(void const *data, int string)
 	
 	// Read offset byte-by-byte to handle unaligned pointers safely
 	// Data is in little-endian format regardless of host endianness
+	// The offset array starts at the beginning of the data block
 	const unsigned char *bytes = (const unsigned char*)data + (string * sizeof(unsigned short));
+	
+	// Read little-endian 16-bit offset: low byte first, then high byte
 	unsigned short offset = ReadLE16(bytes);
-	return ((char*)data) + offset;
+	
+	// Return pointer to the string at the calculated offset
+	char *result = ((char*)data) + offset;
+	
+	return result;
 }
 

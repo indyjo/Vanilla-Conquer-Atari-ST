@@ -3945,6 +3945,11 @@ int Get_Resolution_Factor(void)
 void Blit_Hid_Page_To_Seen_Buff(void)
 {
     HidPage.Blit(SeenBuff);
+
+    /*
+    **	Render logical screen to Atari ST video memory.
+    */
+    Render_Logical_To_ST_Screen();
 }
 
 /***********************************************************************************************

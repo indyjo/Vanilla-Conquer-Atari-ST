@@ -10,6 +10,12 @@
 #include <string.h>  // For memset
 #include <stdio.h>  // For printf
 
+/* Effective row stride: buffers with Pitch==0 use Width as stride (Atari convention). */
+static inline int Get_Row_Stride(GraphicViewPortClass *vp) {
+	int s = vp->Get_Pitch() + vp->Get_XAdd();
+	return (s != 0) ? s : vp->Get_Width();
+}
+
 // Color translation table for font rendering
 // This maps font palette indices (0-15) to actual color values
 // Made non-static so it can be accessed from font.cpp
@@ -97,7 +103,7 @@ extern "C" void Buffer_Put_Pixel(void *thisptr, int x, int y, unsigned char colo
 	if (!viewport_base) return;
 	
 	// Calculate row stride (pitch + xadd)
-	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	int row_stride = Get_Row_Stride(vp);
 	
 	// Calculate pixel pointer using pointer arithmetic
 	unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
@@ -131,8 +137,7 @@ extern "C" void Fat_Put_Pixel(int x, int y, int color, int siz, GraphicViewPortC
 	unsigned char *viewport_base = (unsigned char *)gpage.Get_Offset();
 	if (!viewport_base) return;
 	
-	// Calculate row stride
-	int row_stride = gpage.Get_Pitch() + gpage.Get_XAdd();
+	int row_stride = Get_Row_Stride(&gpage);
 	
 	// Draw fat pixel (square)
 	unsigned char color_byte = (unsigned char)color;
@@ -172,7 +177,7 @@ extern "C" int Buffer_Get_Pixel(void *thisptr, int x, int y)
 	if (!viewport_base) return 0;
 	
 	// Calculate row stride (pitch + xadd)
-	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	int row_stride = Get_Row_Stride(vp);
 	
 	// Calculate pixel pointer using pointer arithmetic
 	unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
@@ -200,7 +205,7 @@ extern "C" void Buffer_Clear(void *thisptr, unsigned char color)
 	if (!viewport_base) return;
 	
 	// Calculate row stride (pitch + xadd)
-	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	int row_stride = Get_Row_Stride(vp);
 	
 	// Clear each row
 	for (int row = 0; row < height; row++) {
@@ -264,9 +269,8 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 	unsigned char *dest_base = (unsigned char *)dest_vp->Get_Offset();
 	if (!src_base || !dest_base) return FALSE;
 	
-	// Calculate source and destination strides
-	int src_stride = src_vp->Get_Pitch() + src_vp->Get_XAdd();
-	int dest_stride = dest_vp->Get_Pitch() + dest_vp->Get_XAdd();
+	int src_stride = Get_Row_Stride(src_vp);
+	int dest_stride = Get_Row_Stride(dest_vp);
 	
 	// Calculate source and destination starting pointers
 	unsigned char *src_ptr = src_base + x_pixel + y_pixel * src_stride;
@@ -299,17 +303,43 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 
 /*=========================================================================*/
 /* Linear_Scale_To_Linear -- Scales between linear buffers                 */
+/*   Nearest-neighbor scale from source rect to destination rect.          */
 /*=========================================================================*/
 extern "C" BOOL Linear_Scale_To_Linear(void *src, void *dest, int src_x, int src_y, int dst_x, int dst_y,
 							int src_w, int src_h, int dst_w, int dst_h, BOOL trans, char *remap)
 {
-	if (!src || !dest) return FALSE;
+	if (!src || !dest || src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) return FALSE;
 	
 	GraphicViewPortClass *src_vp = (GraphicViewPortClass *)src;
 	GraphicViewPortClass *dest_vp = (GraphicViewPortClass *)dest;
 	
-	BOOL result = src_vp->Scale(*dest_vp, src_x, src_y, dst_x, dst_y, src_w, src_h, dst_w, dst_h, trans, remap);
-	return result;
+	GraphicBufferClass *src_gb = src_vp->Get_Graphic_Buffer();
+	GraphicBufferClass *dest_gb = dest_vp->Get_Graphic_Buffer();
+	if (!src_gb || !dest_gb) return FALSE;
+	
+	unsigned char *src_base = (unsigned char *)src_vp->Get_Offset();
+	unsigned char *dest_base = (unsigned char *)dest_vp->Get_Offset();
+	if (!src_base || !dest_base) return FALSE;
+	
+	int src_stride = Get_Row_Stride(src_vp);
+	int dest_stride = Get_Row_Stride(dest_vp);
+	
+	// Nearest-neighbor scale: for each dest pixel, sample source
+	for (int dy = 0; dy < dst_h; dy++) {
+		int sy = (dst_h > 1 && src_h > 1) ? (dy * (src_h - 1) / (dst_h - 1)) : 0;
+		unsigned char *src_row = src_base + (src_y + sy) * src_stride + src_x;
+		unsigned char *dest_row = dest_base + (dst_y + dy) * dest_stride + dst_x;
+		
+		for (int dx = 0; dx < dst_w; dx++) {
+			int sx = (dst_w > 1 && src_w > 1) ? (dx * (src_w - 1) / (dst_w - 1)) : 0;
+			unsigned char pixel = src_row[sx];
+			if (!trans || pixel != 0) {
+				dest_row[dx] = (remap ? remap[(unsigned char)pixel] : pixel);
+			}
+		}
+	}
+	
+	return TRUE;
 }
 
 /*=========================================================================*/
@@ -327,7 +357,7 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 	if (vpwidth <= 0 || vpheight <= 0) return 0;
 	
 	// Calculate buffer width (pitch + xadd)
-	int bufferwidth = vp->Get_Pitch() + vp->Get_XAdd();
+	int bufferwidth = Get_Row_Stride(vp);
 	
 	// Get viewport base pointer
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
@@ -536,7 +566,7 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (!viewport_base) return;
 	
 	// Calculate row stride (pitch + xadd)
-	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	int row_stride = Get_Row_Stride(vp);
 	
 	// Simple line drawing using Bresenham's algorithm
 	int x0 = sx, y0 = sy, x1 = dx, y1 = dy;
@@ -604,7 +634,7 @@ extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
 	
 	// Calculate row stride (pitch + xadd)
-	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	int row_stride = Get_Row_Stride(vp);
 	
 	// Draw top and bottom horizontal lines
 	int rect_width = dx - sx + 1;
@@ -659,7 +689,7 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	int rect_height = dy - sy + 1;
 	
 	// Calculate row stride (pitch + xadd)
-	int row_stride = vp->Get_Pitch() + vp->Get_XAdd();
+	int row_stride = Get_Row_Stride(vp);
 	
 	// Fill each row
 	for (int row = 0; row < rect_height; row++) {

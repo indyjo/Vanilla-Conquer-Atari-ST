@@ -192,7 +192,15 @@ void GraphicViewPortClass::Attach(GraphicBufferClass *gbuffer, int x, int y, int
  	XAdd			= gbuffer->Get_Width() - w;
  	Width			= w;
  	Height		= h;
-	Pitch			= gbuffer->Get_Pitch();
+	// On Atari, backing buffers use Pitch==0 to mean 'no padding; row stride = Width'.
+	// Viewports, however, use (Pitch + XAdd) as the per-scanline stride. If we simply
+	// copy a zero Pitch here, full-screen viewports end up with stride 0 and only the
+	// first line ever gets updated. When the backing buffer has Pitch==0, treat its
+	// logical row stride as its Width for viewport Pitch.
+	{
+		int buf_pitch = gbuffer->Get_Pitch();
+		Pitch = buf_pitch ? buf_pitch : gbuffer->Get_Width();
+	}
  	GraphicBuff = gbuffer;
 	IsDirectDraw= gbuffer->Get_IsDirectDraw();
 }
@@ -268,7 +276,7 @@ void GraphicBufferClass::Init(int w, int h, void *buffer, long size, int flags)
 	Offset			= (long)Buffer;				// Get offset to the buffer
 	IsDirectDraw	= FALSE;
 
-	Pitch			= w;										// Record width of Buffer
+	Pitch			= 0;										// No padding; row stride = Width
 	XAdd			= 0;										// Record XAdd of Buffer
 	XPos			= 0;										// Record XPos of Buffer
 	YPos			= 0;										// Record YPos of Buffer

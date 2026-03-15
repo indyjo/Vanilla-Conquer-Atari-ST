@@ -40,6 +40,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "function.h"
+#include "common/endianness.h"
 #include "common/fading.h"
 #include "common/wwfile.h"
 #include "tile.h"
@@ -212,15 +213,22 @@ int Load_Uncompress(FileClass& file, BufferClass& uncomp_buff, BufferClass& dest
     }
 
     /*
-    **	Read in the size of the file (supposedly).
+    **	Read in the size of the file (supposedly). The file format is little-endian.
     */
     file.Read(&size, sizeof(size));
+#ifdef __BIG_ENDIAN__
+    size = bswap16(size);
+#endif
 
     /*
     **	Read in the header block. This block contains the compression type
-    **	and skip data (among other things).
+    **	and skip data (among other things). Size and Skip are little-endian.
     */
     file.Read(&header, sizeof(header));
+#ifdef __BIG_ENDIAN__
+    header.Size = bswap32(header.Size);
+    header.Skip = bswap16(header.Skip);
+#endif
     size -= sizeof(header);
 
     /*

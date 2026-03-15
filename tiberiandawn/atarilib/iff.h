@@ -38,14 +38,21 @@ typedef enum {
 **	Compressed blocks of data must start with this header structure.
 **	Note that disk based compressed files have an additional two
 **	leading bytes that indicate the size of the entire file.
+**	Layout is packed (8 bytes total); file format is little-endian.
 */
 //lint -strong(AJX,CompHeaderType)
+#if defined(__GNUC__) || defined(__clang__)
+#pragma pack(push, 1)
+#endif
 typedef struct {
 	char	Method;		// Compression method (CompressionType).
 	char	pad;			// Reserved pad byte (always 0).
-	long	Size;			// Size of the uncompressed data.
-	short	Skip;			// Number of bytes to skip before data.
+	long	Size;			// Size of the uncompressed data (LE in file).
+	short	Skip;			// Number of bytes to skip before data (LE in file).
 } CompHeaderType;
+#if defined(__GNUC__) || defined(__clang__)
+#pragma pack(pop)
+#endif
 
 /*=========================================================================*/
 /* Function prototypes                                                     */

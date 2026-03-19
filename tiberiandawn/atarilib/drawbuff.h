@@ -24,6 +24,7 @@ long Buffer_Size_Of_Region(void *thisptr, int w, int h);
 void Buffer_Clear(void *thisptr, unsigned char color);
 long Buffer_To_Buffer(void *thisptr, int x, int y, int w, int h, void *buff, long size);
 long Buffer_To_Page(int x, int y, int w, int h, void *Buffer, void *view);
+long Buffer_From_Page(int x, int y, int w, int h, void *Buffer, void *view);
 BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, int y_pixel, int dx_pixel,
 							int dy_pixel, int pixel_width, int pixel_height, BOOL trans);
 BOOL Linear_Scale_To_Linear(void *, void *, int, int, int, int, int, int, int, int, BOOL, char *);

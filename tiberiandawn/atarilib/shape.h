@@ -101,6 +101,11 @@ int Get_Shape_Width(void const *shape);
 int Get_Shape_Height(void const *shape);
 int Get_Shape_Original_Height(void const *shape);
 int Get_Shape_Uncomp_Size(void const *shape);
+int Decode_Shape_To_Buffer(void const *shape, void *buffer, int buf_size);
+/* Tiberian Dawn SHP (MOUSE.SHP etc.) */
+int Get_TD_SHP_Width(void const *block);
+int Get_TD_SHP_Height(void const *block);
+int Decode_TD_SHP_Frame(void const *block, int frame_index, void *buffer, int buf_size);
 }
 
 /*

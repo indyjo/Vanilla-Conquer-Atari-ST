@@ -75,194 +75,112 @@ extern "C" void RLE_Uncompress(void *src, void *dst, unsigned long size)
 }
 
 /*=========================================================================*/
-/* LCW_Uncompress -- Westwood LCW (Lempel-Ziv-Westwood) decompression      */
+/* LCW_Uncompress -- Westwood LCW ("Format 80") decompression              */
 /*                                                                         */
-/* This is a portable C implementation translated from x86 assembly       */
-/* Command format:                                                          */
-/*   n=0xxxyyyy,yyyyyyyy     short run: back y bytes, run x+3             */
-/*   n=10xxxxxx,n1...nx+1    med length: copy next x+1 bytes               */
-/*   n=11xxxxxx,w1           med run: run x+3 bytes from offset w1        */
-/*   n=11111111,w1,w2        long copy: copy w1 bytes from offset w2      */
-/*   n=11111110,w1,b1        long run: run byte b1 for w1 bytes           */
-/*   n=10000000              end marker                                   */
+/* Command format (absolute mode):                                         */
+/*  - cmd1: 10cccccc : copy next c bytes (c==0 => end marker)              */
+/*  - cmd2: 0ccc pppp + pp : copy (c+3) bytes from (dst - pos)             */
+/*  - cmd3: 11cccccc + word pos : copy (c+3) bytes from (dst0 + pos)       */
+/*  - cmd4: 0xFE + word count + byte value : fill                          */
+/*  - cmd5: 0xFF + word count + word pos : long copy from (dst0 + pos)     */
+/* Relative mode: if stream starts with byte 0, cmd3/cmd5 pos are relative */
+/* (dst - pos) instead of absolute from dst0.                              */
 /*=========================================================================*/
-/* Read little-endian word without alignment requirement (68000-safe).   */
 static inline unsigned short read_lcw_u16(const unsigned char *p)
 {
-	return (unsigned short)(p[0] | (p[1] << 8));
+	return (unsigned short)((unsigned short)p[0] | ((unsigned short)p[1] << 8));
 }
 
 extern "C" unsigned long LCW_Uncompress(void *source, void *dest, unsigned long length)
 {
-	if (!source || !dest || length == 0)
-		return 0;
+	if (!source || !dest || length == 0) return 0;
 
-	unsigned char *src = (unsigned char *)source;
+	const unsigned char *src = (const unsigned char *)source;
 	unsigned char *dst = (unsigned char *)dest;
-	unsigned char *a1stdest = dst;
-	unsigned char *lastbyte = dst + length;
-	unsigned char *src_save = src;
+	unsigned char *dst0 = dst;
+	unsigned char *dst_end = dst + length;
 
-	while (dst < lastbyte) {
-		unsigned long maxlen = lastbyte - dst;
-		src = src_save;
+	bool relative_mode = false;
+	if (*src == 0) {
+		relative_mode = true;
+		src++;
+	}
 
+	while (dst < dst_end) {
 		unsigned char code = *src++;
 
-		// Check for short run (bit 7 = 0)
+		/* cmd2: existing block relative copy (2 bytes) */
 		if ((code & 0x80) == 0) {
-			// Short run: 0xxxyyyy format
-			// Count = (code >> 4) + 3
-			// Offset high = (code & 0x0F)
-			unsigned long count = ((code >> 4) & 0x0F) + 3;
-			unsigned char offset_high = code & 0x0F;
-
-			// Clamp count
-			if (count > maxlen) count = maxlen;
-
-			// Get offset low byte
-			unsigned char offset_low = *src++;
-			src_save = src;
-
-			// Calculate source position (relative to current dest)
-			unsigned long offset = offset_low | (offset_high << 8);
-			unsigned char *src_ptr = dst - offset;
-
-			// Never read before start of buffer (malformed data / 68000 safety)
-			if (src_ptr < a1stdest) {
-				unsigned long skip = (unsigned long)(a1stdest - src_ptr);
-				if (skip >= count) continue;
-				count -= skip;
-				src_ptr = a1stdest;
+			unsigned long count = (unsigned long)((code & 0x70) >> 4) + 3UL;
+			unsigned long pos = ((unsigned long)(code & 0x0F) << 8) | (unsigned long)(*src++);
+			unsigned char *from = dst - (long)pos;
+			if (from < dst0) break;
+			if (dst + count > dst_end) count = (unsigned long)(dst_end - dst);
+			/*
+			** Important: LCW backreferences behave like LZ77 forward copies where
+			** newly written bytes can be referenced during the same copy command.
+			** Using memmove() can produce different results when src/dst overlap.
+			** Copy byte-by-byte in forward order to match LZ semantics.
+			*/
+			for (unsigned long k = 0; k < count; k++) {
+				*dst++ = from[k];
 			}
-
-			// Copy the run (overlap possible: src_ptr is in output buffer)
-			memmove(dst, src_ptr, count);
-			dst += count;
 			continue;
 		}
-		
-		// Check for end marker
-		if (code == 0x80) {
-			break;
-		}
-		
-		// Check if it's a length command (bit 6 = 0, bit 7 = 1)
+
+		/* cmd1: literal copy (or end marker 0x80) */
 		if ((code & 0x40) == 0) {
-			// Medium length: 10xxxxxx format, copy next (code & 0x3F) + 1 bytes
-			unsigned long count = (code & 0x3F) + 1;
-			
-			// Clamp count
-			if (count > maxlen) count = maxlen;
-			
-			// Copy literal bytes (no overlap: src is compressed stream)
+			unsigned long count = (unsigned long)(code & 0x3F);
+			if (count == 0) break; /* end marker */
+			if (dst + count > dst_end) count = (unsigned long)(dst_end - dst);
 			memcpy(dst, src, count);
 			dst += count;
 			src += count;
-			src_save = src;
 			continue;
 		}
-		
-		// Not a length command - could be med run, long copy, or long run
-		unsigned long count = (code & 0x3F) + 3;
-		
-		// Check for long run (0xFE)
-		if (code == 0xFE) {
-			// Long run: w1 bytes of byte b1
-			unsigned short run_length = read_lcw_u16(src);
-			src += 2;
-			unsigned char run_value = *src++;
-			src_save = src;
-			
-			// Clamp run length
-			if (run_length > maxlen) run_length = maxlen;
-			
-			// Fill with run value (optimized for large runs)
-			if (run_length <= 32) {
-				memset(dst, run_value, run_length);
-				dst += run_length;
-			} else {
-				// Large run - use word/dword fills where possible
-				unsigned long dword_value = (run_value << 24) | (run_value << 16) | (run_value << 8) | run_value;
-				unsigned long dword_count = run_length / 4;
-				unsigned long remainder = run_length % 4;
-				
-				// Align to 4-byte boundary if needed
-				unsigned long align = ((unsigned long)dst) & 3;
-				if (align > 0) {
-					align = 4 - align;
-					for (unsigned long i = 0; i < align && i < run_length; i++) {
-						*dst++ = run_value;
-					}
-					run_length -= align;
-					dword_count = run_length / 4;
-					remainder = run_length % 4;
-				}
-				
-				// Fill with dwords
-				unsigned long *dst_dword = (unsigned long *)dst;
-				for (unsigned long i = 0; i < dword_count; i++) {
-					*dst_dword++ = dword_value;
-				}
-				dst = (unsigned char *)dst_dword;
-				
-				// Fill remainder
-				for (unsigned long i = 0; i < remainder; i++) {
-					*dst++ = run_value;
-				}
-			}
-			continue;
-		}
-		
-		// Check for long copy (0xFF)
-		if (code == 0xFF) {
-			// Long copy: w1 bytes from offset w2
-			unsigned short copy_length = read_lcw_u16(src);
-			src += 2;
-			unsigned short offset = read_lcw_u16(src);
-			src += 2;
-			src_save = src;
-			
-			// Clamp copy length
-			if (copy_length > maxlen) copy_length = maxlen;
-			
-			// Calculate source position (relative to a1stdest)
-			unsigned char *src_ptr = a1stdest + offset;
-			
-			// Copy the data (src_ptr is in output buffer; overlap possible)
-			unsigned char *dst_end = dst + copy_length - 1;
-			if (src_ptr > dst_end || src_ptr + copy_length <= dst) {
-				memcpy(dst, src_ptr, copy_length);
-			} else {
-				memmove(dst, src_ptr, copy_length);
-			}
-			dst += copy_length;
-			continue;
-		}
-		
-		// Medium run: 11xxxxxx format, run x+3 bytes from offset w1
-		// Clamp count
-		if (count > maxlen) count = maxlen;
-		
-		// Get offset word
-		unsigned short offset = read_lcw_u16(src);
-		src += 2;
-		src_save = src;
 
-		// Calculate source position (relative to a1stdest)
-		unsigned char *src_ptr = a1stdest + offset;
-		
-		// Copy the run (src_ptr is in output buffer; overlap possible)
-		unsigned char *dst_end = dst + count - 1;
-		if (src_ptr > dst_end || src_ptr + count <= dst) {
-			memcpy(dst, src_ptr, count);
-		} else {
-			memmove(dst, src_ptr, count);
+		/* cmd4: fill */
+		if (code == 0xFE) {
+			unsigned long count = (unsigned long)read_lcw_u16(src);
+			src += 2;
+			unsigned char value = *src++;
+			if (dst + count > dst_end) count = (unsigned long)(dst_end - dst);
+			memset(dst, value, count);
+			dst += count;
+			continue;
 		}
-		dst += count;
+
+		/* cmd5: long copy */
+		if (code == 0xFF) {
+			unsigned long count = (unsigned long)read_lcw_u16(src);
+			src += 2;
+			unsigned short posw = read_lcw_u16(src);
+			src += 2;
+			unsigned char *from = relative_mode ? (dst - (long)posw) : (dst0 + (long)posw);
+			if (from < dst0) break;
+			if (dst + count > dst_end) count = (unsigned long)(dst_end - dst);
+			for (unsigned long k = 0; k < count; k++) {
+				*dst++ = from[k];
+			}
+			continue;
+		}
+
+		/* cmd3: medium-length copy */
+		{
+			unsigned long count = (unsigned long)(code & 0x3F) + 3UL;
+			unsigned short posw = read_lcw_u16(src);
+			src += 2;
+			unsigned char *from = relative_mode ? (dst - (long)posw) : (dst0 + (long)posw);
+			if (from < dst0) break;
+			if (dst + count > dst_end) count = (unsigned long)(dst_end - dst);
+			for (unsigned long k = 0; k < count; k++) {
+				*dst++ = from[k];
+			}
+			continue;
+		}
 	}
-	
-	return dst - a1stdest;
+
+	return (unsigned long)(dst - dst0);
 }
 
 extern "C" unsigned long Uncompress_Data(void const *src, void *dst)

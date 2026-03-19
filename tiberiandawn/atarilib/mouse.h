@@ -54,6 +54,7 @@ class WWMouseClass {
 		//
 		void Draw_Mouse(GraphicViewPortClass *scr);
 		void Erase_Mouse(GraphicViewPortClass *scr, int forced = FALSE);
+		void Set_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index);
 
 		void Block_Mouse(GraphicBufferClass *buffer);
 		void Unblock_Mouse(GraphicBufferClass *buffer);
@@ -112,6 +113,8 @@ void Conditional_Hide_Mouse(int x1, int y1, int x2, int y2);
 void Conditional_Show_Mouse(void);
 int Get_Mouse_State(void);
 void *Set_Mouse_Cursor(int hotx, int hoty, void *cursor);
+/* Set cursor from Tiberian Dawn SHP block (e.g. MOUSE.SHP) by frame index */
+void Set_Mouse_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index);
 int Get_Mouse_X(void);
 int Get_Mouse_Y(void);
 

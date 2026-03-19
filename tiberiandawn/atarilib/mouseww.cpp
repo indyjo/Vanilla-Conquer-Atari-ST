@@ -6,7 +6,11 @@
 
 #include "mouse.h"
 #include "gbuffer.h"
-#include <mint/linea.h>  // For CUR_X and CUR_Y mouse position macros
+#include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
+#include "shape.h"     // Get_Shape_Width, Get_Shape_Height, Decode_Shape_To_Buffer
+#include <mint/linea.h>  // For GCURX and GCURY mouse position macros
+#include <string.h>     // memset
+#include <stdio.h>      // printf debug
 
 // Global mouse object pointer
 void* _Mouse = NULL;
@@ -126,18 +130,57 @@ void WWMouseClass::Clear_Cursor_Clip(void)
 void *WWMouseClass::Set_Cursor(int xhotspot, int yhotspot, void *cursor)
 {
 	void *old_cursor = PrevCursor;
-	PrevCursor = cursor;
-	
+	PrevCursor = (char *)cursor;
+	MouseXHot = xhotspot;
+	MouseYHot = yhotspot;
 	if (cursor) {
-		// TODO: Implement actual cursor setting for Atari ST
-		MouseXHot = xhotspot;
-		MouseYHot = yhotspot;
-		// For now, just store the cursor pointer
-		// In a real implementation, we would need to process the cursor data
-		// and set up the cursor dimensions
+		CursorWidth = Get_Shape_Width(cursor);
+		CursorHeight = Get_Shape_Height(cursor);
+		if (CursorWidth > MaxWidth) CursorWidth = MaxWidth;
+		if (CursorHeight > MaxHeight) CursorHeight = MaxHeight;
+		if (CursorWidth > 0 && CursorHeight > 0) {
+			int decoded = Decode_Shape_To_Buffer(cursor, MouseCursor, MaxWidth * MaxHeight);
+			if (decoded == 0)
+				memset(MouseCursor, 0, (unsigned)(CursorWidth * CursorHeight));
+		}
+		/* Invalidate saved position so next Draw_Mouse doesn't restore garbage */
+		MouseBuffX = -1;
+		MouseBuffY = -1;
+	} else {
+		CursorWidth = 0;
+		CursorHeight = 0;
 	}
-	
 	return old_cursor;
+}
+
+/***************************************************************************
+ * WWMouseClass::Set_Cursor_From_Block -- Set cursor from TD SHP block     *
+ *                                                                         *
+ * Use for MOUSE.SHP (Tiberian Dawn format). Decodes frame_index with LCW. *
+ *=========================================================================*/
+void WWMouseClass::Set_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index)
+{
+	MouseXHot = hotx;
+	MouseYHot = hoty;
+	PrevCursor = (char *)block;  /* non-null so Draw_Mouse runs */
+	if (!block) {
+		CursorWidth = 0;
+		CursorHeight = 0;
+		MouseBuffX = -1;
+		MouseBuffY = -1;
+		return;
+	}
+	CursorWidth = Get_TD_SHP_Width(block);
+	CursorHeight = Get_TD_SHP_Height(block);
+	if (CursorWidth > MaxWidth) CursorWidth = MaxWidth;
+	if (CursorHeight > MaxHeight) CursorHeight = MaxHeight;
+	if (CursorWidth > 0 && CursorHeight > 0) {
+		int decoded = Decode_TD_SHP_Frame(block, frame_index, MouseCursor, MaxWidth * MaxHeight);
+		if (decoded == 0)
+			memset(MouseCursor, 0, (unsigned)(CursorWidth * CursorHeight));
+	}
+	MouseBuffX = -1;
+	MouseBuffY = -1;
 }
 
 /***************************************************************************
@@ -269,8 +312,8 @@ int WWMouseClass::Get_Mouse_X(void)
 	if (DLLForceMouseX >= 0) {
 		return DLLForceMouseX;
 	}
-	// Use CUR_X from LINE-A system variables (voxel-st style)
-	return MouseBuffX >= 0 ? MouseBuffX : CUR_X;
+	// Use GCURX from LINE-A system variables
+	return MouseBuffX >= 0 ? MouseBuffX : GCURX;
 }
 
 /***************************************************************************
@@ -288,8 +331,8 @@ int WWMouseClass::Get_Mouse_Y(void)
 	if (DLLForceMouseY >= 0) {
 		return DLLForceMouseY;
 	}
-	// Use CUR_Y from LINE-A system variables (voxel-st style)
-	return MouseBuffY >= 0 ? MouseBuffY : CUR_Y;
+	// Use GCURY from LINE-A system variables
+	return MouseBuffY >= 0 ? MouseBuffY : GCURY;
 }
 
 /***************************************************************************
@@ -309,10 +352,9 @@ void WWMouseClass::Process_Mouse(void)
 		return;
 	}
 	
-	// Simple voxel-st style: Read mouse position from LINE-A system variables
-	// CUR_X and CUR_Y are macros from mint/linea.h that access __aline structure
-	int mouse_x = CUR_X;
-	int mouse_y = CUR_Y;
+	// Read mouse position from LINE-A system variables (graphics cursor)
+	int mouse_x = GCURX;
+	int mouse_y = GCURY;
 	
 	// Clamp to screen bounds if Screen is set
 	if (Screen) {
@@ -338,8 +380,10 @@ int Get_Mouse_X(void)
 	}
 	if (!_Mouse) {
 		// Fallback to LINE-A if no mouse object
-		return CUR_X;
+		return GCURX;
 	}
+	/* Keep MouseBuffX/Y updated (Win32 does this via timer callback). */
+	((WWMouseClass *)_Mouse)->Process_Mouse();
 	return ((WWMouseClass *)_Mouse)->Get_Mouse_X();
 }
 
@@ -351,8 +395,10 @@ int Get_Mouse_Y(void)
 	}
 	if (!_Mouse) {
 		// Fallback to LINE-A if no mouse object
-		return CUR_Y;
+		return GCURY;
 	}
+	/* Keep MouseBuffX/Y updated (Win32 does this via timer callback). */
+	((WWMouseClass *)_Mouse)->Process_Mouse();
 	return ((WWMouseClass *)_Mouse)->Get_Mouse_Y();
 }
 
@@ -462,6 +508,18 @@ void *Set_Mouse_Cursor(int hotx, int hoty, void *cursor)
 }
 
 /***************************************************************************
+ * Set_Mouse_Cursor_From_Block -- Set cursor from Tiberian Dawn SHP block   *
+ *=========================================================================*/
+void Set_Mouse_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index)
+{
+	if (_Mouse) {
+		/* MOUSE.SHP is a classic ShapeBlock: extract shape pointer then set cursor. */
+		void *shape = Extract_Shape(block, frame_index);
+		((WWMouseClass *)_Mouse)->Set_Cursor(hotx, hoty, shape);
+	}
+}
+
+/***************************************************************************
  * WWMouseClass::Draw_Mouse -- Draws the mouse cursor on a viewport       *
  *                                                                         *
  * INPUT:		GraphicViewPortClass *scr - viewport to draw on            *
@@ -469,12 +527,56 @@ void *Set_Mouse_Cursor(int hotx, int hoty, void *cursor)
  * OUTPUT:     none                                                        *
  *                                                                         *
  * HISTORY:                                                                *
- *   Stub for Atari ST - mouse drawing handled by system                  *
+ *   Analogous to WIN32: restore old background, save new, draw cursor.   *
  *=========================================================================*/
 void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 {
-	// Stub for Atari ST - mouse drawing handled by system
-	(void)scr;
+	if (!scr || State != 0 || !PrevCursor || CursorWidth <= 0 || CursorHeight <= 0)
+		return;
+	if (!scr->Lock())
+		return;
+	int vpw = scr->Get_Width();
+	int vph = scr->Get_Height();
+	int x = Get_Mouse_X();
+	int y = Get_Mouse_Y();
+	/* Clamp so cursor rect stays fully inside viewport */
+	if (x < MouseXHot) x = MouseXHot;
+	if (y < MouseYHot) y = MouseYHot;
+	if (x > vpw - CursorWidth + MouseXHot) x = vpw - CursorWidth + MouseXHot;
+	if (y > vph - CursorHeight + MouseYHot) y = vph - CursorHeight + MouseYHot;
+	int left = x - MouseXHot;
+	int top = y - MouseYHot;
+	if (left < 0 || top < 0) {
+		scr->Unlock();
+		return;
+	}
+	/* Restore background at previous cursor position */
+	if (MouseBuffX >= 0 && MouseBuffY >= 0) {
+		int old_left = MouseBuffX - MouseXHot;
+		int old_top = MouseBuffY - MouseYHot;
+		if (old_left >= 0 && old_top >= 0 &&
+		    old_left + CursorWidth <= vpw && old_top + CursorHeight <= vph)
+			Buffer_To_Page(old_left, old_top, CursorWidth, CursorHeight, MouseBuffer, scr);
+	}
+	/* Save background under new position */
+	Buffer_From_Page(left, top, CursorWidth, CursorHeight, MouseBuffer, scr);
+	/* Draw cursor (0 = transparent) */
+	unsigned char *base = (unsigned char *)scr->Get_Offset();
+	if (base) {
+		int stride = (scr->Get_Pitch() + scr->Get_XAdd()) ? (scr->Get_Pitch() + scr->Get_XAdd()) : scr->Get_Width();
+		const unsigned char *cur = (const unsigned char *)MouseCursor;
+		for (int row = 0; row < CursorHeight; row++) {
+			unsigned char *dest = base + (top + row) * stride + left;
+			for (int col = 0; col < CursorWidth; col++) {
+				if (cur[col] != 0)
+					dest[col] = cur[col];
+			}
+			cur += CursorWidth;
+		}
+	}
+	MouseBuffX = x;
+	MouseBuffY = y;
+	scr->Unlock();
 }
 
 /***************************************************************************
@@ -486,12 +588,25 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
  * OUTPUT:     none                                                        *
  *                                                                         *
  * HISTORY:                                                                *
- *   Stub for Atari ST - mouse erasing handled by system                  *
+ *   Restore EraseBuffer to scr when forced or when cursor was drawn there.*
  *=========================================================================*/
 void WWMouseClass::Erase_Mouse(GraphicViewPortClass *scr, int forced)
 {
-	// Stub for Atari ST - mouse erasing handled by system
-	(void)scr;
+	if (!scr || (EraseBuffX < 0 && !forced))
+		return;
+	if (EraseBuffX >= 0 && EraseBuffY >= 0 && CursorWidth > 0 && CursorHeight > 0) {
+		if (scr->Lock()) {
+			int left = EraseBuffX - EraseBuffHotX;
+			int top = EraseBuffY - EraseBuffHotY;
+			int vpw = scr->Get_Width();
+			int vph = scr->Get_Height();
+			if (left >= 0 && top >= 0 && left + CursorWidth <= vpw && top + CursorHeight <= vph)
+				Buffer_To_Page(left, top, CursorWidth, CursorHeight, EraseBuffer, scr);
+			scr->Unlock();
+		}
+		EraseBuffX = -1;
+		EraseBuffY = -1;
+	}
 	(void)forced;
 }
 

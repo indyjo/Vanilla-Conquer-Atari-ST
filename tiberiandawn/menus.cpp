@@ -792,6 +792,14 @@ int Main_Menu(unsigned int timeout)
         Call_Back();
 
         /*
+        **	Draw mouse cursor on SeenBuff then refresh ST physical screen.
+        */
+        if (WWMouse) {
+            WWMouse->Draw_Mouse(&SeenBuff);
+        }
+        Render_Logical_To_ST_Screen();
+
+        /*
         **	Refresh display if needed.
         */
         if (display) {

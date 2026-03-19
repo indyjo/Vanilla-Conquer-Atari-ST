@@ -799,7 +799,9 @@ void Render_Logical_To_ST_Screen(void)
 	// We should read from VisiblePage's buffer, accounting for SeenBuff's viewport position
 	
 	// Lock VisiblePage to access its buffer
-	if (!SeenBuff.Lock()) return;
+	if (!SeenBuff.Lock()) {
+		return;
+	}
 	
 	unsigned char *base_buffer = (unsigned char *)SeenBuff.Get_Offset();
 	if (!base_buffer) {

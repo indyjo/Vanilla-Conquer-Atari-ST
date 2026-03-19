@@ -239,13 +239,49 @@ extern "C" long Buffer_To_Buffer(void *thisptr, int x, int y, int w, int h, void
 }
 
 /*=========================================================================*/
-/* Buffer_To_Page -- Copies buffer to page/viewport                        */
+/* Buffer_To_Page -- Copies linear buffer to page/viewport                 */
+/*   Buffer is row-major, w bytes per row, h rows.                         */
 /*=========================================================================*/
 extern "C" long Buffer_To_Page(int x, int y, int w, int h, void *Buffer, void *view)
 {
-	// Stub implementation
-	(void)x; (void)y; (void)w; (void)h; (void)Buffer; (void)view;
-	return 0;
+	if (!Buffer || !view || w <= 0 || h <= 0) return 0;
+	GraphicViewPortClass *vp = (GraphicViewPortClass *)view;
+	unsigned char *base = (unsigned char *)vp->Get_Offset();
+	if (!base) return 0;
+	int vpw = vp->Get_Width();
+	int vph = vp->Get_Height();
+	if (x + w > vpw || y + h > vph || x < 0 || y < 0) return 0;
+	int stride = Get_Row_Stride(vp);
+	const unsigned char *src = (const unsigned char *)Buffer;
+	for (int row = 0; row < h; row++) {
+		unsigned char *dest = base + (y + row) * stride + x;
+		memcpy(dest, src, (unsigned)w);
+		src += w;
+	}
+	return (long)(w * h);
+}
+
+/*=========================================================================*/
+/* Buffer_From_Page -- Copies page/viewport rect to linear buffer           */
+/*   Buffer must hold at least w*h bytes (row-major).                       */
+/*=========================================================================*/
+extern "C" long Buffer_From_Page(int x, int y, int w, int h, void *Buffer, void *view)
+{
+	if (!Buffer || !view || w <= 0 || h <= 0) return 0;
+	GraphicViewPortClass *vp = (GraphicViewPortClass *)view;
+	unsigned char *base = (unsigned char *)vp->Get_Offset();
+	if (!base) return 0;
+	int vpw = vp->Get_Width();
+	int vph = vp->Get_Height();
+	if (x + w > vpw || y + h > vph || x < 0 || y < 0) return 0;
+	int stride = Get_Row_Stride(vp);
+	unsigned char *dest = (unsigned char *)Buffer;
+	for (int row = 0; row < h; row++) {
+		unsigned char *src = base + (y + row) * stride + x;
+		memcpy(dest, src, (unsigned)w);
+		dest += w;
+	}
+	return (long)(w * h);
 }
 
 /*=========================================================================*/

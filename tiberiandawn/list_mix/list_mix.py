@@ -10,6 +10,7 @@ import sys
 import zlib
 import base64
 import argparse
+import os
 
 def calculate_crc(buffer):
     """
@@ -177,6 +178,57 @@ def process_mix_file(mix_filename, database):
         print(f"Error: {e}", file=sys.stderr)
         return False
 
+def extract_from_mix_file(mix_filename, entries, extract_crc, database, outdir):
+    """
+    Extract every entry in a MIX archive whose CRC matches extract_crc.
+    """
+    matches = [e for e in entries if e.get('crc') == extract_crc]
+    if not matches:
+        print(f"  (extract) No match in {mix_filename} for 0x{extract_crc:08X}")
+        return False
+
+    # Derive output base name from database if possible
+    out_name = None
+    if database and extract_crc in database:
+        out_name, _desc = database[extract_crc]
+        out_name = out_name.strip()
+
+    # SubBlock.Offset is relative to the start of the embedded data section, not BOF.
+    # Layout: 6-byte FileHeader (count u16 + data_size u32) then count * 12-byte index.
+    # Matches MixFileClass::SubBlock comment in MIXFILE.H and file.Seek in MIXFILE.CPP::Cache.
+    count = len(entries)
+    data_base = 6 + count * 12
+
+    ok = True
+    with open(mix_filename, 'rb') as f:
+        for m in matches:
+            idx = m.get('index', 0)
+            off = m['offset']
+            size = m['size']
+            f.seek(data_base + off)
+            data = f.read(size)
+            if data is None or len(data) != size:
+                print(f"  (extract) Read short for idx={idx} size={size} in {mix_filename}", file=sys.stderr)
+                ok = False
+                continue
+
+            if out_name:
+                # Some filenames may contain directory separators; preserve them.
+                out_path = os.path.join(outdir, out_name)
+            else:
+                out_path = os.path.join(outdir, f"crc_{extract_crc:08X}_idx{idx}")
+
+            parent = os.path.dirname(out_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
+            with open(out_path, 'wb') as outf:
+                outf.write(data)
+
+            print(f"  extracted idx={idx} 0x{extract_crc:08X} -> {out_path}")
+
+    return ok
+
 def main():
     parser = argparse.ArgumentParser(
         description='List contents of MIX files with CRC, offset, size, and optional filename/description lookup',
@@ -186,11 +238,33 @@ def main():
                        help='One or more MIX files to analyze')
     parser.add_argument('-d', '--database', metavar='DATABASE',
                        help='Optional mix database file for filename/description lookup (if not provided, uses embedded database)')
+    parser.add_argument('-x', '--extract', metavar='FILE_OR_CRC',
+                       help='Extract a member from the MIX archives. Accepts either a hex CRC (e.g. 0x1234ABCD or 1234ABCD) or a database filename (e.g. CONQUER.MIX entry name).')
+    parser.add_argument('-o', '--outdir', metavar='OUTDIR', default='.',
+                       help='Output directory for extracted files (default: current directory).')
     
     args = parser.parse_args()
     
     mix_filenames = args.mixfiles
     database_filename = args.database
+    extract_arg = args.extract
+    outdir = args.outdir
+    
+    extract_crc = None
+    if extract_arg:
+        s = extract_arg.strip()
+        # Accept hex CRC input
+        if s.lower().startswith('0x'):
+            extract_crc = int(s, 16)
+        else:
+            # Pure hex?
+            is_hex = all(ch in '0123456789abcdefABCDEF' for ch in s)
+            if is_hex and len(s) <= 8:
+                extract_crc = int(s, 16)
+            else:
+                # Treat as database filename: CRC is calculated on uppercase ASCII
+                extract_crc = calculate_crc(s.upper().encode('ascii'))
+        print(f"Using extract target {extract_arg!r} -> CRC 0x{extract_crc:08X}\n")
     
     # Load database (use embedded if no file provided)
     database = {}
@@ -214,8 +288,13 @@ def main():
     for i, mix_filename in enumerate(mix_filenames):
         if i > 0:
             print()  # Blank line between files
-        if process_mix_file(mix_filename, database):
-            success_count += 1
+        entries = read_mix_file(mix_filename)
+        if extract_crc is not None:
+            if extract_from_mix_file(mix_filename, entries, extract_crc, database, outdir):
+                success_count += 1
+        else:
+            if process_mix_file(mix_filename, database):
+                success_count += 1
     
     # Exit with error if any file failed
     if success_count < len(mix_filenames):

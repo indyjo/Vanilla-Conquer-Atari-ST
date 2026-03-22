@@ -5,12 +5,12 @@
  */
 
 #include "mouse.h"
+#include "keyboard.h"
 #include "gbuffer.h"
 #include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
 #include "shape.h"     // Get_Shape_Width, Get_Shape_Height, Decode_Shape_To_Buffer
-#include <mint/linea.h>  // For GCURX and GCURY mouse position macros
+#include <mint/linea.h>  // GCURX, GCURY, MOUSE_BT (LINE-A)
 #include <string.h>     // memset
-#include <stdio.h>      // printf debug
 
 // Global mouse object pointer
 void* _Mouse = NULL;
@@ -42,6 +42,8 @@ WWMouseClass::WWMouseClass(GraphicViewPortClass *scr, int mouse_max_width, int m
 	MouseBuffer		= new char[mouse_max_width * mouse_max_height];
 	MouseBuffX		= -1;
 	MouseBuffY  	= -1;
+	MousePosX		= -1;
+	MousePosY		= -1;
 	MaxWidth			= mouse_max_width;
 	MaxHeight		= mouse_max_height;
 
@@ -63,6 +65,8 @@ WWMouseClass::WWMouseClass(GraphicViewPortClass *scr, int mouse_max_width, int m
 	EraseBuffHotX	= -1;
 	EraseBuffHotY	= -1;
 	EraseFlags		= FALSE;
+
+	LastMouseBt		= -1;
 
 	_Mouse			= this;
 	
@@ -312,8 +316,7 @@ int WWMouseClass::Get_Mouse_X(void)
 	if (DLLForceMouseX >= 0) {
 		return DLLForceMouseX;
 	}
-	// Use GCURX from LINE-A system variables
-	return MouseBuffX >= 0 ? MouseBuffX : GCURX;
+	return MousePosX >= 0 ? MousePosX : GCURX;
 }
 
 /***************************************************************************
@@ -331,8 +334,7 @@ int WWMouseClass::Get_Mouse_Y(void)
 	if (DLLForceMouseY >= 0) {
 		return DLLForceMouseY;
 	}
-	// Use GCURY from LINE-A system variables
-	return MouseBuffY >= 0 ? MouseBuffY : GCURY;
+	return MousePosY >= 0 ? MousePosY : GCURY;
 }
 
 /***************************************************************************
@@ -367,9 +369,35 @@ void WWMouseClass::Process_Mouse(void)
 		if (mouse_y > max_y) mouse_y = max_y;
 	}
 	
-	// Update buffer position
-	MouseBuffX = mouse_x;
-	MouseBuffY = mouse_y;
+	MousePosX = mouse_x;
+	MousePosY = mouse_y;
+
+	/* Live position for UI that reads _Kbd->MouseQX/Y without dequeuing keys */
+	if (_Kbd) {
+		_Kbd->MouseQX = mouse_x;
+		_Kbd->MouseQY = mouse_y;
+	}
+
+	/* Button edges from LINE-A MOUSE_BT (bit0=left, bit1=right), same as GCURX/GCURY */
+	if (_Kbd) {
+		int bt = (int)(MOUSE_BT & 3);
+		if (LastMouseBt < 0) {
+			LastMouseBt = bt;
+		} else {
+			int prev = LastMouseBt;
+			if ((bt ^ prev) & 1) {
+				_Kbd->Put_Key_Message(VK_LBUTTON, (bt & 1) == 0);
+				_Kbd->Put(mouse_x);
+				_Kbd->Put(mouse_y);
+			}
+			if ((bt ^ prev) & 2) {
+				_Kbd->Put_Key_Message(VK_RBUTTON, (bt & 2) == 0);
+				_Kbd->Put(mouse_x);
+				_Kbd->Put(mouse_y);
+			}
+			LastMouseBt = bt;
+		}
+	}
 }
 
 // Get mouse X position
@@ -382,7 +410,6 @@ int Get_Mouse_X(void)
 		// Fallback to LINE-A if no mouse object
 		return GCURX;
 	}
-	/* Keep MouseBuffX/Y updated (Win32 does this via timer callback). */
 	((WWMouseClass *)_Mouse)->Process_Mouse();
 	return ((WWMouseClass *)_Mouse)->Get_Mouse_X();
 }
@@ -397,7 +424,6 @@ int Get_Mouse_Y(void)
 		// Fallback to LINE-A if no mouse object
 		return GCURY;
 	}
-	/* Keep MouseBuffX/Y updated (Win32 does this via timer callback). */
 	((WWMouseClass *)_Mouse)->Process_Mouse();
 	return ((WWMouseClass *)_Mouse)->Get_Mouse_Y();
 }
@@ -535,6 +561,9 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		return;
 	if (!scr->Lock())
 		return;
+	/* Sample hardware; must not clobber MouseBuffX/Y (previous draw restore coords). */
+	if (DLLForceMouseX < 0 && DLLForceMouseY < 0)
+		Process_Mouse();
 	int vpw = scr->Get_Width();
 	int vph = scr->Get_Height();
 	int x = Get_Mouse_X();

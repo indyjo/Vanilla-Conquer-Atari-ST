@@ -6,6 +6,7 @@
  */
 
 #include "keyboard.h"
+#include <ctype.h>
 
 /***********************************************************************************************
  * WWKeyboardClass::WWKeyboardClass -- Constructor for the Keyboard Class                    *
@@ -33,10 +34,16 @@ WWKeyboardClass::WWKeyboardClass()
 	for (int i = 0; i < 2048; i++) {
 		AsciiRemap[i] = (unsigned char)(i & 0xFF);
 	}
+	/* So Put_Key_Message sets WWKEY_VK_BIT for mouse buttons (see WIN32LIB/KEYBOARD.CPP) */
+	AsciiRemap[VK_LBUTTON] = 0;
+	AsciiRemap[VK_RBUTTON] = 0;
+	AsciiRemap[VK_MBUTTON] = 0;
 	for (int i = 0; i < 256; i++) {
 		Buffer[i] = 0;
 		ToggleKeys[i] = 0;
 	}
+
+	_Kbd = this;
 }
 
 /***********************************************************************************************
@@ -51,7 +58,10 @@ WWKeyboardClass::WWKeyboardClass()
  *=============================================================================================*/
 BOOL WWKeyboardClass::Check(void)
 {
-	return (Head != Tail);
+	if (Head == Tail) {
+		return FALSE;
+	}
+	return Buffer[Head];
 }
 
 /***********************************************************************************************
@@ -94,7 +104,45 @@ int WWKeyboardClass::Buff_Get(void)
 BOOL WWKeyboardClass::Is_Mouse_Key(int key)
 {
 	key &= 0xFF;
-	return (key == VK_LBUTTON || key == VK_RBUTTON);
+	return (key == VK_LBUTTON || key == VK_MBUTTON || key == VK_RBUTTON);
+}
+
+/***********************************************************************************************
+ * WWKeyboardClass::Put -- Insert a value into the ring buffer (key or mouse coordinate)        *
+ *=============================================================================================*/
+BOOL WWKeyboardClass::Put(int key)
+{
+	int temp = (int)((Tail + 1) & 255);
+	if (temp != Head) {
+		Buffer[Tail] = (unsigned short)key;
+		Tail = temp;
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/***********************************************************************************************
+ * WWKeyboardClass::Put_Key_Message -- Build key bit flags and queue one word (Win32-compatible)*
+ *=============================================================================================*/
+BOOL WWKeyboardClass::Put_Key_Message(UINT vk_key, BOOL release, BOOL dbl)
+{
+	int bits = 0;
+	/*
+	** No GetKeyState on Atari yet; keep modifier bits clear (same as mouse path on Win32).
+	*/
+	if (vk_key != VK_LBUTTON && vk_key != VK_MBUTTON && vk_key != VK_RBUTTON) {
+		/* Placeholder for future IKBD modifier state */
+	}
+	if (!AsciiRemap[vk_key | bits]) {
+		bits |= WWKEY_VK_BIT;
+	}
+	if (release) {
+		bits |= WWKEY_RLS_BIT;
+	}
+	if (dbl) {
+		bits |= WWKEY_DBL_BIT;
+	}
+	return Put((int)(vk_key | bits));
 }
 
 /***********************************************************************************************
@@ -127,37 +175,46 @@ int WWKeyboardClass::Get(void)
 // Global keyboard object pointer
 WWKeyboardClass *_Kbd = NULL;
 
-// Key constants
-#define KN_NONE 0
-#define KA_NONE 0
-#define WWKEY_RLS_BIT 0x800
-#define WWKEY_VK_BIT 0x1000
-#define WWKEY_SHIFT_BIT 0x100
-
-// Stub: Get a key from the keyboard buffer
 int Get_Key_Num(void)
 {
-	// TODO: Implement actual keyboard input for Atari ST
-	// For now, return no key
-	return KN_NONE;
+	if (!_Kbd)
+		return KN_NONE;
+	int key = _Kbd->Get();
+	int flags = key & 0xFF00;
+	key = key & 0x00FF;
+
+	if (isupper(key)) {
+		key = tolower(key);
+		if (!(flags & WWKEY_VK_BIT)) {
+			flags |= WWKEY_SHIFT_BIT;
+		}
+	}
+	return key | flags;
 }
 
-// Stub: Check if a key is available (without removing it)
 int Check_Key(void)
 {
-	// TODO: Implement actual keyboard input for Atari ST
-	// For now, return no key (KA_NONE = 0)
-	if (!_Kbd) return KA_NONE;
-	// TODO: Call actual keyboard object method
-	return KA_NONE;
+	if (!_Kbd)
+		return KA_NONE;
+	return _Kbd->Check() & ~WWKEY_SHIFT_BIT;
 }
 
-// Stub: Check if a key is available (without removing it)
 int Check_Key_Num(void)
 {
-	// TODO: Implement actual keyboard input for Atari ST
-	// For now, return no key
-	return KN_NONE;
+	if (!_Kbd)
+		return KN_NONE;
+	int key = _Kbd->Check();
+	int flags = key & 0xFF00;
+	key = key & 0x00FF;
+
+	if (isupper(key)) {
+		key = tolower(key);
+		if (!(flags & WWKEY_VK_BIT)) {
+			flags |= WWKEY_SHIFT_BIT;
+		}
+	}
+
+	return key | flags;
 }
 
 // Stub: Convert key number to ASCII
@@ -171,10 +228,11 @@ int KN_To_KA(int key)
 	return key & 0xFF;
 }
 
-// Stub: Clear the keyboard buffer
 void Clear_KeyBuffer(void)
 {
-	// TODO: Implement keyboard buffer clearing
+	if (!_Kbd)
+		return;
+	_Kbd->Clear();
 }
 
 // Stub: Check if a key is currently down
@@ -184,11 +242,10 @@ int Key_Down(int key)
 	return 0; // Key not down
 }
 
-// Stub: Stuff a key into the keyboard buffer
 void Stuff_Key_Num(int key)
 {
-	// TODO: Implement key stuffing for Atari ST
-	(void)key; // Suppress unused parameter warning
+	if (_Kbd)
+		_Kbd->Put(key);
 }
 
 // Stub: Get a key (compatibility function)
@@ -214,8 +271,7 @@ int Get_Key(void)
  *=========================================================================*/
 void WWKeyboardClass::Clear(void)
 {
-	// TODO: Implement keyboard buffer clearing for Atari ST
-	Head = Tail = 0;
+	Head = Tail;
 }
 
 /***************************************************************************
@@ -230,12 +286,17 @@ void WWKeyboardClass::Clear(void)
  *=========================================================================*/
 int KN_To_VK(int key)
 {
-	// Extract the virtual key code from the key number
-	// VK codes are in the lower 8 bits when WWKEY_VK_BIT is set
-	if (key & WWKEY_VK_BIT) {
-		return key & 0xFF;
+	if (!_Kbd)
+		return KN_NONE;
+	if (key & WWKEY_RLS_BIT) {
+		return VK_NONE;
 	}
-	// For non-VK keys, return 0 or the key itself
-	return 0;
+
+	int flags = key & 0xFF00;
+	if (!(flags & WWKEY_VK_BIT)) {
+		key = _Kbd->VKRemap[key & 0x00FF] | flags;
+	}
+	key &= ~WWKEY_VK_BIT;
+	return key;
 }
 

@@ -76,8 +76,10 @@ class WWMouseClass {
 		int						CursorHeight;	// height of the mouse cursor in pixels
 
 		char						*MouseBuffer;	// pointer to background buffer in memory
-		int						MouseBuffX;		// pixel x mouse buffer was preserved at
-		int						MouseBuffY;		// pixel y mouse buffer was preserved at
+		int						MouseBuffX;		// hotspot x where MouseBuffer was last saved (Draw_Mouse only)
+		int						MouseBuffY;		// hotspot y where MouseBuffer was last saved (Draw_Mouse only)
+		int						MousePosX;		// last sampled cursor x (LINE-A / clamped); not for buffer restore
+		int						MousePosY;		// last sampled cursor y
 		int						MaxWidth;		// maximum width of mouse background buffer
 		int						MaxHeight;		// maximum height of mouse background buffer
 
@@ -100,6 +102,9 @@ class WWMouseClass {
 		int						EraseBuffHotY;	// Y position of the hidden page background
 
 		int						EraseFlags;		// Records whether mutex has been released
+
+		/** LINE-A MOUSE_BT (bits 0–1); -1 until first Process_Mouse */
+		int						LastMouseBt;
 
 		// Note: CRITICAL_SECTION and TimerHandle are Windows-specific
 		// For Atari ST, these will need platform-specific equivalents

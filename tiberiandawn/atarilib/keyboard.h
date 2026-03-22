@@ -69,6 +69,7 @@ class WWKeyboardClass
 #define	VK_NONE				  0x00
 #define	VK_LBUTTON          0x01
 #define	VK_RBUTTON          0x02
+#define	VK_MBUTTON          0x04
 #define	VK_ESCAPE           0x1B
 #define	VK_RETURN           0x0D
 #define	VK_LEFT             0x25

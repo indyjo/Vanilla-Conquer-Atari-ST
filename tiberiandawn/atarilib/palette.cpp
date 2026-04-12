@@ -3,7 +3,7 @@
  */
 
 #include "palette.h"
-#include <stdio.h>
+#include "c2p.h"
 
 /* Current palette buffer - copy of current DAC register values */
 /* Initialized to 255 (white) to match WIN32LIB behavior */
@@ -54,6 +54,8 @@ extern "C" void Set_Palette(void *palette)
 		PaletteToST[pal_idx] = (unsigned char)(brightness >> 2);
 	}
 
+	/* Rebuild c2p palette+dither tables (STDOOM-style). */
+	C2P_Rebuild_Tables_From_CurrentPalette();
 }
 
 /* Stub implementation of palette fading - matches WIN32LIB signature */

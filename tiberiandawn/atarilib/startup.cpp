@@ -42,6 +42,7 @@
 #include	<mint/osbind.h>  // For XBIOS functions: Getrez
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
 #include	"palette.h"  // For PaletteToST mapping array
+#include	"c2p.h"
 
 // Atari ST palette hardware register addresses
 // Palette registers are at $FF8240-$FF825E (16 registers, 16-bit each, 2 bytes apart)
@@ -818,48 +819,9 @@ void Render_Logical_To_ST_Screen(void)
 		SeenBuff.Unlock();
 		return;
 	}
-	
-	// LoRes mode: 320x200, 16 colors (4 bitplanes)
-	// Memory layout: word-interleaved bitplanes
-	// For each group of 16 pixels: 4 words (one per bitplane), each word is 2 bytes
-	const int screen_width = 320;
-	const int screen_height = 200;
-	const int bytes_per_line = 160;  // 20 groups × 8 bytes per group
-	const int pixels_per_group = 16;  // 16 pixels per group
-	const int bytes_per_group = 8;   // 4 words × 2 bytes per word
-	// Convert each pixel from logical screen to ST screen
-	for (int y = 0; y < screen_height; y++) {
-		unsigned char *logical_line = base_buffer + (y * seen_pitch);
-		unsigned char *st_line = st_screen + (y * bytes_per_line);
-		
-		for (int x = 0; x < screen_width; x++) {
-			// Get source color index (0-255) and map to ST color using brightness-based mapping
-			unsigned char src_color = logical_line[x];
-			unsigned char st_color = PaletteToST[src_color];
-			
-			// Calculate position in ST's interleaved bitplane format
-			int group_index = x / pixels_per_group;  // Which group of 16 pixels (0-19)
-			int bit_in_group = x % pixels_per_group;  // Which bit within the group (0-15)
-			int bit_in_word = 15 - bit_in_group;  // Bit position in word (MSB = leftmost pixel)
-			
-			// Calculate base address for this group
-			unsigned char *group_base = st_line + (group_index * bytes_per_group);
-			
-			// Each bitplane is a word (2 bytes) at offset: plane * 2
-			unsigned short *bp0_word = (unsigned short *)(group_base + 0 * 2);  // Bitplane 0 (LSB)
-			unsigned short *bp1_word = (unsigned short *)(group_base + 1 * 2);  // Bitplane 1
-			unsigned short *bp2_word = (unsigned short *)(group_base + 2 * 2);  // Bitplane 2
-			unsigned short *bp3_word = (unsigned short *)(group_base + 3 * 2);  // Bitplane 3 (MSB)
-			
-			// Set the bit in each bitplane based on the color value
-			unsigned short bit_mask = 1 << bit_in_word;
-			if (st_color & 0x01) *bp0_word |= bit_mask; else *bp0_word &= ~bit_mask;  // Bitplane 0
-			if (st_color & 0x02) *bp1_word |= bit_mask; else *bp1_word &= ~bit_mask;  // Bitplane 1
-			if (st_color & 0x04) *bp2_word |= bit_mask; else *bp2_word &= ~bit_mask;  // Bitplane 2
-			if (st_color & 0x08) *bp3_word |= bit_mask; else *bp3_word &= ~bit_mask;  // Bitplane 3
-		}
-		
-	}
+
+	/* Fast table-based c2p with 4x4 Bayer dithering + movep (8 pixels at a time). */
+	C2P_Render_Logical_To_ST_Screen((const uint8_t *)base_buffer, seen_pitch, (uint8_t *)st_screen);
 	
 	SeenBuff.Unlock();
 }

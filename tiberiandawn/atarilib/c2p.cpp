@@ -1,0 +1,163 @@
+/*
+ * c2p.cpp - Chunky-to-planar conversion for Atari ST LoRes
+ */
+
+#include "c2p.h"
+#include "palette.h"   /* CurrentPalette */
+
+/* 4x4 Bayer threshold matrix, values 0..15 */
+static const uint8_t Bayer4x4[16] = {
+	0,  8,  2, 10,
+	12, 4, 14, 6,
+	3, 11, 1,  9,
+	15, 7, 13, 5
+};
+
+/*
+** Palette+dither dependent map:
+**   index = ((y&3)<<2) | (x&3)  in [0..15]
+**   src   = 8-bit palette index
+**   value = 4-bit ST color (0..15)
+*/
+static uint8_t C2P_MapDither[16][256];
+
+/* Pair LUTs: 4 pair positions (pixels 0-1,2-3,4-5,6-7) and two-nibble index. */
+static uint32_t C2P_PairLUT[4][256];
+static int C2P_LUT_InitDone = 0;
+
+static inline uint8_t Brightness63_FromCurrentPalette(uint8_t src_idx)
+{
+	const uint8_t r = (uint8_t)(CurrentPalette[(int)src_idx * 3 + 0] & 63);
+	const uint8_t g = (uint8_t)(CurrentPalette[(int)src_idx * 3 + 1] & 63);
+	const uint8_t b = (uint8_t)(CurrentPalette[(int)src_idx * 3 + 2] & 63);
+	/* (77*r + 150*g + 29*b) >> 8 yields ~0..63 for 0..63 inputs */
+	return (uint8_t)(((77 * (int)r) + (150 * (int)g) + (29 * (int)b)) >> 8);
+}
+
+static void C2P_InitPairLUT_Once(void)
+{
+	if (C2P_LUT_InitDone)
+		return;
+
+	for (int pair = 0; pair < 4; pair++) {
+		const int bit0 = 7 - (pair * 2 + 0);
+		const int bit1 = 7 - (pair * 2 + 1);
+		const uint8_t m0 = (uint8_t)(1u << bit0);
+		const uint8_t m1 = (uint8_t)(1u << bit1);
+
+		for (int idx = 0; idx < 256; idx++) {
+			const uint8_t c0 = (uint8_t)((idx >> 4) & 0x0F);
+			const uint8_t c1 = (uint8_t)(idx & 0x0F);
+
+			uint8_t p0 = 0, p1 = 0, p2 = 0, p3 = 0;
+
+			/* pixel 0 */
+			if (c0 & 0x1) p0 |= m0;
+			if (c0 & 0x2) p1 |= m0;
+			if (c0 & 0x4) p2 |= m0;
+			if (c0 & 0x8) p3 |= m0;
+
+			/* pixel 1 */
+			if (c1 & 0x1) p0 |= m1;
+			if (c1 & 0x2) p1 |= m1;
+			if (c1 & 0x4) p2 |= m1;
+			if (c1 & 0x8) p3 |= m1;
+
+			C2P_PairLUT[pair][idx] =
+				((uint32_t)p0 << 24) |
+				((uint32_t)p1 << 16) |
+				((uint32_t)p2 <<  8) |
+				((uint32_t)p3 <<  0);
+		}
+	}
+
+	C2P_LUT_InitDone = 1;
+}
+
+extern "C" void C2P_Rebuild_Tables_From_CurrentPalette(void)
+{
+	C2P_InitPairLUT_Once();
+
+	for (int b = 0; b < 16; b++) {
+		const int thresh = (int)Bayer4x4[b]; /* 0..15 */
+		for (int src = 0; src < 256; src++) {
+			const int br = (int)Brightness63_FromCurrentPalette((uint8_t)src); /* 0..63 */
+			/*
+			** Dithered quantization to 16 levels:
+			**   value = floor((br*16 + thresh) / 64) -> 0..15
+			*/
+			int st = ((br << 4) + thresh) >> 6;
+			if (st < 0) st = 0;
+			if (st > 15) st = 15;
+			C2P_MapDither[b][src] = (uint8_t)st;
+		}
+	}
+}
+
+/* movep.l d0,(a0) writes bytes to 0,2,4,6(a0): perfect for plane bytes. */
+static inline void C2P_Movep_Store(uint8_t *dst_plane_bytes, uint32_t plane_bytes)
+{
+#if defined(__m68k__)
+	__asm__ volatile(
+		"movep.l %0,0(%1)"
+		:
+		: "d"(plane_bytes), "a"(dst_plane_bytes)
+		: "memory");
+#else
+	/* Non-m68k fallback: write the bytes explicitly with the same spacing. */
+	dst_plane_bytes[0] = (uint8_t)(plane_bytes >> 24);
+	dst_plane_bytes[2] = (uint8_t)(plane_bytes >> 16);
+	dst_plane_bytes[4] = (uint8_t)(plane_bytes >> 8);
+	dst_plane_bytes[6] = (uint8_t)(plane_bytes >> 0);
+#endif
+}
+
+extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logical_stride, uint8_t *st_screen)
+{
+	if (!logical || !st_screen || logical_stride <= 0)
+		return;
+
+	/* LoRes mode */
+	const int screen_width = 320;
+	const int screen_height = 200;
+	const int bytes_per_line = 160; /* 20 groups * 8 bytes */
+
+	/* Ensure tables exist even if caller forgot to rebuild. */
+	if (!C2P_LUT_InitDone) {
+		C2P_Rebuild_Tables_From_CurrentPalette();
+	}
+
+	for (int y = 0; y < screen_height; y++) {
+		const uint8_t *src = logical + y * logical_stride;
+		uint8_t *dst_line = st_screen + y * bytes_per_line;
+
+		const int yb = (y & 3) << 2;
+
+		/* Process 8 pixels at a time: two writes per 16-pixel ST group. */
+		for (int x = 0; x < screen_width; x += 8) {
+			const int group = x >> 4;              /* 0..19 */
+			const int half = (x >> 3) & 1;         /* 0 for pixels 0..7, 1 for 8..15 */
+			uint8_t *dst = dst_line + group * 8 + half;
+
+			/* Map+ dither: 8 chunky palette indices -> 8 ST 4-bit colors. */
+			const uint8_t c0 = C2P_MapDither[yb | ((x + 0) & 3)][src[x + 0]];
+			const uint8_t c1 = C2P_MapDither[yb | ((x + 1) & 3)][src[x + 1]];
+			const uint8_t c2 = C2P_MapDither[yb | ((x + 2) & 3)][src[x + 2]];
+			const uint8_t c3 = C2P_MapDither[yb | ((x + 3) & 3)][src[x + 3]];
+			const uint8_t c4 = C2P_MapDither[yb | ((x + 4) & 3)][src[x + 4]];
+			const uint8_t c5 = C2P_MapDither[yb | ((x + 5) & 3)][src[x + 5]];
+			const uint8_t c6 = C2P_MapDither[yb | ((x + 6) & 3)][src[x + 6]];
+			const uint8_t c7 = C2P_MapDither[yb | ((x + 7) & 3)][src[x + 7]];
+
+			/* Table-based pack: 4 pair LUTs -> one 32-bit register with plane bytes. */
+			const uint32_t v =
+				C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
+				C2P_PairLUT[1][(uint8_t)((c2 << 4) | c3)] |
+				C2P_PairLUT[2][(uint8_t)((c4 << 4) | c5)] |
+				C2P_PairLUT[3][(uint8_t)((c6 << 4) | c7)];
+
+			C2P_Movep_Store(dst, v);
+		}
+	}
+}
+

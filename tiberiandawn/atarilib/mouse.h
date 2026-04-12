@@ -123,4 +123,8 @@ void Set_Mouse_Cursor_From_Block(int hotx, int hoty, void *block, int frame_inde
 int Get_Mouse_X(void);
 int Get_Mouse_Y(void);
 
+/* When >= 0, mouse position reads use these (tests / external control). Default -1. */
+extern int DLLForceMouseX;
+extern int DLLForceMouseY;
+
 #endif

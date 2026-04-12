@@ -39,10 +39,14 @@
 #include	<stdio.h>
 #include	<stdlib.h>
 #include	<string.h>
-#include	<mint/osbind.h>  // For XBIOS functions: Getrez
+#include	<stdint.h>
+#include	<mint/osbind.h>  // For XBIOS functions: Getrez, Cursconf
+#include	<mint/ostruct.h> // CURS_HIDE, CURS_SHOW
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
 #include	"palette.h"  // For PaletteToST mapping array
 #include	"c2p.h"
+#include	"gbuffer.h"  // GBC_ST_PLANAR_LORES, Uses_ST_LoRes_Planar_Layout
+#include	"misc.h"     // Wait_Vert_Blank
 
 // Atari ST palette hardware register addresses
 // Palette registers are at $FF8240-$FF825E (16 registers, 16-bit each, 2 bytes apart)
@@ -230,9 +234,31 @@ int main(int argc, char *argv[])
 
 			/*
 			** Initialize video buffers
+			** ST LoRes: two 32KiB planar pages for draw + Setscreen page flip (320x200 only).
+			** Other resolutions keep linear 8bpp + per-frame C2P fallback.
 			*/
-			VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
-			HiddenPage.Init (ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
+			if (ScreenWidth == 320 && ScreenHeight == 200) {
+				/*
+				 * ST shifter uses a 256-byte-aligned video base (low 8 bits ignored). Allocate
+				 * extra slack and align so Setscreen(Physbase) matches CPU writes to this buffer.
+				 * (STE byte-precise base via XBIOS is possible later; alignment fixes all STs.)
+				 */
+				static unsigned char *st_plane_alloc = NULL;
+				static unsigned char *st_dual_plane = NULL;
+				if (!st_plane_alloc) {
+					st_plane_alloc = new unsigned char[32768 * 2 + 256];
+					uintptr_t raw = (uintptr_t)st_plane_alloc;
+					st_dual_plane = (unsigned char *)((raw + 255u) & ~(uintptr_t)255u);
+				}
+				VisiblePage.Init(320, 200, st_dual_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+				HiddenPage.Init(320, 200, st_dual_plane + 32768, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+				VisiblePage.Clear(0);
+				HiddenPage.Clear(0);
+				Setscreen((long)VisiblePage.Get_Buffer(), (long)VisiblePage.Get_Buffer(), -1);
+			} else {
+				VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
+				HiddenPage.Init (ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
+			}
 
 			if (VisiblePage.Get_Height() == 480){
 				SeenBuff.Attach(&VisiblePage,0, 40, ScreenWidth, 400);
@@ -385,6 +411,8 @@ void Prog_End(const char *why, bool fatal)
 	
 	// Restore original resolution before cleanup
 	Restore_Original_Resolution();
+
+	Cursconf(CURS_SHOW, 0);
 
 	if (Palette){
 		printf("C&C - Deleting palette object.\n");
@@ -712,6 +740,9 @@ BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel)
 	
 	// Initialize greyscale palette
 	Init_Greyscale_Palette();
+
+	/* Hide GEM/VDI hardware mouse; game uses WWMouseClass software cursor on SeenBuff. */
+	Cursconf(CURS_HIDE, 0);
 	
 	return TRUE;
 }
@@ -795,6 +826,28 @@ void Window_Show_Mouse(void)
  *=============================================================================================*/
 void Render_Logical_To_ST_Screen(void)
 {
+	/*
+	** Planar 320x200: present by Setscreen + swap off-screen draw page (no full-frame C2P).
+	** Other modes: chunky 8bpp -> Physbase via C2P.
+	*/
+	if (VisiblePage.Uses_ST_LoRes_Planar_Layout()) {
+		if (!SeenBuff.Lock()) {
+			return;
+		}
+		Wait_Vert_Blank();
+		/*
+		 * Show the Visible page only. Blit_Hid_Page_To_Seen_Buff() copies Hidden -> Visible;
+		 * SeenBuff is attached to VisiblePage, so the mouse and UI must stay on the same
+		 * backing store that Physbase points at. Swapping Visible/Hidden buffer pointers here
+		 * would desync Setscreen from SeenBuff and produce wrong or duplicated halves of the
+		 * framebuffer.
+		 */
+		unsigned char *drawbuf = (unsigned char *)VisiblePage.Get_Buffer();
+		Setscreen((long)drawbuf, (long)drawbuf, -1);
+		SeenBuff.Unlock();
+		return;
+	}
+
 	// Draw_Caption and other drawing functions render to SeenBuff (via Set_Logic_Page)
 	// SeenBuff is a viewport attached to VisiblePage, so the actual buffer is in VisiblePage
 	// We should read from VisiblePage's buffer, accounting for SeenBuff's viewport position

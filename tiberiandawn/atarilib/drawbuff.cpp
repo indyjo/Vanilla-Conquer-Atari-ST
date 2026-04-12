@@ -7,11 +7,47 @@
 #include "drawbuff.h"
 #include "gbuffer.h"
 #include "font.h"
+#include "c2p.h"
 #include <string.h>  // For memset
 #include <stdio.h>  // For printf
 
-/* Effective row stride: buffers with Pitch==0 use Width as stride (Atari convention). */
+/* Delegates to GraphicBufferClass::Uses_ST_LoRes_Planar_Layout (see gbuffer.cpp). */
+static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb)
+{
+	return gb && gb->Uses_ST_LoRes_Planar_Layout();
+}
+
+static inline BOOL VP_Is_Planar(GraphicViewPortClass *vp)
+{
+	if (!vp)
+		return FALSE;
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	return gb && GB_Uses_ST_Planar_Surface(gb);
+}
+
+/* True when vp is the embedded GraphicViewPort part of a GraphicBufferClass (same object). */
+static inline BOOL VP_Is_Root_Graphic_Buffer(GraphicViewPortClass *vp)
+{
+	if (!vp)
+		return FALSE;
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	return gb != NULL && (void *)vp == (void *)gb;
+}
+
+/*
+ * Row stride in bytes for indexing src_base[y*stride + x]:
+ * - Planar ST: fixed 160 bytes/line (must not use Width+Pitch — Pitch is 160 for planar too).
+ * - Root GraphicBufferClass (linear): Init stores Pitch as padding after Width (stride = Width+Pitch+XAdd).
+ * - Attached viewports: Pitch+XAdd holds the backing buffer's bytes-per-row (see Attach in gbuffer.cpp).
+ */
 static inline int Get_Row_Stride(GraphicViewPortClass *vp) {
+	if (!vp)
+		return 0;
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	if (gb && GB_Uses_ST_Planar_Surface(gb))
+		return ST_PLANAR_BYTES_PER_LINE;
+	if (VP_Is_Root_Graphic_Buffer(vp))
+		return vp->Get_Width() + vp->Get_Pitch() + vp->Get_XAdd();
 	int s = vp->Get_Pitch() + vp->Get_XAdd();
 	return (s != 0) ? s : vp->Get_Width();
 }
@@ -97,7 +133,16 @@ extern "C" void Buffer_Put_Pixel(void *thisptr, int x, int y, unsigned char colo
 	// Verify bounds
 	if (x < 0 || x >= vp->Get_Width()) return;
 	if (y < 0 || y >= vp->Get_Height()) return;
-	
+
+	if (VP_Is_Planar(vp)) {
+		uint8_t *root = (uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		const int ax = vp->Get_XPos() + x;
+		const int ay = vp->Get_YPos() + y;
+		const unsigned char c4 = C2P_Map8ToPlanar4(ax, ay, (unsigned char)color);
+		ST_Planar_PutPixel(root, ax, ay, c4);
+		return;
+	}
+
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
 	if (!viewport_base) return;
@@ -132,6 +177,16 @@ extern "C" void Fat_Put_Pixel(int x, int y, int color, int siz, GraphicViewPortC
 	// Verify bounds
 	if (y < 0 || y >= gpage.Get_Height()) return;
 	if (x < 0 || x >= gpage.Get_Width()) return;
+
+	if (VP_Is_Planar(&gpage)) {
+		unsigned char c4 = (unsigned char)(color & 15);
+		for (int row = 0; row < siz && (y + row) < gpage.Get_Height(); row++) {
+			for (int col = 0; col < siz && (x + col) < gpage.Get_Width(); col++) {
+				Buffer_Put_Pixel(&gpage, x + col, y + row, c4);
+			}
+		}
+		return;
+	}
 	
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)gpage.Get_Offset();
@@ -171,6 +226,11 @@ extern "C" int Buffer_Get_Pixel(void *thisptr, int x, int y)
 	// Verify bounds
 	if (x < 0 || x >= vp->Get_Width()) return 0;
 	if (y < 0 || y >= vp->Get_Height()) return 0;
+
+	if (VP_Is_Planar(vp)) {
+		const uint8_t *root = (const uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		return (int)ST_Planar_GetPixel(root, vp->Get_XPos() + x, vp->Get_YPos() + y);
+	}
 	
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
@@ -200,6 +260,27 @@ extern "C" void Buffer_Clear(void *thisptr, unsigned char color)
 	int height = vp->Get_Height();
 	if (width <= 0 || height <= 0) return;
 	
+	if (VP_Is_Planar(vp)) {
+		GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+		uint8_t *root = (uint8_t *)gb->Get_Buffer();
+		unsigned char c4 = (unsigned char)(color & 15);
+		/*
+		 * Full-screen clear: use same movep/LUT path as C2P (solid ST nibble). Per-pixel PutPixel
+		 * works but is slow; sub-rect clears still use PutPixel.
+		 */
+		if (vp->Get_XPos() == 0 && vp->Get_YPos() == 0
+		    && width == ST_PLANAR_WIDTH && height == ST_PLANAR_HEIGHT) {
+			ST_Planar_Clear(root, c4);
+			return;
+		}
+		for (int row = 0; row < height; row++) {
+			for (int col = 0; col < width; col++) {
+				ST_Planar_PutPixel(root, vp->Get_XPos() + col, vp->Get_YPos() + row, c4);
+			}
+		}
+		return;
+	}
+
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
 	if (!viewport_base) return;
@@ -241,16 +322,33 @@ extern "C" long Buffer_To_Buffer(void *thisptr, int x, int y, int w, int h, void
 /*=========================================================================*/
 /* Buffer_To_Page -- Copies linear buffer to page/viewport                 */
 /*   Buffer is row-major, w bytes per row, h rows.                         */
+/*   ST planar: each byte is an ST display nibble 0..15 (same as           */
+/*   Buffer_From_Page / ST_Planar_GetPixel). Do not run C2P dither here — */
+/*   that path is for 8-bit palette indices (see Buffer_Frame_To_Page).    */
 /*=========================================================================*/
 extern "C" long Buffer_To_Page(int x, int y, int w, int h, void *Buffer, void *view)
 {
 	if (!Buffer || !view || w <= 0 || h <= 0) return 0;
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)view;
-	unsigned char *base = (unsigned char *)vp->Get_Offset();
-	if (!base) return 0;
 	int vpw = vp->Get_Width();
 	int vph = vp->Get_Height();
 	if (x + w > vpw || y + h > vph || x < 0 || y < 0) return 0;
+
+	if (VP_Is_Planar(vp)) {
+		uint8_t *root = (uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		const int ax0 = vp->Get_XPos() + x;
+		const int ay0 = vp->Get_YPos() + y;
+		const unsigned char *src = (const unsigned char *)Buffer;
+		for (int row = 0; row < h; row++) {
+			for (int col = 0; col < w; col++) {
+				ST_Planar_PutPixel(root, ax0 + col, ay0 + row, src[row * w + col]);
+			}
+		}
+		return (long)(w * h);
+	}
+
+	unsigned char *base = (unsigned char *)vp->Get_Offset();
+	if (!base) return 0;
 	int stride = Get_Row_Stride(vp);
 	const unsigned char *src = (const unsigned char *)Buffer;
 	for (int row = 0; row < h; row++) {
@@ -264,16 +362,30 @@ extern "C" long Buffer_To_Page(int x, int y, int w, int h, void *Buffer, void *v
 /*=========================================================================*/
 /* Buffer_From_Page -- Copies page/viewport rect to linear buffer           */
 /*   Buffer must hold at least w*h bytes (row-major).                       */
+/*   ST planar: each byte is ST display nibble 0..15 (ST_Planar_GetPixel).  */
 /*=========================================================================*/
 extern "C" long Buffer_From_Page(int x, int y, int w, int h, void *Buffer, void *view)
 {
 	if (!Buffer || !view || w <= 0 || h <= 0) return 0;
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)view;
-	unsigned char *base = (unsigned char *)vp->Get_Offset();
-	if (!base) return 0;
 	int vpw = vp->Get_Width();
 	int vph = vp->Get_Height();
 	if (x + w > vpw || y + h > vph || x < 0 || y < 0) return 0;
+
+	if (VP_Is_Planar(vp)) {
+		const uint8_t *root = (const uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		unsigned char *dest = (unsigned char *)Buffer;
+		for (int row = 0; row < h; row++) {
+			for (int col = 0; col < w; col++) {
+				dest[row * w + col] = ST_Planar_GetPixel(root,
+					vp->Get_XPos() + x + col, vp->Get_YPos() + y + row);
+			}
+		}
+		return (long)(w * h);
+	}
+
+	unsigned char *base = (unsigned char *)vp->Get_Offset();
+	if (!base) return 0;
 	int stride = Get_Row_Stride(vp);
 	unsigned char *dest = (unsigned char *)Buffer;
 	for (int row = 0; row < h; row++) {
@@ -300,40 +412,76 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 	GraphicBufferClass *dest_gb = dest_vp->Get_Graphic_Buffer();
 	if (!src_gb || !dest_gb) return FALSE;
 	
-	// Get viewport base pointers (Get_Offset returns pointer value cast to long)
 	unsigned char *src_base = (unsigned char *)src_vp->Get_Offset();
 	unsigned char *dest_base = (unsigned char *)dest_vp->Get_Offset();
-	if (!src_base || !dest_base) return FALSE;
+	if (!src_gb->Get_Buffer() || !dest_gb->Get_Buffer()) return FALSE;
 	
 	int src_stride = Get_Row_Stride(src_vp);
 	int dest_stride = Get_Row_Stride(dest_vp);
-	
-	// Calculate source and destination starting pointers
-	unsigned char *src_ptr = src_base + x_pixel + y_pixel * src_stride;
-	unsigned char *dest_ptr = dest_base + dx_pixel + dy_pixel * dest_stride;
-	
-	// Perform the blit
-	if (trans) {
-		// Transparent blit: skip pixels with value 0
-		for (int y = 0; y < pixel_height; y++) {
-			for (int x = 0; x < pixel_width; x++) {
-				unsigned char pixel = src_ptr[x];
-				if (pixel != 0) {
-					dest_ptr[x] = pixel;
+	const int src_planar = VP_Is_Planar(src_vp) ? 1 : 0;
+	const int dst_planar = VP_Is_Planar(dest_vp) ? 1 : 0;
+
+	if (!src_planar && !dst_planar) {
+		unsigned char *src_ptr = src_base + x_pixel + y_pixel * src_stride;
+		unsigned char *dest_ptr = dest_base + dx_pixel + dy_pixel * dest_stride;
+		if (trans) {
+			for (int y = 0; y < pixel_height; y++) {
+				for (int x = 0; x < pixel_width; x++) {
+					unsigned char pixel = src_ptr[x];
+					if (pixel != 0)
+						dest_ptr[x] = pixel;
 				}
+				src_ptr += src_stride;
+				dest_ptr += dest_stride;
 			}
-			src_ptr += src_stride;
-			dest_ptr += dest_stride;
+		} else {
+			for (int y = 0; y < pixel_height; y++) {
+				memcpy(dest_ptr, src_ptr, pixel_width);
+				src_ptr += src_stride;
+				dest_ptr += dest_stride;
+			}
 		}
-	} else {
-		// Opaque blit: copy all pixels
-		for (int y = 0; y < pixel_height; y++) {
-			memcpy(dest_ptr, src_ptr, pixel_width);
-			src_ptr += src_stride;
-			dest_ptr += dest_stride;
+		return TRUE;
+	}
+
+	const uint8_t *src_root = GB_Uses_ST_Planar_Surface(src_gb) ? (const uint8_t *)src_gb->Get_Buffer() : NULL;
+	uint8_t *dst_root = GB_Uses_ST_Planar_Surface(dest_gb) ? (uint8_t *)dest_gb->Get_Buffer() : NULL;
+
+	/* Full-screen planar -> planar: byte-identical copy (same layout as C2P / Setscreen). */
+	if (src_planar && dst_planar && !trans
+		&& pixel_width == ST_PLANAR_WIDTH && pixel_height == ST_PLANAR_HEIGHT
+		&& x_pixel == 0 && y_pixel == 0 && dx_pixel == 0 && dy_pixel == 0
+		&& src_vp->Get_XPos() == 0 && src_vp->Get_YPos() == 0
+		&& dest_vp->Get_XPos() == 0 && dest_vp->Get_YPos() == 0
+		&& src_root && dst_root) {
+		memcpy(dst_root, src_root, (size_t)ST_PLANAR_SCREEN_BYTES);
+		return TRUE;
+	}
+
+	for (int y = 0; y < pixel_height; y++) {
+		for (int x = 0; x < pixel_width; x++) {
+			unsigned char pixel;
+			if (src_planar) {
+				pixel = ST_Planar_GetPixel(src_root,
+					src_vp->Get_XPos() + x_pixel + x,
+					src_vp->Get_YPos() + y_pixel + y);
+			} else {
+				pixel = src_base[(y_pixel + y) * src_stride + x_pixel + x];
+			}
+			if (trans && pixel == 0)
+				continue;
+			if (dst_planar) {
+				const int ax = dest_vp->Get_XPos() + dx_pixel + x;
+				const int ay = dest_vp->Get_YPos() + dy_pixel + y;
+				unsigned char c4 = (unsigned char)(src_planar ? (pixel & 15)
+					: C2P_Map8ToPlanar4(ax, ay, pixel));
+				ST_Planar_PutPixel(dst_root, ax, ay, c4);
+			} else {
+				dest_base[(dy_pixel + y) * dest_stride + dx_pixel + x] = pixel;
+			}
 		}
 	}
-	
+
 	return TRUE;
 }
 
@@ -355,11 +503,15 @@ extern "C" BOOL Linear_Scale_To_Linear(void *src, void *dest, int src_x, int src
 	
 	unsigned char *src_base = (unsigned char *)src_vp->Get_Offset();
 	unsigned char *dest_base = (unsigned char *)dest_vp->Get_Offset();
-	if (!src_base || !dest_base) return FALSE;
+	if (!src_gb->Get_Buffer() || !dest_gb->Get_Buffer()) return FALSE;
 	
 	int src_stride = Get_Row_Stride(src_vp);
 	int dest_stride = Get_Row_Stride(dest_vp);
-	
+	const int src_planar = VP_Is_Planar(src_vp) ? 1 : 0;
+	const int dst_planar = VP_Is_Planar(dest_vp) ? 1 : 0;
+	const uint8_t *src_root = GB_Uses_ST_Planar_Surface(src_gb) ? (const uint8_t *)src_gb->Get_Buffer() : NULL;
+	uint8_t *dst_root = GB_Uses_ST_Planar_Surface(dest_gb) ? (uint8_t *)dest_gb->Get_Buffer() : NULL;
+
 	// Nearest-neighbor scale: for each dest pixel, sample source
 	for (int dy = 0; dy < dst_h; dy++) {
 		int sy = (dst_h > 1 && src_h > 1) ? (dy * (src_h - 1) / (dst_h - 1)) : 0;
@@ -368,9 +520,25 @@ extern "C" BOOL Linear_Scale_To_Linear(void *src, void *dest, int src_x, int src
 		
 		for (int dx = 0; dx < dst_w; dx++) {
 			int sx = (dst_w > 1 && src_w > 1) ? (dx * (src_w - 1) / (dst_w - 1)) : 0;
-			unsigned char pixel = src_row[sx];
-			if (!trans || pixel != 0) {
-				dest_row[dx] = (remap ? remap[(unsigned char)pixel] : pixel);
+			unsigned char pixel;
+			if (src_planar) {
+				pixel = ST_Planar_GetPixel(src_root,
+					src_vp->Get_XPos() + src_x + sx,
+					src_vp->Get_YPos() + src_y + sy);
+			} else {
+				pixel = src_row[sx];
+			}
+			if (trans && pixel == 0)
+				continue;
+			unsigned char out = (remap ? (unsigned char)remap[(unsigned char)pixel] : pixel);
+			if (dst_planar) {
+				const int ax = dest_vp->Get_XPos() + dst_x + dx;
+				const int ay = dest_vp->Get_YPos() + dst_y + dy;
+				unsigned char c4 = (unsigned char)(src_planar ? (out & 15)
+					: C2P_Map8ToPlanar4(ax, ay, out));
+				ST_Planar_PutPixel(dst_root, ax, ay, c4);
+			} else {
+				dest_row[dx] = out;
 			}
 		}
 	}
@@ -395,9 +563,8 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 	// Calculate buffer width (pitch + xadd)
 	int bufferwidth = Get_Row_Stride(vp);
 	
-	// Get viewport base pointer
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
-	if (!viewport_base) return 0;
+	if (!VP_Is_Planar(vp) && !viewport_base) return 0;
 	
 	// Set up color translation table
 	ColorXlat[0] = (unsigned char)bcolor;
@@ -427,9 +594,15 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 	int cur_y = y;
 	int original_x = x;
 	
-	// Calculate starting position in buffer
-	unsigned char *curline = viewport_base + cur_y * bufferwidth;
-	unsigned char *startdraw = curline + cur_x;
+	// Calculate starting position in buffer (linear layout only)
+	unsigned char *curline = NULL;
+	unsigned char *startdraw = NULL;
+	if (!VP_Is_Planar(vp)) {
+		curline = viewport_base + cur_y * bufferwidth;
+		startdraw = curline + cur_x;
+	} else {
+		startdraw = (unsigned char *)vp->Get_Graphic_Buffer()->Get_Buffer();
+	}
 	
 	// Process each character
 	const char *string = str;
@@ -441,7 +614,8 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 			cur_y += maxheight + FontYSpacing;
 			if (cur_y + maxheight > (unsigned)vpheight) break;
 			
-			curline = viewport_base + cur_y * bufferwidth;
+			if (!VP_Is_Planar(vp))
+				curline = viewport_base + cur_y * bufferwidth;
 			
 			// CR returns to original x, LF goes to x=0
 			if (ch == 13) {
@@ -450,7 +624,8 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 				cur_x = 0;
 			}
 			
-			startdraw = curline + cur_x;
+			if (!VP_Is_Planar(vp))
+				startdraw = curline + cur_x;
 			continue;
 		}
 		
@@ -465,9 +640,11 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 			cur_y += maxheight + FontYSpacing;
 			if (cur_y + maxheight > (unsigned)vpheight) break;
 			
-			curline = viewport_base + cur_y * bufferwidth;
+			if (!VP_Is_Planar(vp))
+				curline = viewport_base + cur_y * bufferwidth;
 			cur_x = original_x;
-			startdraw = curline + cur_x;
+			if (!VP_Is_Planar(vp))
+				startdraw = curline + cur_x;
 			continue;
 		}
 		
@@ -481,9 +658,6 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 		unsigned char charheight = charheight_ptr[1];
 		unsigned char bottomblank = maxheight - (topblank + charheight);
 		
-		// Calculate next draw position for next character
-		int nextdraw = bufferwidth - charwidth;
-		
 		unsigned char *draw_ptr = startdraw;
 		
 		// Draw top blank area
@@ -491,17 +665,22 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 			unsigned char bgcolor = ColorXlat[0];
 			if (bgcolor != 0) {  // Not transparent
 				for (unsigned char row = 0; row < topblank; row++) {
-					unsigned char *row_ptr = draw_ptr;
 					for (unsigned char col = 0; col < charwidth; col++) {
 						if (cur_x + col < (unsigned)vpwidth && cur_y + row < (unsigned)vpheight) {
-							row_ptr[col] = bgcolor;
+							if (VP_Is_Planar(vp))
+								Buffer_Put_Pixel(vp, cur_x + col, cur_y + row, bgcolor);
+							else {
+								unsigned char *row_ptr = draw_ptr;
+								row_ptr[col] = bgcolor;
+							}
 						}
 					}
-					draw_ptr += bufferwidth;
+					if (!VP_Is_Planar(vp))
+						draw_ptr += bufferwidth;
 				}
 			} else {
-				// Transparent - just advance pointer
-				draw_ptr += topblank * bufferwidth;
+				if (!VP_Is_Planar(vp))
+					draw_ptr += topblank * bufferwidth;
 			}
 		}
 		
@@ -509,7 +688,6 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 		if (charheight > 0) {
 			const unsigned char *data_ptr = chardata;
 			for (unsigned char row = 0; row < charheight; row++) {
-				unsigned char *row_ptr = draw_ptr;
 				unsigned char col = 0;
 				unsigned char remaining_width = charwidth;
 				
@@ -522,7 +700,12 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 					unsigned char color = ColorXlat[pixel];
 					if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + row < (unsigned)vpheight) {
 						if (color != 0) {  // Not transparent
-							row_ptr[col] = color;
+							if (VP_Is_Planar(vp))
+								Buffer_Put_Pixel(vp, cur_x + col, cur_y + topblank + row, color);
+							else {
+								unsigned char *row_ptr = draw_ptr;
+								row_ptr[col] = color;
+							}
 						}
 					}
 					col++;
@@ -534,7 +717,12 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 						color = ColorXlat[pixel];
 						if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + row < (unsigned)vpheight) {
 							if (color != 0) {  // Not transparent
-								row_ptr[col] = color;
+								if (VP_Is_Planar(vp))
+									Buffer_Put_Pixel(vp, cur_x + col, cur_y + topblank + row, color);
+								else {
+									unsigned char *row_ptr = draw_ptr;
+									row_ptr[col] = color;
+								}
 							}
 						}
 						col++;
@@ -542,7 +730,8 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 					}
 				}
 				
-				draw_ptr += bufferwidth;
+				if (!VP_Is_Planar(vp))
+					draw_ptr += bufferwidth;
 			}
 		}
 		
@@ -551,26 +740,32 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 			unsigned char bgcolor = ColorXlat[0];
 			if (bgcolor != 0) {  // Not transparent
 				for (unsigned char row = 0; row < bottomblank; row++) {
-					unsigned char *row_ptr = draw_ptr;
 					for (unsigned char col = 0; col < charwidth; col++) {
 						if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + charheight + row < (unsigned)vpheight) {
-							row_ptr[col] = bgcolor;
+							if (VP_Is_Planar(vp))
+								Buffer_Put_Pixel(vp, cur_x + col, cur_y + topblank + charheight + row, bgcolor);
+							else {
+								unsigned char *row_ptr = draw_ptr;
+								row_ptr[col] = bgcolor;
+							}
 						}
 					}
-					draw_ptr += bufferwidth;
+					if (!VP_Is_Planar(vp))
+						draw_ptr += bufferwidth;
 				}
 			}
 		}
 		
 		// Update position for next character
 		cur_x = next_x;
-		// Recalculate curline in case we're still on the same line (it shouldn't have changed)
-		curline = viewport_base + cur_y * bufferwidth;
-		startdraw = curline + cur_x;
+		if (!VP_Is_Planar(vp)) {
+			curline = viewport_base + cur_y * bufferwidth;
+			startdraw = curline + cur_x;
+		}
 	}
 	
 	// Return pointer to next draw position (cast to long for compatibility)
-	return (LONG)(startdraw);
+	return (LONG)(startdraw ? startdraw : viewport_base);
 }
 
 /*=========================================================================*/
@@ -597,13 +792,6 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (dx >= width) dx = width - 1;
 	if (dy >= height) dy = height - 1;
 	
-	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
-	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
-	if (!viewport_base) return;
-	
-	// Calculate row stride (pitch + xadd)
-	int row_stride = Get_Row_Stride(vp);
-	
 	// Simple line drawing using Bresenham's algorithm
 	int x0 = sx, y0 = sy, x1 = dx, y1 = dy;
 	int dx_abs = (x1 > x0) ? (x1 - x0) : (x0 - x1);
@@ -618,8 +806,7 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 		int error = dx_abs / 2;
 		for (int i = 0; i <= dx_abs; i++) {
 			if (x >= 0 && x < width && y >= 0 && y < height) {
-				unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
-				*pixel_ptr = color;
+				Buffer_Put_Pixel(vp, x, y, color);
 			}
 			error -= dy_abs;
 			if (error < 0) {
@@ -633,8 +820,7 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 		int error = dy_abs / 2;
 		for (int i = 0; i <= dy_abs; i++) {
 			if (x >= 0 && x < width && y >= 0 && y < height) {
-				unsigned char *pixel_ptr = viewport_base + x + y * row_stride;
-				*pixel_ptr = color;
+				Buffer_Put_Pixel(vp, x, y, color);
 			}
 			error -= dx_abs;
 			if (error < 0) {
@@ -666,6 +852,20 @@ extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (sx > dx || sy > dy) return;
 	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
 	
+	if (VP_Is_Planar(vp)) {
+		/* Full 8-bit palette index — Buffer_Put_Pixel runs C2P_Map8ToPlanar4 (do not mask to 4). */
+		unsigned char palidx = (unsigned char)color;
+		for (int xx = sx; xx <= dx; xx++) {
+			Buffer_Put_Pixel(vp, xx, sy, palidx);
+			Buffer_Put_Pixel(vp, xx, dy, palidx);
+		}
+		for (int yy = sy; yy <= dy; yy++) {
+			Buffer_Put_Pixel(vp, sx, yy, palidx);
+			Buffer_Put_Pixel(vp, dx, yy, palidx);
+		}
+		return;
+	}
+
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
 	
@@ -716,6 +916,17 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (sx > dx || sy > dy) return;
 	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
 	
+	if (VP_Is_Planar(vp)) {
+		/* Full 8-bit palette index — Buffer_Put_Pixel runs C2P_Map8ToPlanar4 (do not mask to 4). */
+		unsigned char palidx = (unsigned char)color;
+		for (int row = sy; row <= dy; row++) {
+			for (int col = sx; col <= dx; col++) {
+				Buffer_Put_Pixel(vp, col, row, palidx);
+			}
+		}
+		return;
+	}
+
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
 	if (!viewport_base) return;
@@ -762,10 +973,13 @@ extern "C" VOID Buffer_Fill_Quad(void *thisptr, VOID *span_buff, int x0, int y0,
 /*=========================================================================*/
 extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap)
 {
-	if (!thisptr) return;
-	
-	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Draw_Stamp(icondata, icon, x_pixel, y_pixel, remap);
+	(void)thisptr;
+	(void)icondata;
+	(void)icon;
+	(void)x_pixel;
+	(void)y_pixel;
+	(void)remap;
+	/* ST port: sprites use CC_Draw_Shape / Buffer_Frame_To_Page, not this path. */
 }
 
 /*=========================================================================*/
@@ -773,9 +987,11 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 /*=========================================================================*/
 extern "C" void Buffer_Draw_Stamp_Clip(void const *thisptr, void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap, int, int, int, int)
 {
-	if (!thisptr) return;
-	
-	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Draw_Stamp(icondata, icon, x_pixel, y_pixel, remap);
+	(void)thisptr;
+	(void)icondata;
+	(void)icon;
+	(void)x_pixel;
+	(void)y_pixel;
+	(void)remap;
 }
 

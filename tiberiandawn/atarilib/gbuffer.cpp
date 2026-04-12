@@ -7,6 +7,7 @@
 
 #include "gbuffer.h"
 #include "drawbuff.h"  // For Buffer_Clear, Buffer_Fill_Quad
+#include "c2p.h"
 #include <stdio.h>  // For sprintf
 
 /***************************************************************************
@@ -182,7 +183,12 @@ void GraphicViewPortClass::Attach(GraphicBufferClass *gbuffer, int x, int y, int
 	/*======================================================================*/
 	/* Get a pointer to the top left edge of the buffer.							*/
 	/*======================================================================*/
- 	Offset 		= gbuffer->Get_Offset() + ((gbuffer->Get_Width()+gbuffer->Get_Pitch()) * y) + x;
+	if (gbuffer->Uses_ST_LoRes_Planar_Layout()) {
+		/* Planar: Offset is buffer root; all pixels use (XPos+x, YPos+y) in drawbuff. */
+		Offset = gbuffer->Get_Offset();
+	} else {
+		Offset = gbuffer->Get_Offset() + ((gbuffer->Get_Width()+gbuffer->Get_Pitch()) * y) + x;
+	}
 
 	/*======================================================================*/
 	/* Copy over all of the variables that we need to store.						*/
@@ -192,12 +198,14 @@ void GraphicViewPortClass::Attach(GraphicBufferClass *gbuffer, int x, int y, int
  	XAdd			= gbuffer->Get_Width() - w;
  	Width			= w;
  	Height		= h;
-	// On Atari, backing buffers use Pitch==0 to mean 'no padding; row stride = Width'.
-	// Viewports, however, use (Pitch + XAdd) as the per-scanline stride. If we simply
-	// copy a zero Pitch here, full-screen viewports end up with stride 0 and only the
-	// first line ever gets updated. When the backing buffer has Pitch==0, treat its
-	// logical row stride as its Width for viewport Pitch.
-	{
+	if (gbuffer->Uses_ST_LoRes_Planar_Layout()) {
+		Pitch = ST_PLANAR_BYTES_PER_LINE;
+	} else {
+		// On Atari, backing buffers use Pitch==0 to mean 'no padding; row stride = Width'.
+		// Viewports, however, use (Pitch + XAdd) as the per-scanline stride. If we simply
+		// copy a zero Pitch here, full-screen viewports end up with stride 0 and only the
+		// first line ever gets updated. When the backing buffer has Pitch==0, treat its
+		// logical row stride as its Width for viewport Pitch.
 		int buf_pitch = gbuffer->Get_Pitch();
 		Pitch = buf_pitch ? buf_pitch : gbuffer->Get_Width();
 	}
@@ -258,9 +266,11 @@ void GraphicViewPortClass::Clear(unsigned char color)
  *=========================================================================*/
 void GraphicBufferClass::Init(int w, int h, void *buffer, long size, int flags)
 {
+	VideoSurfacePtr	= NULL;
 	Size			= size;									// find size of physical buffer
 	Width			= w;										// Record width of Buffer
 	Height		= h;										// Record height of Buffer
+	SurfaceFormat	= (flags & GBC_ST_PLANAR_LORES) ? 1 : 0;
 
 	//
 	// For Atari ST, we don't have DirectDraw, so we always do normal allocation
@@ -269,18 +279,71 @@ void GraphicBufferClass::Init(int w, int h, void *buffer, long size, int flags)
 		Buffer		= (unsigned char *)buffer;		//		point to it and mark
 		Allocated	= FALSE;							//		it as user allocated
 	} else {
-		if (!Size) Size = w*h;
+		if (SurfaceFormat) {
+			if (!Size)
+				Size = 32768; /* room for 320x200 planar + alignment headroom */
+		} else {
+			if (!Size) Size = w*h;
+		}
 		Buffer		= new unsigned char[Size];		// otherwise allocate it and
 		Allocated	= TRUE;							//		mark it system alloced
 	}
 	Offset			= (long)Buffer;				// Get offset to the buffer
 	IsDirectDraw	= FALSE;
 
-	Pitch			= 0;										// No padding; row stride = Width
+	if (SurfaceFormat) {
+		Pitch = ST_PLANAR_BYTES_PER_LINE;
+	} else {
+		Pitch			= 0;								// No padding; row stride = Width
+	}
 	XAdd			= 0;										// Record XAdd of Buffer
 	XPos			= 0;										// Record XPos of Buffer
 	YPos			= 0;										// Record YPos of Buffer
 	GraphicBuff	= this;									// Get a pointer to our self
+}
+
+/***************************************************************************
+ * GBC::USES_ST_LORES_PLANAR_LAYOUT -- ST 320×200 planar surface detection   *
+ ***************************************************************************/
+BOOL GraphicBufferClass::Uses_ST_LoRes_Planar_Layout(void) const
+{
+	if (Is_ST_Planar())
+		return TRUE;
+	if (Width != ST_PLANAR_WIDTH || Height != ST_PLANAR_HEIGHT)
+		return FALSE;
+	if (Pitch != ST_PLANAR_BYTES_PER_LINE)
+		return FALSE;
+	if (Size < (long)ST_PLANAR_SCREEN_BYTES || Size > 65536L)
+		return FALSE;
+	return TRUE;
+}
+
+/***************************************************************************
+ * GBC::SET_LINEAR_ROW_PADDING_BYTES -- bytes after each row's Width pixels *
+ ***************************************************************************/
+void GraphicBufferClass::Set_Linear_Row_Padding_Bytes(int padding_after_width)
+{
+	if (Is_ST_Planar())
+		return;
+	if (padding_after_width < 0)
+		padding_after_width = 0;
+	Pitch = padding_after_width;
+}
+
+/***************************************************************************
+ * GBC::SWAP_PLANAR_BUFFER_WITH -- Swap backing memory with peer buffer     *
+ ***************************************************************************/
+void GraphicBufferClass::Swap_Planar_Buffer_With(GraphicBufferClass &other)
+{
+	if (!Is_ST_Planar() || !other.Is_ST_Planar())
+		return;
+	if (Width != other.Width || Height != other.Height || Size != other.Size)
+		return;
+	unsigned char *tmp = (unsigned char *)Buffer;
+	Buffer = other.Buffer;
+	other.Buffer = tmp;
+	Offset = (long)Buffer;
+	other.Offset = (long)other.Buffer;
 }
 
 /***************************************************************************
@@ -884,7 +947,8 @@ GraphicBufferClass::GraphicBufferClass(int w, int h, void *buffer)
  *=========================================================================*/
 GraphicBufferClass::GraphicBufferClass(int w, int h, int flags)
 {
-	Init(w, h, NULL, w * h, flags);
+	long sz = (flags & GBC_ST_PLANAR_LORES) ? 32768L : (long)(w * h);
+	Init(w, h, NULL, sz, flags);
 }
 
 /***************************************************************************
@@ -913,6 +977,8 @@ GraphicBufferClass::GraphicBufferClass(void)
 	YPos = 0;
 	GraphicBuff = this;
 	LockCount = 0;
+	SurfaceFormat = 0;
+	VideoSurfacePtr = NULL;
 }
 
 /***************************************************************************

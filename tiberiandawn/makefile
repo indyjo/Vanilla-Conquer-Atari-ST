@@ -224,7 +224,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp,) \
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp,) \
 	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)
@@ -287,7 +287,7 @@ endif
 # BUILD RULES
 #=============================================================================
 
-.PHONY: all clean cleanall help
+.PHONY: all clean cleanall help st-tests
 
 # Default target
 all: $(TARGET_EXE)
@@ -458,6 +458,8 @@ clean:
 	@rm -f $(OUTDIR)/$(PROJECT_NAME)d.exp
 	@rm -f $(OUTDIR)/cnc.tos
 	@rm -f $(OUTDIR)/cncd.tos
+	@rm -f $(OUTDIR)/cnc_st_tests.tos
+	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/title_pcx_load_st_tests.o
 
 # Clean all configurations
 cleanall:
@@ -475,6 +477,7 @@ help:
 	@echo "Targets:"
 ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  all      - Build the TOS executable (default)"
+	@echo "  st-tests - Build cnc_st_tests.tos (on-machine / interactive suite)"
 else
 	@echo "  all      - Build the DLL (default)"
 endif
@@ -500,6 +503,9 @@ endif
 	@echo "  make USE_WIN32LIB=1      - Force use of WIN32LIB"
 	@echo "  make clean               - Clean current configuration"
 	@echo "  make cleanall            - Clean everything"
+ifeq ($(PLATFORM_LIB),ATARILIB)
+	@echo "  make st-tests            - Build cnc_st_tests.tos (ST on-machine suite)"
+endif
 	@echo ""
 	@echo "Cross-Compiler:"
 	@echo "  Using: $(CROSS_PREFIX)/$(CROSS_TARGET)-*"
@@ -521,6 +527,72 @@ endif
 		echo "  - Windows libraries (winmm, ws2_32) required"; \
 	fi
 	@echo "  - Resource files require windres (may not be available)"
+
+#=============================================================================
+# Atari ST on-machine test harness (cnc_st_tests.tos — own main(), not the game)
+#=============================================================================
+ifeq ($(PLATFORM_LIB),ATARILIB)
+ST_SUITE_DIR = tests/st_suite
+ST_TEST_EXE = $(OUTDIR)/cnc_st_tests.tos
+ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o
+ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/title_pcx_load_st_tests.o \
+	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/drawrect.o \
+	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/link.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
+	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \
+	$(INTDIR)/CDFILE.o $(INTDIR)/misc.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
+	$(INTDIR)/keyboard.o
+
+st-tests: $(ST_TEST_EXE)
+	@echo "ST test suite: $(ST_TEST_EXE)"
+
+$(ST_TEST_EXE): $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) | $(OUTDIR) $(INTDIR)
+	@echo "Linking $(ST_TEST_EXE)..."
+	$(CXX) $(LDFLAGS) -o $(ST_TEST_EXE) $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) $(LIBS)
+
+$(INTDIR)/st_tests_main.o: $(ST_SUITE_DIR)/st_tests_main.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_c2p_autotests.o: $(ST_SUITE_DIR)/st_c2p_autotests.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_interactive.o: $(ST_SUITE_DIR)/st_interactive.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_pcx_minimal.o: $(ST_SUITE_DIR)/st_pcx_minimal.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_mix_minimal.o: $(ST_SUITE_DIR)/st_mix_minimal.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_text.o: $(ST_SUITE_DIR)/st_text.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_title_production.o: $(ST_SUITE_DIR)/st_title_production.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_title_menu_overlay.o: $(ST_SUITE_DIR)/st_title_menu_overlay.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_title_mouse_cursor.o: $(ST_SUITE_DIR)/st_title_mouse_cursor.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_game_link_stubs.o: $(ST_SUITE_DIR)/st_game_link_stubs.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/title_pcx_load_st_tests.o: ATARILIB/title_pcx_load.cpp | $(INTDIR)
+	@echo "Compiling $< (st-tests)..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -DCNC_ST_TEST_EXE -o $@ -c $<
+endif
 
 #=============================================================================
 # DEPENDENCIES

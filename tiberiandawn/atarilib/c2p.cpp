@@ -4,6 +4,7 @@
 
 #include "c2p.h"
 #include "palette.h"   /* CurrentPalette */
+#include <string.h>    /* memset */
 
 /* 4x4 Bayer threshold matrix, values 0..15 */
 static const uint8_t Bayer4x4[16] = {
@@ -72,6 +73,14 @@ static void C2P_InitPairLUT_Once(void)
 	}
 
 	C2P_LUT_InitDone = 1;
+}
+
+extern "C" unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char pal_idx)
+{
+	if (!C2P_LUT_InitDone)
+		C2P_Rebuild_Tables_From_CurrentPalette();
+	const int yb = (abs_y & 3) << 2;
+	return C2P_MapDither[yb | (abs_x & 3)][pal_idx];
 }
 
 extern "C" void C2P_Rebuild_Tables_From_CurrentPalette(void)
@@ -157,6 +166,101 @@ extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logi
 				C2P_PairLUT[3][(uint8_t)((c6 << 4) | c7)];
 
 			C2P_Movep_Store(dst, v);
+		}
+	}
+}
+
+static inline uint8_t *ST_ChunkPtr(uint8_t *base, int x, int y)
+{
+	return base + y * ST_PLANAR_BYTES_PER_LINE + (x >> 4) * 8 + ((x >> 3) & 1);
+}
+
+extern "C" void ST_Planar_PutPixel(uint8_t *base, int x, int y, unsigned char color4)
+{
+	if (!base || x < 0 || x >= ST_PLANAR_WIDTH || y < 0 || y >= ST_PLANAR_HEIGHT)
+		return;
+	uint8_t *p = ST_ChunkPtr(base, x, y);
+	const int bitnum = 7 - (x & 7);
+	const uint8_t mask = (uint8_t)(1u << bitnum);
+	const uint8_t c = (uint8_t)(color4 & 15);
+	for (int pl = 0; pl < 4; pl++) {
+		uint8_t *pb = p + pl * 2;
+		if (c & (uint8_t)(1u << pl))
+			*pb |= mask;
+		else
+			*pb &= (uint8_t)~mask;
+	}
+}
+
+extern "C" unsigned char ST_Planar_GetPixel(const uint8_t *base, int x, int y)
+{
+	if (!base || x < 0 || x >= ST_PLANAR_WIDTH || y < 0 || y >= ST_PLANAR_HEIGHT)
+		return 0;
+	const uint8_t *p = ST_ChunkPtr((uint8_t *)base, x, y);
+	const int bitnum = 7 - (x & 7);
+	const uint8_t mask = (uint8_t)(1u << bitnum);
+	uint8_t c = 0;
+	for (int pl = 0; pl < 4; pl++) {
+		if (p[pl * 2] & mask)
+			c |= (uint8_t)(1u << pl);
+	}
+	return c;
+}
+
+extern "C" void ST_Planar_Clear(uint8_t *base, unsigned char color4)
+{
+	if (!base)
+		return;
+	const uint8_t c = (uint8_t)(color4 & 15);
+	if (c == 0) {
+		memset(base, 0, (size_t)ST_PLANAR_SCREEN_BYTES);
+		return;
+	}
+	C2P_InitPairLUT_Once();
+	const uint8_t pair_idx = (uint8_t)((c << 4) | c);
+	const uint32_t v =
+		C2P_PairLUT[0][pair_idx] |
+		C2P_PairLUT[1][pair_idx] |
+		C2P_PairLUT[2][pair_idx] |
+		C2P_PairLUT[3][pair_idx];
+	for (int y = 0; y < ST_PLANAR_HEIGHT; y++) {
+		uint8_t *dst_line = base + y * ST_PLANAR_BYTES_PER_LINE;
+		for (int x = 0; x < ST_PLANAR_WIDTH; x += 8) {
+			const int group = x >> 4;
+			const int half = (x >> 3) & 1;
+			uint8_t *dst = dst_line + group * 8 + half;
+			C2P_Movep_Store(dst, v);
+		}
+	}
+}
+
+extern "C" void C2P_Blit_Linear8_To_Planar(
+	uint8_t *planar_base,
+	int dst_x, int dst_y,
+	const uint8_t *src, int w, int h, int src_stride,
+	int trans)
+{
+	if (!planar_base || !src || w <= 0 || h <= 0 || src_stride <= 0)
+		return;
+	if (!C2P_LUT_InitDone)
+		C2P_Rebuild_Tables_From_CurrentPalette();
+
+	for (int yy = 0; yy < h; yy++) {
+		const int py = dst_y + yy;
+		if (py < 0 || py >= ST_PLANAR_HEIGHT)
+			continue;
+		const int yb = (py & 3) << 2;
+		const uint8_t *srcrow = src + (size_t)yy * (size_t)src_stride;
+
+		for (int xx = 0; xx < w; xx++) {
+			const int px = dst_x + xx;
+			if (px < 0 || px >= ST_PLANAR_WIDTH)
+				continue;
+			const uint8_t sp = srcrow[xx];
+			if (trans && sp == 0)
+				continue;
+			const uint8_t c4 = C2P_MapDither[yb | (px & 3)][sp];
+			ST_Planar_PutPixel(planar_base, px, py, c4);
 		}
 	}
 }

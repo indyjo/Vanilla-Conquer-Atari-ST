@@ -792,9 +792,11 @@ int Main_Menu(unsigned int timeout)
         Call_Back();
 
         /*
-        **	Draw mouse cursor on SeenBuff then refresh ST physical screen.
+        **	Draw mouse on SeenBuff, then refresh ST screen. Skip while `display` is true:
+        **	the first loop iteration runs before the title is blitted to Seen; drawing then
+        **	would save the wrong backdrop under the cursor and restore garbage over the title.
         */
-        if (WWMouse) {
+        if (!display && WWMouse) {
             WWMouse->Draw_Mouse(&SeenBuff);
         }
         Render_Logical_To_ST_Screen();

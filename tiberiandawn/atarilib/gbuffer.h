@@ -177,10 +177,27 @@ class GraphicBufferClass : public GraphicViewPortClass, public BufferClass {
 		BOOL Lock(void);
 		BOOL Unlock(void);
 
+		/* ST LoRes planar: swap backing store with peer (same dimensions). */
+		void Swap_Planar_Buffer_With(GraphicBufferClass &other);
+
+		int Get_Surface_Format(void) const { return SurfaceFormat; }
+		static BOOL Is_ST_Planar_Format(int fmt) { return fmt == 1; }
+		BOOL Is_ST_Planar(void) const { return SurfaceFormat == 1; }
+		/*
+		 * True if this buffer is (or matches) ST 320×200 LoRes planar memory: either SurfaceFormat
+		 * planar, or same width/height/pitch/size as Init(..., GBC_ST_PLANAR_LORES) even if the
+		 * flag was lost. Used so we never run chunky→planar C2P on already-planar draw buffers.
+		 */
+		BOOL Uses_ST_LoRes_Planar_Layout(void) const;
+
+		/* Linear buffers only: set bytes of padding after each Width-wide row (row stride = Width + padding). */
+		void Set_Linear_Row_Padding_Bytes(int padding_after_width);
+
 		// Get_Buffer is inherited from BufferClass
 
 	protected:
 		void	*VideoSurfacePtr;		//Pointer to the related direct draw surface (stub)
+		int		SurfaceFormat;			/* 0 = linear 8bpp, 1 = ST LoRes planar */
 
 };
 
@@ -235,6 +252,8 @@ enum GBC_Enum {
 	GBC_NONE				= 0,
 	GBC_VIDEOMEM		= 1,
 	GBC_VISIBLE			= 2,
+	/* 320x200 ST interleaved bitplanes, 160 bytes/line, 32000 bytes (allocate 32768). */
+	GBC_ST_PLANAR_LORES	= 4,
 };
 
 /*=========================================================================*/

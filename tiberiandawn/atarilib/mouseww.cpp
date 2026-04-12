@@ -80,6 +80,10 @@ WWMouseClass::~WWMouseClass()
 {
 	MouseUpdate++;
 
+	if (_Mouse == this) {
+		_Mouse = NULL;
+	}
+
 	if (MouseCursor) delete[] MouseCursor;
 	if (MouseBuffer) delete[] MouseBuffer;
 	if (EraseBuffer) delete[] EraseBuffer;
@@ -589,19 +593,14 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 	}
 	/* Save background under new position */
 	Buffer_From_Page(left, top, CursorWidth, CursorHeight, MouseBuffer, scr);
-	/* Draw cursor (0 = transparent) */
-	unsigned char *base = (unsigned char *)scr->Get_Offset();
-	if (base) {
-		int stride = (scr->Get_Pitch() + scr->Get_XAdd()) ? (scr->Get_Pitch() + scr->Get_XAdd()) : scr->Get_Width();
-		const unsigned char *cur = (const unsigned char *)MouseCursor;
-		for (int row = 0; row < CursorHeight; row++) {
-			unsigned char *dest = base + (top + row) * stride + left;
-			for (int col = 0; col < CursorWidth; col++) {
-				if (cur[col] != 0)
-					dest[col] = cur[col];
-			}
-			cur += CursorWidth;
+	/* Draw cursor (0 = transparent); use Buffer_Put_Pixel for linear + ST planar. */
+	const unsigned char *cur = (const unsigned char *)MouseCursor;
+	for (int row = 0; row < CursorHeight; row++) {
+		for (int col = 0; col < CursorWidth; col++) {
+			if (cur[col] != 0)
+				Buffer_Put_Pixel(scr, left + col, top + row, cur[col]);
 		}
+		cur += CursorWidth;
 	}
 	MouseBuffX = x;
 	MouseBuffY = y;

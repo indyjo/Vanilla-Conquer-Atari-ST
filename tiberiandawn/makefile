@@ -217,7 +217,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/load.cpp \
 	$(PLATFORM_LIB)/loadfont.cpp $(PLATFORM_LIB)/loadpal.cpp $(PLATFORM_LIB)/mem.cpp \
 	$(PLATFORM_LIB)/morphpal.cpp $(PLATFORM_LIB)/mouseww.cpp $(PLATFORM_LIB)/newdel.cpp \
-	$(PLATFORM_LIB)/palette.cpp $(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/c2p.cpp,) $(PLATFORM_LIB)/regionsz.cpp $(PLATFORM_LIB)/set_font.cpp \
+	$(PLATFORM_LIB)/palette.cpp $(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/c2p.cpp $(PLATFORM_LIB)/st_temperat_palette_data.cpp,) $(PLATFORM_LIB)/regionsz.cpp $(PLATFORM_LIB)/set_font.cpp \
 	$(PLATFORM_LIB)/timer.cpp $(PLATFORM_LIB)/timerdwn.cpp $(PLATFORM_LIB)/timerini.cpp \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/WINDOWS.CPP,) $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
 	$(PLATFORM_LIB)/startup.cpp \
@@ -459,7 +459,7 @@ clean:
 	@rm -f $(OUTDIR)/cnc.tos
 	@rm -f $(OUTDIR)/cncd.tos
 	@rm -f $(OUTDIR)/cnc_st_tests.tos
-	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/title_pcx_load_st_tests.o
+	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/title_pcx_load_st_tests.o $(INTDIR)/st_temperat_palette_data.o
 
 # Clean all configurations
 cleanall:
@@ -535,7 +535,7 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 ST_SUITE_DIR = tests/st_suite
 ST_TEST_EXE = $(OUTDIR)/cnc_st_tests.tos
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o
-ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/title_pcx_load_st_tests.o \
+ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/drawrect.o \
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/link.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \

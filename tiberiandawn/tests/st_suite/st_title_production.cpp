@@ -6,6 +6,7 @@
 #include "function.h"
 #include "gbuffer.h"
 #include "palette.h"
+#include "st_temperat_palette.h"
 #include "st_mix_minimal.h"
 #include "st_text.h"
 
@@ -32,16 +33,6 @@ static void st_hw_palette_write(const unsigned short *src16)
 	volatile unsigned short *pr = (volatile unsigned short *)0xFF8240L;
 	for (int i = 0; i < ST_HW_PAL_COUNT; i++)
 		pr[i] = src16[i];
-}
-
-static void st_hw_palette_grey16(void)
-{
-	volatile unsigned short *pr = (volatile unsigned short *)0xFF8240L;
-	for (int i = 0; i < ST_HW_PAL_COUNT; i++) {
-		unsigned short channel = (unsigned short)(((i >> 1) & 0x7) | ((i & 0x1) << 3));
-		unsigned short color = (unsigned short)(((channel << 8) | (channel << 4) | channel));
-		pr[i] = color;
-	}
 }
 
 int st_run_interactive_title_production_path(void)
@@ -85,17 +76,13 @@ int st_run_interactive_title_production_path(void)
 
 	/*
 	 * INIT.CPP uses Set_Palette(GamePalette) long before HTITLE, then memset(CurrentPalette,1)
-	 * immediately before Load_Title_Screen. We have no MIX-backed TEMPERAT.PAL here; prime
-	 * CurrentPalette with a neutral ramp so C2P / Scale inside Load_Title_Screen see valid
-	 * PaletteToST (cold start after only the menu would leave stale tables -> black screen).
+	 * immediately before Load_Title_Screen. Prime CurrentPalette with TEMPERAT.PAL so C2P /
+	 * Scale inside Load_Title_Screen see valid PaletteToST (cold start would leave stale tables).
 	 */
 	memset(CurrentPalette, 0x01, 768);
 	{
 		unsigned char warm[768];
-		for (int i = 0; i < 256; i++) {
-			unsigned char v = (unsigned char)((i * 63) / 255);
-			warm[i * 3 + 0] = warm[i * 3 + 1] = warm[i * 3 + 2] = v;
-		}
+		memcpy(warm, kStTemperatPal768, 768);
 		Set_Palette(warm);
 	}
 	vp.Clear(0);
@@ -104,7 +91,7 @@ int st_run_interactive_title_production_path(void)
 	remove(ST_PROD_PCX_NAME);
 
 	Set_Palette(pal);
-	st_hw_palette_grey16();
+	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
 
 	Vsync();
 

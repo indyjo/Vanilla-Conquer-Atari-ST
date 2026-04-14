@@ -45,6 +45,7 @@
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
 #include	"palette.h"  // For PaletteToST mapping array
 #include	"c2p.h"
+#include	"st_temperat_palette.h"
 #include	"gbuffer.h"  // GBC_ST_PLANAR_LORES, Uses_ST_LoRes_Planar_Layout
 #include	"misc.h"     // Wait_Vert_Blank
 
@@ -90,7 +91,7 @@ BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel);
 // Atari ST palette helper functions
 static void Save_Original_Palette(void);
 static void Restore_Original_Palette(void);
-static void Init_Greyscale_Palette(void);
+static void Init_Temperat_HW_Palette(void);
 
 // Atari ST resolution helper functions
 static void Switch_To_LoRes(void);
@@ -596,31 +597,14 @@ static void Restore_Original_Palette(void)
 }
 
 /***********************************************************************************************
- * Init_Greyscale_Palette -- Initialize a 16-color greyscale palette                          *
+ * Init_Temperat_HW_Palette -- Load first 16 colors of TEMPERAT.PAL into ST hardware palette *
  *                                                                                             *
- * Creates 16 shades from black (0,0,0) to white (15,15,15) in equal steps                     *
- * Note: Atari STE uses 12-bit color (4 bits per RGB component), so values are 0-15           *
- *       Format: rRRR gGGG bBBB where:                                                          *
- *       - r = LSB of red at bit 11, RRR = higher 3 bits of red at bits 14-12                *
- *       - g = LSB of green at bit 7, GGG = higher 3 bits of green at bits 10-8              *
- *       - b = LSB of blue at bit 0, BBB = higher 3 bits of blue at bits 3-1                 *
+ * C&C .PAL uses 6-bit RGB (0-63) per channel; STE registers use the same packing as the       *
+ * previous greyscale init (nibble split per gun, then R in bits 11-8, G in 7-4, B in 3-0).   *
  *=============================================================================================*/
-static void Init_Greyscale_Palette(void)
+static void Init_Temperat_HW_Palette(void)
 {
-	// Create 16 greyscale colors from black to white
-	// Each color has R=G=B, ranging from 0 to 15 (4-bit per component on Atari STE)
-	// Format: rRRR gGGG bBBB
-	for (int i = 0; i < PALETTE_REG_COUNT; i++) {
-		unsigned short channel = ((i >> 1) & 0x7) | ((i & 0x1) << 3);
-		unsigned short color = (unsigned short)(
-			(channel << 8) |   // Red:   bits 11-8
-			(channel << 4) |   // Green: bits 7-4
-			(channel << 0)     // Blue:  bits 3-0
-		);
-		
-		// Write directly to hardware palette register
-		PaletteRegs[i] = color;
-	}
+	St_HW_Palette_Write_Temperat_First16(PaletteRegs);
 	
 	// Draw an 8-pixel high bar containing all 16 colors in the vertical middle of the screen
 	// The bar fills the screen horizontally
@@ -754,8 +738,8 @@ BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel)
 	// Save original palette before we modify it
 	Save_Original_Palette();
 	
-	// Initialize greyscale palette
-	Init_Greyscale_Palette();
+	/* First 16 entries of temperate theater palette -> ST hardware (replaces grey ramp). */
+	Init_Temperat_HW_Palette();
 
 	/* Hide GEM/VDI hardware mouse; game uses WWMouseClass software cursor on SeenBuff. */
 	Cursconf(CURS_HIDE, 0);

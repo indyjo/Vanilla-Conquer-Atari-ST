@@ -33,6 +33,7 @@
  *   Get_Build_Frame_Count -- Fetches the number of frames in data block.                      *
  *   Get_Build_Frame_Width -- Fetches the width of the shape image.                            *
  *   Get_Build_Frame_Height -- Fetches the height of the shape image.                          *
+ *   Get_Build_Frame_BufferBytes -- Min bytes for Build_Frame output buffer (wh vs largest).   *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 
@@ -227,7 +228,23 @@ void Enable_Uncompressed_Shapes (void)
 
 #define FIXIT_SCORE_CRASH
 
-unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void *buffptr)
+/* When blob_size > 0, dataptr is exactly that many bytes (e.g. MIX extract); reject bad offsets. */
+static bool Build_Frame_SrcRangeOk(void const *base, size_t blob, void const *src, size_t nbytes)
+{
+	if (blob == 0 || nbytes == 0)
+		return true;
+	const unsigned char *b = (const unsigned char *)base;
+	const unsigned char *s = (const unsigned char *)src;
+	if (s < b)
+		return false;
+	size_t off = (size_t)(s - b);
+	if (off > blob || nbytes > blob - off)
+		return false;
+	return true;
+}
+
+unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void *buffptr,
+		size_t blob_size)
 {
 #ifdef FIXIT_SCORE_CRASH
 	char * ptr;
@@ -262,6 +279,13 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		return(0);
 	}
 
+	if (blob_size > 0) {
+		size_t table_bytes =
+				(size_t)sizeof(KeyFrameHeaderType) + ((size_t)total_frames << 3u);
+		if (table_bytes > blob_size) {
+			return (0);
+		}
+	}
 
 	if (UseBigShapeBuffer){
 		/*
@@ -356,7 +380,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 
 	// get offset into data
 	unsigned long frame_offset = (((unsigned long)framenumber << 3) + sizeof(KeyFrameHeaderType));
-	
+
+	if (blob_size > 0 && (size_t)frame_offset + 12u > blob_size) {
+		return (0);
+	}
+
 	ptr = (char *)Add_Long_To_Pointer( dataptr, frame_offset );
 	
 	// Read 12 bytes (3 unsigned longs) as little-endian from potentially unaligned ptr
@@ -373,10 +401,17 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 
 	if ( (frameflags & KF_KEYFRAME) ) {
 		unsigned long data_offset = (offset[0] & 0x00FFFFFFL);
-		
+
+		if (blob_size > 0 && data_offset >= blob_size) {
+			return (0);
+		}
+
 		ptr = (char *)Add_Long_To_Pointer( dataptr, data_offset );
 
 		if (flags & 1 ) {
+			if (blob_size > 0 && data_offset + 768u > blob_size) {
+				return (0);
+			}
 			ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 		}
 		length = LCW_Uncompress( ptr, buffptr, buffsize );
@@ -389,6 +424,16 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 				return (0);
 			}
 			currframe = (unsigned short)ref_frame;
+
+			{
+				unsigned long row_off =
+						(((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType));
+				if (blob_size > 0
+						&& (size_t)row_off + (size_t)(SUBFRAMEOFFS * sizeof(unsigned long))
+								> blob_size) {
+					return (0);
+				}
+			}
 
 			ptr = (char *)Add_Long_To_Pointer( dataptr, (((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)) );
 			// Read subframe offsets as little-endian
@@ -404,9 +449,16 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		// key delta
 		offdiff = (offset[0] & 0x00FFFFFFL) - offcurr;
 
+		if (blob_size > 0 && offcurr >= blob_size) {
+			return (0);
+		}
+
 		ptr = (char *)Add_Long_To_Pointer( dataptr, offcurr );
 
 		if (flags & 1 ) {
+			if (blob_size > 0 && offcurr + 768u > blob_size) {
+				return (0);
+			}
 			ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 		}
 
@@ -446,6 +498,10 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			Add_Long_To_Pointer(ptr, offdiff), (unsigned)total_frames);
 		fflush(stdout);
 #endif
+		if (!Build_Frame_SrcRangeOk(dataptr, blob_size,
+					Add_Long_To_Pointer(ptr, offdiff), (size_t)buffsize)) {
+			return (0);
+		}
 		Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff), buffsize);
 
 		if ( (frameflags & KF_DELTA) ) {
@@ -492,6 +548,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 							Add_Long_To_Pointer(ptr, offdiff));
 						fflush(stdout);
 #endif
+						if (!Build_Frame_SrcRangeOk(dataptr, blob_size,
+									Add_Long_To_Pointer(ptr, offdiff),
+									(size_t)buffsize)) {
+							return (0);
+						}
 						Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),
 							buffsize);
 					}
@@ -502,6 +563,36 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 
 				if ( subframe >= (SUBFRAMEOFFS - 1) &&
 					currframe <= framenumber ) {
+					/*
+					** Reload seven dwords from the per-frame offset table. Each frame slot is
+					** only 8 bytes; reading 28 bytes from row `currframe` needs room for 3.5
+					** more rows — otherwise we read past the table (e.g. TREX.SHP high frames)
+					** and corrupt offset[] / ptr.
+					*/
+					{
+						const unsigned long hdr_sz = (unsigned long)sizeof(KeyFrameHeaderType);
+						const unsigned long copy_len =
+							(unsigned long)(SUBFRAMEOFFS * sizeof(unsigned long));
+						const unsigned long copy_start =
+							hdr_sz + ((unsigned long)currframe << 3);
+						const unsigned long table_end =
+							hdr_sz + ((unsigned long)total_frames << 3);
+						if (copy_start + copy_len > table_end
+								|| (blob_size > 0
+										&& (size_t)(copy_start + copy_len) > blob_size)) {
+#ifdef DEBUG
+							fprintf(stderr,
+									"[Build_Frame] XOR chain: Mem_Copy would read past frame "
+									"table (curr=%u total=%u need_end=%lx table_end=%lx) "
+									"shape=%p\n",
+									(unsigned)currframe, (unsigned)total_frames,
+									(unsigned long)(copy_start + copy_len),
+									(unsigned long)table_end, dataptr);
+							fflush(stderr);
+#endif
+							return (0);
+						}
+					}
 					Mem_Copy( Add_Long_To_Pointer( dataptr,
 									(((unsigned long)currframe << 3) +
 									sizeof(KeyFrameHeaderType)) ),
@@ -530,8 +621,14 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 					** match that table's key segment or offdiff points outside the asset.
 					*/
 					offcurr = offset[1] & 0x00FFFFFFL;
+					if (blob_size > 0 && offcurr >= blob_size) {
+						return (0);
+					}
 					ptr = (char *)Add_Long_To_Pointer( dataptr, offcurr );
 					if (flags & 1 ) {
+						if (blob_size > 0 && offcurr + 768u > blob_size) {
+							return (0);
+						}
 						ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 					}
 				}
@@ -607,6 +704,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 	}else{
 		return ((unsigned long)buffptr);
 	}
+}
+
+unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void *buffptr)
+{
+	return Build_Frame(dataptr, framenumber, buffptr, (size_t)0);
 }
 
 
@@ -688,6 +790,33 @@ unsigned short Get_Build_Frame_Width(void const *dataptr)
 unsigned short Get_Build_Frame_Height(void const *dataptr)
 {
 	return Get_Build_Frame_Field(dataptr, offsetof(KeyFrameHeaderType, height));
+}
+
+
+/***********************************************************************************************
+ * Get_Build_Frame_BufferBytes -- Bytes Build_Frame needs for buffptr.                         *
+ *                                                                                             *
+ *    Matches Build_Frame: max(width*height, largest_frame_size). Callers must pass a buffer   *
+ *    at least this large or LCW / XOR delta steps corrupt memory.                             *
+ *                                                                                             *
+ * INPUT:   dataptr  -- Pointer to the keyframe shape data block.                              *
+ *                                                                                             *
+ * OUTPUT:  Byte count, or 0 if invalid / unreasonably large.                                  *
+ *=============================================================================================*/
+unsigned long Get_Build_Frame_BufferBytes(void const *dataptr)
+{
+	if (!dataptr)
+		return 0;
+	unsigned short width = Get_Build_Frame_Width(dataptr);
+	unsigned short height = Get_Build_Frame_Height(dataptr);
+	unsigned long wh = (unsigned long)width * (unsigned long)height;
+	const unsigned char *hdrbytes = (const unsigned char *)dataptr;
+	unsigned long lfs = (unsigned long)ReadLE16(
+			hdrbytes + offsetof(KeyFrameHeaderType, largest_frame_size));
+	unsigned long buffsize = wh > lfs ? wh : lfs;
+	if (buffsize > (unsigned long)(4 * 1024 * 1024))
+		return 0;
+	return buffsize;
 }
 
 

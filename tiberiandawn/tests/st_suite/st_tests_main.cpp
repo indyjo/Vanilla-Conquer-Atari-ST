@@ -4,7 +4,6 @@
  */
 
 #include "st_build_frame_assets.h"
-#include "st_text.h"
 
 #include <mint/osbind.h>
 
@@ -20,26 +19,20 @@ extern int st_run_interactive_title_mouse_cursor(void);
 
 static void print_banner(void)
 {
+	/* Each line <= ST_TEXT_MAXCOL (40); no st_wrap_puts so breaks stay clean. */
 	printf("\n");
 	printf("========================================\n");
 	printf("  C&C ST test suite (on-machine)\n");
 	printf("========================================\n");
-	st_wrap_puts(
-			"1 Automated: C2P pack / planar readback "
-			"2 Interactive: horizontal ramp (low rez) "
-			"3 Interactive: HTITLE from UPDATE.MIX\n"
-			"4 Interactive: HTITLE production path (game code) "
-			"\n"
-			"5 Interactive: HTITLE + main menu overlay (dialog + gradient labels) "
-			"\n"
-			"6 Interactive: HTITLE + moving mouse cursor (MOUSE.SHP) "
-			"\n"
-			"7 Interactive: SHP grid (CONQUER.MIX KeyFrame, checker + XOR/LCW) "
-			"\n"
-			"8 Run automated only (no prompts: C2P + Build_Frame SHP checks) "
-			"\n"
-			"0 Exit",
-			ST_TEXT_MAXCOL);
+	printf("1 Auto: C2P planar checksum\n");
+	printf("2 Interactive: 16x16 color grid (8x8)\n");
+	printf("3 Interactive: HTITLE (UPDATE.MIX)\n");
+	printf("4 Interactive: HTITLE prod path\n");
+	printf("5 Interactive: HTITLE + menu overlay\n");
+	printf("6 Interactive: HTITLE + mouse cursor\n");
+	printf("7 Interactive: SHP grid (CONQUER.MIX)\n");
+	printf("8 Automated: C2P + SHP checks\n");
+	printf("0 Exit\n");
 	printf("Choice: ");
 	fflush(stdout);
 }

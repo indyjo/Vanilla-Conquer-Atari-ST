@@ -68,3 +68,11 @@ int st_read_yes_no(void)
 	printf("%c\n", ch ? ch : '?');
 	return (ch == 'y' || ch == 'Y' || ch == 'z' || ch == 'Z') ? 1 : 0;
 }
+
+int st_read_yes_no_silent(void)
+{
+	fflush(stdout);
+	long w = Crawcin();
+	unsigned char ch = (unsigned char)(w & 0xFF);
+	return (ch == 'y' || ch == 'Y' || ch == 'z' || ch == 'Z') ? 1 : 0;
+}

@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-/* Rebuild palette-dependent mapping table after Set_Palette(). */
+/* Rebuild c2p dither map (palette-opt weights; TEMPERAT @ subset 0..15). Still call after Set_Palette(). */
 void C2P_Rebuild_Tables_From_CurrentPalette(void);
 
 /* Map 8-bit palette index to one ST 4-bit color using current dither tables (absolute pixel coords). */

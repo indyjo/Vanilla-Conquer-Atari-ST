@@ -4,6 +4,7 @@
 
 #include "c2p.h"
 #include "palette.h"
+#include "st_temperat_palette.h"
 #include "st_text.h"
 
 #include <stdio.h>
@@ -11,20 +12,10 @@
 #include <string.h>
 
 /*
- * Golden value for the planar buffer checksum below (m68k-atari-mint,
- * same C2P + test pattern). Update if C2P or this test pattern changes.
+ * Golden planar checksum (diagonal index pattern + TEMPERAT + current
+ * c2p_palette_opt_weights). Recompute with host g++ if weights/pattern change.
  */
-static const unsigned ST_C2P_AUTOTEST_PLANAR_CHECKSUM = 3171128944u;
-
-static void fill_grey_palette(unsigned char *pal768)
-{
-	for (int i = 0; i < 256; i++) {
-		unsigned v = (unsigned)((i * 63) / 255);
-		pal768[i * 3 + 0] = (unsigned char)v;
-		pal768[i * 3 + 1] = (unsigned char)v;
-		pal768[i * 3 + 2] = (unsigned char)v;
-	}
-}
+static const unsigned ST_C2P_AUTOTEST_PLANAR_CHECKSUM = 1475674531u;
 
 int st_run_c2p_autotests(void)
 {
@@ -40,7 +31,7 @@ int st_run_c2p_autotests(void)
 		return 1;
 	}
 
-	fill_grey_palette(pal);
+	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);
 
 	for (int y = 0; y < 200; y++) {

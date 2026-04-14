@@ -3,7 +3,6 @@
  */
 
 #include "c2p.h"
-#include "palette.h"   /* CurrentPalette */
 #include <string.h>    /* memset */
 
 /* 4x4 Bayer threshold matrix, values 0..15 */
@@ -14,11 +13,15 @@ static const uint8_t Bayer4x4[16] = {
 	15, 7, 13, 5
 };
 
+#include "c2p_palette_opt_weights.inc"
+
 /*
 ** Palette+dither dependent map:
 **   index = ((y&3)<<2) | (x&3)  in [0..15]
 **   src   = 8-bit palette index
 **   value = 4-bit ST color (0..15)
+**
+** Filled from palette-opt (TEMPERAT.PAL, subset 0..15); see kC2PPaletteOptWeight.
 */
 static uint8_t C2P_MapDither[16][256];
 
@@ -26,13 +29,19 @@ static uint8_t C2P_MapDither[16][256];
 static uint32_t C2P_PairLUT[4][256];
 static int C2P_LUT_InitDone = 0;
 
-static inline uint8_t Brightness63_FromCurrentPalette(uint8_t src_idx)
+/* Map 8-bit logical color to ST index 0..15 using palette-opt weights + Bayer rank. */
+static uint8_t C2P_STIndex_FromOptWeights(int x_mod4, int y_mod4, uint8_t src_idx)
 {
-	const uint8_t r = (uint8_t)(CurrentPalette[(int)src_idx * 3 + 0] & 63);
-	const uint8_t g = (uint8_t)(CurrentPalette[(int)src_idx * 3 + 1] & 63);
-	const uint8_t b = (uint8_t)(CurrentPalette[(int)src_idx * 3 + 2] & 63);
-	/* (77*r + 150*g + 29*b) >> 8 yields ~0..63 for 0..63 inputs */
-	return (uint8_t)(((77 * (int)r) + (150 * (int)g) + (29 * (int)b)) >> 8);
+	const int b = (y_mod4 << 2) | x_mod4;
+	const int rank = (int)Bayer4x4[b];
+	const uint8_t *w = kC2PPaletteOptWeight[src_idx];
+	int cum = 0;
+	for (int k = 0; k < 16; k++) {
+		cum += (int)w[k];
+		if (rank < cum)
+			return (uint8_t)k;
+	}
+	return 15;
 }
 
 static void C2P_InitPairLUT_Once(void)
@@ -88,17 +97,10 @@ extern "C" void C2P_Rebuild_Tables_From_CurrentPalette(void)
 	C2P_InitPairLUT_Once();
 
 	for (int b = 0; b < 16; b++) {
-		const int thresh = (int)Bayer4x4[b]; /* 0..15 */
+		const int xb = b & 3;
+		const int yb = b >> 2;
 		for (int src = 0; src < 256; src++) {
-			const int br = (int)Brightness63_FromCurrentPalette((uint8_t)src); /* 0..63 */
-			/*
-			** Dithered quantization to 16 levels:
-			**   value = floor((br*16 + thresh) / 64) -> 0..15
-			*/
-			int st = ((br << 4) + thresh) >> 6;
-			if (st < 0) st = 0;
-			if (st > 15) st = 15;
-			C2P_MapDither[b][src] = (uint8_t)st;
+			C2P_MapDither[b][src] = C2P_STIndex_FromOptWeights(xb, yb, (uint8_t)src);
 		}
 	}
 }

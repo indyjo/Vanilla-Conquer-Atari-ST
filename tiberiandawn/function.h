@@ -39,53 +39,53 @@
 Map(screen) class heirarchy.
 
     MapeditClass(most derived class)-- scenario editor
-        ³ MouseClass-- handles mouse animation and display control
-        ³ ScrollClass-- map scroll handler
-        ³ HelpClass-- pop
+        ? MouseClass-- handles mouse animation and display control
+        ? ScrollClass-- map scroll handler
+        ? HelpClass-- pop
     - up help text handler
-        ³ TabClass-- file folder tab screen mode control dispatcher
-        ³ SidebarClass-- displays and controls construction list sidebar
-        ³ PowerClass-- display power production
+        ? TabClass-- file folder tab screen mode control dispatcher
+        ? SidebarClass-- displays and controls construction list sidebar
+        ? PowerClass-- display power production
           / consumption bargraph
-        ³ RadarClass-- displays and controls radar map
-        ³ DisplayClass-- general tactical map display handler
-        ³ MapClass-- general tactical map data handler
-        ³ GScreenClass(pure virtual base class)-- generic screen control
+        ? RadarClass-- displays and controls radar map
+        ? DisplayClass-- general tactical map display handler
+        ? MapClass-- general tactical map data handler
+        ? GScreenClass(pure virtual base class)-- generic screen control
 
           AbstractClass
-                                  ³
-                                  ³
-                                  ³
-                                  ³ ObjectClass
-                                  ³
-       ÚÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÅÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄ¿
-          AnimClass  ³ TemplateClass    ³        ÃÄ FuseClass     ³ TerrainClass
-              ³                   ³        ÃÄ FlyClass      ³
-              ³                   ³ BulletClass            ³ OverlayClass MissionClass SmudgeClass
-                                  ³ RadioClass
-                                  ³
-                                  ÃÄ CrewClass
-                                  ÃÄ FlasherClass
-                                  ÃÄ StageClass
-                                  ÃÄ CargoClass TechnoClass
-                                  ³
-         ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿ FootClass BuildingClass
-         ³
-         ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄ¿ DriveClass InfantryClass         ÃÄ FlyClass
-         ³ AircraftClass TurretClass
-         ³ TarComClass
-         ³ UnitClass
+                                  ?
+                                  ?
+                                  ?
+                                  ? ObjectClass
+                                  ?
+       ?????????????????????????????????????????????????????????????????
+          AnimClass  ? TemplateClass    ?        ?? FuseClass     ? TerrainClass
+              ?                   ?        ?? FlyClass      ?
+              ?                   ? BulletClass            ? OverlayClass MissionClass SmudgeClass
+                                  ? RadioClass
+                                  ?
+                                  ?? CrewClass
+                                  ?? FlasherClass
+                                  ?? StageClass
+                                  ?? CargoClass TechnoClass
+                                  ?
+         ?????????????????????????????????????????????????????? FootClass BuildingClass
+         ?
+         ????????????????????????????? DriveClass InfantryClass         ?? FlyClass
+         ? AircraftClass TurretClass
+         ? TarComClass
+         ? UnitClass
 
           AbstractTypeClass
-                                    ³ ObjectTypeClass
-                                    ³
-             ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÄÄÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
-             ³                      ³            ³                 ³ TechnoTypeClass              ³            ³                 ³
-             ³ BulletTypeClass    ³                 ³
-             ³ TemplateTypeClass         ³
-    ÚÄÄÄÄÄÄÄÄÁÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿ TerrainTypeClass
-    ³              ³           ³              ³ UnitTypeClass      ³ BuildingTypeClass      ³
-                   ³ InfantryTypeClass AircraftTypeClass
+                                    ? ObjectTypeClass
+                                    ?
+             ??????????????????????????????????????????????????????
+             ?                      ?            ?                 ? TechnoTypeClass              ?            ?                 ?
+             ? BulletTypeClass    ?                 ?
+             ? TemplateTypeClass         ?
+    ?????????????????????????????????????????? TerrainTypeClass
+    ?              ?           ?              ? UnitTypeClass      ? BuildingTypeClass      ?
+                   ? InfantryTypeClass AircraftTypeClass
 */
 
 #if !defined _WIN32 || defined NOMINMAX
@@ -529,12 +529,14 @@ void Buffer_Frame_To_Page(int x,
 **	KEYFRAME.CPP
 */
 int Get_Last_Frame_Length(void);
-uintptr_t Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr);
+unsigned long Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr);
+unsigned long Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr, size_t blob_size);
 unsigned short Get_Build_Frame_Count(void const* dataptr);
 unsigned short Get_Build_Frame_X(void const* dataptr);
 unsigned short Get_Build_Frame_Y(void const* dataptr);
 unsigned short Get_Build_Frame_Width(void const* dataptr);
 unsigned short Get_Build_Frame_Height(void const* dataptr);
+unsigned long Get_Build_Frame_BufferBytes(void const* dataptr);
 bool Get_Build_Frame_Palette(void const* dataptr, void* palette);
 
 /*

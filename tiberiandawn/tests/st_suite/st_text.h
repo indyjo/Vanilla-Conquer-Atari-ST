@@ -17,6 +17,9 @@ void st_wrap_puts(const char *paragraph, int maxcol);
 /** Crawcin-based Y/N (Y or Z = ok for QWERTZ). Returns 1 = ok, 0 = bad. */
 int st_read_yes_no(void);
 
+/** Same as st_read_yes_no but no prompt or echo (blank video preview). */
+int st_read_yes_no_silent(void);
+
 #ifdef __cplusplus
 }
 #endif

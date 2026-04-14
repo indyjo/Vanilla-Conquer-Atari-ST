@@ -7,6 +7,7 @@
 #include "function.h"
 #include "gbuffer.h"
 #include "palette.h"
+#include "st_temperat_palette.h"
 #include "st_mix_minimal.h"
 #include "st_text.h"
 
@@ -177,16 +178,6 @@ static void st_hw_palette_write(const unsigned short *src16)
 		pr[i] = src16[i];
 }
 
-static void st_hw_palette_grey16(void)
-{
-	volatile unsigned short *pr = (volatile unsigned short *)0xFF8240L;
-	for (int i = 0; i < ST_HW_PAL_COUNT; i++) {
-		unsigned short channel = (unsigned short)(((i >> 1) & 0x7) | ((i & 0x1) << 3));
-		unsigned short color = (unsigned short)(((channel << 8) | (channel << 4) | channel));
-		pr[i] = color;
-	}
-}
-
 int st_run_interactive_title_menu_overlay(void)
 {
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
@@ -275,10 +266,7 @@ int st_run_interactive_title_menu_overlay(void)
 	memset(CurrentPalette, 0x01, 768);
 	{
 		unsigned char warm[768];
-		for (int i = 0; i < 256; i++) {
-			unsigned char v = (unsigned char)((i * 63) / 255);
-			warm[i * 3 + 0] = warm[i * 3 + 1] = warm[i * 3 + 2] = v;
-		}
+		memcpy(warm, kStTemperatPal768, 768);
 		Set_Palette(warm);
 	}
 	vp.Clear(0);
@@ -287,7 +275,7 @@ int st_run_interactive_title_menu_overlay(void)
 	remove(ST_PROD_PCX_NAME);
 
 	Set_Palette(pal);
-	st_hw_palette_grey16();
+	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
 
 	Set_Logic_Page(&vp);
 	st_draw_dialog_green_border(vp);

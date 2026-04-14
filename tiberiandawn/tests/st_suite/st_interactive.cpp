@@ -4,6 +4,7 @@
 
 #include "c2p.h"
 #include "palette.h"
+#include "st_temperat_palette.h"
 #include "st_mix_minimal.h"
 #include "st_pcx_minimal.h"
 #include "st_text.h"
@@ -66,17 +67,6 @@ static void st_hw_palette_write(const unsigned short *src16)
 		pr[i] = src16[i];
 }
 
-/* Same grey STE palette layout as startup Init_Greyscale_Palette. */
-static void st_hw_palette_grey16(void)
-{
-	volatile unsigned short *pr = (volatile unsigned short *)0xFF8240L;
-	for (int i = 0; i < ST_HW_PAL_COUNT; i++) {
-		unsigned short channel = (unsigned short)(((i >> 1) & 0x7) | ((i & 0x1) << 3));
-		unsigned short color = (unsigned short)(((channel << 8) | (channel << 4) | channel));
-		pr[i] = color;
-	}
-}
-
 int st_run_interactive_gradient(void)
 {
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
@@ -99,25 +89,33 @@ int st_run_interactive_gradient(void)
 
 	Setscreen(-1L, -1L, 0); /* low rez */
 
-	memset(pal, 0, sizeof(pal));
-	for (int i = 0; i < 256; i++)
-		pal[i * 3 + 0] = pal[i * 3 + 1] = pal[i * 3 + 2] = (unsigned char)((i * 63) / 255);
+	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);
-	st_hw_palette_grey16();
+	St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
 
-	/* One black->white sweep per row (no x&255 wrap / repeat). */
-	for (int y = 0; y < 200; y++)
-		for (int x = 0; x < 320; x++)
-			chunky[y * 320 + x] = (unsigned char)((x * 255) / 319);
+	/* 16x16 cells, 8x8 px each: logical colors 0..255; 128x128 grid bottom-centered. */
+	memset(chunky, 0, (size_t)(320 * 200));
+	const int grid_px = 16 * 8;
+	const int x0 = (320 - grid_px) / 2;
+	const int y0 = 200 - grid_px;
+	for (int gy = 0; gy < 16; gy++) {
+		for (int gx = 0; gx < 16; gx++) {
+			unsigned char c = (unsigned char)(gy * 16 + gx);
+			for (int dy = 0; dy < 8; dy++) {
+				for (int dx = 0; dx < 8; dx++)
+					chunky[(y0 + gy * 8 + dy) * 320 + (x0 + gx * 8 + dx)] = c;
+			}
+		}
+	}
 
 	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar);
 	Setscreen((long)planar, (long)planar, -1L);
 	Vsync();
 
-	printf("\n=== INTERACTIVE: horizontal ramp ===\n");
+	printf("\n=== INTERACTIVE: C2P color grid ===\n");
 	st_wrap_puts(
-			"Expect one smooth grey ramp left to right "
-			"(black to white), no band repeats on the right.",
+			"16x16 blocks of 8x8 px at screen bottom "
+			"(centered); indices 0..255, TEMPERAT + C2P.",
 			ST_TEXT_MAXCOL);
 
 	int ok = st_read_yes_no();
@@ -191,7 +189,7 @@ int st_run_interactive_htitle(void)
 
 	Setscreen(-1L, -1L, 0);
 	Set_Palette(pal);
-	st_hw_palette_grey16();
+	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
 
 	C2P_Render_Logical_To_ST_Screen(disp, disp_stride, planar);
 	Setscreen((long)planar, (long)planar, -1L);

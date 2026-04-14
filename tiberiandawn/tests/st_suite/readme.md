@@ -21,13 +21,17 @@ Output: `bin/AtariST/cnc_st_tests.tos`
 | **2** | Interactive | Switches to low rez, shows one horizontal black→white sweep via C2P; **Y/N** whether it looks correct (catches “half duplicated” style bugs). |
 | **3** | Interactive | Extracts **`HTITLE.PCX`** from **`UPDATE.MIX`**, decodes PCX, **nearest-neighbour scales to 320×200** if needed (e.g. 640×400), then **Y/N** (or **Z** for OK on German QWERTZ). |
 | **4** | Interactive | **Production HTITLE draw:** writes **`ST_HTEST.PCX`** (from `UPDATE.MIX`), primes **`CurrentPalette`** like startup, then **`Load_Title_Screen`** (same **C2P / `Scale`** as the game) into planar 320×200. This is the **title background only**, not the full main menu (buttons/text still need the real menu/dialog code). Compare with **3**. |
-| **5** | Automated | Same as **1**, then prints PASS/FAIL. |
+| **5** | Interactive | HTITLE production path plus **main menu overlay** (dialog + gradient labels). |
+| **6** | Interactive | HTITLE plus **moving mouse cursor** using **`MOUSE.SHP`** from **`CCLOCAL.MIX`**. |
+| **7** | Interactive | **`Build_Frame`** grid: **KeyFrame** SHPs from **`CONQUER.MIX`** on a **4×4 grey checker** (palette indices 80/160), transparent blit for index **0**, **Y/Z vs N** on the result. |
+| **8** | Automated | Runs **1** (C2P checksum), then the same **`Build_Frame`** SHP list as **7** (skips missing files; counts zero `Build_Frame` returns as failures). No screen prompts. |
 
 Input is read with **`Crawcin()`** (MiNT/TOS keyboard).
 
 ## Tips on real hardware
 
-- For options **3** and **4**, place **`UPDATE.MIX`** in the **current working directory**. **4** briefly creates **`ST_HTEST.PCX`** (then deletes it) so **`CCFileClass`** can open the same asset path style as loose files on disk.
+- For options **3**–**6**, place **`UPDATE.MIX`** (and for **5**/**6** the other MIX files those tests open) in the **current working directory**. **4** briefly creates **`ST_HTEST.PCX`** (then deletes it) so **`CCFileClass`** can open the same asset path style as loose files on disk.
+- For **7** / **8**, add **`CONQUER.MIX`** next to the test `.TOS`. (Cursor **`MOUSE.SHP`** is not a KeyFrame blob; menu **6** still loads it from **`CCLOCAL.MIX`** via **`Extract_Shape`**.)
 - Interactive tests switch resolution and `Setscreen`. When they finish, they **restore the 16 ST hardware palette words** at `$FF8240` from before the test, then restore the previous `Getrez()` value.
 - Interactive prompts accept **Y** or **Z** as “OK” (German QWERTZ).
 - If automated test **1** reports a checksum `FAIL` after you change `c2p.cpp` or the test pattern, update the golden constant `ST_C2P_AUTOTEST_PLANAR_CHECKSUM` in `st_c2p_autotests.cpp`.

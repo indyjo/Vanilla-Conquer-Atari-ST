@@ -12,6 +12,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* KEYFRAME.CPP references these; full game defines them in GLOBALS / WINSTUB. */
+long Frame = 0;
+
+void Memory_Error_Handler(void)
+{
+}
+
 extern "C" {
 char *_ShapeBuffer = NULL;
 long _ShapeBufferSize = 0;

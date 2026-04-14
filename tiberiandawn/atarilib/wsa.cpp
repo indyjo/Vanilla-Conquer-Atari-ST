@@ -9,6 +9,57 @@
 #include "rawfile.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+
+/* Warn on XOR-delta linear buffer overruns (Build_Frame / SHP); caller aborts apply. */
+static void XorDelta_LogBounds(
+	const char *cmd,
+	const char *target,
+	const char *t,
+	const char *delta0,
+	const char *opcode_at,
+	unsigned int frame_bytes,
+	unsigned long operand,
+	unsigned int bytes_processed,
+	unsigned int word_le /* 0 if not a 0x80-prefix command */)
+{
+	unsigned long pos = (unsigned long)((const unsigned char *)t - (const unsigned char *)target);
+	unsigned long op_off = (unsigned long)((const unsigned char *)opcode_at - (const unsigned char *)delta0);
+	fprintf(stderr,
+		"[Apply_XOR_Delta] %s: dest_pos=%lu opnd=%lu frame_bytes=%u stream_off=%lu "
+		"bytes_in=%u target=%p delta0=%p op@=%p",
+		cmd, pos, operand, frame_bytes, op_off, bytes_processed,
+		(const void *)target, (const void *)delta0, (const void *)opcode_at);
+	if (word_le != 0) {
+		fprintf(stderr, " word_le=0x%04X", word_le & 0xFFFFu);
+	}
+	fprintf(stderr, "\n");
+	fflush(stderr);
+}
+
+#define XORDELTA_BOUND_CHECK(CMD, OP_AT, OPERAND, WORDLE)                                 \
+	do {                                                                              \
+		if (frame_bytes != 0) {                                                   \
+			size_t _pos = (size_t)(t - target);                               \
+			size_t _op = (size_t)(OPERAND);                                   \
+			if (_pos + _op > (size_t)frame_bytes) {                         \
+				XorDelta_LogBounds((CMD), target, t, delta, (OP_AT),      \
+					frame_bytes, (unsigned long)(OPERAND), bytes_processed, \
+					(WORDLE));                                            \
+				fprintf(stderr,                                               \
+					"[Apply_XOR_Delta] Stopping XOR apply (buffer bounds).\n"); \
+				fflush(stderr);                                               \
+				return 0;                                                     \
+			}                                                             \
+		}                                                                         \
+	} while (0)
+
+/* Westwood XOR delta streams use little-endian 16-bit words; read by bytes so
+ * this works on big-endian m68k and when the stream pointer is odd-aligned. */
+static inline unsigned short ReadLE16_u8(const unsigned char *p)
+{
+	return (unsigned short)(p[0] | (p[1] << 8));
+}
 
 /*=========================================================================*/
 /* WSA Animation Functions - Stub implementations                          */
@@ -179,107 +230,105 @@ extern "C" unsigned long Get_Animation_Size(void const *handle)
 /*   n = 128-255: SHORTSKIP - skip n-128 bytes                             */
 /*   n = 128, w = word: LONGSKIP - skip w bytes (if w > 0)                */
 /*   n = 128, w = 0: STOP - end of data                                   */
-/*   n = 128, w = 0x8000-0xBFFF: LONGRUN - run of next byte, count = w-0x8000 */
-/*   n = 128, w = 0x4000-0x7FFF: LONGDUMP - copy w-0x4000 bytes, XORing    */
+/* After n==128, 16-bit w (LE): if 0<w<0x8000, LONGSKIP w bytes.           */
+/* If w>=0x8000: let X=w-0x8000; if (X&0x4000)==0, LONGDUMP X XOR bytes;  */
+/* else LONGRUN: XOR one byte value (X-0x4000) times (matches XORDELTA.ASM).*/
 /*                                                                         */
 /* INPUT:                                                                  */
 /*   target -- Destination buffer                                         */
 /*   delta  -- XOR delta data to apply                                     */
+/*   frame_bytes -- width*height for bounds checks; 0 = skip bounds checks */
 /*                                                                         */
 /* OUTPUT:                                                                 */
 /*   Returns number of bytes processed (or 0 on error)                    */
 /*=========================================================================*/
-extern "C" unsigned int Apply_XOR_Delta(char *target, char *delta)
+extern "C" unsigned int Apply_XOR_Delta(char *target, char *delta, unsigned int frame_bytes)
 {
 	char *t = target;
 	char *d = delta;
 	unsigned int bytes_processed = 0;
-	
+
 	if (!target || !delta) {
 		return 0;
 	}
-	
+
 	while (1) {
 		unsigned char code = (unsigned char)*d++;
 		bytes_processed++;
-		
+
 		// Check for SHORTDUMP (0 < code < 128)
 		if (code > 0 && code < 128) {
-			// SHORTDUMP: copy next 'code' bytes, XORing each
 			unsigned int count = code;
+			XORDELTA_BOUND_CHECK("SHORTDUMP", d - 1, count, 0);
 			for (unsigned int i = 0; i < count; i++) {
 				*t++ ^= *d++;
 				bytes_processed++;
 			}
 			continue;
 		}
-		
+
 		// Check for SHORTRUN (code == 0)
 		if (code == 0) {
-			// SHORTRUN: run of next byte, count from next byte
 			unsigned char count = (unsigned char)*d++;
 			unsigned char value = *d++;
 			bytes_processed += 2;
-			
-			for (unsigned int i = 0; i < count; i++) {
+
+			XORDELTA_BOUND_CHECK("SHORTRUN", d - 3, (unsigned int)(unsigned char)count, 0);
+			for (unsigned int i = 0; i < (unsigned int)count; i++) {
 				*t++ ^= value;
 			}
 			continue;
 		}
-		
+
 		// Check for SHORTSKIP (128 <= code < 256, code != 128)
 		if (code > 128) {
-			// SHORTSKIP: skip (code - 128) bytes
 			unsigned int skip = code - 128;
+			XORDELTA_BOUND_CHECK("SHORTSKIP", d - 1, skip, 0);
 			t += skip;
 			continue;
 		}
-		
-		// code == 128: get next word
-		unsigned short word_code = *((unsigned short *)d);
+
+		// code == 128: get next word (little-endian, possibly odd-aligned)
+		unsigned short word_code = ReadLE16_u8((const unsigned char *)d);
 		d += 2;
 		bytes_processed += 2;
-		
-		// Check for STOP (word_code == 0)
+
 		if (word_code == 0) {
 			break;
 		}
-		
-		// Check for LONGSKIP (word_code > 0)
+
 		if (word_code > 0 && word_code < 0x8000) {
-			// LONGSKIP: skip word_code bytes
-			t += word_code;
+			unsigned int skip = word_code;
+			XORDELTA_BOUND_CHECK("LONGSKIP", d - 3, skip, (unsigned int)word_code);
+			t += skip;
 			continue;
 		}
-		
-		// Check for LONGRUN (0x8000 <= word_code < 0xC000)
-		if (word_code >= 0x8000 && word_code < 0xC000) {
-			// LONGRUN: run of next byte, count = word_code - 0x8000
-			unsigned int count = word_code - 0x8000;
-			unsigned char value = *d++;
-			bytes_processed++;
-			
-			for (unsigned int i = 0; i < count; i++) {
-				*t++ ^= value;
-			}
-			continue;
-		}
-		
-		// Check for LONGDUMP (0x4000 <= word_code < 0x8000)
-		if (word_code >= 0x4000 && word_code < 0x8000) {
-			// LONGDUMP: copy (word_code - 0x4000) bytes, XORing each
-			unsigned int count = word_code - 0x4000;
-			for (unsigned int i = 0; i < count; i++) {
-				*t++ ^= *d++;
+
+		/* w >= 0x8000: same split as WIN32LIB/XORDELTA.ASM (not "w < 0xC000" LONGRUN) */
+		{
+			unsigned int X = (unsigned int)word_code - 0x8000u;
+			if ((X & 0x4000u) == 0u) {
+				/* LONGDUMP */
+				unsigned int count = X;
+				XORDELTA_BOUND_CHECK("LONGDUMP", d - 3, count, (unsigned int)word_code);
+				for (unsigned int i = 0; i < count; i++) {
+					*t++ ^= *d++;
+					bytes_processed++;
+				}
+			} else {
+				/* LONGRUN */
+				unsigned int count = X - 0x4000u;
+				unsigned char value = *d++;
 				bytes_processed++;
+				XORDELTA_BOUND_CHECK("LONGRUN", d - 4, count, (unsigned int)word_code);
+				for (unsigned int i = 0; i < count; i++) {
+					*t++ ^= value;
+				}
 			}
 			continue;
 		}
-		
-		// Invalid code - break to avoid infinite loop
-		break;
 	}
-	
+
 	return bytes_processed;
 }
 
@@ -301,7 +350,7 @@ extern "C" void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, i
 		// Not implemented yet
 	} else {
 		// XOR mode - apply XOR delta
-		Apply_XOR_Delta((char *)target, (char *)delta);
+		Apply_XOR_Delta((char *)target, (char *)delta, 0);
 	}
 }
 

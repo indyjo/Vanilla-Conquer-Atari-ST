@@ -53,8 +53,9 @@ unsigned long Get_Animation_Size(void const *handle);
 /* XOR Delta functions - for applying delta compression to buffers         */
 /*=========================================================================*/
 
-/* Apply XOR delta data to a linear buffer */
-unsigned int Apply_XOR_Delta(char *target, char *delta);
+/* Apply XOR delta data to a linear buffer. frame_bytes==0 skips target bounds checks;
+ * otherwise DEBUG builds assert that skips/XORs stay within [target, target+frame_bytes). */
+unsigned int Apply_XOR_Delta(char *target, char *delta, unsigned int frame_bytes);
 
 /* Apply XOR delta to a page or viewport */
 void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, int width, int nextrow, int copy);

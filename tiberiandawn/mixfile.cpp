@@ -53,6 +53,7 @@
 #include	<share.h>
 #endif
 #include	<errno.h>
+#include	<assert.h>
 #include	"mixfile.h"
 
 // Endianness detection - MIX files are always little-endian
@@ -566,6 +567,12 @@ bool MixFileClass::Offset(char const *filename, void ** realptr, MixFileClass **
 		**	Binary search for the file in this mixfile. If it is found, then extract the
 		**	appropriate information and store it in the locations provided and then return.
 		*/
+		#ifdef DEBUG
+		assert(ptr != nullptr);
+		assert(ptr->Count >= 0);
+		assert(ptr->Count <= 1000000);
+		assert(ptr->Count == 0 || ptr->Buffer != nullptr);
+		#endif
 		block = (SubBlock *)bsearch(&key, ptr->Buffer, ptr->Count, sizeof(SubBlock), compfunc);
 		if (block) {
 			if (mixfile) *mixfile = ptr;

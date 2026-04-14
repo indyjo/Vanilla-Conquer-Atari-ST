@@ -3,6 +3,7 @@
  * Build: make st-tests   -> bin/AtariST/cnc_st_tests.tos
  */
 
+#include "st_build_frame_assets.h"
 #include "st_text.h"
 
 #include <mint/osbind.h>
@@ -33,7 +34,9 @@ static void print_banner(void)
 			"\n"
 			"6 Interactive: HTITLE + moving mouse cursor (MOUSE.SHP) "
 			"\n"
-			"7 Run automated only (no prompts) "
+			"7 Interactive: SHP grid (CONQUER.MIX KeyFrame, checker + XOR/LCW) "
+			"\n"
+			"8 Run automated only (no prompts: C2P + Build_Frame SHP checks) "
 			"\n"
 			"0 Exit",
 			ST_TEXT_MAXCOL);
@@ -69,9 +72,15 @@ int main(void)
 		case '6':
 			st_run_interactive_title_mouse_cursor();
 			break;
-		case '7': {
+		case '7':
+			st_run_interactive_build_frame_xor_grid();
+			break;
+		case '8': {
 			int r = st_run_c2p_autotests();
-			printf("Auto: %s\n", r ? "FAIL" : "PASS");
+			int bf = st_run_build_frame_asset_autocheck();
+			printf("Auto C2P: %s\n", r ? "FAIL" : "PASS");
+			printf("Auto Build_Frame assets: %s (fail count=%d)\n",
+					bf ? "FAIL" : "PASS", bf);
 			break;
 		}
 		case '0':

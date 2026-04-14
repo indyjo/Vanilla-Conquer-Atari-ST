@@ -37,11 +37,16 @@
 
 
 #include "function.h"
+#ifdef DEBUG
+#include <stdio.h>
+#endif
 
 #define SUBFRAMEOFFS			7	// 3 1/2 frame offsets loaded (2 offsets/frame)
+/* Optional: with DEBUG, also define BUILD_FRAME_XOR_TRACE for per-frame XOR printf spam. */
 
 
-#define	Apply_Delta(buffer, delta)		Apply_XOR_Delta((char*)(buffer), (char*)(delta))
+#define	Apply_Delta(buffer, delta, bufsize)	\
+	Apply_XOR_Delta((char*)(buffer), (char*)(delta), (unsigned int)(bufsize))
 
 typedef struct {
 	unsigned short frames;
@@ -232,8 +237,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 	unsigned long offcurr, off16, offdiff;
 #endif
 	unsigned long offset[SUBFRAMEOFFS];
-	KeyFrameHeaderType *keyfr;
-	unsigned short buffsize, currframe, subframe;
+	unsigned long buffsize;
+	unsigned short currframe = 0, subframe;
 	unsigned long length = 0;
 	char frameflags;
 	unsigned long return_value;
@@ -251,8 +256,6 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 	// look at header then check that frame to build is not greater
 	// than total frames
 	//
-	keyfr = (KeyFrameHeaderType *) dataptr;
-
 	unsigned short total_frames = Get_Build_Frame_Count(dataptr);
 	
 	if ( framenumber >= total_frames ) {
@@ -338,10 +341,18 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		}
 	}
 
-	// calc buff size
+	// Linear frame bytes: width*height; TD SHP DeltaSize can be larger (decompress workspace).
 	unsigned short width = Get_Build_Frame_Width(dataptr);
 	unsigned short height = Get_Build_Frame_Height(dataptr);
-	buffsize = width * height;
+	unsigned long wh = (unsigned long)width * (unsigned long)height;
+	const unsigned char* hdrbytes = (const unsigned char*)dataptr;
+	unsigned long lfs = (unsigned long)ReadLE16(
+		hdrbytes + offsetof(KeyFrameHeaderType, largest_frame_size));
+	/* DeltaSize / largest_frame_size is max decompress buffer; XOR can index up to that. */
+	buffsize = wh > lfs ? wh : lfs;
+	if (buffsize > (unsigned long)(4 * 1024 * 1024)) {
+		return (0);
+	}
 
 	// get offset into data
 	unsigned long frame_offset = (((unsigned long)framenumber << 3) + sizeof(KeyFrameHeaderType));
@@ -372,7 +383,12 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 	} else {	// key delta or delta
 
 		if ( (frameflags & KF_DELTA) ) {
-			currframe = (unsigned short)offset[1];
+			/* Reference is frame index in low 24 bits (high byte is ReferenceFormat, not part of index). */
+			unsigned long ref_frame = (unsigned long)(offset[1] & 0x00FFFFFFUL);
+			if (ref_frame >= (unsigned long)total_frames) {
+				return (0);
+			}
+			currframe = (unsigned short)ref_frame;
 
 			ptr = (char *)Add_Long_To_Pointer( dataptr, (((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)) );
 			// Read subframe offsets as little-endian
@@ -414,7 +430,23 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		}
 #endif
 		length = buffsize;
-		Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff));
+#if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
+		fprintf(stdout,
+			"[Build_Frame] keydelta XOR: shape=%p fr=%u size wh=%lux%lu=%lu lfs=%lu "
+			"buffsize=%lu LCW_out=%lu off0=%lX off1=%lX off2=%lX offcurr=%lX offdiff=%lX "
+			"kfflags=0x%02X pal=%d buff=%p delta=%p frames=%u\n",
+			dataptr, (unsigned)framenumber, (unsigned long)width, (unsigned long)height,
+			(unsigned long)wh, (unsigned long)lfs, (unsigned long)buffsize,
+			(unsigned long)length,
+			(unsigned long)(offset[0] & 0x00FFFFFFUL),
+			(unsigned long)(offset[1] & 0x00FFFFFFUL),
+			(unsigned long)(offset[2] & 0x00FFFFFFUL),
+			(unsigned long)offcurr, (unsigned long)offdiff,
+			(unsigned)(unsigned char)frameflags, (int)flags, buffptr,
+			Add_Long_To_Pointer(ptr, offdiff), (unsigned)total_frames);
+		fflush(stdout);
+#endif
+		Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff), buffsize);
 
 		if ( (frameflags & KF_DELTA) ) {
 			// adjust to delta after the keydelta
@@ -437,7 +469,33 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 #endif
 
 				length = buffsize;
-				Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff));
+				{
+					unsigned long abs_sub =
+						(unsigned long)(offset[subframe] & 0x00FFFFFFUL);
+					if ( abs_sub < offcurr ) {
+						fprintf(stderr,
+							"[Build_Frame] XOR chain: table underflow (sub=%u curr=%u "
+							"abs=%lX offcurr=%lX) - skipping XOR, shape=%p\n",
+							(unsigned)subframe, (unsigned)currframe,
+							(unsigned long)abs_sub, (unsigned long)offcurr,
+							dataptr);
+						fflush(stderr);
+					} else {
+#if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
+						fprintf(stdout,
+							"[Build_Frame] chain XOR: shape=%p fr=%u curr=%u sub=%u "
+							"buffsize=%lu offcurr=%lX offdiff=%lX buff=%p delta=%p\n",
+							dataptr, (unsigned)framenumber, (unsigned)currframe,
+							(unsigned)subframe, (unsigned long)buffsize,
+							(unsigned long)offcurr, (unsigned long)offdiff,
+							buffptr,
+							Add_Long_To_Pointer(ptr, offdiff));
+						fflush(stdout);
+#endif
+						Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),
+							buffsize);
+					}
+				}
 
 				currframe++;
 				subframe += 2;
@@ -448,7 +506,34 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 									(((unsigned long)currframe << 3) +
 									sizeof(KeyFrameHeaderType)) ),
 						&offset[0], (long)(SUBFRAMEOFFS * sizeof(unsigned long)) );
-					subframe = 0;
+					/*
+					** After reload, offset[0] is this row's DataOffset. Usually the next
+					** chain patch uses offset[2],offset[4],... (same as mid-window steps).
+					** When currframe == framenumber, offset[2] is already the *next* frame's
+					** row — wrong for finishing this frame; use offset[0] instead.
+					*/
+					if ( currframe == framenumber ) {
+#ifdef DEBUG
+						fprintf(stderr,
+							"[Build_Frame] XOR chain: Mem_Copy at target frame %u - "
+							"using subframe 0 (this frame's DataOffset), not 2 (next row). "
+							"shape=%p\n",
+							(unsigned)framenumber, dataptr);
+						fflush(stderr);
+#endif
+						subframe = 0;
+					} else {
+						subframe = 2;
+					}
+					/*
+					** offset[] was replaced with another frame's table; offcurr/ptr must
+					** match that table's key segment or offdiff points outside the asset.
+					*/
+					offcurr = offset[1] & 0x00FFFFFFL;
+					ptr = (char *)Add_Long_To_Pointer( dataptr, offcurr );
+					if (flags & 1 ) {
+						ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
+					}
 				}
 			}
 		}

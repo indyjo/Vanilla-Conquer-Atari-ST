@@ -8,8 +8,12 @@
 #include "keyboard.h"
 #include "gbuffer.h"
 #include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
+#include "c2p.h"       // ST_PLANAR_BYTES_PER_LINE
 #include "shape.h"     // Get_Shape_Width, Get_Shape_Height, Decode_Shape_To_Buffer
 #include <mint/linea.h>  // GCURX, GCURY, MOUSE_BT (LINE-A)
+#include <mint/ostruct.h> // BLIT_HARD
+#include <mint/osbind.h>  // Blitmode
+#include <stdint.h>
 #include <string.h>     // memset
 
 // Global mouse object pointer
@@ -18,6 +22,87 @@ void* _Mouse = NULL;
 // DLL force mouse position (used when mouse is controlled externally)
 int DLLForceMouseX = -1;
 int DLLForceMouseY = -1;
+
+static inline volatile unsigned short *ST_BLT_REG(unsigned long addr)
+{
+	return (volatile unsigned short *)addr;
+}
+
+static void ST_Blit_Wait_Idle(void)
+{
+	volatile unsigned char *ctrl = (volatile unsigned char *)0xFFFF8A3CL;
+	while ((*ctrl & 0x80u) != 0) {
+	}
+}
+
+static void ST_Copy_Bytes_2D(const uint8_t *src, uint8_t *dst, int row_bytes, int lines, int src_stride, int dst_stride)
+{
+	if (!src || !dst || row_bytes <= 0 || lines <= 0)
+		return;
+	for (int y = 0; y < lines; y++) {
+		memcpy(dst, src, (size_t)row_bytes);
+		src += src_stride;
+		dst += dst_stride;
+	}
+}
+
+/*
+ * One ST low-res bitplane: horizontal skew from interleaved src to interleaved dst.
+ * src_row_bytes / dst_row_bytes: full planar row strides (multiple of 8).
+ * dst_words: destination 16-pixel columns (same as mouse "words" in Draw_Mouse).
+ * plane_idx: 0..3 (word at +plane*2 within each 16-pixel group).
+ * skew_bits: 0..15 pixel shift right of source into destination (ST $FF8A3D).
+ */
+static void ST_Blit_Plane_Skew(
+	const uint8_t *src_base, uint8_t *dst_base,
+	int src_row_bytes, int dst_row_bytes,
+	int dst_words, int lines, int plane_idx, unsigned skew_bits, unsigned char op)
+{
+	if (!src_base || !dst_base || dst_words <= 0 || lines <= 0 || plane_idx < 0 || plane_idx > 3)
+		return;
+	const int sx = 8;
+	const int dx = 8;
+	const int src_y_inc = src_row_bytes - (dst_words - 1) * sx;
+	const int dst_y_inc = dst_row_bytes - (dst_words - 1) * dx;
+	ST_Blit_Wait_Idle();
+	*ST_BLT_REG(0xFFFF8A20UL) = (unsigned short)sx;
+	*ST_BLT_REG(0xFFFF8A22UL) = (unsigned short)src_y_inc;
+	{
+		size_t sa = (size_t)(src_base + plane_idx * 2);
+		*ST_BLT_REG(0xFFFF8A24UL) = (unsigned short)(sa >> 16);
+		*ST_BLT_REG(0xFFFF8A26UL) = (unsigned short)(sa & 0xFFFFu);
+	}
+	*ST_BLT_REG(0xFFFF8A28UL) = 0xFFFF;
+	*ST_BLT_REG(0xFFFF8A2AUL) = 0xFFFF;
+	*ST_BLT_REG(0xFFFF8A2CUL) = 0xFFFF;
+	*ST_BLT_REG(0xFFFF8A2EUL) = (unsigned short)dx;
+	*ST_BLT_REG(0xFFFF8A30UL) = (unsigned short)dst_y_inc;
+	{
+		size_t da = (size_t)(dst_base + plane_idx * 2);
+		*ST_BLT_REG(0xFFFF8A32UL) = (unsigned short)(da >> 16);
+		*ST_BLT_REG(0xFFFF8A34UL) = (unsigned short)(da & 0xFFFFu);
+	}
+	*ST_BLT_REG(0xFFFF8A36UL) = (unsigned short)dst_words;
+	*ST_BLT_REG(0xFFFF8A38UL) = (unsigned short)lines;
+	*(volatile unsigned char *)0xFFFF8A3AUL = 2;              /* HOP: source */
+	*(volatile unsigned char *)0xFFFF8A3BUL = op;             /* OP */
+	{
+		/* Keep to pure 4-bit skew value first; extra control bits are blitter-revision sensitive. */
+		unsigned char skewb = (unsigned char)(skew_bits & 15u);
+		*(volatile unsigned char *)0xFFFF8A3DUL = skewb;
+	}
+	*(volatile unsigned char *)0xFFFF8A3CUL = 0x80;           /* start */
+	ST_Blit_Wait_Idle();
+}
+
+static void ST_Blit_Interleaved_Block_Skew(
+	const uint8_t *src, uint8_t *dst,
+	int src_row_bytes, int dst_row_bytes,
+	int dst_words, int lines, unsigned skew_bits, unsigned char op)
+{
+	for (int pl = 0; pl < 4; pl++)
+		ST_Blit_Plane_Skew(src, dst, src_row_bytes, dst_row_bytes, dst_words, lines, pl, skew_bits, op);
+}
 
 /***********************************************************************************************
  * WWMouseClass::WWMouseClass -- Constructor for the Mouse Class                               *
@@ -39,9 +124,18 @@ WWMouseClass::WWMouseClass(GraphicViewPortClass *scr, int mouse_max_width, int m
 	CursorWidth		= 0;
 	CursorHeight	= 0;
 
-	MouseBuffer		= new char[mouse_max_width * mouse_max_height];
+	const int blit_max_width = mouse_max_width + 31; /* word-align headroom */
+	const int blit_max_words = (blit_max_width + 15) >> 4;
+	const int blit_max_bytes = blit_max_words * 8 * mouse_max_height;
+	MouseBlitRowBytes = blit_max_words * 8;
+	MouseBuffer		= new char[blit_max_bytes];
+	MousePlanarColorPre = new unsigned char[blit_max_bytes];
 	MouseBuffX		= -1;
 	MouseBuffY  	= -1;
+	MouseBuffLeft	= -1;
+	MouseBuffTop	= -1;
+	MouseBuffWords	= 0;
+	MouseBuffH		= 0;
 	MousePosX		= -1;
 	MousePosY		= -1;
 	MaxWidth			= mouse_max_width;
@@ -86,6 +180,7 @@ WWMouseClass::~WWMouseClass()
 
 	if (MouseCursor) delete[] MouseCursor;
 	if (MouseBuffer) delete[] MouseBuffer;
+	if (MousePlanarColorPre) delete[] MousePlanarColorPre;
 	if (EraseBuffer) delete[] EraseBuffer;
 
 	/*
@@ -154,6 +249,11 @@ void *WWMouseClass::Set_Cursor(int xhotspot, int yhotspot, void *cursor)
 		/* Invalidate saved position so next Draw_Mouse doesn't restore garbage */
 		MouseBuffX = -1;
 		MouseBuffY = -1;
+		MouseBuffLeft = -1;
+		MouseBuffTop = -1;
+		MouseBuffWords = 0;
+		MouseBuffH = 0;
+		Rebuild_Planar_Cursor_From_Decoded();
 	} else {
 		CursorWidth = 0;
 		CursorHeight = 0;
@@ -189,6 +289,47 @@ void WWMouseClass::Set_Cursor_From_Block(int hotx, int hoty, void *block, int fr
 	}
 	MouseBuffX = -1;
 	MouseBuffY = -1;
+	MouseBuffLeft = -1;
+	MouseBuffTop = -1;
+	MouseBuffWords = 0;
+	MouseBuffH = 0;
+	Rebuild_Planar_Cursor_From_Decoded();
+}
+
+/***************************************************************************
+ * WWMouseClass::Rebuild_Planar_Cursor_From_Decoded -- planar color         *
+ *                                                                         *
+ * Builds canonical (X shift 0) MousePlanarColorPre.
+ * Draw_Mouse skew-copies it per pixel offset via the blitter and ORs it
+ * directly into VRAM (transparent pixels are color 0).
+ *=========================================================================*/
+void WWMouseClass::Rebuild_Planar_Cursor_From_Decoded(void)
+{
+	if (CursorWidth <= 0 || CursorHeight <= 0 || !MousePlanarColorPre)
+		return;
+	const int blit_bytes = MouseBlitRowBytes * MaxHeight;
+	memset(MousePlanarColorPre, 0, (size_t)blit_bytes);
+	const unsigned char *cur = (const unsigned char *)MouseCursor;
+	for (int row = 0; row < CursorHeight; row++) {
+		unsigned char *color = MousePlanarColorPre + row * MouseBlitRowBytes;
+		for (int col = 0; col < CursorWidth; col++) {
+			const unsigned char px = cur[col];
+			if (px == 0)
+				continue;
+			const int ax = col;
+			const int group = ax >> 4;
+			const int half = (ax >> 3) & 1;
+			unsigned char *c = color + group * 8 + half;
+			const int bitnum = 7 - (ax & 7);
+			const unsigned char bit = (unsigned char)(1u << bitnum);
+			for (int pl = 0; pl < 4; pl++) {
+				unsigned char *cb = c + pl * 2;
+				if (px & (1u << pl))
+					*cb |= bit;
+			}
+		}
+		cur += CursorWidth;
+	}
 }
 
 /***************************************************************************
@@ -204,12 +345,17 @@ void WWMouseClass::Set_Cursor_From_Block(int hotx, int hoty, void *block, int fr
 void WWMouseClass::Show_Mouse(void)
 {
 	MouseUpdate++;
-	// Windows compatibility: State=0 is visible, State>0 is hidden
-	// Decrement State to make mouse more visible (but don't go below 0)
 	if (State > 0) {
 		State--;
+		if (State == 0 && Screen) {
+			int x = Get_Mouse_X();
+			int y = Get_Mouse_Y();
+			if (Screen->Lock()) {
+				Low_Show_Mouse(x, y);
+				Screen->Unlock();
+			}
+		}
 	}
-	// TODO: Implement actual mouse showing for Atari ST
 	MouseUpdate--;
 }
 
@@ -226,11 +372,84 @@ void WWMouseClass::Show_Mouse(void)
 void WWMouseClass::Hide_Mouse(void)
 {
 	MouseUpdate++;
-	// Windows compatibility: State=0 is visible, State>0 is hidden
-	// Increment State to make mouse more hidden
+	if (State == 0 && Screen) {
+		if (Screen->Lock()) {
+			Low_Hide_Mouse();
+			Screen->Unlock();
+		}
+	}
 	State++;
-	// TODO: Implement actual mouse hiding for Atari ST
 	MouseUpdate--;
+}
+
+void WWMouseClass::Low_Hide_Mouse(void)
+{
+	if (!Screen)
+		return;
+	GraphicBufferClass *gb = Screen->Get_Graphic_Buffer();
+	if (!gb || !gb->Uses_ST_LoRes_Planar_Layout())
+		return;
+	if (MouseBuffWords > 0 && MouseBuffH > 0 && MouseBuffLeft >= 0 && MouseBuffTop >= 0) {
+		uint8_t *dst = (uint8_t *)gb->Get_Buffer()
+			+ MouseBuffTop * ST_PLANAR_BYTES_PER_LINE
+			+ ((MouseBuffLeft >> 4) * 8);
+		const int row_bytes = MouseBuffWords * 8;
+		ST_Copy_Bytes_2D((const uint8_t *)MouseBuffer, dst, row_bytes, MouseBuffH, row_bytes, ST_PLANAR_BYTES_PER_LINE);
+	}
+	MouseBuffX = -1;
+	MouseBuffY = -1;
+	MouseBuffLeft = -1;
+	MouseBuffTop = -1;
+	MouseBuffWords = 0;
+	MouseBuffH = 0;
+}
+
+void WWMouseClass::Low_Show_Mouse(int x, int y)
+{
+	if (!Screen || State != 0 || !PrevCursor || CursorWidth <= 0 || CursorHeight <= 0)
+		return;
+	GraphicBufferClass *gb = Screen->Get_Graphic_Buffer();
+	if (!gb || !gb->Uses_ST_LoRes_Planar_Layout())
+		return;
+
+	int vpw = Screen->Get_Width();
+	int vph = Screen->Get_Height();
+	int left = x - MouseXHot;
+	int top = y - MouseYHot;
+	int clip_left = left < 0 ? 0 : left;
+	int clip_top = top < 0 ? 0 : top;
+	int clip_right = left + CursorWidth;
+	int clip_bottom = top + CursorHeight;
+	if (clip_right > vpw) clip_right = vpw;
+	if (clip_bottom > vph) clip_bottom = vph;
+	const int vis_w = clip_right - clip_left;
+	const int vis_h = clip_bottom - clip_top;
+
+	MouseBuffX = x;
+	MouseBuffY = y;
+	if (vis_w <= 0 || vis_h <= 0) {
+		MouseBuffLeft = -1;
+		MouseBuffTop = -1;
+		MouseBuffWords = 0;
+		MouseBuffH = 0;
+		return;
+	}
+
+	const int word_left = clip_left & ~15;
+	const int word_right = (clip_right + 15) & ~15;
+	const int words = (word_right - word_left) >> 4;
+	const int row_bytes = words * 8;
+	uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
+		+ clip_top * ST_PLANAR_BYTES_PER_LINE
+		+ ((word_left >> 4) * 8);
+	ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, vis_h, ST_PLANAR_BYTES_PER_LINE, row_bytes);
+
+	MouseBuffLeft = word_left;
+	MouseBuffTop = clip_top;
+	MouseBuffWords = words;
+	MouseBuffH = vis_h;
+
+	Draw_Mouse(Screen);
 }
 
 /***************************************************************************
@@ -353,14 +572,8 @@ int WWMouseClass::Get_Mouse_Y(void)
  *=========================================================================*/
 void WWMouseClass::Process_Mouse(void)
 {
-	// Skip if forced position is set
-	if (DLLForceMouseX >= 0 || DLLForceMouseY >= 0) {
-		return;
-	}
-	
-	// Read mouse position from LINE-A system variables (graphics cursor)
-	int mouse_x = GCURX;
-	int mouse_y = GCURY;
+	int mouse_x = (DLLForceMouseX >= 0) ? DLLForceMouseX : GCURX;
+	int mouse_y = (DLLForceMouseY >= 0) ? DLLForceMouseY : GCURY;
 	
 	// Clamp to screen bounds if Screen is set
 	if (Screen) {
@@ -400,6 +613,29 @@ void WWMouseClass::Process_Mouse(void)
 				_Kbd->Put(mouse_y);
 			}
 			LastMouseBt = bt;
+		}
+	}
+
+	/*
+	 * Win32-like behavior: poll position and redraw cursor only when it moved.
+	 * This keeps mouse painting event-driven by movement instead of per-frame loops.
+	 */
+	if (Screen && State == 0 && !MouseUpdate) {
+		if (mouse_x != MouseBuffX || mouse_y != MouseBuffY) {
+			if (Screen->Lock()) {
+				Low_Hide_Mouse();
+				if (MCFlags & CONDHIDE
+					&& mouse_x >= MouseCXLeft && mouse_x <= MouseCXRight
+					&& mouse_y >= MouseCYUpper && mouse_y <= MouseCYLower) {
+					MCFlags |= CONDHIDDEN;
+				} else {
+					MCFlags &= ~CONDHIDDEN;
+				}
+				if (!(MCFlags & CONDHIDDEN)) {
+					Low_Show_Mouse(mouse_x, mouse_y);
+				}
+				Screen->Unlock();
+			}
 		}
 	}
 }
@@ -557,54 +793,73 @@ void Set_Mouse_Cursor_From_Block(int hotx, int hoty, void *block, int frame_inde
  * OUTPUT:     none                                                        *
  *                                                                         *
  * HISTORY:                                                                *
- *   Analogous to WIN32: restore old background, save new, draw cursor.   *
+ *   Internal utility: blit cursor shape only (no save/restore).          *
  *=========================================================================*/
 void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 {
 	if (!scr || State != 0 || !PrevCursor || CursorWidth <= 0 || CursorHeight <= 0)
 		return;
-	if (!scr->Lock())
+	GraphicBufferClass *gb = scr->Get_Graphic_Buffer();
+	if (!gb || !gb->Uses_ST_LoRes_Planar_Layout()) {
 		return;
-	/* Sample hardware; must not clobber MouseBuffX/Y (previous draw restore coords). */
-	if (DLLForceMouseX < 0 && DLLForceMouseY < 0)
-		Process_Mouse();
+	}
 	int vpw = scr->Get_Width();
 	int vph = scr->Get_Height();
 	int x = Get_Mouse_X();
 	int y = Get_Mouse_Y();
-	/* Clamp so cursor rect stays fully inside viewport */
-	if (x < MouseXHot) x = MouseXHot;
-	if (y < MouseYHot) y = MouseYHot;
-	if (x > vpw - CursorWidth + MouseXHot) x = vpw - CursorWidth + MouseXHot;
-	if (y > vph - CursorHeight + MouseYHot) y = vph - CursorHeight + MouseYHot;
 	int left = x - MouseXHot;
 	int top = y - MouseYHot;
-	if (left < 0 || top < 0) {
-		scr->Unlock();
+	int right = left + CursorWidth;
+	int bottom = top + CursorHeight;
+	if (right <= 0 || bottom <= 0 || left >= vpw || top >= vph) {
 		return;
 	}
-	/* Restore background at previous cursor position */
-	if (MouseBuffX >= 0 && MouseBuffY >= 0) {
-		int old_left = MouseBuffX - MouseXHot;
-		int old_top = MouseBuffY - MouseYHot;
-		if (old_left >= 0 && old_top >= 0 &&
-		    old_left + CursorWidth <= vpw && old_top + CursorHeight <= vph)
-			Buffer_To_Page(old_left, old_top, CursorWidth, CursorHeight, MouseBuffer, scr);
-	}
-	/* Save background under new position */
-	Buffer_From_Page(left, top, CursorWidth, CursorHeight, MouseBuffer, scr);
-	/* Draw cursor (0 = transparent); use Buffer_Put_Pixel for linear + ST planar. */
-	const unsigned char *cur = (const unsigned char *)MouseCursor;
-	for (int row = 0; row < CursorHeight; row++) {
-		for (int col = 0; col < CursorWidth; col++) {
-			if (cur[col] != 0)
-				Buffer_Put_Pixel(scr, left + col, top + row, cur[col]);
+
+	if (left < 0 || top < 0 || right > vpw || bottom > vph) {
+		const int clip_left = left < 0 ? 0 : left;
+		const int clip_top = top < 0 ? 0 : top;
+		const int clip_right = right > vpw ? vpw : right;
+		const int clip_bottom = bottom > vph ? vph : bottom;
+		const int src_x = clip_left - left;
+		const int src_y = clip_top - top;
+		const int vis_w = clip_right - clip_left;
+		const int vis_h = clip_bottom - clip_top;
+		if (vis_w <= 0 || vis_h <= 0)
+			return;
+		const unsigned char *src = (const unsigned char *)MouseCursor + src_y * CursorWidth + src_x;
+		for (int row = 0; row < vis_h; row++) {
+			const unsigned char *s = src + row * CursorWidth;
+			for (int col = 0; col < vis_w; col++) {
+				const unsigned char px = s[col];
+				if (px != 0) {
+					Buffer_Put_Pixel(scr, clip_left + col, clip_top + row, px);
+				}
+			}
 		}
-		cur += CursorWidth;
+		return;
 	}
-	MouseBuffX = x;
-	MouseBuffY = y;
-	scr->Unlock();
+
+	/*
+	 * Word-aligned cursor block (all planar):
+	 * - OR skewed canonical cursor color (shift=0 source) directly into VRAM
+	 *   (transparent pixels are encoded as color 0)
+	 */
+	const int word_left = left & ~15;
+	const int shift = left - word_left;
+	const int words = (shift + CursorWidth + 15) >> 4;
+	const unsigned skew_bits = (unsigned)(shift & 15);
+	uint8_t *dst = (uint8_t *)gb->Get_Buffer()
+		+ top * ST_PLANAR_BYTES_PER_LINE
+		+ ((word_left >> 4) * 8);
+	ST_Blit_Interleaved_Block_Skew(
+		(const uint8_t *)MousePlanarColorPre,
+		dst,
+		MouseBlitRowBytes,
+		ST_PLANAR_BYTES_PER_LINE,
+		words,
+		CursorHeight,
+		skew_bits,
+		7 /* OP: D = D OR S */);
 }
 
 /***************************************************************************

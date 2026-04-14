@@ -53,6 +53,17 @@
 #define PALETTE_BASE_ADDR 0xFF8240
 #define PALETTE_REG_COUNT 16
 
+static BOOL Require_ST_Blitter(void)
+{
+	short cfg = Blitmode(-1);
+	if ((cfg & 0x0002) == 0) {
+		return FALSE;
+	}
+	/* Force hardware blitter mode globally. */
+	Blitmode(BLIT_HARD);
+	return TRUE;
+}
+
 // Pointer to palette hardware registers (volatile because hardware can change them)
 static volatile unsigned short *PaletteRegs = (volatile unsigned short *)PALETTE_BASE_ADDR;
 
@@ -225,6 +236,11 @@ int main(int argc, char *argv[])
 
 			if (!video_success){
 				printf("C&C - Failed to set video mode.\n");
+				if (Palette) delete [] Palette;
+				return (EXIT_FAILURE);
+			}
+			if (!Require_ST_Blitter()) {
+				printf("C&C - Atari BLiTTER chip not available. This build requires BLiTTER hardware.\n");
 				if (Palette) delete [] Palette;
 				return (EXIT_FAILURE);
 			}
@@ -807,75 +823,5 @@ void Window_Show_Mouse(void)
 {
 	// Stub for Atari ST - just show the mouse
 	Show_Mouse();
-}
-
-/***********************************************************************************************
- * Render_Logical_To_ST_Screen -- Renders logical screen to ST physical screen                *
- *                                                                                             *
- * Converts the logical screen (256 colors, byte-per-pixel) to ST's physical screen           *
- * (16 colors, interleaved bitplanes). Takes lowest 4 bits of source color index.             *
- *                                                                                             *
- * INPUT:   none                                                                               *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS: Assumes LoRes mode (320x200)                                                      *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *    Created for Atari ST port                                                               *
- *=============================================================================================*/
-void Render_Logical_To_ST_Screen(void)
-{
-	/*
-	** Planar 320x200: present by Setscreen + swap off-screen draw page (no full-frame C2P).
-	** Other modes: chunky 8bpp -> Physbase via C2P.
-	*/
-	if (VisiblePage.Uses_ST_LoRes_Planar_Layout()) {
-		if (!SeenBuff.Lock()) {
-			return;
-		}
-		Wait_Vert_Blank();
-		/*
-		 * Show the Visible page only. Blit_Hid_Page_To_Seen_Buff() copies Hidden -> Visible;
-		 * SeenBuff is attached to VisiblePage, so the mouse and UI must stay on the same
-		 * backing store that Physbase points at. Swapping Visible/Hidden buffer pointers here
-		 * would desync Setscreen from SeenBuff and produce wrong or duplicated halves of the
-		 * framebuffer.
-		 */
-		unsigned char *drawbuf = (unsigned char *)VisiblePage.Get_Buffer();
-		Setscreen((long)drawbuf, (long)drawbuf, -1);
-		SeenBuff.Unlock();
-		return;
-	}
-
-	// Draw_Caption and other drawing functions render to SeenBuff (via Set_Logic_Page)
-	// SeenBuff is a viewport attached to VisiblePage, so the actual buffer is in VisiblePage
-	// We should read from VisiblePage's buffer, accounting for SeenBuff's viewport position
-	
-	// Lock VisiblePage to access its buffer
-	if (!SeenBuff.Lock()) {
-		return;
-	}
-	
-	unsigned char *base_buffer = (unsigned char *)SeenBuff.Get_Offset();
-	if (!base_buffer) {
-		SeenBuff.Unlock();
-		return;
-	}
-	
-	int seen_pitch = SeenBuff.Get_Pitch();
-	if (seen_pitch == 0) seen_pitch = SeenBuff.Get_Width();
-	
-	// Get ST physical screen base address
-	unsigned char *st_screen = (unsigned char *)Physbase();
-	if (!st_screen) {
-		SeenBuff.Unlock();
-		return;
-	}
-
-	/* Fast table-based c2p with 4x4 Bayer dithering + movep (8 pixels at a time). */
-	C2P_Render_Logical_To_ST_Screen((const uint8_t *)base_buffer, seen_pitch, (uint8_t *)st_screen);
-	
-	SeenBuff.Unlock();
 }
 

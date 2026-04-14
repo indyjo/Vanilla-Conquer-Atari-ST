@@ -1,7 +1,7 @@
 /*
  * Interactive: HTITLE production draw, then animate the game mouse cursor (MOUSE.SHP)
- * over the title using WWMouseClass::Draw_Mouse. Position is synthetic (DLLForceMouseX/Y),
- * stepped once per Vsync (~50 Hz) for natural motion.
+ * over the title using the normal mouse update path (Process_Mouse), not direct Draw_Mouse.
+ * Position is synthetic (DLLForceMouseX/Y), stepped once per Vsync (~50 Hz).
  */
 
 #include "function.h"
@@ -157,14 +157,20 @@ int st_run_interactive_title_mouse_cursor(void)
 		Set_Mouse_Cursor(0, 0, Extract_Shape(mouse_block, 0));
 		Show_Mouse();
 
+		/* Align animation to frame boundary before first draw. */
+		Vsync();
 		for (int f = 0; f < ST_MOUSE_DEMO_FRAMES; f++) {
 			double t = (double)f * (2.0 * M_PI / 280.0);
 			int mxp = 160 + (int)(110.0 * sin(t));
 			int myp = 100 + (int)(72.0 * sin(t * 1.37 + 0.9));
 			DLLForceMouseX = mxp;
 			DLLForceMouseY = myp;
-			mouse.Draw_Mouse(&vp);
+			/*
+			 * Use the same path as the actual game: movement polling/update in Process_Mouse.
+			 * This includes restore of prior background before drawing at the new position.
+			 */
 			Vsync();
+			mouse.Process_Mouse();
 		}
 
 		DLLForceMouseX = -1;
@@ -186,7 +192,7 @@ int st_run_interactive_title_mouse_cursor(void)
 	printf("\n=== INTERACTIVE: HTITLE + moving mouse cursor ===\n");
 	st_wrap_puts(
 			"Synthetic path (~50 Hz): MOUSE.SHP frame 0 via Set_Mouse_Cursor + "
-			"Draw_Mouse over HTITLE. Requires UPDATE.MIX and CCLOCAL.MIX.",
+			"Process_Mouse over HTITLE (game-like cursor flow). Requires UPDATE.MIX and CCLOCAL.MIX.",
 			ST_TEXT_MAXCOL);
 
 	int ok = st_read_yes_no();

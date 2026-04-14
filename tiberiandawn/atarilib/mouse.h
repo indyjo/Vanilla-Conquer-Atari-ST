@@ -68,6 +68,8 @@ class WWMouseClass {
 		};
 		void Low_Hide_Mouse(void);
 		void Low_Show_Mouse(int x, int y);
+		/** After MouseCursor is filled: build canonical (shift=0) planar color bits. */
+		void Rebuild_Planar_Cursor_From_Decoded(void);
 
 		char						*MouseCursor;	// pointer to the mouse cursor in memory
 		int						MouseXHot;		// X hot spot of the current mouse cursor
@@ -75,13 +77,21 @@ class WWMouseClass {
 		int						CursorWidth;	// width of the mouse cursor in pixels
 		int						CursorHeight;	// height of the mouse cursor in pixels
 
-		char						*MouseBuffer;	// pointer to background buffer in memory
+		char						*MouseBuffer;	// saved planar background block (word-aligned rect)
 		int						MouseBuffX;		// hotspot x where MouseBuffer was last saved (Draw_Mouse only)
 		int						MouseBuffY;		// hotspot y where MouseBuffer was last saved (Draw_Mouse only)
+		int						MouseBuffLeft;	// word-aligned left edge of saved background rect
+		int						MouseBuffTop;	// top edge of saved background rect
+		int						MouseBuffWords;	// width of saved background rect in 16px words
+		int						MouseBuffH;		// saved background rect height
 		int						MousePosX;		// last sampled cursor x (LINE-A / clamped); not for buffer restore
 		int						MousePosY;		// last sampled cursor y
 		int						MaxWidth;		// maximum width of mouse background buffer
 		int						MaxHeight;		// maximum height of mouse background buffer
+		/** Canonical (X shift 0) planar color; same row stride as MouseBlitRowBytes. */
+		unsigned char		*MousePlanarColorPre;
+		/** ST low-res bytes per cursor row in scratch buffers (aligned max width). */
+		int						MouseBlitRowBytes;
 
 		int						MouseCXLeft;	// left x pos if conditional hide mouse in effect
 		int						MouseCYUpper;	// upper y pos if conditional hide mouse in effect

@@ -41,6 +41,13 @@
 #include "common/wsproto.h"
 #include "common/vqaaudio.h"
 
+#ifdef POSIX
+#include "atarilib/c2p.h"
+#include "atarilib/drawbuff.h"
+#include <cstdarg>
+#include <cstdint>
+#endif
+
 void output(short, short)
 {
 }
@@ -418,6 +425,101 @@ bool Any_Locked()
         return false;
     }
 }
+
+#ifdef POSIX
+/*
+** Atari ST: KEYFBUFF.ASM is not linked for m68k; provide Buffer_Frame_To_Page here.
+** Centering + viewport clipping (9387d0d) fixes title-screen rivets drawn with SHAPE_CENTER.
+*/
+void Buffer_Frame_To_Page(int x,
+                          int y,
+                          int w,
+                          int h,
+                          void* Buffer,
+                          GraphicViewPortClass& view,
+                          int flags,
+                          ...)
+{
+    if (!Buffer || w <= 0 || h <= 0) {
+        return;
+    }
+
+    va_list ap;
+    va_start(ap, flags);
+    (void)ap; /* ghost/fade tables ignored on ST for this path */
+
+    const int trans = (flags & 0x40) ? 1 : 0;    /* SHAPE_TRANS */
+    const int centered = (flags & 0x20) ? 1 : 0; /* SHAPE_CENTER */
+
+    int draw_x = x;
+    int draw_y = y;
+    if (centered) {
+        draw_x -= (w >> 1);
+        draw_y -= (h >> 1);
+    }
+
+    GraphicBufferClass* gb = view.Get_Graphic_Buffer();
+    const int vpw = view.Get_Width();
+    const int vph = view.Get_Height();
+    int src_x = 0;
+    int src_y = 0;
+    int dst_x = draw_x;
+    int dst_y = draw_y;
+    int blit_w = w;
+    int blit_h = h;
+
+    if (dst_x < 0) {
+        src_x = -dst_x;
+        blit_w -= src_x;
+        dst_x = 0;
+    }
+    if (dst_y < 0) {
+        src_y = -dst_y;
+        blit_h -= src_y;
+        dst_y = 0;
+    }
+    if (dst_x + blit_w > vpw) {
+        blit_w = vpw - dst_x;
+    }
+    if (dst_y + blit_h > vph) {
+        blit_h = vph - dst_y;
+    }
+    if (blit_w <= 0 || blit_h <= 0) {
+        va_end(ap);
+        return;
+    }
+
+    const uint8_t* src = static_cast<const uint8_t*>(Buffer) + static_cast<size_t>(src_y) * static_cast<size_t>(w)
+                         + static_cast<size_t>(src_x);
+
+    if (gb && gb->Is_ST_Planar()) {
+        uint8_t* root = static_cast<uint8_t*>(gb->Get_Buffer());
+        C2P_Blit_Linear8_To_Planar(root,
+                                   view.Get_XPos() + dst_x,
+                                   view.Get_YPos() + dst_y,
+                                   src,
+                                   blit_w,
+                                   blit_h,
+                                   w,
+                                   trans);
+        va_end(ap);
+        return;
+    }
+
+    for (int row = 0; row < blit_h; ++row) {
+        const uint8_t* srow = src + static_cast<size_t>(row) * static_cast<size_t>(w);
+        for (int col = 0; col < blit_w; ++col) {
+            uint8_t px = srow[col];
+            if (trans && px == 0) {
+                continue;
+            }
+            view.Put_Pixel(dst_x + col, dst_y + row, px);
+        }
+    }
+
+    va_end(ap);
+}
+#endif
 
 /***********************************************************************************************
  * Memory_Error_Handler -- Handle a possibly fatal failure to allocate memory                  *

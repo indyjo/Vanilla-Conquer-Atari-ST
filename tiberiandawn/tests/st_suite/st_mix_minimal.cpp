@@ -165,9 +165,10 @@ int st_mix_extract_file(const char *mix_path, const char *entry_name,
 		return -11;
 	}
 
+	size_t extracted_size = (size_t)hit->size;
 	free(blocks);
 	fclose(f);
 	*out_data = buf;
-	*out_size = (size_t)hit->size;
+	*out_size = extracted_size;
 	return 0;
 }

@@ -4,6 +4,7 @@
  */
 
 #include "function.h"
+#include "c2p.h"
 #include "gbuffer.h"
 #include "palette.h"
 #include "st_temperat_palette.h"
@@ -43,14 +44,17 @@ int st_run_interactive_title_production_path(void)
 	unsigned char pal[768];
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
+	long old_phys = (long)Physbase();
+	long old_log = (long)Logbase();
 	st_hw_palette_read(saved_hw);
+	Setscreen(-1L, -1L, 0);
 
 	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw, &raw_len);
 	if (mx != 0 || !raw) {
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		printf("SKIP: UPDATE.MIX err=%d\n", mx);
-		st_wrap_puts("Need UPDATE.MIX with HTITLE.PCX in cwd.", ST_TEXT_MAXCOL);
 		return 0;
 	}
 
@@ -58,6 +62,7 @@ int st_run_interactive_title_production_path(void)
 	if (!out || fwrite(raw, 1, raw_len, out) != raw_len) {
 		free(raw);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		if (out)
 			fclose(out);
@@ -68,10 +73,11 @@ int st_run_interactive_title_production_path(void)
 	free(raw);
 	raw = NULL;
 
-	GraphicBufferClass screen(320, 200, (int)GBC_ST_PLANAR_LORES);
+	unsigned char *tos_screen = (unsigned char *)Logbase();
+	GraphicBufferClass screen;
+	screen.Init(320, 200, tos_screen, 32768L, (int)GBC_ST_PLANAR_LORES);
 	GraphicViewPortClass vp(&screen, 0, 0, 320, 200);
 
-	Setscreen(-1L, -1L, 0);
 	Setscreen((long)screen.Get_Buffer(), (long)screen.Get_Buffer(), -1L);
 
 	/*
@@ -90,22 +96,17 @@ int st_run_interactive_title_production_path(void)
 	Load_Title_Screen((char *)ST_PROD_PCX_NAME, &vp, pal);
 	remove(ST_PROD_PCX_NAME);
 
+	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 	Set_Palette(pal);
 	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
 
 	Vsync();
 
-	printf("\n=== INTERACTIVE: HTITLE production path ===\n");
-	st_wrap_puts(
-			"Startup-style draw only: Read_PCX_File + "
-			"Load_Title_Screen (C2P or Scale). Not the full "
-			"menu UI (buttons/dialogs need MENUS). Compare to 3.",
-			ST_TEXT_MAXCOL);
-
 	int ok = st_read_yes_no();
 
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	st_hw_palette_write(saved_hw);
-	Setscreen(-1L, -1L, old_rez);
+	Setscreen(old_log, old_phys, old_rez);
 	Super(old_ssp);
 	return ok ? 0 : 1;
 }

@@ -35,6 +35,7 @@ void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned ch
 
 	if (load_buffer) {
 		if (palette) {
+			C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 			Set_Palette(palette);
 		}
 		int src_w = load_buffer->Get_Width();

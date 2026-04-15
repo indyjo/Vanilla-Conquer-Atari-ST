@@ -284,16 +284,17 @@ int st_run_interactive_build_frame_xor_grid(void)
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
+	long old_phys = (long)Physbase();
+	long old_log = (long)Logbase();
 	st_hw_palette_read(saved_hw);
 
 	unsigned char *chunky = (unsigned char *)calloc(1, (size_t)ST_SCR_W * ST_SCR_H);
-	unsigned char *planar = (unsigned char *)calloc(1, 32768u);
-	if (!chunky || !planar) {
+	if (!chunky) {
 		free(chunky);
-		free(planar);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
-		printf("FAIL: oom chunky/planar\n");
+		printf("FAIL: oom chunky\n");
 		return 1;
 	}
 
@@ -307,8 +308,8 @@ int st_run_interactive_build_frame_xor_grid(void)
 	if (mx != 0 || !raw) {
 		printf("SKIP %s:%s err=%d (%s)\n", sel->mix, sel->shp, mx, sel->desc);
 		free(chunky);
-		free(planar);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		return 1;
 	}
@@ -320,8 +321,8 @@ int st_run_interactive_build_frame_xor_grid(void)
 		printf("SKIP %s:%s bad header\n", sel->mix, sel->shp);
 		free(raw);
 		free(chunky);
-		free(planar);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		return 1;
 	}
@@ -337,6 +338,14 @@ int st_run_interactive_build_frame_xor_grid(void)
 	}
 
 	Setscreen(-1L, -1L, 0);
+	unsigned char *planar = (unsigned char *)Logbase();
+	if (!planar) {
+		free(chunky);
+		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
+		Super(old_ssp);
+		return 1;
+	}
 	St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
 	C2P_Render_Logical_To_ST_Screen(chunky, ST_SCR_W, planar);
 	Setscreen((long)planar, (long)planar, -1L);
@@ -346,10 +355,9 @@ int st_run_interactive_build_frame_xor_grid(void)
 	int ok = st_read_yes_no_silent();
 
 	free(chunky);
-	free(planar);
 
 	st_hw_palette_write(saved_hw);
-	Setscreen(-1L, -1L, old_rez);
+	Setscreen(old_log, old_phys, old_rez);
 	Super(old_ssp);
 	return ok ? 0 : 1;
 }

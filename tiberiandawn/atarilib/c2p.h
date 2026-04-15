@@ -17,6 +17,15 @@ extern "C" {
 /* Rebuild c2p dither map (palette-opt weights; TEMPERAT @ subset 0..15). Still call after Set_Palette(). */
 void C2P_Rebuild_Tables_From_CurrentPalette(void);
 
+enum {
+	C2P_WEIGHTSET_TEMPERAT = 0,
+	C2P_WEIGHTSET_HTITLE = 1
+};
+
+/* Select which palette-opt weight table drives 8-bit->4-bit mapping. */
+void C2P_Select_WeightSet(int weight_set);
+int C2P_Get_WeightSet(void);
+
 /* Map 8-bit palette index to one ST 4-bit color using current dither tables (absolute pixel coords). */
 unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char pal_idx);
 

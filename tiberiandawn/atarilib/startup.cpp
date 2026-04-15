@@ -251,24 +251,25 @@ int main(int argc, char *argv[])
 
 			/*
 			** Initialize video buffers
-			** ST LoRes: two 32KiB planar pages for draw + Setscreen page flip (320x200 only).
+			** ST LoRes: recycle TOS logical screen for VisiblePage and allocate one extra
+			** 32KiB aligned planar page for HiddenPage (320x200 only).
 			** Other resolutions keep linear 8bpp + per-frame C2P fallback.
 			*/
 			if (ScreenWidth == 320 && ScreenHeight == 200) {
 				/*
-				 * ST shifter uses a 256-byte-aligned video base (low 8 bits ignored). Allocate
-				 * extra slack and align so Setscreen(Physbase) matches CPU writes to this buffer.
-				 * (STE byte-precise base via XBIOS is possible later; alignment fixes all STs.)
+				 * ST shifter uses a 256-byte-aligned video base (low 8 bits ignored). We reuse
+				 * current TOS screen as visible and allocate one aligned hidden page for drawing.
 				 */
 				static unsigned char *st_plane_alloc = NULL;
-				static unsigned char *st_dual_plane = NULL;
+				static unsigned char *st_hidden_plane = NULL;
 				if (!st_plane_alloc) {
-					st_plane_alloc = new unsigned char[32768 * 2 + 256];
+					st_plane_alloc = new unsigned char[32768 + 256];
 					uintptr_t raw = (uintptr_t)st_plane_alloc;
-					st_dual_plane = (unsigned char *)((raw + 255u) & ~(uintptr_t)255u);
+					st_hidden_plane = (unsigned char *)((raw + 255u) & ~(uintptr_t)255u);
 				}
-				VisiblePage.Init(320, 200, st_dual_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
-				HiddenPage.Init(320, 200, st_dual_plane + 32768, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+				unsigned char *tos_visible = (unsigned char *)Logbase();
+				VisiblePage.Init(320, 200, tos_visible, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+				HiddenPage.Init(320, 200, st_hidden_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
 				VisiblePage.Clear(0);
 				HiddenPage.Clear(0);
 				Setscreen((long)VisiblePage.Get_Buffer(), (long)VisiblePage.Get_Buffer(), -1);

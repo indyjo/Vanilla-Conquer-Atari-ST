@@ -72,22 +72,33 @@ int st_run_interactive_gradient(void)
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
+	long old_phys = (long)Physbase();
+	long old_log = (long)Logbase();
 	st_hw_palette_read(saved_hw);
 
 	unsigned char *chunky = (unsigned char *)malloc(320 * 200);
-	unsigned char *planar = (unsigned char *)calloc(1, 32768);
+	unsigned char *planar = NULL;
 	unsigned char pal[768];
 
-	if (!chunky || !planar) {
+	if (!chunky) {
 		free(chunky);
-		free(planar);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		printf("  FAIL: allocation\n");
 		return 1;
 	}
 
 	Setscreen(-1L, -1L, 0); /* low rez */
+	planar = (unsigned char *)Logbase();
+	if (!planar) {
+		free(chunky);
+		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
+		Super(old_ssp);
+		printf("  FAIL: no logbase\n");
+		return 1;
+	}
 
 	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);
@@ -112,20 +123,13 @@ int st_run_interactive_gradient(void)
 	Setscreen((long)planar, (long)planar, -1L);
 	Vsync();
 
-	printf("\n=== INTERACTIVE: C2P color grid ===\n");
-	st_wrap_puts(
-			"16x16 blocks of 8x8 px at screen bottom "
-			"(centered); indices 0..255, TEMPERAT + C2P.",
-			ST_TEXT_MAXCOL);
-
 	int ok = st_read_yes_no();
 
 	st_hw_palette_write(saved_hw);
-	Setscreen(-1L, -1L, old_rez);
+	Setscreen(old_log, old_phys, old_rez);
 	Super(old_ssp);
 
 	free(chunky);
-	free(planar);
 	return ok ? 0 : 1;
 }
 
@@ -139,26 +143,18 @@ int st_run_interactive_htitle(void)
 	unsigned char pal[768];
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
+	long old_phys = (long)Physbase();
+	long old_log = (long)Logbase();
 	st_hw_palette_read(saved_hw);
 
-	unsigned char *planar = (unsigned char *)calloc(1, 32768);
-	if (!planar) {
-		st_hw_palette_write(saved_hw);
-		Super(old_ssp);
-		printf("  FAIL: allocation\n");
-		return 1;
-	}
+	unsigned char *planar = NULL;
 
 	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw_mix, &raw_len);
 	if (mx != 0 || !raw_mix) {
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
-		free(planar);
 		printf("  SKIP: UPDATE.MIX / HTITLE.PCX (mix err=%d)\n", mx);
-		st_wrap_puts(
-				"Place UPDATE.MIX in the current directory (same "
-				"folder as the test .TOS).",
-				ST_TEXT_MAXCOL);
 		return 0;
 	}
 
@@ -168,9 +164,9 @@ int st_run_interactive_htitle(void)
 
 	if (err != 0 || !pcx || w <= 0 || h <= 0) {
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		free(pcx);
-		free(planar);
 		printf("SKIP: HTITLE decode err=%d w=%d h=%d\n", err, w, h);
 		return 0;
 	}
@@ -180,35 +176,30 @@ int st_run_interactive_htitle(void)
 	unsigned char *down_free = NULL;
 	if (st_prepare_320x200_chunky(pcx, w, h, stride, &disp, &disp_stride, &down_free) != 0 || !disp) {
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		free(pcx);
-		free(planar);
 		printf("SKIP: HTITLE downsample alloc failed (w=%d h=%d)\n", w, h);
 		return 0;
 	}
 
 	Setscreen(-1L, -1L, 0);
+	planar = (unsigned char *)Logbase();
+	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 	Set_Palette(pal);
 	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
 
 	C2P_Render_Logical_To_ST_Screen(disp, disp_stride, planar);
 	Setscreen((long)planar, (long)planar, -1L);
 	Vsync();
-
-	printf("\n=== INTERACTIVE: HTITLE (UPDATE.MIX) ===\n");
-	st_wrap_puts(
-			"HTITLE scaled to 320x200. Expect no half-width "
-			"duplicate; title art readable.",
-			ST_TEXT_MAXCOL);
-
 	int ok = st_read_yes_no();
 
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	st_hw_palette_write(saved_hw);
-	Setscreen(-1L, -1L, old_rez);
+	Setscreen(old_log, old_phys, old_rez);
 	Super(old_ssp);
 
 	free(down_free); /* only if we allocated a shrunk buffer */
 	free(pcx);
-	free(planar);
 	return ok ? 0 : 1;
 }

@@ -5,6 +5,7 @@
  */
 
 #include "function.h"
+#include "c2p.h"
 #include "gbuffer.h"
 #include "palette.h"
 #include "st_temperat_palette.h"
@@ -27,6 +28,14 @@ extern void *Load_Alloc_Data(FileClass &file);
 #define ST_HW_PAL_COUNT 16
 #define ST_PROD_PCX_NAME "ST_HTEST.PCX"
 #define ST_GRAD_FONT_NAME "GRAD6FNT.FNT"
+
+static void st_fill_bytes(volatile unsigned char *dst, unsigned char value, size_t count)
+{
+	if (!dst)
+		return;
+	for (size_t i = 0; i < count; i++)
+		dst[i] = value;
+}
 
 /* Same table as DIALOG.CPP Simple_Text_Print::_textfontpal (gradient remap rows). */
 static const unsigned char k_textfontpal[16][16] = {
@@ -187,14 +196,17 @@ int st_run_interactive_title_menu_overlay(void)
 	void *grad_font = NULL;
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
+	long old_phys = (long)Physbase();
+	long old_log = (long)Logbase();
 	st_hw_palette_read(saved_hw);
+	Setscreen(-1L, -1L, 0);
 
 	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw, &raw_len);
 	if (mx != 0 || !raw) {
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		printf("SKIP: UPDATE.MIX err=%d\n", mx);
-		st_wrap_puts("Need UPDATE.MIX with HTITLE.PCX in cwd.", ST_TEXT_MAXCOL);
 		return 0;
 	}
 
@@ -202,6 +214,7 @@ int st_run_interactive_title_menu_overlay(void)
 	if (!out || fwrite(raw, 1, raw_len, out) != raw_len) {
 		free(raw);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		if (out)
 			fclose(out);
@@ -218,17 +231,17 @@ int st_run_interactive_title_menu_overlay(void)
 	if (gmx != 0 || !grad_raw) {
 		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		printf("SKIP: CCLOCAL.MIX %s err=%d\n", ST_GRAD_FONT_NAME, gmx);
-		st_wrap_puts("Need CCLOCAL.MIX with GRAD6FNT.FNT in cwd.", ST_TEXT_MAXCOL);
 		return 0;
 	}
-
 	FILE *gf = fopen(ST_GRAD_FONT_NAME, "wb");
 	if (!gf || fwrite(grad_raw, 1, grad_len, gf) != grad_len) {
 		free(grad_raw);
 		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		if (gf)
 			fclose(gf);
@@ -247,15 +260,15 @@ int st_run_interactive_title_menu_overlay(void)
 	if (!grad_font) {
 		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
+		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
 		printf("SKIP: Load_Alloc_Data failed for font\n");
 		return 0;
 	}
-
-	GraphicBufferClass screen(320, 200, (int)GBC_ST_PLANAR_LORES);
+	unsigned char *tos_screen = (unsigned char *)Logbase();
+	GraphicBufferClass screen;
+	screen.Init(320, 200, tos_screen, 32768L, (int)GBC_ST_PLANAR_LORES);
 	GraphicViewPortClass vp(&screen, 0, 0, 320, 200);
-
-	Setscreen(-1L, -1L, 0);
 	/*
 	 * Point the ST shifter at our draw buffer before Load_Title_Screen and UI draws.
 	 * Otherwise Physbase still references the previous framebuffer: you see a shifted /
@@ -263,7 +276,7 @@ int st_run_interactive_title_menu_overlay(void)
 	 */
 	Setscreen((long)screen.Get_Buffer(), (long)screen.Get_Buffer(), -1L);
 
-	memset(CurrentPalette, 0x01, 768);
+	st_fill_bytes((volatile unsigned char *)CurrentPalette, 0x01, 768);
 	{
 		unsigned char warm[768];
 		memcpy(warm, kStTemperatPal768, 768);
@@ -288,21 +301,13 @@ int st_run_interactive_title_menu_overlay(void)
 
 	Vsync();
 
-	printf("\n=== INTERACTIVE: title + main menu overlay ===\n");
-	st_wrap_puts(
-			"HTITLE production draw, then green dialog + "
-			"raised green button frames (TEXTBTN BOXSTYLE_GREEN_RAISED, "
-			"solid fill not BTEXTURE) + gradient labels. English placeholders. "
-			"Requires UPDATE.MIX and CCLOCAL.MIX.",
-			ST_TEXT_MAXCOL);
-
 	int ok = st_read_yes_no();
 
 	delete[] (char *)grad_font;
 	grad_font = NULL;
 
 	st_hw_palette_write(saved_hw);
-	Setscreen(-1L, -1L, old_rez);
+	Setscreen(old_log, old_phys, old_rez);
 	Super(old_ssp);
 	return ok ? 0 : 1;
 }

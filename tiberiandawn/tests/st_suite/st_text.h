@@ -14,10 +14,10 @@ extern "C" {
 /** Print paragraph with word-wrap; lines never exceed maxcol characters. */
 void st_wrap_puts(const char *paragraph, int maxcol);
 
-/** Crawcin-based Y/N (Y or Z = ok for QWERTZ). Returns 1 = ok, 0 = bad. */
+/** Wait for one keypress, no prompt, always returns 1. */
 int st_read_yes_no(void);
 
-/** Same as st_read_yes_no but no prompt or echo (blank video preview). */
+/** Same behavior as st_read_yes_no (kept for call-site compatibility). */
 int st_read_yes_no_silent(void);
 
 #ifdef __cplusplus

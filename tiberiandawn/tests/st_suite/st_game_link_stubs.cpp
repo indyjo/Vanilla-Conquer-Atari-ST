@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* KEYFRAME.CPP references these; full game defines them in GLOBALS / WINSTUB. */
 long Frame = 0;
@@ -26,6 +27,7 @@ long _ShapeBufferSize = 0;
 
 bool RunningAsDLL = false;
 int RequiredCD = -2;
+unsigned char *GamePalette = NULL;
 
 bool Force_CD_Available(int)
 {
@@ -56,6 +58,7 @@ void *Load_Alloc_Data(FileClass &file)
 {
 	void *ptr = NULL;
 	long size = 0;
+	long got = 0;
 	const char *filename = file.File_Name() ? file.File_Name() : "(unknown)";
 
 	if (!file.Is_Available()) {
@@ -81,7 +84,20 @@ void *Load_Alloc_Data(FileClass &file)
 		fprintf(stderr, "Load_Alloc_Data: oom: %s\n", filename);
 		exit(EXIT_FAILURE);
 	}
-	file.Read(ptr, size);
+	/*
+	 * RawFile/CCFile size queries and prior users can leave file position away from
+	 * start; always rewind before bulk read, and fail hard on short reads so callers
+	 * never consume partially initialized blobs.
+	 */
+	file.Seek(0, SEEK_SET);
+	memset(ptr, 0, (size_t)size);
+	got = file.Read(ptr, size);
+	if (got != size) {
+		file.Close();
+		delete[] (char *)ptr;
+		fprintf(stderr, "Load_Alloc_Data: short read: %s got=%ld want=%ld\n", filename, got, size);
+		exit(EXIT_FAILURE);
+	}
 	file.Close();
 	return ptr;
 }

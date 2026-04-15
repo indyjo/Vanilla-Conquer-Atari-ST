@@ -14,6 +14,9 @@ static const uint8_t Bayer4x4[16] = {
 };
 
 #include "c2p_palette_opt_weights.inc"
+#define kC2PPaletteOptWeight kC2PPaletteOptWeightHTitle
+#include "c2p_palette_opt_weights_htitle.inc"
+#undef kC2PPaletteOptWeight
 
 /*
 ** Palette+dither dependent map:
@@ -28,13 +31,16 @@ static uint8_t C2P_MapDither[16][256];
 /* Pair LUTs: 4 pair positions (pixels 0-1,2-3,4-5,6-7) and two-nibble index. */
 static uint32_t C2P_PairLUT[4][256];
 static int C2P_LUT_InitDone = 0;
+static int C2P_WeightSet = C2P_WEIGHTSET_TEMPERAT;
+
+static const uint8_t (*C2P_ActivePaletteWeights)[16] = kC2PPaletteOptWeight;
 
 /* Map 8-bit logical color to ST index 0..15 using palette-opt weights + Bayer rank. */
 static uint8_t C2P_STIndex_FromOptWeights(int x_mod4, int y_mod4, uint8_t src_idx)
 {
 	const int b = (y_mod4 << 2) | x_mod4;
 	const int rank = (int)Bayer4x4[b];
-	const uint8_t *w = kC2PPaletteOptWeight[src_idx];
+	const uint8_t *w = C2P_ActivePaletteWeights[src_idx];
 	int cum = 0;
 	for (int k = 0; k < 16; k++) {
 		cum += (int)w[k];
@@ -103,6 +109,23 @@ extern "C" void C2P_Rebuild_Tables_From_CurrentPalette(void)
 			C2P_MapDither[b][src] = C2P_STIndex_FromOptWeights(xb, yb, (uint8_t)src);
 		}
 	}
+}
+
+extern "C" int C2P_Get_WeightSet(void)
+{
+	return C2P_WeightSet;
+}
+
+extern "C" void C2P_Select_WeightSet(int weight_set)
+{
+	const int normalized = (weight_set == C2P_WEIGHTSET_HTITLE) ? C2P_WEIGHTSET_HTITLE : C2P_WEIGHTSET_TEMPERAT;
+	if (normalized == C2P_WeightSet)
+		return;
+
+	C2P_WeightSet = normalized;
+	C2P_ActivePaletteWeights = (C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
+	if (C2P_LUT_InitDone)
+		C2P_Rebuild_Tables_From_CurrentPalette();
 }
 
 /* movep.l d0,(a0) writes bytes to 0,2,4,6(a0): perfect for plane bytes. */
@@ -214,10 +237,12 @@ extern "C" void ST_Planar_Clear(uint8_t *base, unsigned char color4)
 	if (!base)
 		return;
 	const uint8_t c = (uint8_t)(color4 & 15);
-	if (c == 0) {
-		memset(base, 0, (size_t)ST_PLANAR_SCREEN_BYTES);
-		return;
-	}
+	/*
+	 * Avoid libc memset for ST screen clears here.
+	 * On-target diagnostics show font data adjacent to the planar buffer being clobbered
+	 * after Clear(0); using the explicit planar store loop keeps writes confined to the
+	 * exact ST interleaved layout (200 lines * 160 bytes).
+	 */
 	C2P_InitPairLUT_Once();
 	const uint8_t pair_idx = (uint8_t)((c << 4) | c);
 	const uint32_t v =

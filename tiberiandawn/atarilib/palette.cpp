@@ -4,6 +4,9 @@
 
 #include "palette.h"
 #include "c2p.h"
+#include "st_temperat_palette.h"
+
+extern unsigned char *GamePalette;
 
 /* Current palette buffer - copy of current DAC register values */
 /* Initialized to 255 (white) to match WIN32LIB behavior */
@@ -31,15 +34,29 @@ static int CalculateBrightness(unsigned char r, unsigned char g, unsigned char b
 	return (77 * r + 150 * g + 29 * b) >> 8;
 }
 
+static void Install_ST_Hardware_Palette_First16(const unsigned char *pal768)
+{
+	if (!pal768) return;
+#if defined(__m68k__)
+	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal768);
+#endif
+}
+
 extern "C" void Set_Palette(void *palette)
 {
 	if (!palette) return;
 	
 	// Copy palette to CurrentPalette
 	unsigned char *pal = (unsigned char *)palette;
+	if (pal == GamePalette) {
+		C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
+	}
 	for (int i = 0; i < 768; i++) {
 		CurrentPalette[i] = pal[i] & 63;
 	}
+
+	/* Keep ST hardware pens in sync with whichever logical palette got installed. */
+	Install_ST_Hardware_Palette_First16(CurrentPalette);
 	
 	// Build brightness-based mapping from original palette (256 entries) to ST colors (16 entries)
 	// Map source brightness (0-63) directly to ST palette index (0-15) by bitshifting

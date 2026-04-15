@@ -22,7 +22,24 @@ static inline BOOL VP_Is_Planar(GraphicViewPortClass *vp)
 	if (!vp)
 		return FALSE;
 	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	return gb && GB_Uses_ST_Planar_Surface(gb);
+	if (!gb)
+		return FALSE;
+	if (GB_Uses_ST_Planar_Surface(gb))
+		return TRUE;
+	/*
+	 * Defensive fallback: some callers still construct 320x200 ST draw buffers through
+	 * older paths where the planar surface flag can be lost. Treat canonical ST layout
+	 * geometry as planar so clear/draw paths never overrun by using 320-byte chunky rows.
+	 */
+	if (vp->Get_XPos() == 0 && vp->Get_YPos() == 0
+	    && vp->Get_Width() == ST_PLANAR_WIDTH
+	    && vp->Get_Height() == ST_PLANAR_HEIGHT
+	    && vp->Get_Pitch() == ST_PLANAR_BYTES_PER_LINE
+	    && gb->Get_Size() >= (long)ST_PLANAR_SCREEN_BYTES
+	    && gb->Get_Size() <= 65536L) {
+		return TRUE;
+	}
+	return FALSE;
 }
 
 /* True when vp is the embedded GraphicViewPort part of a GraphicBufferClass (same object). */

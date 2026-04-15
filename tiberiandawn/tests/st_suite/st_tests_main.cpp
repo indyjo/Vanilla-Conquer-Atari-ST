@@ -48,7 +48,11 @@ int main(void)
 		switch (ch) {
 		case '1':
 			printf("\n-- Automated C2P --\n");
-			st_run_c2p_autotests();
+			{
+				long old_ssp = Super(0L);
+				st_run_c2p_autotests();
+				Super(old_ssp);
+			}
 			break;
 		case '2':
 			st_run_interactive_gradient();
@@ -69,8 +73,10 @@ int main(void)
 			st_run_interactive_build_frame_xor_grid();
 			break;
 		case '8': {
+			long old_ssp = Super(0L);
 			int r = st_run_c2p_autotests();
 			int bf = st_run_build_frame_asset_autocheck();
+			Super(old_ssp);
 			printf("Auto C2P: %s\n", r ? "FAIL" : "PASS");
 			printf("Auto Build_Frame assets: %s (fail count=%d)\n",
 					bf ? "FAIL" : "PASS", bf);

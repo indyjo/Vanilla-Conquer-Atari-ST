@@ -593,10 +593,15 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 							return (0);
 						}
 					}
-					Mem_Copy( Add_Long_To_Pointer( dataptr,
-									(((unsigned long)currframe << 3) +
-									sizeof(KeyFrameHeaderType)) ),
-						&offset[0], (long)(SUBFRAMEOFFS * sizeof(unsigned long)) );
+					{
+						const unsigned char *row_bytes =
+							(const unsigned char *)Add_Long_To_Pointer(
+								dataptr,
+								(((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)));
+						for (int i = 0; i < SUBFRAMEOFFS; i++) {
+							offset[i] = ReadLE32(row_bytes + i * 4);
+						}
+					}
 					/*
 					** After reload, offset[0] is this row's DataOffset. Usually the next
 					** chain patch uses offset[2],offset[4],... (same as mid-window steps).

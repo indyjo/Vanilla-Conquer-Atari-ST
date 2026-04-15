@@ -78,8 +78,13 @@ extern "C" void Set_Palette(void *palette)
 /* Stub implementation of palette fading - matches WIN32LIB signature */
 void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)())
 {
-	// Stub - palette fading not implemented
-	// In a real implementation, this would fade to the palette over time
+	(void)delay;
+	/*
+	 * Atari port: we do not implement timed fades yet, but callers depend on
+	 * this routine to *apply* the destination palette immediately (notably when
+	 * transitioning from title/menu black to in-game GamePalette).
+	 */
+	Set_Palette(palette1);
 	if (callback) {
 		callback();
 	}

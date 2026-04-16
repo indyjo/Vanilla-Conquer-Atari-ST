@@ -64,7 +64,7 @@ static void st_build_unit_shadow_table(const unsigned char pal768[768], unsigned
  */
 static void st_blit_tile_ghost(unsigned char *screen, int sx, int sy, int scr_stride,
 		const unsigned char *src, int w, int h, int src_stride,
-		const unsigned char *unit512)
+		const unsigned char *unit512, const unsigned char *remap)
 {
 	const unsigned char *is_trans = unit512;
 	const unsigned char *blend_base = unit512 + 256;
@@ -82,7 +82,7 @@ static void st_blit_tile_ghost(unsigned char *screen, int sx, int sy, int scr_st
 			int row = (int)scr_stride * (sy + yy) + (sx + xx);
 			unsigned char it = is_trans[s];
 			if (it == 0xFFu) {
-				screen[row] = s;
+				screen[row] = remap ? remap[s] : s;
 			} else {
 				unsigned char d = screen[row];
 				screen[row] = blend_base[((size_t)it << 8) + (size_t)d];
@@ -116,7 +116,8 @@ typedef struct {
 /* Frames that often hit XOR chain / Mem_Copy on unit SHPs; 0 and small ids for sanity. */
 static const unsigned short k_frames_e1[] = { 0, 2, 3, 6, 9, 15, 19, 23, 31 };
 static const unsigned short k_frames_e2[] = { 0, 3, 7, 11, 15, 21 };
-static const unsigned short k_frames_power[] = { 0, 1, 2, 3 };
+static const unsigned short k_frames_gun[] = { 0, 1, 2, 3 };
+static const unsigned short k_frames_sam[] = { 0, 1, 2, 3 };
 static const unsigned short k_frames_minigun[] = { 0, 1, 2, 3, 4, 5 };
 static const unsigned short k_frames_fire1[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 /* OPTIONS.SHP frame 2 = OPTION_CONTROLS (game options dialog chrome); see GOPTIONS.CPP. */
@@ -132,8 +133,10 @@ static const StBfAsset k_assets[] = {
 		(int)(sizeof(k_frames_e1) / sizeof(k_frames_e1[0])) },
 	{ "CONQUER.MIX", "E2.SHP", "infantry E2 (long XOR chain)", k_frames_e2,
 		(int)(sizeof(k_frames_e2) / sizeof(k_frames_e2[0])) },
-	{ "CONQUER.MIX", "POWER.SHP", "POWER icon (short)", k_frames_power,
-		(int)(sizeof(k_frames_power) / sizeof(k_frames_power[0])) },
+	{ "CONQUER.MIX", "GUN.SHP", "gun turret building", k_frames_gun,
+		(int)(sizeof(k_frames_gun) / sizeof(k_frames_gun[0])) },
+	{ "CONQUER.MIX", "SAM.SHP", "sam site building", k_frames_sam,
+		(int)(sizeof(k_frames_sam) / sizeof(k_frames_sam[0])) },
 	{ "CONQUER.MIX", "MINIGUN.SHP", "MINIGUN muzzle", k_frames_minigun,
 		(int)(sizeof(k_frames_minigun) / sizeof(k_frames_minigun[0])) },
 	{ "CONQUER.MIX", "FIRE1.SHP", "FIRE1 ground fire", k_frames_fire1,
@@ -162,14 +165,15 @@ static void st_fill_checkerboard_4x4(unsigned char *screen, int scr_w, int scr_h
 
 /*
  * Test 7: pick entry in k_assets[] (console only, before video preview).
- * Keys 1-9 and 0 (tenth slot) match array order; other keys default to 0 (E1).
+ * Keys 1-9 and 0 match array order for the first 10 slots; 's' selects SAM.
+ * Other keys default to 0 (E1).
  */
 static int st_read_build7_shape_choice(void)
 {
 	printf(
 			"\n"
-			"1=E1 2=E2 3=POWER 4=MINIGUN 5=FIRE1 6=OPTIONS 7=TREX 8=ATOMSFX\n"
-			"9=A10 0=SILOMAKE\n"
+			"1=E1 2=E2 3=GUN 4=SAM 5=MINIGUN 6=FIRE1 7=OPTIONS 8=TREX\n"
+			"9=ATOMSFX 0=A10 s=SILOMAKE\n"
 			"Choice: ");
 	fflush(stdout);
 	long w = Crawcin();
@@ -179,17 +183,88 @@ static int st_read_build7_shape_choice(void)
 		return (int)(ch - '1');
 	if (ch == '0')
 		return 9;
+	if (ch == 's' || ch == 'S')
+		return 10;
 	return 0;
 }
 
+static int st_build7_frames_per_page(unsigned short tw, unsigned short th)
+{
+	const int cell_w = (int)tw + ST_BF7_PAD * 2;
+	const int cell_h = (int)th + ST_BF7_PAD * 2;
+	int cols = ((int)ST_SCR_W - ST_BF7_PAD * 2) / cell_w;
+	if (cols < 1)
+		cols = 1;
+	int rows = ((int)ST_SCR_H - ST_BF7_PAD * 2) / cell_h;
+	if (rows < 1)
+		rows = 1;
+	return cols * rows;
+}
+
+static int st_build7_next_remap(int remap_index)
+{
+	int next = remap_index + 1;
+	if (next >= 6) {
+		next = 0;
+	}
+	return next;
+}
+
+static const unsigned char *st_build7_remap_table(int remap_index)
+{
+	static unsigned char const * const k_remaps[] = {
+		RemapGold,
+		RemapRed,
+		RemapLtBlue,
+		RemapOrange,
+		RemapGreen,
+		RemapBlue
+	};
+
+	if (remap_index < 0 || remap_index >= (int)(sizeof(k_remaps) / sizeof(k_remaps[0]))) {
+		return NULL;
+	}
+	return k_remaps[remap_index];
+}
+
+static const char *st_build7_remap_name(int remap_index)
+{
+	static const char * const k_names[] = {
+		"GOLD",
+		"RED",
+		"LTBLUE",
+		"ORANGE",
+		"GREEN",
+		"BLUE"
+	};
+
+	if (remap_index < 0 || remap_index >= (int)(sizeof(k_names) / sizeof(k_names[0]))) {
+		return "UNKNOWN";
+	}
+	return k_names[remap_index];
+}
+
+static void st_build7_status_line(int remap_index, int page_index, int page_count)
+{
+	/*
+	 * VT52 direct cursor address:
+	 *   ESC Y row+32 col+32
+	 * ST low-res text console is 40x25, so row 24 is the bottom line.
+	 */
+	printf("\033Y%c%c", (char)(24 + 32), (char)(0 + 32));
+	printf("R:%s P:%d/%d SPC nxt H remap Y ok", st_build7_remap_name(remap_index), page_index + 1, page_count);
+	fflush(stdout);
+}
+
 /*
- * Tile every frame 0..frame_count-1 on chunky; top-aligned, ST_BF7_PAD margin and pad.
+ * Tile frames [start_frame, end_frame) on chunky; top-aligned, ST_BF7_PAD margin and pad.
  * Skips frames where Build_Frame fails (slot stays checker).
  */
-static void st_blit_all_frames_on_checker(unsigned char *chunky, void *raw, size_t raw_len,
-		unsigned short tw, unsigned short th, unsigned short frame_count)
+static void st_blit_frame_page_on_checker(unsigned char *chunky, void *raw, size_t raw_len,
+		unsigned short tw, unsigned short th, unsigned short start_frame, unsigned short end_frame,
+		const unsigned char *remap)
 {
-	if (!chunky || !raw || tw == 0 || th == 0 || frame_count == 0)
+	if (!chunky || !raw || tw == 0 || th == 0 || start_frame >= end_frame)
 		return;
 
 	const int cell_w = (int)tw + ST_BF7_PAD * 2;
@@ -209,8 +284,8 @@ static void st_blit_all_frames_on_checker(unsigned char *chunky, void *raw, size
 	unsigned char unit_shadow[ST_BF7_UNSHADOW_BYTES];
 	st_build_unit_shadow_table(kStTemperatPal768, unit_shadow);
 
-	for (unsigned short fr = 0; fr < frame_count; fr++) {
-		int slot = (int)fr;
+	for (unsigned short fr = start_frame; fr < end_frame; fr++) {
+		int slot = (int)(fr - start_frame);
 		int col = slot % cols;
 		int row = slot / cols;
 		int cx = ST_BF7_PAD + col * cell_w;
@@ -221,7 +296,7 @@ static void st_blit_all_frames_on_checker(unsigned char *chunky, void *raw, size
 		if (!br)
 			continue;
 
-		st_blit_tile_ghost(chunky, cx, cy, ST_SCR_W, buf, tw, th, tw, unit_shadow);
+		st_blit_tile_ghost(chunky, cx, cy, ST_SCR_W, buf, tw, th, tw, unit_shadow, remap);
 	}
 
 	free(buf);
@@ -327,10 +402,6 @@ int st_run_interactive_build_frame_xor_grid(void)
 		return 1;
 	}
 
-	st_fill_checkerboard_4x4(chunky, ST_SCR_W, ST_SCR_H, ST_SCR_W);
-	st_blit_all_frames_on_checker(chunky, raw, raw_len, tw, th, tc);
-	free(raw);
-
 	{
 		unsigned char pal[768];
 		memcpy(pal, kStTemperatPal768, 768);
@@ -352,8 +423,41 @@ int st_run_interactive_build_frame_xor_grid(void)
 	Vsync();
 	Vsync();
 
-	int ok = st_read_yes_no_silent();
+	int ok = 1;
+	int frames_per_page = st_build7_frames_per_page(tw, th);
+	if (frames_per_page < 1)
+		frames_per_page = 1;
+	unsigned short page_start = 0;
+	int remap_index = 0;
+	for (;;) {
+		unsigned short page_end = (unsigned short)MIN((int)tc, (int)page_start + frames_per_page);
+		const unsigned char *remap = st_build7_remap_table(remap_index);
+		int page_index = page_start / frames_per_page;
+		int page_count = (tc + frames_per_page - 1) / frames_per_page;
+		st_fill_checkerboard_4x4(chunky, ST_SCR_W, ST_SCR_H, ST_SCR_W);
+		st_blit_frame_page_on_checker(chunky, raw, raw_len, tw, th, page_start, page_end, remap);
+		C2P_Render_Logical_To_ST_Screen(chunky, ST_SCR_W, planar);
+		Setscreen((long)planar, (long)planar, -1L);
+		Vsync();
+		Vsync();
+		st_build7_status_line(remap_index, page_index, page_count);
 
+		long w = Crawcin();
+		unsigned char ch = (unsigned char)(w & 0xFF);
+		if (ch == 'h' || ch == 'H') {
+			remap_index = st_build7_next_remap(remap_index);
+			continue;
+		}
+		if (ch == ' ' && page_end < tc) {
+			page_start = page_end;
+			continue;
+		}
+
+		ok = (ch == 'y' || ch == 'Y' || ch == ' ');
+		break;
+	}
+
+	free(raw);
 	free(chunky);
 
 	st_hw_palette_write(saved_hw);

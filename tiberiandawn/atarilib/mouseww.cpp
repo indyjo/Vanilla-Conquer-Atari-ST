@@ -621,6 +621,8 @@ void WWMouseClass::Process_Mouse(void)
 	 * This keeps mouse painting event-driven by movement instead of per-frame loops.
 	 */
 	if (Screen && State == 0 && !MouseUpdate) {
+		if (EraseFlags)
+			return;
 		if (mouse_x != MouseBuffX || mouse_y != MouseBuffY) {
 			if (Screen->Lock()) {
 				Low_Hide_Mouse();
@@ -811,9 +813,23 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 	int top = y - MouseYHot;
 	int right = left + CursorWidth;
 	int bottom = top + CursorHeight;
+	const int using_external_surface = (scr != Screen);
+
+	if (using_external_surface)
+		EraseFlags = TRUE;
+
 	if (right <= 0 || bottom <= 0 || left >= vpw || top >= vph) {
+		if (using_external_surface)
+			EraseFlags = FALSE;
+		EraseBuffX = -1;
+		EraseBuffY = -1;
 		return;
 	}
+
+	EraseBuffX = x;
+	EraseBuffY = y;
+	EraseBuffHotX = MouseXHot;
+	EraseBuffHotY = MouseYHot;
 
 	if (left < 0 || top < 0 || right > vpw || bottom > vph) {
 		const int clip_left = left < 0 ? 0 : left;
@@ -824,8 +840,14 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		const int src_y = clip_top - top;
 		const int vis_w = clip_right - clip_left;
 		const int vis_h = clip_bottom - clip_top;
-		if (vis_w <= 0 || vis_h <= 0)
+		if (vis_w <= 0 || vis_h <= 0) {
+			if (using_external_surface)
+				EraseFlags = FALSE;
+			EraseBuffX = -1;
+			EraseBuffY = -1;
 			return;
+		}
+		Buffer_From_Page(clip_left, clip_top, vis_w, vis_h, EraseBuffer, scr);
 		const unsigned char *src = (const unsigned char *)MouseCursor + src_y * CursorWidth + src_x;
 		for (int row = 0; row < vis_h; row++) {
 			const unsigned char *s = src + row * CursorWidth;
@@ -838,6 +860,8 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		}
 		return;
 	}
+
+	Buffer_From_Page(left, top, CursorWidth, CursorHeight, EraseBuffer, scr);
 
 	/*
 	 * Word-aligned cursor block (all planar):
@@ -877,19 +901,30 @@ void WWMouseClass::Erase_Mouse(GraphicViewPortClass *scr, int forced)
 {
 	if (!scr || (EraseBuffX < 0 && !forced))
 		return;
+	const int using_external_surface = (scr != Screen);
 	if (EraseBuffX >= 0 && EraseBuffY >= 0 && CursorWidth > 0 && CursorHeight > 0) {
 		if (scr->Lock()) {
 			int left = EraseBuffX - EraseBuffHotX;
 			int top = EraseBuffY - EraseBuffHotY;
 			int vpw = scr->Get_Width();
 			int vph = scr->Get_Height();
-			if (left >= 0 && top >= 0 && left + CursorWidth <= vpw && top + CursorHeight <= vph)
-				Buffer_To_Page(left, top, CursorWidth, CursorHeight, EraseBuffer, scr);
+			int clip_left = left < 0 ? 0 : left;
+			int clip_top = top < 0 ? 0 : top;
+			int clip_right = left + CursorWidth;
+			int clip_bottom = top + CursorHeight;
+			if (clip_right > vpw) clip_right = vpw;
+			if (clip_bottom > vph) clip_bottom = vph;
+			const int vis_w = clip_right - clip_left;
+			const int vis_h = clip_bottom - clip_top;
+			if (vis_w > 0 && vis_h > 0)
+				Buffer_To_Page(clip_left, clip_top, vis_w, vis_h, EraseBuffer, scr);
 			scr->Unlock();
 		}
 		EraseBuffX = -1;
 		EraseBuffY = -1;
 	}
+	if (using_external_surface)
+		EraseFlags = FALSE;
 	(void)forced;
 }
 

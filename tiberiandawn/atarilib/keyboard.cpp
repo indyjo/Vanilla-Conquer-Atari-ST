@@ -6,6 +6,7 @@
  */
 
 #include "keyboard.h"
+#include <mint/linea.h>  // MOUSE_BT
 #include <ctype.h>
 
 /***********************************************************************************************
@@ -238,7 +239,21 @@ void Clear_KeyBuffer(void)
 // Stub: Check if a key is currently down
 int Key_Down(int key)
 {
-	// TODO: Implement key state checking for Atari ST
+	int vk = key & 0xFF;
+
+	/*
+	** The gadget system polls mouse-button hold state through Key_Down().
+	** Wire that to the live LINE-A button bits so drag-select and held-click
+	** interactions can work on Atari too.
+	*/
+	if (vk == VK_LBUTTON) {
+		return (MOUSE_BT & 1) != 0;
+	}
+	if (vk == VK_RBUTTON) {
+		return (MOUSE_BT & 2) != 0;
+	}
+
+	// TODO: Implement keyboard key state checking for Atari ST
 	return 0; // Key not down
 }
 

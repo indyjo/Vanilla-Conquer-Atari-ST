@@ -5,6 +5,7 @@
  */
 
 #include "misc.h"
+#include <mint/osbind.h>
 
 /*=========================================================================*/
 /* Calculate_CRC -- Computes a CRC value for a data buffer                 */
@@ -494,8 +495,7 @@ int UnCachedIconsDrawn = 0;
  *=========================================================================*/
 void Wait_Vert_Blank(void)
 {
-	// Stub for Atari ST - vertical blank synchronization not needed
-	// In a real implementation, this would wait for the VBL interrupt
+	Vsync();
 }
 
 /***************************************************************************

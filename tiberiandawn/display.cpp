@@ -636,8 +636,8 @@ void DisplayClass::Set_View_Dimensions(int x, int y, int width, int height)
     **	Adjust the tactical cell if it is now in an invalid position
     **	because of the changed dimensions.
     */
-    int xx = 0; // Coord_X(TacticalCoord) - (MapCellX * CELL_LEPTON_W);
-    int yy = 0; // Coord_Y(TacticalCoord) - (MapCellY * CELL_LEPTON_H);
+    int xx = Coord_X(TacticalCoord) - (MapCellX * CELL_LEPTON_W);
+    int yy = Coord_Y(TacticalCoord) - (MapCellY * CELL_LEPTON_H);
 
     Confine_Rect(
         &xx, &yy, TacLeptonWidth, TacLeptonHeight, MapCellWidth * CELL_LEPTON_W, MapCellHeight * CELL_LEPTON_H);
@@ -4096,8 +4096,8 @@ void DisplayClass::Set_Tactical_Position(COORDINATE coord)
     **	Bound the desired location to fit the legal map edges.
     */
 #ifdef REMASTER_BUILD
-    int xx = 0; // Coord_X(coord) - Cell_To_Lepton(MapCellX);
-    int yy = 0; // Coord_Y(coord) - Cell_To_Lepton(MapCellY);
+    int xx = Coord_X(coord) - Cell_To_Lepton(MapCellX);
+    int yy = Coord_Y(coord) - Cell_To_Lepton(MapCellY);
 
     Confine_Rect(&xx,
                  &yy,

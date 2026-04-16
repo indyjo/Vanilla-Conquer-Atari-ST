@@ -446,10 +446,14 @@ void Buffer_Frame_To_Page(int x,
 
     va_list ap;
     va_start(ap, flags);
-    (void)ap; /* ghost/fade tables ignored on ST for this path */
 
     const int trans = (flags & 0x40) ? 1 : 0;    /* SHAPE_TRANS */
     const int centered = (flags & 0x20) ? 1 : 0; /* SHAPE_CENTER */
+    const int ghost = (flags & 0x1000) ? 1 : 0;  /* SHAPE_GHOST */
+    const uint8_t* ghost_table = nullptr;
+    if (ghost) {
+        ghost_table = static_cast<const uint8_t*>(va_arg(ap, void*));
+    }
 
     int draw_x = x;
     int draw_y = y;
@@ -494,14 +498,32 @@ void Buffer_Frame_To_Page(int x,
 
     if (gb && gb->Is_ST_Planar()) {
         uint8_t* root = static_cast<uint8_t*>(gb->Get_Buffer());
-        C2P_Blit_Linear8_To_Planar(root,
-                                   view.Get_XPos() + dst_x,
-                                   view.Get_YPos() + dst_y,
-                                   src,
-                                   blit_w,
-                                   blit_h,
-                                   w,
-                                   trans);
+        const int ax0 = view.Get_XPos() + dst_x;
+        const int ay0 = view.Get_YPos() + dst_y;
+        if (!ghost_table) {
+            C2P_Blit_Linear8_To_Planar(root, ax0, ay0, src, blit_w, blit_h, w, trans);
+        } else {
+            const uint8_t* is_trans = ghost_table;
+            const uint8_t* blend_base = ghost_table + 256;
+            for (int row = 0; row < blit_h; ++row) {
+                const uint8_t* srow = src + static_cast<size_t>(row) * static_cast<size_t>(w);
+                const int ay = ay0 + row;
+                for (int col = 0; col < blit_w; ++col) {
+                    const uint8_t s = srow[col];
+                    if (trans && s == 0) {
+                        continue;
+                    }
+                    const int ax = ax0 + col;
+                    const uint8_t it = is_trans[s];
+                    uint8_t out = s;
+                    if (it != 0xFFu) {
+                        const uint8_t d = ST_Planar_GetPixel(root, ax, ay);
+                        out = blend_base[(static_cast<size_t>(it) << 8) + static_cast<size_t>(d)];
+                    }
+                    ST_Planar_PutPixel(root, ax, ay, C2P_Map8ToPlanar4(ax, ay, out));
+                }
+            }
+        }
         va_end(ap);
         return;
     }
@@ -512,6 +534,13 @@ void Buffer_Frame_To_Page(int x,
             uint8_t px = srow[col];
             if (trans && px == 0) {
                 continue;
+            }
+            if (ghost_table) {
+                const uint8_t it = ghost_table[px];
+                if (it != 0xFFu) {
+                    uint8_t d = static_cast<uint8_t>(view.Get_Pixel(dst_x + col, dst_y + row));
+                    px = ghost_table[256 + (static_cast<size_t>(it) << 8) + static_cast<size_t>(d)];
+                }
             }
             view.Put_Pixel(dst_x + col, dst_y + row, px);
         }

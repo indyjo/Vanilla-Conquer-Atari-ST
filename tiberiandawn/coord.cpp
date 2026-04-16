@@ -61,12 +61,18 @@
  *=============================================================================================*/
 CELL Coord_Cell(COORDINATE coord)
 {
-    CELL_COMPOSITE cell;
-    cell.Cell = 0;
-    cell.Sub.X = ((COORD_COMPOSITE&)coord).Sub.X.Sub.Cell;
-    cell.Sub.Y = ((COORD_COMPOSITE&)coord).Sub.Y.Sub.Cell;
-    return (cell.Cell);
-    //	return(XY_Cell(((COORD_COMPOSITE)coord).Sub.X, ((COORD_COMPOSITE)composite).Sub.Y));
+    /*
+     * Original x86 logic:
+     *   x_cell = byte1(coord)
+     *   y_part = (high_word(coord) & 0xFF00) >> 2
+     *   cell = y_part | x_cell
+     *
+     * Implement with shifts so behavior is independent of host endianness.
+     */
+    unsigned int u = (unsigned int)coord;
+    unsigned int x_cell = (u >> 8) & 0xFFu;
+    unsigned int y_part = ((u >> 16) & 0xFF00u) >> 2;
+    return (CELL)(y_part | x_cell);
 }
 
 /***********************************************************************************************

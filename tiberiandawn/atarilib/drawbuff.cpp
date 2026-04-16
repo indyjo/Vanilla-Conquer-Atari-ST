@@ -8,8 +8,26 @@
 #include "gbuffer.h"
 #include "font.h"
 #include "c2p.h"
+#include "function.h"
+#include "st_blitter_blit.h"
 #include <string.h>  // For memset
 #include <stdio.h>  // For printf
+
+/* Kept local to avoid including CONQUER.CPP private define. */
+static const int ST_SHAPE_TRANS_FLAG = 0x40;
+
+static inline unsigned short Read_LE16_Unsafe(const unsigned char *p)
+{
+	return (unsigned short)((unsigned short)p[0] | ((unsigned short)p[1] << 8));
+}
+
+static inline unsigned long Read_LE32_Unsafe(const unsigned char *p)
+{
+	return (unsigned long)p[0]
+		| ((unsigned long)p[1] << 8)
+		| ((unsigned long)p[2] << 16)
+		| ((unsigned long)p[3] << 24);
+}
 
 /* Delegates to GraphicBufferClass::Uses_ST_LoRes_Planar_Layout (see gbuffer.cpp). */
 static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb)
@@ -452,10 +470,24 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 				dest_ptr += dest_stride;
 			}
 		} else {
-			for (int y = 0; y < pixel_height; y++) {
-				memcpy(dest_ptr, src_ptr, pixel_width);
-				src_ptr += src_stride;
-				dest_ptr += dest_stride;
+			/*
+			** Scroll blits often copy within the same surface with overlap. memcpy is
+			** undefined for overlap and can smear/leave holes; use memmove and choose
+			** row order for vertical overlap safety.
+			*/
+			const bool same_surface = (src_base == dest_base);
+			if (same_surface && dest_ptr > src_ptr && dy_pixel > y_pixel) {
+				for (int y = pixel_height - 1; y >= 0; --y) {
+					unsigned char *s = src_base + x_pixel + (y_pixel + y) * src_stride;
+					unsigned char *d = dest_base + dx_pixel + (dy_pixel + y) * dest_stride;
+					memmove(d, s, (size_t)pixel_width);
+				}
+			} else {
+				for (int y = 0; y < pixel_height; y++) {
+					memmove(dest_ptr, src_ptr, (size_t)pixel_width);
+					src_ptr += src_stride;
+					dest_ptr += dest_stride;
+				}
 			}
 		}
 		return TRUE;
@@ -463,6 +495,24 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 
 	const uint8_t *src_root = GB_Uses_ST_Planar_Surface(src_gb) ? (const uint8_t *)src_gb->Get_Buffer() : NULL;
 	uint8_t *dst_root = GB_Uses_ST_Planar_Surface(dest_gb) ? (uint8_t *)dest_gb->Get_Buffer() : NULL;
+
+	/*
+	** ST planar self-blit fast path: hardware blitter with skew/masks
+	** (see st_blitter_blit.cpp).
+	*/
+	if (src_planar && dst_planar && !trans
+		&& src_gb == dest_gb
+		&& src_root && dst_root
+		&& AllowHardwareBlitFills) {
+		const int sx_abs = src_vp->Get_XPos() + x_pixel;
+		const int sy_abs = src_vp->Get_YPos() + y_pixel;
+		const int dx_abs = dest_vp->Get_XPos() + dx_pixel;
+		const int dy_abs = dest_vp->Get_YPos() + dy_pixel;
+		if (ST_Blitter_Planar_Screen_Rect_Blit(
+				src_root, dst_root, sx_abs, sy_abs, dx_abs, dy_abs, pixel_width, pixel_height)) {
+			return TRUE;
+		}
+	}
 
 	/* Full-screen planar -> planar: byte-identical copy (same layout as C2P / Setscreen). */
 	if (src_planar && dst_planar && !trans
@@ -967,22 +1017,116 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 /*=========================================================================*/
 extern "C" VOID Buffer_Remap(void *thisptr, int sx, int sy, int width, int height, void *remap)
 {
-	if (!thisptr) return;
-	
+	if (!thisptr || !remap || width <= 0 || height <= 0) {
+		return;
+	}
+
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Remap(sx, sy, width, height, remap);
+	const unsigned char *map = (const unsigned char *)remap;
+
+	const int vpw = vp->Get_Width();
+	const int vph = vp->Get_Height();
+	if (vpw <= 0 || vph <= 0) {
+		return;
+	}
+
+	int x0 = sx;
+	int y0 = sy;
+	int x1 = sx + width - 1;
+	int y1 = sy + height - 1;
+
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 >= vpw) x1 = vpw - 1;
+	if (y1 >= vph) y1 = vph - 1;
+	if (x0 > x1 || y0 > y1) {
+		return;
+	}
+
+	for (int y = y0; y <= y1; ++y) {
+		for (int x = x0; x <= x1; ++x) {
+			unsigned char src = (unsigned char)Buffer_Get_Pixel(vp, x, y);
+			Buffer_Put_Pixel(vp, x, y, map[src]);
+		}
+	}
 }
 
 /*=========================================================================*/
 /* Buffer_Fill_Quad -- Fills a quadrilateral on a buffer                   */
 /*=========================================================================*/
+static inline int Edge_Function(int ax, int ay, int bx, int by, int px, int py)
+{
+	return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+}
+
+static void Fill_Triangle_Solid(
+	GraphicViewPortClass *vp,
+	int x0, int y0,
+	int x1, int y1,
+	int x2, int y2,
+	unsigned char color)
+{
+	int min_x = x0;
+	int max_x = x0;
+	int min_y = y0;
+	int max_y = y0;
+
+	if (x1 < min_x) min_x = x1;
+	if (x2 < min_x) min_x = x2;
+	if (x1 > max_x) max_x = x1;
+	if (x2 > max_x) max_x = x2;
+	if (y1 < min_y) min_y = y1;
+	if (y2 < min_y) min_y = y2;
+	if (y1 > max_y) max_y = y1;
+	if (y2 > max_y) max_y = y2;
+
+	const int vpw = vp->Get_Width();
+	const int vph = vp->Get_Height();
+	if (vpw <= 0 || vph <= 0) {
+		return;
+	}
+
+	if (min_x < 0) min_x = 0;
+	if (min_y < 0) min_y = 0;
+	if (max_x >= vpw) max_x = vpw - 1;
+	if (max_y >= vph) max_y = vph - 1;
+	if (min_x > max_x || min_y > max_y) {
+		return;
+	}
+
+	int area = Edge_Function(x0, y0, x1, y1, x2, y2);
+	if (area == 0) {
+		return;
+	}
+	if (area < 0) {
+		int tx = x1; x1 = x2; x2 = tx;
+		int ty = y1; y1 = y2; y2 = ty;
+	}
+
+	for (int y = min_y; y <= max_y; ++y) {
+		for (int x = min_x; x <= max_x; ++x) {
+			const int w0 = Edge_Function(x1, y1, x2, y2, x, y);
+			const int w1 = Edge_Function(x2, y2, x0, y0, x, y);
+			const int w2 = Edge_Function(x0, y0, x1, y1, x, y);
+			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+				Buffer_Put_Pixel(vp, x, y, color);
+			}
+		}
+	}
+}
+
 extern "C" VOID Buffer_Fill_Quad(void *thisptr, VOID *span_buff, int x0, int y0, int x1, int y1,
 						int x2, int y2, int x3, int y3, int color)
 {
+	(void)span_buff;
 	if (!thisptr) return;
-	
+
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
-	vp->Fill_Quad(span_buff, x0, y0, x1, y1, x2, y2, x3, y3, color);
+	const unsigned char fill = (unsigned char)color;
+
+	/* Split quad into two triangles and rasterize directly. */
+	Fill_Triangle_Solid(vp, x0, y0, x1, y1, x2, y2, fill);
+	Fill_Triangle_Solid(vp, x0, y0, x2, y2, x3, y3, fill);
 }
 
 /*=========================================================================*/
@@ -990,13 +1134,105 @@ extern "C" VOID Buffer_Fill_Quad(void *thisptr, VOID *span_buff, int x0, int y0,
 /*=========================================================================*/
 extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap)
 {
-	(void)thisptr;
-	(void)icondata;
-	(void)icon;
-	(void)x_pixel;
-	(void)y_pixel;
 	(void)remap;
-	/* ST port: sprites use CC_Draw_Shape / Buffer_Frame_To_Page, not this path. */
+	if (!thisptr || !icondata || icon < 0) {
+		return;
+	}
+	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
+	if (!vp->Get_Graphic_Buffer()) {
+		return;
+	}
+	if (!_ShapeBuffer || _ShapeBufferSize <= 0) {
+		return;
+	}
+
+	void *decoded_ptr = NULL;
+	int w = 0;
+	int h = 0;
+
+	/*
+	 * First try iconset-layout stamps (legacy ICN loaded blocks).
+	 * Header fields are little-endian offsets; decode with byte reads.
+	 */
+	{
+		const unsigned char *base = (const unsigned char *)icondata;
+		const unsigned short iw = Read_LE16_Unsafe(base + 0);
+		const unsigned short ih = Read_LE16_Unsafe(base + 2);
+		const unsigned short icount = Read_LE16_Unsafe(base + 4);
+		const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
+		const unsigned long map_off = Read_LE32_Unsafe(base + 28);
+		if (iw > 0 && ih > 0 && iw <= 128 && ih <= 128 && icount > 0 && icon < (int)icount && icons_off > 0) {
+			int icon_index = icon;
+			if (map_off > 0) {
+				const unsigned char *map_ptr = base + map_off;
+				icon_index = (int)map_ptr[icon];
+			}
+			if (icon_index >= 0 && icon_index < (int)icount) {
+				const long icon_size = (long)iw * (long)ih;
+				const unsigned char *icon_ptr = base + icons_off + (long)icon_index * icon_size;
+				if (icon_size > 0 && icon_size <= _ShapeBufferSize) {
+					Mem_Copy(icon_ptr, _ShapeBuffer, icon_size);
+					decoded_ptr = _ShapeBuffer;
+					w = (int)iw;
+					h = (int)ih;
+				}
+			}
+		}
+	}
+
+	/*
+	 * Try TD SHP block decode first (templ/terrain icon sets are typically this format).
+	 * Decode output is linear 8bpp frame bytes in _ShapeBuffer.
+	 */
+	if (!decoded_ptr) {
+		w = Get_TD_SHP_Width(icondata);
+		h = Get_TD_SHP_Height(icondata);
+		if (w > 0 && h > 0 && (long)(w * h) <= _ShapeBufferSize) {
+			int td_decoded = Decode_TD_SHP_Frame(icondata, icon, _ShapeBuffer, (int)_ShapeBufferSize);
+			if (td_decoded > 0) {
+				decoded_ptr = _ShapeBuffer;
+			}
+		}
+	}
+
+	/*
+	 * Fallback: classic SHP shape block (extract frame then decode shape stream).
+	 */
+	if (!decoded_ptr) {
+		void *shape = Extract_Shape(icondata, icon);
+		if (shape) {
+			w = Get_Shape_Width(shape);
+			h = Get_Shape_Height(shape);
+			if (w > 0 && h > 0 && (long)(w * h) <= _ShapeBufferSize) {
+				int decoded = Decode_Shape_To_Buffer(shape, _ShapeBuffer, (int)_ShapeBufferSize);
+				if (decoded > 0) {
+					decoded_ptr = _ShapeBuffer;
+				}
+			}
+		}
+	}
+
+	/* Last resort: KeyFrame decode path. */
+	if (!decoded_ptr) {
+		unsigned long frame_ptr = Build_Frame(icondata, (unsigned short)icon, _ShapeBuffer);
+		if (frame_ptr) {
+			w = (int)Get_Build_Frame_Width(icondata);
+			h = (int)Get_Build_Frame_Height(icondata);
+			decoded_ptr = (void *)frame_ptr;
+		}
+	}
+
+	if (!decoded_ptr) {
+		return;
+	}
+
+	if (w <= 0 || h <= 0) {
+		return;
+	}
+
+	/* Match legacy Draw_Stamp semantics: viewport-relative opaque blit. */
+	Buffer_Frame_To_Page(
+		x_pixel, y_pixel, w, h, decoded_ptr, *vp, SHAPE_WIN_REL | ST_SHAPE_TRANS_FLAG);
 }
 
 /*=========================================================================*/
@@ -1004,11 +1240,7 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 /*=========================================================================*/
 extern "C" void Buffer_Draw_Stamp_Clip(void const *thisptr, void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap, int, int, int, int)
 {
-	(void)thisptr;
-	(void)icondata;
-	(void)icon;
-	(void)x_pixel;
-	(void)y_pixel;
-	(void)remap;
+	/* Current callers pass viewport bounds; Buffer_Frame_To_Page clips to viewport. */
+	Buffer_Draw_Stamp(thisptr, icondata, icon, x_pixel, y_pixel, remap);
 }
 

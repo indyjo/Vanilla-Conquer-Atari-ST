@@ -7,6 +7,7 @@
  */
 
 #include "function.h"
+#include "gbuffer.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -100,4 +101,20 @@ void *Load_Alloc_Data(FileClass &file)
 	}
 	file.Close();
 	return ptr;
+}
+
+/*
+ * drawbuff.cpp references Buffer_Frame_To_Page (full implementation in WINSTUB.CPP);
+ * st-tests do not link WINSTUB — provide a no-op so the suite links.
+ */
+long Buffer_Frame_To_Page(int x, int y, int w, int h, void *Buffer, GraphicViewPortClass &view, int flags, ...)
+{
+	(void)x;
+	(void)y;
+	(void)w;
+	(void)h;
+	(void)Buffer;
+	(void)view;
+	(void)flags;
+	return 0;
 }

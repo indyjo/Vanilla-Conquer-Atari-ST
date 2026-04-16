@@ -528,15 +528,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 				{
 					unsigned long abs_sub =
 						(unsigned long)(offset[subframe] & 0x00FFFFFFUL);
-					if ( abs_sub < offcurr ) {
-						fprintf(stderr,
-							"[Build_Frame] XOR chain: table underflow (sub=%u curr=%u "
-							"abs=%lX offcurr=%lX) - skipping XOR, shape=%p\n",
-							(unsigned)subframe, (unsigned)currframe,
-							(unsigned long)abs_sub, (unsigned long)offcurr,
-							dataptr);
-						fflush(stderr);
-					} else {
+					if ( abs_sub >= offcurr ) {
 #if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
 						fprintf(stdout,
 							"[Build_Frame] chain XOR: shape=%p fr=%u curr=%u sub=%u "
@@ -609,14 +601,6 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 					** row — wrong for finishing this frame; use offset[0] instead.
 					*/
 					if ( currframe == framenumber ) {
-#ifdef DEBUG
-						fprintf(stderr,
-							"[Build_Frame] XOR chain: Mem_Copy at target frame %u - "
-							"using subframe 0 (this frame's DataOffset), not 2 (next row). "
-							"shape=%p\n",
-							(unsigned)framenumber, dataptr);
-						fflush(stderr);
-#endif
 						subframe = 0;
 					} else {
 						subframe = 2;

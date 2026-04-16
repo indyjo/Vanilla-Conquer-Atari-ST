@@ -16,6 +16,7 @@ extern int st_run_interactive_htitle(void);
 extern int st_run_interactive_title_production_path(void);
 extern int st_run_interactive_title_menu_overlay(void);
 extern int st_run_interactive_title_mouse_cursor(void);
+extern int st_run_interactive_blitter_planar(void);
 
 static void print_banner(void)
 {
@@ -32,6 +33,7 @@ static void print_banner(void)
 	printf("6 Interactive: HTITLE + mouse cursor\n");
 	printf("7 Interactive: SHP grid (CONQUER.MIX)\n");
 	printf("8 Automated: C2P + SHP checks\n");
+	printf("9 Auto: HTITLE 8-way blitter scroll\n");
 	printf("0 Exit\n");
 	printf("Choice: ");
 	fflush(stdout);
@@ -82,6 +84,9 @@ int main(void)
 					bf ? "FAIL" : "PASS", bf);
 			break;
 		}
+		case '9':
+			st_run_interactive_blitter_planar();
+			break;
 		case '0':
 		case 27: /* ESC */
 			printf("Bye.\n");

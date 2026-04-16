@@ -162,14 +162,15 @@ extern int LParam;
 //#include <fast.h>
 
 extern int Frame;
+/* Follow little-endian coordinate encoding regardless of host endianness. */
 inline CELL Coord_XCell(COORDINATE coord)
 {
-    return (((COORD_COMPOSITE&)coord).Sub.X.Sub.Cell);
+    return (CELL)((coord >> 8) & 0xFF);
 }
 
 inline CELL Coord_YCell(COORDINATE coord)
 {
-    return (((COORD_COMPOSITE&)coord).Sub.Y.Sub.Cell);
+    return (CELL)((coord >> 24) & 0xFF);
 }
 
 #include "miscasm.h"
@@ -777,12 +778,12 @@ inline int Cell_Y(CELL cell)
 
 inline CELL Coord_XLepton(COORDINATE coord)
 {
-    return (CELL)(((COORD_COMPOSITE&)coord).Sub.X.Sub.Lepton);
+    return (CELL)(coord & 0xFF);
 }
 
 inline CELL Coord_YLepton(COORDINATE coord)
 {
-    return (CELL)(((COORD_COMPOSITE&)coord).Sub.Y.Sub.Lepton);
+    return (CELL)((coord >> 16) & 0xFF);
 }
 
 inline COORDINATE Coord_Whole(COORDINATE coord)
@@ -801,13 +802,7 @@ inline COORDINATE Coord_Fraction(COORDINATE coord)
 
 inline COORDINATE Coord_Add(COORDINATE coord1, COORDINATE coord2)
 {
-    COORD_COMPOSITE coord;
-
-    coord.Sub.X.Raw =
-        (LEPTON)((int)(short)((COORD_COMPOSITE&)coord1).Sub.X.Raw + (int)(short)((COORD_COMPOSITE&)coord2).Sub.X.Raw);
-    coord.Sub.Y.Raw =
-        (LEPTON)((int)(short)((COORD_COMPOSITE&)coord1).Sub.Y.Raw + (int)(short)((COORD_COMPOSITE&)coord2).Sub.Y.Raw);
-    return (coord.Coord);
+    return XY_Coord(Coord_X(coord1) + Coord_X(coord2), Coord_Y(coord1) + Coord_Y(coord2));
 }
 
 inline COORDINATE Coord_Sub(COORDINATE coord1, COORDINATE coord2)

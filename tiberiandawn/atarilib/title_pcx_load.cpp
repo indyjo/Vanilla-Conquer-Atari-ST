@@ -63,12 +63,6 @@ void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned ch
 				load_buffer->Scale(*video_page, 0, 0, 0, 0, src_w, src_h, dst_w, dst_h, FALSE, NULL);
 			}
 		}
-#if defined(POSIX) && !defined(CNC_ST_TEST_EXE)
-		{
-			static char title_dump_name[] = "title.pcx";
-			Write_PCX_File(title_dump_name, *video_page, palette);
-		}
-#endif
 		delete load_buffer;
 	}
 }

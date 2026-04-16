@@ -251,7 +251,12 @@ bool Read_Scenario(char* root)
 
         Fill_In_Data();
 
-        //        Map.Set_View_Dimensions(0, Map.Get_Tab_Height(), Map.MapCellWidth, Map.MapCellHeight);
+        /*
+         * Use screen-sized tactical viewport. Passing map-cell dimensions here
+         * expands TacLeptonWidth/Height to whole-map space, which breaks
+         * Coord_To_Pixel clipping on ST 320x200 and pushes most draws off-screen.
+         */
+        Map.Set_View_Dimensions(0, Map.Get_Tab_Height());
 
         /*
         **	SPECIAL CASE:

@@ -535,7 +535,7 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 ST_SUITE_DIR = tests/st_suite
 ST_TEST_EXE = $(OUTDIR)/cnc_st_tests.tos
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o
-ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
+ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/drawrect.o \
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/link.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \

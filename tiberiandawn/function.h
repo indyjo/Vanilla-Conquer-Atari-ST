@@ -807,31 +807,20 @@ inline COORDINATE Coord_Add(COORDINATE coord1, COORDINATE coord2)
 
 inline COORDINATE Coord_Sub(COORDINATE coord1, COORDINATE coord2)
 {
-    COORD_COMPOSITE coord;
-
-    coord.Sub.X.Raw =
-        (LEPTON)((int)(short)((COORD_COMPOSITE&)coord1).Sub.X.Raw - (int)(short)((COORD_COMPOSITE&)coord2).Sub.X.Raw);
-    coord.Sub.Y.Raw =
-        (LEPTON)((int)(short)((COORD_COMPOSITE&)coord1).Sub.Y.Raw - (int)(short)((COORD_COMPOSITE&)coord2).Sub.Y.Raw);
-    return (coord.Coord);
+    return XY_Coord(Coord_X(coord1) - Coord_X(coord2), Coord_Y(coord1) - Coord_Y(coord2));
 }
 
 inline COORDINATE Coord_Snap(COORDINATE coord)
 {
-    ((COORD_COMPOSITE&)coord).Sub.X.Sub.Lepton = CELL_LEPTON_W / 2;
-    ((COORD_COMPOSITE&)coord).Sub.Y.Sub.Lepton = CELL_LEPTON_W / 2;
-    return (coord);
+    return XY_Coord((short)(((unsigned short)Coord_X(coord) & 0xFF00u) | 0x0080u),
+                    (short)(((unsigned short)Coord_Y(coord) & 0xFF00u) | 0x0080u));
 }
 
 inline COORDINATE Coord_Mid(COORDINATE coord1, COORDINATE coord2)
 {
-    COORD_COMPOSITE coord;
-
-    coord.Sub.X.Raw =
-        (LEPTON)(((int)((COORD_COMPOSITE&)coord1).Sub.X.Raw + (int)((COORD_COMPOSITE&)coord2).Sub.X.Raw) / 2);
-    coord.Sub.Y.Raw =
-        (LEPTON)(((int)((COORD_COMPOSITE&)coord1).Sub.Y.Raw + (int)((COORD_COMPOSITE&)coord2).Sub.Y.Raw) / 2);
-    return (coord.Coord);
+    unsigned const xsum = (unsigned)(unsigned short)Coord_X(coord1) + (unsigned)(unsigned short)Coord_X(coord2);
+    unsigned const ysum = (unsigned)(unsigned short)Coord_Y(coord1) + (unsigned)(unsigned short)Coord_Y(coord2);
+    return XY_Coord((short)(xsum >> 1), (short)(ysum >> 1));
 }
 
 inline COORDINATE XYPixel_Coord(int x, int y)

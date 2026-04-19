@@ -730,13 +730,17 @@ inline int Coord_Y(COORDINATE coord) {return (short)(HIGH_WORD(coord));}
 inline int Cell_X(CELL cell) {return (int)(((unsigned)cell) & 0x3F);}
 inline int Cell_Y(CELL cell) {return (int)(((unsigned)cell) >> 6);}
 inline int Dir_Diff(DirType dir1, DirType dir2) {return (int)(*((signed char*)&dir2) - *((signed char*)&dir1));}
-inline CELL Coord_XLepton(COORDINATE coord) {return (CELL)(*((unsigned char*)&coord));}
-inline CELL Coord_YLepton(COORDINATE coord) {return (CELL)(*(((unsigned char*)&coord)+2));}
+inline CELL Coord_XLepton(COORDINATE coord) {return (CELL)(coord & 0xFF);}
+inline CELL Coord_YLepton(COORDINATE coord) {return (CELL)((coord >> 16) & 0xFF);}
 //inline COORD CellXY_Coord(unsigned x, unsigned y) {return (COORD)(MAKE_LONG(y<<8, x<<8));}
-inline COORDINATE Coord_Add(COORDINATE coord1, COORDINATE coord2) {return (COORDINATE)MAKE_LONG((*((short*)(&coord1)+1) + *((short*)(&coord2)+1)), (*((short*)(&coord1)) + *((short*)(&coord2))));}
-inline COORDINATE Coord_Sub(COORDINATE coord1, COORDINATE coord2) {return (COORDINATE)MAKE_LONG((*((short*)(&coord1)+1) - *((short*)(&coord2)+1)), (*((short*)(&coord1)) - *((short*)(&coord2))));}
-inline COORDINATE Coord_Snap(COORDINATE coord) {return (COORDINATE)MAKE_LONG((((*(((unsigned short *)&coord)+1))&0xFF00)|0x80), (((*((unsigned short *)&coord))&0xFF00)|0x80));}
-inline COORDINATE Coord_Mid(COORDINATE coord1, COORDINATE coord2) {return (COORDINATE)MAKE_LONG((*((unsigned short *)(&coord1)+1) + *((unsigned short *)(&coord2)+1))>>1, (*((unsigned short *)(&coord1)) + *((unsigned short *)(&coord2)))>>1);}
+inline COORDINATE Coord_Add(COORDINATE coord1, COORDINATE coord2) {return XY_Coord(Coord_X(coord1) + Coord_X(coord2), Coord_Y(coord1) + Coord_Y(coord2));}
+inline COORDINATE Coord_Sub(COORDINATE coord1, COORDINATE coord2) {return XY_Coord(Coord_X(coord1) - Coord_X(coord2), Coord_Y(coord1) - Coord_Y(coord2));}
+inline COORDINATE Coord_Snap(COORDINATE coord) {return XY_Coord((short)(((unsigned short)Coord_X(coord) & 0xFF00u) | 0x0080u), (short)(((unsigned short)Coord_Y(coord) & 0xFF00u) | 0x0080u));}
+inline COORDINATE Coord_Mid(COORDINATE coord1, COORDINATE coord2) {
+	unsigned const xsum = (unsigned)(unsigned short)Coord_X(coord1) + (unsigned)(unsigned short)Coord_X(coord2);
+	unsigned const ysum = (unsigned)(unsigned short)Coord_Y(coord1) + (unsigned)(unsigned short)Coord_Y(coord2);
+	return XY_Coord((short)(xsum >> 1), (short)(ysum >> 1));
+}
 inline COORDINATE Cell_Coord(CELL cell) {return (COORDINATE) MAKE_LONG( (((cell & 0x0FC0)<<2)|0x80), ((((cell & 0x003F)<<1)+1)<<7) );}
 inline COORDINATE XYPixel_Coord(int x, int y) {return ((COORDINATE)MAKE_LONG((int)(((long)y*(long)ICON_LEPTON_H)/(long)ICON_PIXEL_H)/*+LEPTON_OFFSET_Y*/, (int)(((long)x*(long)ICON_LEPTON_W)/(long)ICON_PIXEL_W)/*+LEPTON_OFFSET_X*/));}
 //inline int Facing_To_16(int facing) {return Facing16[facing];}

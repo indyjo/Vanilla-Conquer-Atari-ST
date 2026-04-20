@@ -196,7 +196,16 @@ void ThemeClass::AI(void)
             **	be picked when this one ends.
             */
             Play_Song(Pending);
-            Pending = THEME_PICK_ANOTHER;
+            /*
+            ** If load or digitized playback failed (e.g. oversize IMA on Atari), do not
+            ** leave Pending at PICK_ANOTHER or Theme.AI will retry every Call_Back and
+            ** can appear to hang the game.
+            */
+            if (Current >= 0) {
+                Pending = THEME_PICK_ANOTHER;
+            } else {
+                Pending = THEME_NONE;
+            }
         }
         Sound_Callback();
     }

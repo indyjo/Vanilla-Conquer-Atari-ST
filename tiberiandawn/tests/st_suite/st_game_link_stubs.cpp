@@ -8,6 +8,7 @@
 
 #include "function.h"
 #include "gbuffer.h"
+#include "audio.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -29,6 +30,10 @@ long _ShapeBufferSize = 0;
 bool RunningAsDLL = false;
 int RequiredCD = -2;
 unsigned char *GamePalette = NULL;
+
+/* Defined in AUDIO.CPP for full game; audio_ste.cpp expects these for SampleType writes. */
+Sample_Type SampleType = SAMPLE_NONE;
+SFX_Type SoundType = SFX_NONE;
 
 bool Force_CD_Available(int)
 {

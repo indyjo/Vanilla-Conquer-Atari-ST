@@ -207,10 +207,12 @@ int main(int argc, char *argv[])
 			printf("C&C - Initialising audio.\n");
 
 			/*
-			** Initialize audio system
-			** TODO: Implement Audio_Init for Atari ST (YM2149/DMA sound)
+			** Initialize audio system (STe-class DMA 8-bit mono in audio_ste.cpp).
 			*/
-			SoundOn = Audio_Init ( NULL , 16 , false , 11025*2 , 0 );
+			SoundOn = Audio_Init ( NULL , 8 , false , 11025*2 , 0 );
+			if (!SoundOn) {
+				printf("C&C - Failed to initialize audio.\n");
+			}
 
 			Palette = new(MEM_CLEAR) unsigned char[768];
 

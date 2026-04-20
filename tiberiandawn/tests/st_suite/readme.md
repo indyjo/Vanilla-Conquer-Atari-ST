@@ -24,14 +24,15 @@ Output: `bin/AtariST/cnc_st_tests.tos`
 | **5** | Interactive | HTITLE production path plus **main menu overlay** (dialog + gradient labels). |
 | **6** | Interactive | HTITLE plus **moving mouse cursor** using **`MOUSE.SHP`** from **`CCLOCAL.MIX`**. |
 | **7** | Interactive | Console menu **`1`**–**`7`** (`E1`, `E2`, `POWER`, `MINIGUN`, `FIRE1`, `OPTIONS`, `TREX` from **`CONQUER.MIX`**); then **`Build_Frame` every frame** of the chosen SHP, tiled on a **4×4 checker** (logical **13**/**14**), grid **bottom-padded** (**8** px). **No** `printf` / `st_wrap_puts` during the low-rez preview; confirm with **silent** **Y**/**Z** vs **N** (Tips below). |
-| **8** | Automated | Runs **1** (C2P checksum), then a fixed **`Build_Frame`** multi-SHP list in `st_build_frame_assets.cpp` (includes **E1**, **OPTIONS**, **TREX**, etc.; skips missing files). No screen prompts. |
+| **8** | Automated | Runs **1** (C2P checksum), then a fixed **`Build_Frame`** multi-SHP list in `st_build_frame_assets.cpp` (includes **E1**, **OPTIONS**, **TREX**, etc.; skips missing files), then a real **`.AUD`** via **`Play_Sample`** / **`Sound_Callback`** (tries **`SOUNDS.MIX`**, **`AUD.MIX`**, **`CONQUER.MIX`**, **`SCORES.MIX`**, etc., in list order; skips if no STE DMA or no listed file found). The whole block runs under **`Super(0L)`** so **`conterm`** ($484) can be toggled to mute key clicks on MiNT. No screen prompts. |
+| **a** | Submenu | **Audio tests:** pick **1**–**n** for a fixed **MIX / .AUD** row, **n+1** for “first hit in list order” (same as **8**’s audio step), **0** / **ESC** back. The submenu stays in **supervisor mode** for its lifetime so **`conterm`** key-click muting is safe under MiNT memory protection. |
 
 Input is read with **`Crawcin()`** (MiNT/TOS keyboard).
 
 ## Tips on real hardware
 
 - For options **3**–**6**, place **`UPDATE.MIX`** (and for **5**/**6** the other MIX files those tests open) in the **current working directory**. **4** briefly creates **`ST_HTEST.PCX`** (then deletes it) so **`CCFileClass`** can open the same asset path style as loose files on disk.
-- For **7** / **8**, add **`CONQUER.MIX`** next to the test `.TOS`. (Cursor **`MOUSE.SHP`** is not a KeyFrame blob; menu **6** still loads it from **`CCLOCAL.MIX`** via **`Extract_Shape`**.)
+- For **7** / **8**, add **`CONQUER.MIX`** next to the test `.TOS`. For **8** / **a** audio, copy the **MIX** files referenced by the built-in try list (e.g. **`SOUNDS.MIX`**, **`AUD.MIX`**, **`CONQUER.MIX`**, **`SCORES.MIX`** for **`AOI.AUD`**, etc.). (Cursor **`MOUSE.SHP`** is not a KeyFrame blob; menu **6** still loads it from **`CCLOCAL.MIX`** via **`Extract_Shape`**.) Audio tests need **STE-class** digitized hardware (same as the main game). API: `tests/st_suite/st_audio_asset_autotest.h`.
 - Interactive tests switch resolution and `Setscreen`. When they finish, they **restore the 16 ST hardware palette words** at `$FF8240` from before the test, then restore the previous `Getrez()` value.
 - Interactive prompts accept **Y** or **Z** as “OK” (German QWERTZ). Test **7** uses a **silent** Y/N read during the video preview (no on-screen or serial prompt there); press **Y** or **Z** if the frame grid looks correct, **N** if not.
 - If automated test **1** reports a checksum `FAIL` after you change `c2p.cpp` or the test pattern, update the golden constant `ST_C2P_AUTOTEST_PLANAR_CHECKSUM` in `st_c2p_autotests.cpp`.

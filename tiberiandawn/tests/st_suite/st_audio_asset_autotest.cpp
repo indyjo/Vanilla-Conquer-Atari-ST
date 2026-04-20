@@ -1,0 +1,175 @@
+/*
+ * Automated: load a real .AUD from game MIX archives, decode/play via audio_ste Play_Sample,
+ * drive completion with Sound_Callback (same path as in-game SFX).
+ *
+ * Key-click muting uses TOS conterm ($484) bit 0; st_tests_main runs submenu / bundle
+ * under Super(0L) before calling push/pop (MiNT user-mode access to $484 bus-errors).
+ */
+
+#include "st_audio_asset_autotest.h"
+
+#include "function.h"
+#include "audio.h"
+#include "st_mix_minimal.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct {
+	char const *mix;
+	char const *aud;
+} StAudioAssetTry;
+
+static StAudioAssetTry const k_audio_tries[] = {
+	{ "SOUNDS.MIX", "CLOCK1.AUD" },
+	{ "AUD.MIX", "BEEPY6.AUD" },
+	{ "AUD.MIX", "TEXT2.AUD" },
+	{ "CONQUER.MIX", "SFX4.AUD" },
+	{ "SCORES.MIX", "AOI.AUD" },
+};
+
+int st_asset_audio_try_count(void)
+{
+	return (int)(sizeof(k_audio_tries) / sizeof(k_audio_tries[0]));
+}
+
+void st_asset_audio_try_label(int idx, char *buf, size_t buflen)
+{
+	if (!buf || buflen == 0) {
+		return;
+	}
+	if (idx < 0 || idx >= st_asset_audio_try_count()) {
+		buf[0] = '\0';
+		return;
+	}
+	snprintf(buf, buflen, "%s / %s", k_audio_tries[idx].mix, k_audio_tries[idx].aud);
+}
+
+/* TOS conterm ($484): bit 0 = keyboard click; nested push/pop for submenu + per-run RAII */
+enum { ST_CONTERM_STACK = 8 };
+static unsigned char s_conterm_saved[ST_CONTERM_STACK];
+static int s_conterm_depth;
+
+void st_conterm_keyclick_mute_push(void)
+{
+	volatile unsigned char *ct = (volatile unsigned char *)0x484UL;
+	if (s_conterm_depth < ST_CONTERM_STACK) {
+		s_conterm_saved[s_conterm_depth++] = *ct;
+		*ct = (unsigned char)(*ct & (unsigned char)~1u);
+	}
+}
+
+void st_conterm_keyclick_mute_pop(void)
+{
+	volatile unsigned char *ct = (volatile unsigned char *)0x484UL;
+	if (s_conterm_depth > 0) {
+		*ct = s_conterm_saved[--s_conterm_depth];
+	}
+}
+
+struct StKeyclickMuteRAII {
+	StKeyclickMuteRAII() { st_conterm_keyclick_mute_push(); }
+	~StKeyclickMuteRAII() { st_conterm_keyclick_mute_pop(); }
+};
+
+static BOOL st_audio_init_game_rate(void)
+{
+	return Audio_Init(NULL, 8, FALSE, 11025 * 2, 0);
+}
+
+static void st_audio_spin_until_done_or_timeout(void const* sample, int max_iterations)
+{
+	for (int i = 0; i < max_iterations && Is_Sample_Playing(sample); i++) {
+		Sound_Callback();
+	}
+}
+
+/* Returns 0 skip/pass, 1 fail. Always frees raw. */
+static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char const *hit_aud)
+{
+	if (!st_audio_init_game_rate()) {
+		printf("SKIP audio (no STE DMA / Audio_Init)\n");
+		free(raw);
+		return 0;
+	}
+
+	if (Play_Sample(raw, 255, 0xFF, 0) < 0) {
+		printf("FAIL audio Play_Sample %s:%s\n", hit_mix, hit_aud);
+		Sound_End();
+		free(raw);
+		return 1;
+	}
+
+	st_audio_spin_until_done_or_timeout(raw, 20000000);
+	if (Is_Sample_Playing(raw)) {
+		printf("FAIL audio playback timeout %s:%s\n", hit_mix, hit_aud);
+		Stop_Sample_Playing(raw);
+		Sound_End();
+		free(raw);
+		return 1;
+	}
+
+	Sound_End();
+	free(raw);
+	printf("PASS audio %s from %s\n", hit_aud, hit_mix);
+	return 0;
+}
+
+int st_run_asset_audio_try_index(int idx)
+{
+	if (idx < 0 || idx >= st_asset_audio_try_count()) {
+		return -1;
+	}
+	StKeyclickMuteRAII mute;
+	(void)mute;
+
+	unsigned char *raw = NULL;
+	size_t raw_len = 0;
+	int const mx = st_mix_extract_file(k_audio_tries[idx].mix, k_audio_tries[idx].aud, &raw, &raw_len);
+	if (mx != 0 || !raw) {
+		printf("SKIP audio %s:%s err=%d\n", k_audio_tries[idx].mix, k_audio_tries[idx].aud, mx);
+		if (raw) {
+			free(raw);
+		}
+		return 0;
+	}
+	if (raw_len < 12u) {
+		printf("SKIP audio bad AUD size %s:%s\n", k_audio_tries[idx].mix, k_audio_tries[idx].aud);
+		free(raw);
+		return 0;
+	}
+
+	return st_audio_play_loaded(raw, k_audio_tries[idx].mix, k_audio_tries[idx].aud);
+}
+
+int st_run_asset_audio_autotest(void)
+{
+	StKeyclickMuteRAII mute;
+	(void)mute;
+
+	unsigned char *raw = NULL;
+	size_t raw_len = 0;
+	char const *hit_mix = NULL;
+	char const *hit_aud = NULL;
+
+	for (size_t ti = 0; ti < sizeof(k_audio_tries) / sizeof(k_audio_tries[0]); ti++) {
+		int const mx = st_mix_extract_file(k_audio_tries[ti].mix, k_audio_tries[ti].aud, &raw, &raw_len);
+		if (mx == 0 && raw && raw_len >= 12u) {
+			hit_mix = k_audio_tries[ti].mix;
+			hit_aud = k_audio_tries[ti].aud;
+			break;
+		}
+		if (raw) {
+			free(raw);
+			raw = NULL;
+			raw_len = 0;
+		}
+	}
+
+	if (!raw || !hit_mix || !hit_aud) {
+		printf("SKIP audio (no .AUD in tried MIXes — need e.g. SOUNDS.MIX or AUD.MIX)\n");
+		return 0;
+	}
+
+	return st_audio_play_loaded(raw, hit_mix, hit_aud);
+}

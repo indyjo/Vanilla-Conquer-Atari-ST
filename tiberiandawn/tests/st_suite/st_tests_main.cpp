@@ -3,6 +3,7 @@
  * Build: make st-tests   -> bin/AtariST/cnc_st_tests.tos
  */
 
+#include "st_audio_asset_autotest.h"
 #include "st_build_frame_assets.h"
 
 #include <mint/osbind.h>
@@ -32,11 +33,70 @@ static void print_banner(void)
 	printf("5 Interactive: HTITLE + menu overlay\n");
 	printf("6 Interactive: HTITLE + mouse cursor\n");
 	printf("7 Interactive: SHP grid (CONQUER.MIX)\n");
-	printf("8 Automated: C2P + SHP checks\n");
+	printf("8 Automated: C2P + SHP + .AUD (MIX)\n");
 	printf("9 Auto: HTITLE 8-way blitter scroll\n");
+	printf("a Audio tests (submenu)\n");
 	printf("0 Exit\n");
 	printf("Choice: ");
 	fflush(stdout);
+}
+
+static void audio_tests_submenu(void)
+{
+	/* conterm ($484) is not user-accessible on MiNT with memory protection; stay supervisor
+	 * for the whole submenu so push/pop and Crawcin are safe. */
+	long const ssp = Super(0L);
+	st_conterm_keyclick_mute_push();
+	for (;;) {
+		printf("\n");
+		printf("-------- Audio tests -----------------\n");
+		int const n = st_asset_audio_try_count();
+		for (int i = 0; i < n; i++) {
+			char line[48];
+			st_asset_audio_try_label(i, line, sizeof(line));
+			printf("%d %s\n", i + 1, line);
+		}
+		printf("%d First hit in list order\n", n + 1);
+		printf("0 Back to main menu\n");
+		printf("Choice: ");
+		fflush(stdout);
+
+		long w = Crawcin();
+		int ch = (int)(w & 0xFF);
+		printf("%c\n", (ch >= 32 && ch < 127) ? ch : '?');
+
+		if (ch == '0' || ch == 27) {
+			break;
+		}
+		if (ch >= '1' && ch <= '9') {
+			int pick = ch - '0';
+			if (pick >= 1 && pick <= n) {
+				printf("\n-- Audio try %d --\n", pick);
+				int r = st_run_asset_audio_try_index(pick - 1);
+				if (r < 0) {
+					printf("Internal error (bad index).\n");
+				} else if (r != 0) {
+					printf("Audio: FAIL\n");
+				} else {
+					printf("Audio: PASS or SKIP\n");
+				}
+			} else if (pick == n + 1) {
+				printf("\n-- Audio first hit --\n");
+				int r = st_run_asset_audio_autotest();
+				if (r != 0) {
+					printf("Audio: FAIL\n");
+				} else {
+					printf("Audio: PASS or SKIP\n");
+				}
+			} else {
+				printf("Unknown option.\n");
+			}
+			continue;
+		}
+		printf("Unknown option.\n");
+	}
+	st_conterm_keyclick_mute_pop();
+	Super(ssp);
 }
 
 int main(void)
@@ -76,14 +136,22 @@ int main(void)
 			break;
 		case '8': {
 			long old_ssp = Super(0L);
+			st_conterm_keyclick_mute_push();
 			int r = st_run_c2p_autotests();
 			int bf = st_run_build_frame_asset_autocheck();
+			int au = st_run_asset_audio_autotest();
+			st_conterm_keyclick_mute_pop();
 			Super(old_ssp);
 			printf("Auto C2P: %s\n", r ? "FAIL" : "PASS");
 			printf("Auto Build_Frame assets: %s (fail count=%d)\n",
 					bf ? "FAIL" : "PASS", bf);
+			printf("Auto asset audio: %s\n", au ? "FAIL" : "PASS");
 			break;
 		}
+		case 'a':
+		case 'A':
+			audio_tests_submenu();
+			break;
 		case '9':
 			st_run_interactive_blitter_planar();
 			break;

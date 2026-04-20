@@ -91,7 +91,6 @@ extern "C" {
 int File_Stream_Sample(char const *filename, BOOL real_time_start);
 int File_Stream_Sample_Vol(char const *filename, int volume, BOOL real_time_start);
 void Sound_Callback(void);
-void maintenance_callback(void); // "far" keyword not needed for Atari ST
 void *Load_Sample(char const *filename);
 long Load_Sample_Into_Buffer(char const *filename, void *buffer, long size);
 long Sample_Read(int fh, void *buffer, long size);

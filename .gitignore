@@ -2,3 +2,32 @@
 /CMakeUserPresets.json
 /.cache
 /.vscode
+
+# Visual Studio files
+.vs/
+*.user
+
+# Output object and binary folders
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+
+# Common build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+
+# macOS metadata
+.DS_Store
+
+# Local/generated project data
+pal_extract_tmp/

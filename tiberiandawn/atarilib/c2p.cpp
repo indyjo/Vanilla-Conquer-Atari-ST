@@ -146,6 +146,101 @@ static inline void C2P_Movep_Store(uint8_t *dst_plane_bytes, uint32_t plane_byte
 #endif
 }
 
+static inline void Planar_Put_Pixel_RowBytes(
+	uint8_t *base, int row_bytes, int width_px, int height_px, int x, int y, uint8_t color4)
+{
+	if (!base || x < 0 || y < 0 || x >= width_px || y >= height_px || row_bytes <= 0)
+		return;
+	uint8_t *p = base + y * row_bytes + (x >> 4) * 8 + ((x >> 3) & 1);
+	const int bitnum = 7 - (x & 7);
+	const uint8_t mask = (uint8_t)(1u << bitnum);
+	const uint8_t c = (uint8_t)(color4 & 15);
+	for (int pl = 0; pl < 4; pl++) {
+		uint8_t *pb = p + pl * 2;
+		if (c & (uint8_t)(1u << pl))
+			*pb |= mask;
+		else
+			*pb &= (uint8_t)~mask;
+	}
+}
+
+extern "C" void C2P_Render_Logical_To_Planar_Rect(
+	const uint8_t *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	uint8_t *planar_base,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0,
+	int abs_x0,
+	int abs_y0)
+{
+	if (!logical || !planar_base || logical_w <= 0 || logical_h <= 0
+		|| logical_stride <= 0 || planar_row_bytes <= 0
+		|| planar_width_pixels <= 0 || planar_height_pixels <= 0) {
+		return;
+	}
+	if (!C2P_LUT_InitDone)
+		C2P_Rebuild_Tables_From_CurrentPalette();
+
+	for (int y = 0; y < logical_h; y++) {
+		const uint8_t *src = logical + (size_t)y * (size_t)logical_stride;
+		const int apy = abs_y0 + y;
+		const int yb = (apy & 3) << 2;
+		uint8_t *dst_line = planar_base + (size_t)(dst_y0 + y) * (size_t)planar_row_bytes;
+		const int row_unaligned = ((dst_x0 & 7) != 0);
+
+		int x = 0;
+		/*
+		 * The pair-LUT movep path writes one 8-pixel halfword chunk at a fixed byte slot.
+		 * It is only valid when destination x is 8-pixel aligned. For unaligned dst_x0,
+		 * fall back to per-pixel writes so spans crossing 8-pixel boundaries are correct.
+		 */
+		for (; !row_unaligned && x + 8 <= logical_w; x += 8) {
+			const int apx = abs_x0 + x;
+			const int lx = dst_x0 + x;
+			const int group = lx >> 4;
+			const int half = (lx >> 3) & 1;
+			uint8_t *dst = dst_line + group * 8 + half;
+
+			const uint8_t c0 = C2P_MapDither[yb | ((apx + 0) & 3)][src[x + 0]];
+			const uint8_t c1 = C2P_MapDither[yb | ((apx + 1) & 3)][src[x + 1]];
+			const uint8_t c2 = C2P_MapDither[yb | ((apx + 2) & 3)][src[x + 2]];
+			const uint8_t c3 = C2P_MapDither[yb | ((apx + 3) & 3)][src[x + 3]];
+			const uint8_t c4 = C2P_MapDither[yb | ((apx + 4) & 3)][src[x + 4]];
+			const uint8_t c5 = C2P_MapDither[yb | ((apx + 5) & 3)][src[x + 5]];
+			const uint8_t c6 = C2P_MapDither[yb | ((apx + 6) & 3)][src[x + 6]];
+			const uint8_t c7 = C2P_MapDither[yb | ((apx + 7) & 3)][src[x + 7]];
+
+			const uint32_t v =
+				C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
+				C2P_PairLUT[1][(uint8_t)((c2 << 4) | c3)] |
+				C2P_PairLUT[2][(uint8_t)((c4 << 4) | c5)] |
+				C2P_PairLUT[3][(uint8_t)((c6 << 4) | c7)];
+
+			C2P_Movep_Store(dst, v);
+		}
+		/* Tail: widths not divisible by 8 (not used for 24x24 terrain). */
+		for (; x < logical_w; x++) {
+			const int apx = abs_x0 + x;
+			const int lx = dst_x0 + x;
+			const int ly = dst_y0 + y;
+			const uint8_t c4 = C2P_MapDither[yb | (apx & 3)][src[x]];
+			Planar_Put_Pixel_RowBytes(
+				planar_base,
+				planar_row_bytes,
+				planar_width_pixels,
+				planar_height_pixels,
+				lx,
+				ly,
+				c4);
+		}
+	}
+}
+
 extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logical_stride, uint8_t *st_screen)
 {
 	if (!logical || !st_screen || logical_stride <= 0)

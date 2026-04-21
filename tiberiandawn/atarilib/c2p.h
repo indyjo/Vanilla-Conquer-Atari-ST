@@ -32,6 +32,28 @@ unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char pal_idx);
 /* Convert one 320x200 8-bit buffer to ST planar screen (Physbase). */
 void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logical_stride, uint8_t *st_screen);
 
+/*
+** Convert an 8bpp row-major rectangle into a small ST-style interleaved planar buffer.
+** logical_w should be a multiple of 8 for the fast path; any remainder uses a slow tail.
+** Pixels (0,0) of `logical` map to planar (dst_x0,dst_y0). Dither uses abs screen coords
+** (abs_x0+lx, abs_y0+ly). planar_row_bytes is the byte stride between scanlines (e.g. 16 for 32-wide).
+** planar_width_pixels / planar_height_pixels bound the destination buffer for the slow tail
+** (widths not divisible by 8).
+*/
+void C2P_Render_Logical_To_Planar_Rect(
+	const uint8_t *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	uint8_t *planar_base,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0,
+	int abs_x0,
+	int abs_y0);
+
 /* ST LoRes planar surface (320x200, 160 bytes/line, interleaved like C2P output). */
 #define ST_PLANAR_WIDTH 320
 #define ST_PLANAR_HEIGHT 200

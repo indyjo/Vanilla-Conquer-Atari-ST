@@ -30,6 +30,27 @@ BOOL ST_Blitter_Planar_Screen_Rect_Blit(
 	int pixel_width,
 	int pixel_height);
 
+/**
+ * Generic planar rectangle copy using ST blitter.
+ * Layout is Atari 4-plane interleaved (8 bytes per 16 pixels).
+ * Coordinates are in pixels relative to each surface.
+ */
+BOOL ST_Blitter_Planar_Rect_Blit(
+	const uint8_t *src_root,
+	int src_row_bytes,
+	int src_width_pixels,
+	int src_height_pixels,
+	int sx,
+	int sy,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
+	int dx,
+	int dy,
+	int pixel_width,
+	int pixel_height);
+
 #ifdef __cplusplus
 }
 #endif

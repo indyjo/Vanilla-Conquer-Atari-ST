@@ -10,11 +10,55 @@
 #include "c2p.h"
 #include "function.h"
 #include "st_blitter_blit.h"
+#include "memflag.h"
 #include <string.h>  // For memset
 #include <stdio.h>  // For printf
+#include <stdint.h>
+
+#if defined(__MINT__)
+#include <mint/osbind.h>
+#endif
 
 /* Kept local to avoid including CONQUER.CPP private define. */
 static const int ST_SHAPE_TRANS_FLAG = 0x40;
+static const int ST_TILE_LINEAR_W = 24;
+static const int ST_TILE_LINEAR_H = 24;
+static const int ST_TILE_LINEAR_BYTES = ST_TILE_LINEAR_W * ST_TILE_LINEAR_H;
+/*
+ * Keep planar scratch wider than tile width so we can place the tile at sx = dx mod 16.
+ * This makes src/dst nibble alignment equal (skew_low = 0), avoiding problematic skew cases.
+ */
+static const int ST_TILE_PLANAR_W = 64;
+static const int ST_TILE_PLANAR_H = 24;
+static const int ST_TILE_PLANAR_BPL = (ST_TILE_PLANAR_W / 16) * 8;
+static const int ST_TILE_PLANAR_BYTES = ST_TILE_PLANAR_BPL * ST_TILE_PLANAR_H;
+
+static uint8_t *g_tile_linear_24x24 = NULL;
+static uint8_t *g_tile_planar_scratch = NULL;
+static BOOL g_tile_scratch_init_attempted = FALSE;
+
+static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
+{
+#if defined(__MINT__)
+	long p = Mxalloc((long)bytes, MX_STRAM | MX_PRIVATE);
+	if (p > 0L)
+		return (uint8_t *)p;
+#endif
+	return (uint8_t *)Alloc((unsigned long)bytes, MEM_NORMAL);
+}
+
+static BOOL Ensure_Terrain_Tile_Scratch(void)
+{
+	if (g_tile_linear_24x24 && g_tile_planar_scratch)
+		return TRUE;
+	if (g_tile_scratch_init_attempted)
+		return FALSE;
+
+	g_tile_scratch_init_attempted = TRUE;
+	g_tile_linear_24x24 = (uint8_t *)Alloc((unsigned long)ST_TILE_LINEAR_BYTES, MEM_NORMAL);
+	g_tile_planar_scratch = Alloc_Planar_Blitter_Scratch((size_t)ST_TILE_PLANAR_BYTES);
+	return (g_tile_linear_24x24 && g_tile_planar_scratch) ? TRUE : FALSE;
+}
 
 static inline unsigned short Read_LE16_Unsafe(const unsigned char *p)
 {
@@ -1230,6 +1274,104 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 		return;
 	}
 
+	/*
+	 * Fast terrain-tile path for ST planar targets:
+	 * decode -> 24x24 linear scratch -> 64x24 planar scratch -> blit to destination.
+	 * C2P phase is tile-local (0,0), independent of framebuffer destination.
+	 */
+	if (w == ST_TILE_LINEAR_W && h == ST_TILE_LINEAR_H
+		&& !remap
+		&& AllowHardwareBlitFills
+		&& VP_Is_Planar(vp)
+		&& Ensure_Terrain_Tile_Scratch()) {
+		/*
+		 * Same viewport clip as Buffer_Frame_To_Page (WINSTUB.CPP): the fast path
+		 * always blits a full 24x24. If any edge is clipped, fall back to Frame_To_Page.
+		 */
+		const int vpw = vp->Get_Width();
+		const int vph = vp->Get_Height();
+		int dst_x = x_pixel;
+		int dst_y = y_pixel;
+		int clip_src_x = 0;
+		int clip_src_y = 0;
+		int clip_blit_w = ST_TILE_LINEAR_W;
+		int clip_blit_h = ST_TILE_LINEAR_H;
+		if (dst_x < 0) {
+			clip_src_x = -dst_x;
+			clip_blit_w -= clip_src_x;
+			dst_x = 0;
+		}
+		if (dst_y < 0) {
+			clip_src_y = -dst_y;
+			clip_blit_h -= clip_src_y;
+			dst_y = 0;
+		}
+		if (dst_x + clip_blit_w > vpw) {
+			clip_blit_w = vpw - dst_x;
+		}
+		if (dst_y + clip_blit_h > vph) {
+			clip_blit_h = vph - dst_y;
+		}
+		const BOOL stamp_fully_in_vp = (clip_blit_w == ST_TILE_LINEAR_W && clip_blit_h == ST_TILE_LINEAR_H
+			&& clip_src_x == 0 && clip_src_y == 0);
+
+		if (stamp_fully_in_vp) {
+		GraphicBufferClass *dst_gb = vp->Get_Graphic_Buffer();
+		uint8_t *dst_root = (dst_gb && GB_Uses_ST_Planar_Surface(dst_gb))
+			? (uint8_t *)dst_gb->Get_Buffer() : NULL;
+		const int dx_abs = vp->Get_XPos() + dst_x;
+		const int dy_abs = vp->Get_YPos() + dst_y;
+		if (dst_root
+			&& dx_abs >= 0 && dy_abs >= 0
+			&& dx_abs + ST_TILE_LINEAR_W <= ST_PLANAR_WIDTH
+			&& dy_abs + ST_TILE_LINEAR_H <= ST_PLANAR_HEIGHT) {
+			memcpy(g_tile_linear_24x24, decoded_ptr, (size_t)ST_TILE_LINEAR_BYTES);
+			/*
+			 * Buffer_Frame_To_Page is called with SHAPE_TRANS, so index 0 must be transparent.
+			 * The blitter path is D=S (no per-pixel transparency), therefore only use it for
+			 * fully opaque tiles; otherwise fall back to Frame_To_Page for correctness.
+			 */
+			if (memchr(g_tile_linear_24x24, 0, (size_t)ST_TILE_LINEAR_BYTES) != NULL) {
+				goto fast24_fallback;
+			}
+
+			const int sx_src = 0;
+			memset(g_tile_planar_scratch, 0, (size_t)ST_TILE_PLANAR_BYTES);
+			C2P_Render_Logical_To_Planar_Rect(
+				g_tile_linear_24x24,
+				ST_TILE_LINEAR_W,
+				ST_TILE_LINEAR_H,
+				ST_TILE_LINEAR_W,
+				g_tile_planar_scratch,
+				ST_TILE_PLANAR_BPL,
+				ST_TILE_PLANAR_W,
+				ST_TILE_PLANAR_H,
+				sx_src,
+				0,
+				0,
+				0);
+
+			if (ST_Blitter_Planar_Rect_Blit(
+					g_tile_planar_scratch,
+					ST_TILE_PLANAR_BPL,
+					ST_TILE_PLANAR_W,
+					ST_TILE_PLANAR_H,
+					sx_src, 0,
+					dst_root,
+					ST_PLANAR_BYTES_PER_LINE,
+					ST_PLANAR_WIDTH,
+					ST_PLANAR_HEIGHT,
+					dx_abs,
+					dy_abs,
+					ST_TILE_LINEAR_W,
+					ST_TILE_LINEAR_H)) {
+				return;
+			}
+		}
+		}
+	}
+
+fast24_fallback:
 	/* Match legacy Draw_Stamp semantics: viewport-relative opaque blit. */
 	Buffer_Frame_To_Page(
 		x_pixel, y_pixel, w, h, decoded_ptr, *vp, SHAPE_WIN_REL | ST_SHAPE_TRANS_FLAG);

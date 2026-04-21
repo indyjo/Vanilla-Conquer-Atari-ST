@@ -97,15 +97,51 @@ BOOL ST_Blitter_Planar_Screen_Rect_Blit(
 	int pixel_width,
 	int pixel_height)
 {
+	return ST_Blitter_Planar_Rect_Blit(
+		src_root,
+		ST_PLANAR_BYTES_PER_LINE,
+		ST_PLANAR_WIDTH,
+		ST_PLANAR_HEIGHT,
+		sx_abs,
+		sy_abs,
+		dst_root,
+		ST_PLANAR_BYTES_PER_LINE,
+		ST_PLANAR_WIDTH,
+		ST_PLANAR_HEIGHT,
+		dx_abs,
+		dy_abs,
+		pixel_width,
+		pixel_height);
+}
+
+BOOL ST_Blitter_Planar_Rect_Blit(
+	const uint8_t *src_root,
+	int src_row_bytes,
+	int src_width_pixels,
+	int src_height_pixels,
+	int sx_abs,
+	int sy_abs,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
+	int dx_abs,
+	int dy_abs,
+	int pixel_width,
+	int pixel_height)
+{
 	if (!src_root || !dst_root || !ST_Has_Blitter())
 		return FALSE;
 
 	if (pixel_width <= 0 || pixel_height <= 0
 		|| sx_abs < 0 || sy_abs < 0 || dx_abs < 0 || dy_abs < 0
-		|| sx_abs + pixel_width > ST_PLANAR_WIDTH
-		|| dx_abs + pixel_width > ST_PLANAR_WIDTH
-		|| sy_abs + pixel_height > ST_PLANAR_HEIGHT
-		|| dy_abs + pixel_height > ST_PLANAR_HEIGHT) {
+		|| src_row_bytes <= 0 || dst_row_bytes <= 0
+		|| src_width_pixels <= 0 || src_height_pixels <= 0
+		|| dst_width_pixels <= 0 || dst_height_pixels <= 0
+		|| sx_abs + pixel_width > src_width_pixels
+		|| dx_abs + pixel_width > dst_width_pixels
+		|| sy_abs + pixel_height > src_height_pixels
+		|| dy_abs + pixel_height > dst_height_pixels) {
 		return FALSE;
 	}
 
@@ -113,7 +149,7 @@ BOOL ST_Blitter_Planar_Screen_Rect_Blit(
 	const int dst_start = dx_abs - dst_word_left;
 	const int words = (dst_start + pixel_width + 15) >> 4;
 	const int src_word_left = sx_abs & ~15;
-	if (words <= 0 || src_word_left < 0 || (src_word_left + words * 16) > ST_PLANAR_WIDTH) {
+	if (words <= 0 || src_word_left < 0 || (src_word_left + words * 16) > src_width_pixels) {
 		return FALSE;
 	}
 
@@ -122,14 +158,12 @@ BOOL ST_Blitter_Planar_Screen_Rect_Blit(
 	unsigned sm = (unsigned)sx_abs & 15u;
 	unsigned dm = (unsigned)dx_abs & 15u;
 	int skew_idx = (sm > dm) ? 1 : 0;
-	{
-		const int src_span_m1 = ((sx_abs + pixel_width - 1) >> 4) - (sx_abs >> 4);
-		const int dst_span_m1 = ((dx_abs + pixel_width - 1) >> 4) - (dx_abs >> 4);
-		if (dst_span_m1 == 0)
-			skew_idx += 4;
-		if (src_span_m1 == dst_span_m1)
-			skew_idx += 2;
-	}
+	const int src_span_m1 = ((sx_abs + pixel_width - 1) >> 4) - (sx_abs >> 4);
+	const int dst_span_m1 = ((dx_abs + pixel_width - 1) >> 4) - (dx_abs >> 4);
+	if (dst_span_m1 == 0)
+		skew_idx += 4;
+	if (src_span_m1 == dst_span_m1)
+		skew_idx += 2;
 
 	/*
 	 * Same-surface overlap: negate X step only when dest is to the right of source,
@@ -167,18 +201,22 @@ BOOL ST_Blitter_Planar_Screen_Rect_Blit(
 		endmask3 = t;
 	}
 
-	const uint8_t *src = src_root + (size_t)sy_abs * (size_t)ST_PLANAR_BYTES_PER_LINE
+	const uint8_t *src = src_root + (size_t)sy_abs * (size_t)src_row_bytes
 		+ (size_t)((src_word_left >> 4) * 8);
-	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)ST_PLANAR_BYTES_PER_LINE
+	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
 		+ (size_t)((dst_word_left >> 4) * 8);
-	const unsigned char skew_reg = (unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
+	unsigned char skew_flags = k_skew_fxsr_nfsr[skew_idx];
+	/* Empirically validated by Test10 skew-flag sweep: sw<dw requires FXSR/NFSR=00. */
+	if (src_span_m1 < dst_span_m1)
+		skew_flags = 0x00u;
+	const unsigned char skew_reg = (unsigned char)(skew_low | skew_flags);
 
 	for (int pl = 0; pl < 4; ++pl) {
 		ST_Blit_Copy_Plane_Skew_Masked(
 			src,
 			dst,
-			ST_PLANAR_BYTES_PER_LINE,
-			ST_PLANAR_BYTES_PER_LINE,
+			src_row_bytes,
+			dst_row_bytes,
 			words,
 			pixel_height,
 			pl,

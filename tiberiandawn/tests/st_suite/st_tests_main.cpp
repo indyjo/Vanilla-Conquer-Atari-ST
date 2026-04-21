@@ -18,6 +18,7 @@ extern int st_run_interactive_title_production_path(void);
 extern int st_run_interactive_title_menu_overlay(void);
 extern int st_run_interactive_title_mouse_cursor(void);
 extern int st_run_interactive_blitter_planar(void);
+extern int st_run_blitter_tile_skew_matrix(void);
 
 static void print_banner(void)
 {
@@ -35,6 +36,7 @@ static void print_banner(void)
 	printf("7 Interactive: SHP grid (CONQUER.MIX)\n");
 	printf("8 Automated: C2P + SHP + .AUD (MIX)\n");
 	printf("9 Auto: HTITLE 8-way blitter scroll\n");
+	printf("b Auto: 24x24 tile skew matrix\n");
 	printf("a Audio tests (submenu)\n");
 	printf("0 Exit\n");
 	printf("Choice: ");
@@ -154,6 +156,10 @@ int main(void)
 			break;
 		case '9':
 			st_run_interactive_blitter_planar();
+			break;
+		case 'b':
+		case 'B':
+			st_run_blitter_tile_skew_matrix();
 			break;
 		case '0':
 		case 27: /* ESC */

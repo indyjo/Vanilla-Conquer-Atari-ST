@@ -50,6 +50,10 @@ Tracked follow-ups for the Atari ST/MiNT port.
   - Current behavior: dummy return value.
   - Primary file: `TIBERIANDAWN/CONQUER.CPP`.
 
+- [ ] Create a `remix` content tool to repack `.MIX` archives with alignment padding.
+  - Goal: ensure embedded file payloads never start on odd addresses, to avoid unaligned `short/long` accesses on m68k when data is interpreted as structs.
+  - Scope idea: rewrite MIX index/offsets and inject per-entry padding while preserving file content bytes and load compatibility.
+
 ## WSA / Animation Delta APIs
 
 - [ ] Replace remaining Atari stub implementations in `ATARILIB/wsa.cpp` with production behavior.

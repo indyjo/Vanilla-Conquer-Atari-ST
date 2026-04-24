@@ -2,6 +2,7 @@ CompileFlags:
   Add: [
     "-DTRUE_FALSE_DEFINED",
     "-DPOSIX",
+    "-DATARI_ST",
     "-DBIG_ENDIAN",
     "-std=c++11",
     # Adapt to your workspace location

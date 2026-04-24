@@ -1,5 +1,5 @@
 /*
- * Interactive: HTITLE production draw, then animate the game mouse cursor (MOUSE.SHP)
+ * Interactive: TITLE.CPS production draw, then animate the game mouse cursor (MOUSE.SHP)
  * over the title using the normal mouse update path (Process_Mouse), not direct Draw_Mouse.
  * Position is synthetic (DLLForceMouseX/Y), stepped once per Vsync (~50 Hz).
  */
@@ -27,7 +27,8 @@ extern void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsi
 extern void *Load_Alloc_Data(FileClass &file);
 
 #define ST_HW_PAL_COUNT 16
-#define ST_PROD_PCX_NAME "ST_HTEST.PCX"
+#define ST_TITLE_MIX_NAME "CONQUER.MIX"
+#define ST_TITLE_CPS_NAME "TITLE.CPS"
 #define ST_MOUSE_MIX_NAME "MOUSE.SHP"
 #define ST_MOUSE_TEMP_FILE "ST_MOUSE.SHP"
 
@@ -50,8 +51,6 @@ static void st_hw_palette_write(const unsigned short *src16)
 int st_run_interactive_title_mouse_cursor(void)
 {
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
-	unsigned char *raw = NULL;
-	size_t raw_len = 0;
 	unsigned char pal[768];
 	void *mouse_block = NULL;
 	long old_ssp = Super(0L);
@@ -61,46 +60,20 @@ int st_run_interactive_title_mouse_cursor(void)
 	st_hw_palette_read(saved_hw);
 	Setscreen(-1L, -1L, 0);
 
-	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw, &raw_len);
-	if (mx != 0 || !raw) {
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		printf("SKIP: UPDATE.MIX err=%d\n", mx);
-		return 0;
-	}
-
-	FILE *out = fopen(ST_PROD_PCX_NAME, "wb");
-	if (!out || fwrite(raw, 1, raw_len, out) != raw_len) {
-		free(raw);
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		if (out)
-			fclose(out);
-		printf("SKIP: cannot write %s\n", ST_PROD_PCX_NAME);
-		return 0;
-	}
-	fclose(out);
-	free(raw);
-	raw = NULL;
-
 	unsigned char *mouse_raw = NULL;
 	size_t mouse_len = 0;
-	int mmx = st_mix_extract_file("CCLOCAL.MIX", ST_MOUSE_MIX_NAME, &mouse_raw, &mouse_len);
+	int mmx = st_mix_extract_file("LOCAL.MIX", ST_MOUSE_MIX_NAME, &mouse_raw, &mouse_len);
 	if (mmx != 0 || !mouse_raw) {
-		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
-		printf("SKIP: CCLOCAL.MIX %s err=%d\n", ST_MOUSE_MIX_NAME, mmx);
+		printf("SKIP: LOCAL.MIX %s err=%d\n", ST_MOUSE_MIX_NAME, mmx);
 		return 0;
 	}
 
 	FILE *mf = fopen(ST_MOUSE_TEMP_FILE, "wb");
 	if (!mf || fwrite(mouse_raw, 1, mouse_len, mf) != mouse_len) {
 		free(mouse_raw);
-		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
@@ -119,7 +92,6 @@ int st_run_interactive_title_mouse_cursor(void)
 	}
 	remove(ST_MOUSE_TEMP_FILE);
 	if (!mouse_block) {
-		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
@@ -142,7 +114,7 @@ int st_run_interactive_title_mouse_cursor(void)
 	}
 	vp.Clear(0);
 
-	Load_Title_Screen((char *)ST_PROD_PCX_NAME, &vp, pal);
+	Load_Title_Screen((char *)ST_TITLE_CPS_NAME, &vp, pal);
 	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 	Set_Palette(pal);
 	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
@@ -175,12 +147,10 @@ int st_run_interactive_title_mouse_cursor(void)
 	}
 
 	/* Redraw title to clear the cursor (no public undraw API). */
-	Load_Title_Screen((char *)ST_PROD_PCX_NAME, &vp, pal);
+	Load_Title_Screen((char *)ST_TITLE_CPS_NAME, &vp, pal);
 	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 	Set_Palette(pal);
 	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
-
-	remove(ST_PROD_PCX_NAME);
 
 	delete[] (char *)mouse_block;
 	mouse_block = NULL;

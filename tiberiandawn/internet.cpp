@@ -760,7 +760,7 @@ bool Do_The_Internet_Menu_Thang(void)
 			GameStatisticsPacketSent = false;
 			if (!Spawn_WChat(true)){
 				Set_Logic_Page(SeenBuff);
-				Load_Title_Screen("HTITLE.PCX", &HidPage, Palette);
+				Load_Title_Screen("TITLE.CPS", &HidPage, Palette);
 				Blit_Hid_Page_To_Seen_Buff();
 				Set_Palette(Palette);
 				CCMessageBox().Process(TXT_ERROR_UNABLE_TO_RUN_WCHAT, TXT_OK);
@@ -769,7 +769,7 @@ bool Do_The_Internet_Menu_Thang(void)
 			}
 		}else{
 			Set_Logic_Page(SeenBuff);
-			Load_Title_Screen("HTITLE.PCX", &HidPage, Palette);
+			Load_Title_Screen("TITLE.CPS", &HidPage, Palette);
 			Blit_Hid_Page_To_Seen_Buff();
 			Set_Palette(Palette);
 			if (CCMessageBox().Process(TXT_EXPLAIN_REGISTRATION, TXT_REGISTER, TXT_CANCEL)){
@@ -811,7 +811,7 @@ bool Do_The_Internet_Menu_Thang(void)
 			/*
 			** Redraw backgound & dialog box
 			*/
-			Load_Title_Screen("HTITLE.PCX", &HidPage, Palette);
+			Load_Title_Screen("TITLE.CPS", &HidPage, Palette);
 			Blit_Hid_Page_To_Seen_Buff();
 			Set_Palette(Palette);
 

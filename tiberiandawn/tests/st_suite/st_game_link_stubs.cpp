@@ -34,6 +34,17 @@ unsigned char *GamePalette = NULL;
 /* Defined in AUDIO.CPP for full game; audio_ste.cpp expects these for SampleType writes. */
 Sample_Type SampleType = SAMPLE_NONE;
 SFX_Type SoundType = SFX_NONE;
+GraphicBufferClass SysMemPage(320, 200, (void *)NULL);
+int WindowList[][8] = {
+	{0, 0, 40, 200, WHITE, BLACK, 0, 0},
+	{1, 75, 38, 100, WHITE, BLACK, 0, 0},
+	{0, 8, 40, 192, WHITE, LTGREY, 0, 0},
+	{12, 199 - 42, 16, 42, LTGREY, DKGREY, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{5, 30, 30, 140, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+};
 
 bool Force_CD_Available(int)
 {
@@ -123,3 +134,4 @@ long Buffer_Frame_To_Page(int x, int y, int w, int h, void *Buffer, GraphicViewP
 	(void)flags;
 	return 0;
 }
+

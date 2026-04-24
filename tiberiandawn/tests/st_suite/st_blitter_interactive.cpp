@@ -1,14 +1,14 @@
 /*
- * Automated: HTITLE.PCX — per direction & increment (1,2,3): HW restore from offscreen,
+ * Automated: TITLE.CPS — per direction & increment (1,2,3): HW restore from offscreen,
  * then 16-step smooth scroll via hardware blit (no keypresses).
  * Validates: after each round, planar nibble at screen center vs hidden origin pixel.
  */
 
+#include "function.h"
 #include "c2p.h"
 #include "palette.h"
 #include "st_blitter_blit.h"
 #include "st_mix_minimal.h"
-#include "st_pcx_minimal.h"
 #include "st_temperat_palette.h"
 
 #include <mint/osbind.h>
@@ -187,10 +187,6 @@ static void origin_in_hidden_after_scroll(
 int st_run_interactive_blitter_planar(void)
 {
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
-	unsigned char *raw_mix = NULL;
-	size_t raw_len = 0;
-	unsigned char *pcx = NULL;
-	int pw = 0, ph = 0, pstride = 0;
 	unsigned char pal[768];
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
@@ -207,50 +203,10 @@ int st_run_interactive_blitter_planar(void)
 		return 1;
 	}
 
-	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw_mix, &raw_len);
-	if (mx != 0 || !raw_mix) {
-		free(hidden);
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		printf("  SKIP: UPDATE.MIX / HTITLE.PCX (mix err=%d)\n", mx);
-		return 0;
-	}
-
-	int err = st_pcx_load_from_memory(raw_mix, raw_len, &pcx, &pw, &ph, &pstride, pal);
-	free(raw_mix);
-	raw_mix = NULL;
-
-	if (err != 0 || !pcx || pw <= 0 || ph <= 0) {
-		free(hidden);
-		free(pcx);
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		printf("  SKIP: HTITLE decode err=%d w=%d h=%d\n", err, pw, ph);
-		return 0;
-	}
-
-	unsigned char *disp = NULL;
-	int disp_stride = 320;
-	unsigned char *down_free = NULL;
-	if (st_prepare_320x200_chunky(pcx, pw, ph, pstride, &disp, &disp_stride, &down_free) != 0 || !disp) {
-		free(hidden);
-		free(pcx);
-		free(down_free);
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		printf("  SKIP: HTITLE downsample alloc failed (w=%d h=%d)\n", pw, ph);
-		return 0;
-	}
-
 	Setscreen(-1L, -1L, 0);
 	unsigned char *planar = (unsigned char *)Logbase();
 	if (!planar) {
 		free(hidden);
-		free(down_free);
-		free(pcx);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
@@ -259,10 +215,19 @@ int st_run_interactive_blitter_planar(void)
 	}
 
 	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
+	GraphicBufferClass screen;
+	screen.Init(320, 200, planar, 32768L, (int)GBC_ST_PLANAR_LORES);
+	GraphicViewPortClass vp(&screen, 0, 0, 320, 200);
+	vp.Clear(0);
+	memset(CurrentPalette, 0x01, 768);
+	{
+		unsigned char warm[768];
+		memcpy(warm, kStTemperatPal768, 768);
+		Set_Palette(warm);
+	}
+	Load_Title_Screen((char *)"TITLE.CPS", &vp, pal);
 	Set_Palette(pal);
 	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
-
-	C2P_Render_Logical_To_ST_Screen(disp, disp_stride, planar);
 	memcpy(hidden, planar, 32000);
 
 	int any_fail = 0;
@@ -321,9 +286,9 @@ int st_run_interactive_blitter_planar(void)
 	}
 
 	if (any_fail)
-		printf("  Test 9 (HTITLE blitter scroll): FAIL\n");
+		printf("  Test 9 (TITLE blitter scroll): FAIL\n");
 	else
-		printf("  Test 9 (HTITLE blitter scroll): PASS\n");
+		printf("  Test 9 (TITLE blitter scroll): PASS\n");
 
 	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	st_hw_palette_write(saved_hw);
@@ -331,8 +296,6 @@ int st_run_interactive_blitter_planar(void)
 	Super(old_ssp);
 
 	free(hidden);
-	free(down_free);
-	free(pcx);
 	return any_fail ? 1 : 0;
 }
 

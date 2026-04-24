@@ -1,5 +1,5 @@
 /*
- * Interactive: HTITLE via Load_Title_Screen, then paint the main-menu style overlay
+ * Interactive: TITLE.CPS via Load_Title_Screen, then paint the main-menu style overlay
  * (green dialog panel + 6pt gradient button labels) on the same buffer as Main_Menu's
  * first redraw — without linking MENUS.CPP / gadget stack.
  */
@@ -26,7 +26,8 @@ extern void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsi
 extern void *Load_Alloc_Data(FileClass &file);
 
 #define ST_HW_PAL_COUNT 16
-#define ST_PROD_PCX_NAME "ST_HTEST.PCX"
+#define ST_TITLE_MIX_NAME "CONQUER.MIX"
+#define ST_TITLE_CPS_NAME "TITLE.CPS"
 #define ST_GRAD_FONT_NAME "GRAD6FNT.FNT"
 
 static void st_fill_bytes(volatile unsigned char *dst, unsigned char value, size_t count)
@@ -190,8 +191,6 @@ static void st_hw_palette_write(const unsigned short *src16)
 int st_run_interactive_title_menu_overlay(void)
 {
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
-	unsigned char *raw = NULL;
-	size_t raw_len = 0;
 	unsigned char pal[768];
 	void *grad_font = NULL;
 	long old_ssp = Super(0L);
@@ -201,45 +200,19 @@ int st_run_interactive_title_menu_overlay(void)
 	st_hw_palette_read(saved_hw);
 	Setscreen(-1L, -1L, 0);
 
-	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw, &raw_len);
-	if (mx != 0 || !raw) {
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		printf("SKIP: UPDATE.MIX err=%d\n", mx);
-		return 0;
-	}
-
-	FILE *out = fopen(ST_PROD_PCX_NAME, "wb");
-	if (!out || fwrite(raw, 1, raw_len, out) != raw_len) {
-		free(raw);
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		if (out)
-			fclose(out);
-		printf("SKIP: cannot write %s\n", ST_PROD_PCX_NAME);
-		return 0;
-	}
-	fclose(out);
-	free(raw);
-	raw = NULL;
-
 	unsigned char *grad_raw = NULL;
 	size_t grad_len = 0;
-	int gmx = st_mix_extract_file("CCLOCAL.MIX", ST_GRAD_FONT_NAME, &grad_raw, &grad_len);
+	int gmx = st_mix_extract_file("LOCAL.MIX", ST_GRAD_FONT_NAME, &grad_raw, &grad_len);
 	if (gmx != 0 || !grad_raw) {
-		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
-		printf("SKIP: CCLOCAL.MIX %s err=%d\n", ST_GRAD_FONT_NAME, gmx);
+		printf("SKIP: LOCAL.MIX %s err=%d\n", ST_GRAD_FONT_NAME, gmx);
 		return 0;
 	}
 	FILE *gf = fopen(ST_GRAD_FONT_NAME, "wb");
 	if (!gf || fwrite(grad_raw, 1, grad_len, gf) != grad_len) {
 		free(grad_raw);
-		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
@@ -258,7 +231,6 @@ int st_run_interactive_title_menu_overlay(void)
 	}
 	remove(ST_GRAD_FONT_NAME);
 	if (!grad_font) {
-		remove(ST_PROD_PCX_NAME);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
 		Super(old_ssp);
@@ -284,8 +256,7 @@ int st_run_interactive_title_menu_overlay(void)
 	}
 	vp.Clear(0);
 
-	Load_Title_Screen((char *)ST_PROD_PCX_NAME, &vp, pal);
-	remove(ST_PROD_PCX_NAME);
+	Load_Title_Screen((char *)ST_TITLE_CPS_NAME, &vp, pal);
 
 	Set_Palette(pal);
 	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);

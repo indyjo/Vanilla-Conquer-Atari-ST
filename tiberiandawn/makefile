@@ -188,7 +188,7 @@ ROOT_CPP_SOURCES = \
 	ENDING.CPP EVENT.CPP EXPAND.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),FACING.CPP,) FACTORY.CPP FIELD.CPP \
 	FINDPATH.CPP FLASHER.CPP FLY.CPP FOOT.CPP FUSE.CPP GADGET.CPP \
 	GAMEDLG.CPP GAUGE.CPP GLOBALS.CPP GOPTIONS.CPP GSCREEN.CPP \
-	HDATA.CPP HEAP.CPP HELP.CPP HOUSE.CPP IDATA.CPP INFANTRY.CPP \
+	HDATA.CPP HEAP.CPP HEAPPROBE.CPP HELP.CPP HOUSE.CPP IDATA.CPP INFANTRY.CPP \
 	INI.CPP INIT.CPP INTERNET.CPP INTERPAL.CPP INTRO.CPP IOMAP.CPP \
 	IOOBJ.CPP $(IPX_SOURCES) IPXADDR.CPP IPXCONN.CPP IPXGCONN.CPP \
 	IPXMGR.CPP JSHELL.CPP KEYFRAME.CPP LAYER.CPP LINK.CPP LIST.CPP \
@@ -459,7 +459,7 @@ clean:
 	@rm -f $(OUTDIR)/cnc.tos
 	@rm -f $(OUTDIR)/cncd.tos
 	@rm -f $(OUTDIR)/cnc_st_tests.tos
-	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/title_pcx_load_st_tests.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/st_blitter_blit.o
+	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/title_pcx_load_st_tests.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/st_blitter_blit.o
 
 # Clean all configurations
 cleanall:
@@ -534,13 +534,14 @@ endif
 ifeq ($(PLATFORM_LIB),ATARILIB)
 ST_SUITE_DIR = tests/st_suite
 ST_TEST_EXE = $(OUTDIR)/cnc_st_tests.tos
-ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_audio_asset_autotest.o
+ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_mix_register.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/drawrect.o \
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \
 	$(INTDIR)/CDFILE.o $(INTDIR)/misc.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
-	$(INTDIR)/keyboard.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/audio_ste.o $(INTDIR)/ws_adpcm_68k.o
+	$(INTDIR)/keyboard.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/audio_ste.o $(INTDIR)/ws_adpcm_68k.o \
+	$(INTDIR)/st_load_uncompress.o
 
 st-tests: $(ST_TEST_EXE)
 	@echo "ST test suite: $(ST_TEST_EXE)"
@@ -597,7 +598,19 @@ $(INTDIR)/st_build_frame_assets.o: $(ST_SUITE_DIR)/st_build_frame_assets.cpp | $
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
+$(INTDIR)/st_font_browser.o: $(ST_SUITE_DIR)/st_font_browser.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
 $(INTDIR)/st_audio_asset_autotest.o: $(ST_SUITE_DIR)/st_audio_asset_autotest.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_mix_register.o: $(ST_SUITE_DIR)/st_mix_register.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_load_uncompress.o: $(ST_SUITE_DIR)/st_load_uncompress.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 

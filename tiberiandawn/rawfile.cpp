@@ -74,7 +74,6 @@
 extern short Hard_Error_Occured;
 #endif
 
-
 /***********************************************************************************************
  * RawFileClass::Error -- Handles displaying a file error message.                             *
  *                                                                                             *

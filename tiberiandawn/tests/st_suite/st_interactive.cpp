@@ -1,12 +1,12 @@
 /*
- * Interactive tests: low rez, Setscreen, human Y/N (gradient + HTITLE from UPDATE.MIX).
+ * Interactive tests: low rez, Setscreen, human Y/N.
  */
 
+#include "function.h"
 #include "c2p.h"
 #include "palette.h"
 #include "st_temperat_palette.h"
 #include "st_mix_minimal.h"
-#include "st_pcx_minimal.h"
 #include "st_text.h"
 
 #include <mint/osbind.h>
@@ -16,42 +16,6 @@
 #include <string.h>
 
 #define ST_HW_PAL_COUNT 16
-
-/*
- * C2P is fixed 320x200. PCX may be larger (e.g. 640x400 HTITLE); nearest-neighbour
- * shrink into *out_down (malloc). If already 320x200, *out_down is NULL and *disp
- * points at src with *disp_stride == src_stride.
- */
-static int st_prepare_320x200_chunky(const unsigned char *src, int w, int h, int src_stride,
-		unsigned char **disp, int *disp_stride, unsigned char **out_down_to_free)
-{
-	*out_down_to_free = NULL;
-	if (w == 320 && h == 200) {
-		*disp = (unsigned char *)src;
-		*disp_stride = src_stride;
-		return 0;
-	}
-
-	unsigned char *out = (unsigned char *)malloc(320u * 200u);
-	if (!out)
-		return -1;
-	for (int y = 0; y < 200; y++) {
-		int sy = (y * h) / 200;
-		if (sy >= h)
-			sy = h - 1;
-		const unsigned char *row = src + sy * src_stride;
-		for (int x = 0; x < 320; x++) {
-			int sx = (x * w) / 320;
-			if (sx >= w)
-				sx = w - 1;
-			out[y * 320 + x] = row[sx];
-		}
-	}
-	*disp = out;
-	*disp_stride = 320;
-	*out_down_to_free = out;
-	return 0;
-}
 
 static void st_hw_palette_read(unsigned short *dst16)
 {
@@ -133,73 +97,3 @@ int st_run_interactive_gradient(void)
 	return ok ? 0 : 1;
 }
 
-int st_run_interactive_htitle(void)
-{
-	unsigned short saved_hw[ST_HW_PAL_COUNT];
-	unsigned char *raw_mix = NULL;
-	size_t raw_len = 0;
-	unsigned char *pcx = NULL;
-	int w = 0, h = 0, stride = 0;
-	unsigned char pal[768];
-	long old_ssp = Super(0L);
-	int old_rez = Getrez();
-	long old_phys = (long)Physbase();
-	long old_log = (long)Logbase();
-	st_hw_palette_read(saved_hw);
-
-	unsigned char *planar = NULL;
-
-	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw_mix, &raw_len);
-	if (mx != 0 || !raw_mix) {
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		printf("  SKIP: UPDATE.MIX / HTITLE.PCX (mix err=%d)\n", mx);
-		return 0;
-	}
-
-	int err = st_pcx_load_from_memory(raw_mix, raw_len, &pcx, &w, &h, &stride, pal);
-	free(raw_mix);
-	raw_mix = NULL;
-
-	if (err != 0 || !pcx || w <= 0 || h <= 0) {
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		free(pcx);
-		printf("SKIP: HTITLE decode err=%d w=%d h=%d\n", err, w, h);
-		return 0;
-	}
-
-	unsigned char *disp = NULL;
-	int disp_stride = 320;
-	unsigned char *down_free = NULL;
-	if (st_prepare_320x200_chunky(pcx, w, h, stride, &disp, &disp_stride, &down_free) != 0 || !disp) {
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		free(pcx);
-		printf("SKIP: HTITLE downsample alloc failed (w=%d h=%d)\n", w, h);
-		return 0;
-	}
-
-	Setscreen(-1L, -1L, 0);
-	planar = (unsigned char *)Logbase();
-	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
-	Set_Palette(pal);
-	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
-
-	C2P_Render_Logical_To_ST_Screen(disp, disp_stride, planar);
-	Setscreen((long)planar, (long)planar, -1L);
-	Vsync();
-	int ok = st_read_yes_no();
-
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-	st_hw_palette_write(saved_hw);
-	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
-
-	free(down_free); /* only if we allocated a shrunk buffer */
-	free(pcx);
-	return ok ? 0 : 1;
-}

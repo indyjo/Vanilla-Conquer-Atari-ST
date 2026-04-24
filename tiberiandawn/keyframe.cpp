@@ -572,7 +572,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 						if (copy_start + copy_len > table_end
 								|| (blob_size > 0
 										&& (size_t)(copy_start + copy_len) > blob_size)) {
-#ifdef DEBUG
+#if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
 							fprintf(stderr,
 									"[Build_Frame] XOR chain: Mem_Copy would read past frame "
 									"table (curr=%u total=%u need_end=%lx table_end=%lx) "

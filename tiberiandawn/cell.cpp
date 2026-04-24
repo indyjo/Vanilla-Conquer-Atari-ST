@@ -343,6 +343,26 @@ ObjectClass* CellClass::Cell_Object(int x, int y) const
     return (ptr);
 }
 
+#ifdef ATARI_ST
+static bool Is_Invalid_Object_Pointer(ObjectClass const* object)
+{
+    if (!object) {
+        return false;
+    }
+    unsigned long ptr = (unsigned long)object;
+    if ((ptr & 1UL) != 0) {
+        return true;
+    }
+    if ((ptr & 0xFF000000UL) != 0) {
+        return true;
+    }
+    if (ptr < 0x00001000UL) {
+        return true;
+    }
+    return ((ptr & 0xF0000000UL) == 0xF0000000UL);
+}
+#endif
+
 /***********************************************************************************************
  * CellClass::Redraw_Objects -- Redraws all objects overlapping this cell.                     *
  *                                                                                             *
@@ -380,6 +400,14 @@ void CellClass::Redraw_Objects(bool forced)
         if (Cell_Occupier()) {
             ObjectClass* optr = Cell_Occupier();
             while (optr) {
+#ifdef ATARI_ST
+                if (Is_Invalid_Object_Pointer(optr)) {
+                    char dbg[160];
+                    sprintf(dbg, "[Cell::Redraw_Objects] invalid chain ptr=%p cell=%d", (void*)optr, (int)cell);
+                    DBG_LOG(dbg);
+                    break;
+                }
+#endif
                 if (optr->IsActive) {
                     optr->Mark(MARK_CHANGE);
                 }
@@ -479,6 +507,23 @@ bool CellClass::Is_Generally_Clear(bool ignore_cloaked) const
 void CellClass::Recalc_Attributes(void)
 {
     Validate();
+#ifdef ATARI_ST
+    if (Overlay != OVERLAY_NONE
+        && ((int)Overlay < (int)OVERLAY_FIRST || (int)Overlay >= (int)OVERLAY_COUNT)) {
+        char dbg[128];
+        sprintf(dbg, "[Cell::Recalc_Attributes] invalid Overlay=%d cell=%d", (int)Overlay, (int)Cell_Number());
+        DBG_LOG(dbg);
+        Overlay = OVERLAY_NONE;
+    }
+    if (TType != TEMPLATE_NONE
+        && ((int)TType < (int)TEMPLATE_FIRST || (int)TType >= (int)TEMPLATE_COUNT)) {
+        char dbg[128];
+        sprintf(dbg, "[Cell::Recalc_Attributes] invalid TType=%d cell=%d", (int)TType, (int)Cell_Number());
+        DBG_LOG(dbg);
+        TType = TEMPLATE_NONE;
+        TIcon = 0;
+    }
+#endif
     /*
     **	Check for wall effects.
     */
@@ -544,6 +589,21 @@ void CellClass::Recalc_Attributes(void)
  *=============================================================================================*/
 void CellClass::Occupy_Down(ObjectClass* object)
 {
+#ifdef ATARI_ST
+    CELL cell_num = (CELL)(this - &Map[0]);
+    if (!object) {
+        DBG_LOG("[Cell::Occupy_Down] null object");
+        return;
+    }
+    if (Is_Invalid_Object_Pointer(object)) {
+        char dbg[160];
+        sprintf(dbg, "[Cell::Occupy_Down] reject object=%p cell=%d occ=%p", (void*)object, (int)cell_num,
+                (void*)Cell_Occupier());
+        DBG_LOG(dbg);
+        return;
+    }
+#endif
+
     Validate();
     ObjectClass* optr;
 
@@ -554,6 +614,17 @@ void CellClass::Occupy_Down(ObjectClass* object)
     if (Cell_Occupier()) {
         optr = Cell_Occupier();
         while (optr) {
+#ifdef ATARI_ST
+            if (Is_Invalid_Object_Pointer(optr)) {
+                char dbg[192];
+                sprintf(dbg, "[Cell::Occupy_Down] invalid existing occupier=%p cell=%d new=%p", (void*)optr,
+                        (int)cell_num, (void*)object);
+                DBG_LOG(dbg);
+                OccupierPtr = 0;
+                optr = 0;
+                break;
+            }
+#endif
             if (optr == object) {
                 return;
             }
@@ -563,6 +634,16 @@ void CellClass::Occupy_Down(ObjectClass* object)
         }
     }
     optr = Cell_Occupier();
+#ifdef ATARI_ST
+    if (Is_Invalid_Object_Pointer(optr)) {
+        char dbg[192];
+        sprintf(dbg, "[Cell::Occupy_Down] head invalid before link=%p cell=%d new=%p", (void*)optr, (int)cell_num,
+                (void*)object);
+        DBG_LOG(dbg);
+        OccupierPtr = 0;
+        optr = 0;
+    }
+#endif
     object->Next = optr;
 
     OccupierPtr = object;
@@ -2550,13 +2631,63 @@ void CellClass::Shimmer(void)
 ObjectClass* CellClass::Cell_Occupier(void) const
 {
     ObjectClass* ptr = OccupierPtr;
+#ifdef ATARI_ST
+    ObjectClass* last_good = 0;
 
+    while (ptr) {
+        if (Is_Invalid_Object_Pointer(ptr)) {
+            char dbg[256];
+            unsigned long next_field_addr = 0;
+            unsigned long next_field_value = 0;
+            unsigned char b0 = 0, b1 = 0, b2 = 0, b3 = 0;
+            if (last_good) {
+                next_field_addr = (unsigned long)&last_good->Next;
+                next_field_value = (unsigned long)last_good->Next;
+                unsigned char const* raw = (unsigned char const*)last_good;
+                b0 = raw[0];
+                b1 = raw[1];
+                b2 = raw[2];
+                b3 = raw[3];
+            } else {
+                next_field_addr = (unsigned long)&OccupierPtr;
+                next_field_value = (unsigned long)OccupierPtr;
+            }
+            sprintf(dbg,
+                    "[Cell::Cell_Occupier] invalid ptr=%p cell=%d head=%p last=%p next_field=0x%08lx next_val=0x%08lx",
+                    (void*)ptr, (int)Cell_Number(), (void*)OccupierPtr, (void*)last_good, next_field_addr,
+                    next_field_value);
+            DBG_LOG(dbg);
+            if (last_good) {
+                sprintf(dbg, "[Cell::Cell_Occupier] last bytes=%02x %02x %02x %02x", (unsigned int)b0,
+                        (unsigned int)b1, (unsigned int)b2, (unsigned int)b3);
+                DBG_LOG(dbg);
+            }
+            sprintf(dbg, "[Cell::Cell_Occupier] watch write at 0x%08lx", next_field_addr);
+            DBG_LOG(dbg);
+            if (last_good) {
+                last_good->Next = 0;
+            } else {
+                ((ObjectClass*&)OccupierPtr) = 0;
+            }
+            return (0);
+        }
+        if (ptr->IsActive) {
+            return (ptr);
+        }
+        last_good = ptr;
+        ptr = ptr->Next;
+        ((ObjectClass*&)OccupierPtr) = 0;
+    }
+
+    return (0);
+#else
     while (ptr && !ptr->IsActive) {
         ptr = ptr->Next;
         ((ObjectClass*&)OccupierPtr) = 0;
     }
 
     return (ptr);
+#endif
 }
 
 /*
@@ -2578,6 +2709,9 @@ ObjectClass* CellClass::Cell_Occupier(void) const
 void CellClass::Set_Mapped(HousesType house, bool set)
 {
     int shift = (int)house;
+    if (shift < 0 || shift >= 32) {
+        return;
+    }
     if (set) {
         IsMappedByPlayerMask |= (1 << shift);
     } else {
@@ -2612,6 +2746,9 @@ void CellClass::Set_Mapped(HouseClass* player, bool set)
 bool CellClass::Is_Mapped(HousesType house) const
 {
     int shift = (int)house;
+    if (shift < 0 || shift >= 32) {
+        return false;
+    }
     return (IsMappedByPlayerMask & (1 << shift)) ? true : false;
 }
 
@@ -2640,6 +2777,9 @@ bool CellClass::Is_Mapped(HouseClass* player) const
 void CellClass::Set_Visible(HousesType house, bool set)
 {
     int shift = (int)house;
+    if (shift < 0 || shift >= 32) {
+        return;
+    }
     if (set) {
         IsVisibleByPlayerMask |= (1 << shift);
     } else {
@@ -2674,6 +2814,9 @@ void CellClass::Set_Visible(HouseClass* player, bool set)
 bool CellClass::Is_Visible(HousesType house) const
 {
     int shift = (int)house;
+    if (shift < 0 || shift >= 32) {
+        return false;
+    }
     return (IsVisibleByPlayerMask & (1 << shift)) ? true : false;
 }
 

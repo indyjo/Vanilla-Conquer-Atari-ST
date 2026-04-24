@@ -1,6 +1,5 @@
 /*
- * Interactive: draw HTITLE using the same Load_Title_Screen + Read_PCX_File + C2P/Scale
- * path as the game (ATARILIB/title_pcx_load.cpp). Writes a temp PCX for CCFileClass.
+ * Interactive: draw TITLE.CPS using the same Load_Title_Screen path as the game.
  */
 
 #include "function.h"
@@ -20,7 +19,8 @@
 extern void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned char *palette);
 
 #define ST_HW_PAL_COUNT 16
-#define ST_PROD_PCX_NAME "ST_HTEST.PCX"
+#define ST_TITLE_MIX_NAME "CONQUER.MIX"
+#define ST_TITLE_CPS_NAME "TITLE.CPS"
 
 static void st_hw_palette_read(unsigned short *dst16)
 {
@@ -39,8 +39,6 @@ static void st_hw_palette_write(const unsigned short *src16)
 int st_run_interactive_title_production_path(void)
 {
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
-	unsigned char *raw = NULL;
-	size_t raw_len = 0;
 	unsigned char pal[768];
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
@@ -48,30 +46,6 @@ int st_run_interactive_title_production_path(void)
 	long old_log = (long)Logbase();
 	st_hw_palette_read(saved_hw);
 	Setscreen(-1L, -1L, 0);
-
-	int mx = st_mix_extract_file("UPDATE.MIX", "HTITLE.PCX", &raw, &raw_len);
-	if (mx != 0 || !raw) {
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		printf("SKIP: UPDATE.MIX err=%d\n", mx);
-		return 0;
-	}
-
-	FILE *out = fopen(ST_PROD_PCX_NAME, "wb");
-	if (!out || fwrite(raw, 1, raw_len, out) != raw_len) {
-		free(raw);
-		st_hw_palette_write(saved_hw);
-		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
-		if (out)
-			fclose(out);
-		printf("SKIP: cannot write %s\n", ST_PROD_PCX_NAME);
-		return 0;
-	}
-	fclose(out);
-	free(raw);
-	raw = NULL;
 
 	unsigned char *tos_screen = (unsigned char *)Logbase();
 	GraphicBufferClass screen;
@@ -81,7 +55,7 @@ int st_run_interactive_title_production_path(void)
 	Setscreen((long)screen.Get_Buffer(), (long)screen.Get_Buffer(), -1L);
 
 	/*
-	 * INIT.CPP uses Set_Palette(GamePalette) long before HTITLE, then memset(CurrentPalette,1)
+	 * INIT.CPP uses Set_Palette(GamePalette) long before title-screen draw, then memset(CurrentPalette,1)
 	 * immediately before Load_Title_Screen. Prime CurrentPalette with TEMPERAT.PAL so C2P /
 	 * Scale inside Load_Title_Screen see valid PaletteToST (cold start would leave stale tables).
 	 */
@@ -93,8 +67,7 @@ int st_run_interactive_title_production_path(void)
 	}
 	vp.Clear(0);
 
-	Load_Title_Screen((char *)ST_PROD_PCX_NAME, &vp, pal);
-	remove(ST_PROD_PCX_NAME);
+	Load_Title_Screen((char *)ST_TITLE_CPS_NAME, &vp, pal);
 
 	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 	Set_Palette(pal);

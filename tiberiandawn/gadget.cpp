@@ -156,6 +156,9 @@ GadgetClass::~GadgetClass(void)
  *=========================================================================*/
 int GadgetClass::Clicked_On(KeyNumType & key, unsigned flags, int mousex, int mousey)
 {
+	int const dx = mousex - X;
+	int const dy = mousey - Y;
+
 	/*
 	**	Set flags to match only those events that occur AND are being looked for. If
 	**	the result is NULL, then we know that this button should be ignored.
@@ -173,7 +176,7 @@ int GadgetClass::Clicked_On(KeyNumType & key, unsigned flags, int mousex, int mo
 	*/
 	if (this == StuckOn ||
 		(flags & KEYBOARD) ||
-		(flags && (mousex - X) < Width  && (mousey - Y) < Height)) {
+		(flags && dx >= 0 && dy >= 0 && dx < Width && dy < Height)) {
 
 		return(Action(flags, key));
 	}

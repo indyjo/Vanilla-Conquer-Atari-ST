@@ -31,39 +31,42 @@ static inline short SwapLE16(short val)
 
 void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned char *palette)
 {
-	GraphicBufferClass *load_buffer = Read_PCX_File(name, (char *)palette, NULL, 0);
+	if (!name || !video_page || strcmp(name, "TITLE.CPS") != 0) {
+		return;
+	}
 
-	if (load_buffer) {
-		if (palette) {
-			C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
-			Set_Palette(palette);
-		}
-		int src_w = load_buffer->Get_Width();
-		int src_h = load_buffer->Get_Height();
-		int dst_w = video_page->Get_Width();
-		int dst_h = video_page->Get_Height();
-		GraphicBufferClass *dst_gb = video_page->Get_Graphic_Buffer();
+	CCFileClass file_obj(name);
+	if (!file_obj.Is_Available()) {
+		return;
+	}
+	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
+	Load_Uncompress(file_obj, SysMemPage, SysMemPage, palette);
+	if (palette) {
+		Set_Palette(palette);
+	}
 
-		bool title_drawn = false;
-		if (dst_gb && dst_gb->Uses_ST_LoRes_Planar_Layout() && src_w == 320 && src_h == 200 && dst_w == 320 && dst_h == 200) {
-			const int lin_stride = load_buffer->Get_Width() + load_buffer->Get_Pitch();
-			if (lin_stride > 0 && load_buffer->Get_Buffer()) {
-				C2P_Rebuild_Tables_From_CurrentPalette();
-				C2P_Render_Logical_To_ST_Screen(
-						(const uint8_t *)load_buffer->Get_Buffer(),
-						lin_stride,
-						(uint8_t *)dst_gb->Get_Buffer());
-				title_drawn = true;
-			}
+	int src_w = 320;
+	int src_h = 200;
+	int dst_w = video_page->Get_Width();
+	int dst_h = video_page->Get_Height();
+	GraphicBufferClass *dst_gb = video_page->Get_Graphic_Buffer();
+	bool title_drawn = false;
+	if (dst_gb && dst_gb->Is_ST_Planar() && src_w == 320 && src_h == 200
+		&& dst_w == 320 && dst_h == 200) {
+		const int lin_stride = SysMemPage.Get_Width() + SysMemPage.Get_Pitch();
+		if (lin_stride > 0 && SysMemPage.Get_Buffer()) {
+			C2P_Rebuild_Tables_From_CurrentPalette();
+			C2P_Render_Logical_To_ST_Screen(
+				(const uint8_t *)SysMemPage.Get_Buffer(),
+				lin_stride,
+				(uint8_t *)dst_gb->Get_Buffer());
+			title_drawn = true;
 		}
-		if (!title_drawn) {
-			if (src_w == dst_w && src_h == dst_h) {
-				load_buffer->Blit(*video_page);
-			} else {
-				load_buffer->Scale(*video_page, 0, 0, 0, 0, src_w, src_h, dst_w, dst_h, FALSE, NULL);
-			}
-		}
-		delete load_buffer;
+	}
+	if (!title_drawn && src_w == dst_w && src_h == dst_h) {
+		SysMemPage.Blit(*video_page);
+	} else if (!title_drawn) {
+		SysMemPage.Scale(*video_page, 0, 0, 0, 0, src_w, src_h, dst_w, dst_h, FALSE, NULL);
 	}
 }
 

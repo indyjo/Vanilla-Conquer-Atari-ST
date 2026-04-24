@@ -1193,6 +1193,13 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	void *decoded_ptr = NULL;
 	int w = 0;
 	int h = 0;
+	const char *decode_path = "none";
+	/*
+	 * Most shape draws treat index 0 as transparent, but terrain/iconset tiles use
+	 * full 8bpp data where 0 is a valid color. Start with transparent semantics and
+	 * disable it for iconset-decoded tiles.
+	 */
+	BOOL use_shape_transparency = TRUE;
 
 	/*
 	 * First try iconset-layout stamps (legacy ICN loaded blocks).
@@ -1203,25 +1210,40 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 		const unsigned short iw = Read_LE16_Unsafe(base + 0);
 		const unsigned short ih = Read_LE16_Unsafe(base + 2);
 		const unsigned short icount = Read_LE16_Unsafe(base + 4);
+		const unsigned long total_size = Read_LE32_Unsafe(base + 8);
 		const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
 		const unsigned long map_off = Read_LE32_Unsafe(base + 28);
-		if (iw > 0 && ih > 0 && iw <= 128 && ih <= 128 && icount > 0 && icon < (int)icount && icons_off > 0) {
+		if (iw > 0 && ih > 0 && iw <= 128 && ih <= 128 && icount > 0 && icons_off > 0) {
+			const long logical_count = (long)iw * (long)ih;
 			int icon_index = icon;
 			if (map_off > 0) {
+				if (icon < 0 || icon >= logical_count) {
+					goto iconset_decode_done;
+				}
 				const unsigned char *map_ptr = base + map_off;
 				icon_index = (int)map_ptr[icon];
+			} else {
+				if (icon < 0 || icon >= (int)icount) {
+					goto iconset_decode_done;
+				}
 			}
 			if (icon_index >= 0 && icon_index < (int)icount) {
 				const long icon_size = (long)iw * (long)ih;
 				const unsigned char *icon_ptr = base + icons_off + (long)icon_index * icon_size;
-				if (icon_size > 0 && icon_size <= _ShapeBufferSize) {
+				const unsigned long icon_end = icons_off + (unsigned long)((long)icon_index * icon_size) + (unsigned long)icon_size;
+				if (icon_size > 0 && icon_size <= _ShapeBufferSize
+					&& (total_size == 0 || icon_end <= total_size)) {
 					Mem_Copy(icon_ptr, _ShapeBuffer, icon_size);
 					decoded_ptr = _ShapeBuffer;
 					w = (int)iw;
 					h = (int)ih;
+					decode_path = "iconset";
+					use_shape_transparency = FALSE;
 				}
 			}
 		}
+iconset_decode_done:
+		;
 	}
 
 	/*
@@ -1235,6 +1257,7 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 			int td_decoded = Decode_TD_SHP_Frame(icondata, icon, _ShapeBuffer, (int)_ShapeBufferSize);
 			if (td_decoded > 0) {
 				decoded_ptr = _ShapeBuffer;
+				decode_path = "td_shp";
 			}
 		}
 	}
@@ -1251,6 +1274,7 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 				int decoded = Decode_Shape_To_Buffer(shape, _ShapeBuffer, (int)_ShapeBufferSize);
 				if (decoded > 0) {
 					decoded_ptr = _ShapeBuffer;
+					decode_path = "shape";
 				}
 			}
 		}
@@ -1263,6 +1287,7 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 			w = (int)Get_Build_Frame_Width(icondata);
 			h = (int)Get_Build_Frame_Height(icondata);
 			decoded_ptr = (void *)frame_ptr;
+			decode_path = "build_frame";
 		}
 	}
 
@@ -1273,7 +1298,6 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	if (w <= 0 || h <= 0) {
 		return;
 	}
-
 	/*
 	 * Fast terrain-tile path for ST planar targets:
 	 * decode -> 24x24 linear scratch -> 64x24 planar scratch -> blit to destination.
@@ -1327,11 +1351,11 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 			&& dy_abs + ST_TILE_LINEAR_H <= ST_PLANAR_HEIGHT) {
 			memcpy(g_tile_linear_24x24, decoded_ptr, (size_t)ST_TILE_LINEAR_BYTES);
 			/*
-			 * Buffer_Frame_To_Page is called with SHAPE_TRANS, so index 0 must be transparent.
-			 * The blitter path is D=S (no per-pixel transparency), therefore only use it for
-			 * fully opaque tiles; otherwise fall back to Frame_To_Page for correctness.
+			 * If index 0 must be transparent, the blitter D=S path is not correct.
+			 * In that case, fall back to Buffer_Frame_To_Page so transparency is applied.
 			 */
-			if (memchr(g_tile_linear_24x24, 0, (size_t)ST_TILE_LINEAR_BYTES) != NULL) {
+			if (use_shape_transparency
+				&& memchr(g_tile_linear_24x24, 0, (size_t)ST_TILE_LINEAR_BYTES) != NULL) {
 				goto fast24_fallback;
 			}
 
@@ -1374,7 +1398,8 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 fast24_fallback:
 	/* Match legacy Draw_Stamp semantics: viewport-relative opaque blit. */
 	Buffer_Frame_To_Page(
-		x_pixel, y_pixel, w, h, decoded_ptr, *vp, SHAPE_WIN_REL | ST_SHAPE_TRANS_FLAG);
+		x_pixel, y_pixel, w, h, decoded_ptr, *vp,
+		SHAPE_WIN_REL | (use_shape_transparency ? ST_SHAPE_TRANS_FLAG : 0));
 }
 
 /*=========================================================================*/

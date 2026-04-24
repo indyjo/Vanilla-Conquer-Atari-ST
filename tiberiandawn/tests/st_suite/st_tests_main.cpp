@@ -5,6 +5,8 @@
 
 #include "st_audio_asset_autotest.h"
 #include "st_build_frame_assets.h"
+#include "st_font_browser.h"
+#include "st_mix_register.h"
 
 #include <mint/osbind.h>
 
@@ -13,7 +15,6 @@
 
 extern int st_run_c2p_autotests(void);
 extern int st_run_interactive_gradient(void);
-extern int st_run_interactive_htitle(void);
 extern int st_run_interactive_title_production_path(void);
 extern int st_run_interactive_title_menu_overlay(void);
 extern int st_run_interactive_title_mouse_cursor(void);
@@ -29,14 +30,14 @@ static void print_banner(void)
 	printf("========================================\n");
 	printf("1 Auto: C2P planar checksum\n");
 	printf("2 Interactive: 16x16 color grid (8x8)\n");
-	printf("3 Interactive: HTITLE (UPDATE.MIX)\n");
-	printf("4 Interactive: HTITLE prod path\n");
-	printf("5 Interactive: HTITLE + menu overlay\n");
-	printf("6 Interactive: HTITLE + mouse cursor\n");
+	printf("4 Interactive: TITLE prod path\n");
+	printf("5 Interactive: TITLE + menu overlay\n");
+	printf("6 Interactive: TITLE + mouse cursor\n");
 	printf("7 Interactive: SHP grid (CONQUER.MIX)\n");
 	printf("8 Automated: C2P + SHP + .AUD (MIX)\n");
-	printf("9 Auto: HTITLE 8-way blitter scroll\n");
+	printf("9 Auto: TITLE 8-way blitter scroll\n");
 	printf("b Auto: 24x24 tile skew matrix\n");
+	printf("f Interactive: font browser (.FNT)\n");
 	printf("a Audio tests (submenu)\n");
 	printf("0 Exit\n");
 	printf("Choice: ");
@@ -77,18 +78,22 @@ static void audio_tests_submenu(void)
 				int r = st_run_asset_audio_try_index(pick - 1);
 				if (r < 0) {
 					printf("Internal error (bad index).\n");
-				} else if (r != 0) {
+				} else if (r == 1) {
 					printf("Audio: FAIL\n");
+				} else if (r == 2) {
+					printf("Audio: SKIP\n");
 				} else {
-					printf("Audio: PASS or SKIP\n");
+					printf("Audio: PASS\n");
 				}
 			} else if (pick == n + 1) {
 				printf("\n-- Audio first hit --\n");
 				int r = st_run_asset_audio_autotest();
-				if (r != 0) {
+				if (r == 1) {
 					printf("Audio: FAIL\n");
+				} else if (r == 2) {
+					printf("Audio: SKIP\n");
 				} else {
-					printf("Audio: PASS or SKIP\n");
+					printf("Audio: PASS\n");
 				}
 			} else {
 				printf("Unknown option.\n");
@@ -103,6 +108,8 @@ static void audio_tests_submenu(void)
 
 int main(void)
 {
+	(void)st_tests_register_mixes_once();
+
 	for (;;) {
 		print_banner();
 		long w = Crawcin();
@@ -120,9 +127,6 @@ int main(void)
 			break;
 		case '2':
 			st_run_interactive_gradient();
-			break;
-		case '3':
-			st_run_interactive_htitle();
 			break;
 		case '4':
 			st_run_interactive_title_production_path();
@@ -147,7 +151,7 @@ int main(void)
 			printf("Auto C2P: %s\n", r ? "FAIL" : "PASS");
 			printf("Auto Build_Frame assets: %s (fail count=%d)\n",
 					bf ? "FAIL" : "PASS", bf);
-			printf("Auto asset audio: %s\n", au ? "FAIL" : "PASS");
+			printf("Auto asset audio: %s\n", (au == 1) ? "FAIL" : ((au == 2) ? "SKIP" : "PASS"));
 			break;
 		}
 		case 'a':
@@ -160,6 +164,10 @@ int main(void)
 		case 'b':
 		case 'B':
 			st_run_blitter_tile_skew_matrix();
+			break;
+		case 'f':
+		case 'F':
+			st_run_interactive_font_browser();
 			break;
 		case '0':
 		case 27: /* ESC */

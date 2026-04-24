@@ -8,6 +8,7 @@
 #include "gbuffer.h"
 #include "drawbuff.h"  // For Buffer_Clear, Buffer_Fill_Quad
 #include "c2p.h"
+#include "ww_win.h"
 #include <stdio.h>  // For sprintf
 
 /***************************************************************************
@@ -424,10 +425,21 @@ void GraphicViewPortClass::Draw_Stamp(void const *icondata, int icon, int x_pixe
  *=========================================================================*/
 void GraphicViewPortClass::Draw_Stamp(void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap, int clip_window)
 {
-	if (Lock()){
-		Buffer_Draw_Stamp_Clip(this, icondata, icon, x_pixel, y_pixel, remap, 0, 0, Width, Height);
+	GraphicViewPortClass draw_window(
+		Get_Graphic_Buffer(),
+		(WindowList[clip_window][WINDOWX] << 3) + Get_XPos(),
+		WindowList[clip_window][WINDOWY] + Get_YPos(),
+		WindowList[clip_window][WINDOWWIDTH] << 3,
+		WindowList[clip_window][WINDOWHEIGHT]);
+
+	if (draw_window.Get_Width() <= 0 || draw_window.Get_Height() <= 0) {
+		return;
 	}
-	Unlock();
+
+	if (draw_window.Lock()){
+		Buffer_Draw_Stamp(&draw_window, icondata, icon, x_pixel, y_pixel, remap);
+	}
+	draw_window.Unlock();
 }
 
 /***************************************************************************

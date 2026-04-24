@@ -90,6 +90,12 @@ class VectorClass
 		virtual int Resize(unsigned newsize, T const * array=0);
 		virtual void Clear(void);
 		unsigned Length(void) const {return VectorMax;};
+		/*
+		** Contiguous storage for [0 .. Length()-1], or NULL when Length()==0.
+		** If Length()>0 but this returns NULL, the vector is in a corrupt state (do not index).
+		*/
+		T* Buffer_Ptr(void) { return (VectorMax && Vector) ? Vector : (T*)0; }
+		T const* Buffer_Ptr(void) const { return (VectorMax && Vector) ? Vector : (T const*)0; }
 		virtual int ID(T const * ptr);	// Pointer based identification.
 		virtual int ID(T const & ptr);	// Value based identification.
 
@@ -366,14 +372,18 @@ class BooleanVectorClass
 		// Quick check on boolean state.
 		bool Is_True(int index) const {
 			if (index == LastIndex) return(Copy);
-			return(Get_Bit(&BitArray[0], index) ? true : false);
+			unsigned char const* bits = BitArray.Buffer_Ptr();
+			if (!bits) return(false);
+			return(Get_Bit(bits, index) ? true : false);
 		};
 
 		// Find first index that is false.
 		int First_False(void) const {
 			if (LastIndex != -1) Fixup(-1);
 
-			int retval = First_False_Bit(&BitArray[0]);
+			unsigned char const* bits = BitArray.Buffer_Ptr();
+			if (!bits) return(-1);
+			int retval = First_False_Bit(bits);
 			if (retval < BitCount) return(retval);
 
 			/*
@@ -387,7 +397,9 @@ class BooleanVectorClass
 		int First_True(void) const {
 			if (LastIndex != -1) Fixup(-1);
 
-			int retval = First_True_Bit(&BitArray[0]);
+			unsigned char const* bits = BitArray.Buffer_Ptr();
+			if (!bits) return(-1);
+			int retval = First_True_Bit(bits);
 			if (retval < BitCount) return(retval);
 
 			/*

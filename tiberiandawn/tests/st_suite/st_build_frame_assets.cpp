@@ -113,6 +113,23 @@ typedef struct {
 	int nframes;
 } StBfAsset;
 
+typedef struct {
+	StBfAsset asset;
+	char shp_name[32];
+} StBfMenuAsset;
+
+static int st_extract_asset_preferring_dos_conquer(const char *mix, const char *entry_name,
+		unsigned char **out_data, size_t *out_size)
+{
+	if (mix && entry_name && strcmp(mix, "CONQUER.MIX") == 0) {
+		int rc = st_mix_extract_file("dos/CONQUER.MIX", entry_name, out_data, out_size);
+		if (rc == 0) {
+			return 0;
+		}
+	}
+	return st_mix_extract_file(mix, entry_name, out_data, out_size);
+}
+
 /* Frames that often hit XOR chain / Mem_Copy on unit SHPs; 0 and small ids for sanity. */
 static const unsigned short k_frames_e1[] = { 0, 2, 3, 6, 9, 15, 19, 23, 31 };
 static const unsigned short k_frames_e2[] = { 0, 3, 7, 11, 15, 21 };
@@ -127,6 +144,13 @@ static const unsigned short k_frames_trex[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 static const unsigned short k_frames_atomsfx[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20 };
 static const unsigned short k_frames_a10[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16 };
 static const unsigned short k_frames_silomake[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+static const unsigned short k_frames_power[] = { 0, 1, 2, 3, 4, 5 };
+static const unsigned short k_frames_radar_gdi[] = { 0, 1, 2, 3, 4, 5 };
+static const unsigned short k_frames_pips[] = { 0, 1, 2, 3, 4, 5 };
+static const unsigned short k_frames_dot_shp[] = { 0 };
+static const unsigned short k_frames_bar3ylw[] = { 0, 1, 2, 3, 4, 5 };
+static const unsigned short k_frames_bar3red[] = { 0, 1, 2, 3, 4, 5 };
+static const unsigned short k_frames_icon[] = { 0 };
 
 static const StBfAsset k_assets[] = {
 	{ "CONQUER.MIX", "E1.SHP", "infantry E1 (long XOR chain)", k_frames_e1,
@@ -151,7 +175,308 @@ static const StBfAsset k_assets[] = {
 		(int)(sizeof(k_frames_a10) / sizeof(k_frames_a10[0])) },
 	{ "CONQUER.MIX", "SILOMAKE.SHP", "ore silo build anim", k_frames_silomake,
 		(int)(sizeof(k_frames_silomake) / sizeof(k_frames_silomake[0])) },
+	{ "CONQUER.MIX", "POWER.SHP", "power bar marker", k_frames_power,
+		(int)(sizeof(k_frames_power) / sizeof(k_frames_power[0])) },
+	{ "CONQUER.MIX", "RADAR.GDI", "GDI radar logo", k_frames_radar_gdi,
+		(int)(sizeof(k_frames_radar_gdi) / sizeof(k_frames_radar_gdi[0])) },
+	{ "CONQUER.MIX", "PIPS.SHP", "pip markers", k_frames_pips,
+		(int)(sizeof(k_frames_pips) / sizeof(k_frames_pips[0])) },
+	{ "CONQUER.MIX", ".SHP", "literal .SHP entry", k_frames_dot_shp,
+		(int)(sizeof(k_frames_dot_shp) / sizeof(k_frames_dot_shp[0])) },
+	{ "CONQUER.MIX", "BAR3YLW.SHP", "yellow bar frames", k_frames_bar3ylw,
+		(int)(sizeof(k_frames_bar3ylw) / sizeof(k_frames_bar3ylw[0])) },
+	{ "CONQUER.MIX", "BAR3RED.SHP", "red bar frames", k_frames_bar3red,
+		(int)(sizeof(k_frames_bar3red) / sizeof(k_frames_bar3red[0])) },
+
+	/* All *ICON.SHP entries from mix2.txt, sorted alphabetically. */
+	{ "CONQUER.MIX", "A10ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "AFLDICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "APCICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "ARCOICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "ARTYICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "ATOMICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "ATWRICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "BARBICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "BGGYICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "BIKEICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "BIOICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "BOATICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "BOMBICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "BRIKICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "C17ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "CYCLICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "E1ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "E2ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "E3ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "E4ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "E5ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "E6ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "EYEICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "FACTICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "FIXICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "FTNKICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "GTWRICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "GUNICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "HANDICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "HARVICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "HELIICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "HOSPICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "HQICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "HPADICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "HTNKICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "IONICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "JEEPICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "LSTICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "LTNKICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "MCVICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "MHQICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "MLRSICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "MSAMICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "MTNKICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "NUK2ICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "NUKEICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "OBLIICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "ORCAICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "PROCICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "PUMPICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "PYLEICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "ROADICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "RMBOICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "SAMICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "SBAGICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "SILOICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "STNKICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "TMPLICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "TRANICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "WEAPICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
+	{ "CONQUER.MIX", "WOODICON.SHP", "icon asset", k_frames_icon,
+		(int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0])) },
 };
+
+static const char * const k_mix2_shps[] = {
+	"120MM.SHP","50CAL.SHP","A10.SHP","A10ICON.SHP","AFLD.SHP","AFLDICON.SHP","AFLDMAKE.SHP","APC.SHP","APCICON.SHP","ARCO.SHP",
+	"ARCOICON.SHP","ART-EXP1.SHP","ARTY.SHP","ARTYICON.SHP","ATOMDOOR.SHP","ATOMICDN.SHP","ATOMICON.SHP","ATOMICUP.SHP","ATOMSFX.SHP","ATWR.SHP",
+	"ATWRICON.SHP","ATWRMAKE.SHP","BAR3RED.SHP","BAR3YLW.SHP","BARB.SHP","BARBICON.SHP","BGGY.SHP","BGGYICON.SHP","BIKE.SHP","BIKEICON.SHP",
+	"BIO.SHP","BIOICON.SHP","BIOMAKE.SHP","BOAT.SHP","BOATICON.SHP","BOMB.SHP","BOMBICON.SHP","BOMBLET.SHP","BRIK.SHP","BRIKICON.SHP",
+	"BTN-DN.SHP","BTN-PL.SHP","BTN-ST.SHP","BTN-UP.SHP","BURN-L.SHP","BURN-M.SHP","BURN-S.SHP","C1.SHP","C10.SHP","C17.SHP",
+	"C17ICON.SHP","C2.SHP","C3.SHP","C4.SHP","C5.SHP","C6.SHP","C7.SHP","C8.SHP","C9.SHP","CHAN.SHP",
+	"CHEM-E.SHP","CHEM-N.SHP","CHEM-NE.SHP","CHEM-NW.SHP","CHEM-S.SHP","CHEM-SE.SHP","CHEM-SW.SHP","CHEM-W.SHP","CHEMBALL.SHP","CLOCK.SHP",
+	"CONC.SHP","COUNTRYA.SHP","COUNTRYE.SHP","CREDS.SHP","CYCL.SHP","CYCLICON.SHP","DELPHI.SHP","DEVIATOR.SHP","DOLLAR.SHP","DRAGON.SHP",
+	"E1.SHP","E1ICON.SHP","E1ROT.SHP","E2.SHP","E2ICON.SHP","E2ROT.SHP","E3.SHP","E3ICON.SHP","E3ROT.SHP","E4.SHP",
+	"E4ICON.SHP","E4ROT.SHP","E5.SHP","E5ICON.SHP","E6.SHP","E6ICON.SHP","EARTH.SHP","EMPULSE.SHP","EYE.SHP","EYEICON.SHP",
+	"EYEMAKE.SHP","FACT.SHP","FACTICON.SHP","FACTMAKE.SHP","FBALL1.SHP","FIRE1.SHP","FIRE2.SHP","FIRE3.SHP","FIRE4.SHP","FIX.SHP",
+	"FIXICON.SHP","FIXMAKE.SHP","FLAGFLY.SHP","FLAME-E.SHP","FLAME-N.SHP","FLAME-NE.SHP","FLAME-NW.SHP","FLAME-S.SHP","FLAME-SE.SHP","FLAME-SW.SHP",
+	"FLAME-W.SHP","FLMSPT.SHP","FPLS.SHP","FRAG1.SHP","FRAG3.SHP","FTNK.SHP","FTNKICON.SHP","GTWR.SHP","GTWRICON.SHP","GTWRMAKE.SHP",
+	"GUN.SHP","GUNFIRE.SHP","GUNICON.SHP","GUNMAKE.SHP","HAND.SHP","HANDICON.SHP","HANDMAKE.SHP","HARV.SHP","HARVICON.SHP","HELI.SHP",
+	"HELIICON.SHP","HISCORE1.SHP","HISCORE2.SHP","HOSP.SHP","HOSPICON.SHP","HOSPMAKE.SHP","HPAD.SHP","HPADICON.SHP","HPADMAKE.SHP","HQ.SHP",
+	"HQICON.SHP","HQMAKE.SHP","HTNK.SHP","HTNKICON.SHP","INVUN.SHP","IONICON.SHP","IONSFX.SHP","JEEP.SHP","JEEPICON.SHP","LOGOS.SHP",
+	"LROTOR.SHP","LST.SHP","LSTICON.SHP","LTNK.SHP","LTNKICON.SHP","MCV.SHP","MCVICON.SHP","MHQ.SHP","MHQICON.SHP","MINE.SHP",
+	"MINIGUN.SHP","MISS.SHP","MISSILE.SHP","MISSILE2.SHP","MLRS.SHP","MLRSICON.SHP","MOEBIUS.SHP","MOUSE.SHP","MOVEFLSH.SHP","MSAM.SHP",
+	"MSAMICON.SHP","MTNK.SHP","MTNKICON.SHP","NAPALM1.SHP","NAPALM2.SHP","NAPALM3.SHP","NUK2.SHP","NUK2ICON.SHP","NUK2MAKE.SHP","NUKE.SHP",
+	"NUKEICON.SHP","NUKEMAKE.SHP","OBLI.SHP","OBLIICON.SHP","OBLIMAKE.SHP","OPTIONS.SHP","ORCA.SHP","ORCAICON.SHP","PATRIOT.SHP","PIFF.SHP",
+	"PIFFPIFF.SHP","PIPS.SHP","POWER.SHP","PROC.SHP","PROCICON.SHP","PROCMAKE.SHP","PUMPICON.SHP","PUMPMAKE.SHP","PYLE.SHP","PYLEICON.SHP",
+	"PYLEMAKE.SHP","RAPID.SHP","RAPT.SHP","RMBO.SHP","RMBOICON.SHP","ROAD.SHP","ROADICON.SHP","RROTOR.SHP","SAM.SHP","SAMFIRE.SHP",
+	"SAMICON.SHP","SAMMAKE.SHP","SBAG.SHP","SBAGICON.SHP","SCRATE.SHP","SELECT.SHP","SHADOW.SHP","SILO.SHP","SILOICON.SHP","SILOMAKE.SHP",
+	"SMOKEY.SHP","SMOKE_M.SHP","SMOKLAND.SHP","SQUISH.SHP","STEALTH2.SHP","STEG.SHP","STNK.SHP","STNKICON.SHP","STRIP.SHP","STRIPDN.SHP",
+	"STRIPUP.SHP","TABS.SHP","TIME.SHP","TMPL.SHP","TMPLICON.SHP","TMPLMAKE.SHP","TRAN.SHP","TRANICON.SHP","TREX.SHP","TRIC.SHP",
+	"V19.SHP","VEH-HIT1.SHP","VEH-HIT2.SHP","VEH-HIT3.SHP","VICE.SHP","WAKE.SHP","WCRATE.SHP","WEAP.SHP","WEAP2.SHP","WEAPICON.SHP",
+	"WEAPMAKE.SHP","WOOD.SHP","WOODICON.SHP"
+};
+
+static int st_ascii_upper(int c)
+{
+	if (c >= 'a' && c <= 'z') {
+		return c - ('a' - 'A');
+	}
+	return c;
+}
+
+static int st_casecmp(const char *a, const char *b)
+{
+	while (*a && *b) {
+		int da = st_ascii_upper((unsigned char)*a++);
+		int db = st_ascii_upper((unsigned char)*b++);
+		if (da != db) {
+			return da - db;
+		}
+	}
+	return st_ascii_upper((unsigned char)*a) - st_ascii_upper((unsigned char)*b);
+}
+
+static int st_has_shp_ext(const char *name)
+{
+	size_t n = strlen(name);
+	return n >= 4 &&
+		st_ascii_upper((unsigned char)name[n - 4]) == '.' &&
+		st_ascii_upper((unsigned char)name[n - 3]) == 'S' &&
+		st_ascii_upper((unsigned char)name[n - 2]) == 'H' &&
+		st_ascii_upper((unsigned char)name[n - 1]) == 'P';
+}
+
+static int st_menu_find_name(const StBfMenuAsset *items, int count, const char *name)
+{
+	for (int i = 0; i < count; i++) {
+		if (st_casecmp(items[i].asset.shp, name) == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int st_menu_cmp_asset_name(const void *a, const void *b)
+{
+	const StBfMenuAsset *aa = (const StBfMenuAsset *)a;
+	const StBfMenuAsset *bb = (const StBfMenuAsset *)b;
+	return st_casecmp(aa->shp_name, bb->shp_name);
+}
+
+static int st_build7_collect_assets(StBfMenuAsset *items, int cap)
+{
+	if (!items || cap <= 0) {
+		return 0;
+	}
+
+	int count = 0;
+	for (int i = 0; i < (int)(sizeof(k_assets) / sizeof(k_assets[0])) && count < cap; i++) {
+		/* Keep only .SHP in the interactive menu. */
+		if (!st_has_shp_ext(k_assets[i].shp)) {
+			continue;
+		}
+		strncpy(items[count].shp_name, k_assets[i].shp, sizeof(items[count].shp_name) - 1);
+		items[count].shp_name[sizeof(items[count].shp_name) - 1] = '\0';
+		items[count].asset = k_assets[i];
+		items[count].asset.shp = items[count].shp_name;
+		count++;
+	}
+
+	for (int i = 0; i < (int)(sizeof(k_mix2_shps) / sizeof(k_mix2_shps[0])) && count < cap; i++) {
+		const char *token = k_mix2_shps[i];
+		if (st_menu_find_name(items, count, token) >= 0) {
+			continue;
+		}
+		strncpy(items[count].shp_name, token, sizeof(items[count].shp_name) - 1);
+		items[count].shp_name[sizeof(items[count].shp_name) - 1] = '\0';
+		items[count].asset.mix = "CONQUER.MIX";
+		items[count].asset.shp = items[count].shp_name;
+		items[count].asset.desc = "hardcoded SHP";
+		items[count].asset.frames = k_frames_icon;
+		items[count].asset.nframes = (int)(sizeof(k_frames_icon) / sizeof(k_frames_icon[0]));
+		count++;
+	}
+
+	qsort(items, (size_t)count, sizeof(items[0]), st_menu_cmp_asset_name);
+	for (int i = 0; i < count; i++) {
+		/* Keep pointer fields coherent after struct moves during qsort. */
+		items[i].asset.shp = items[i].shp_name;
+	}
+	return count;
+}
+
+static int st_read_index_line(char *buf, int cap)
+{
+	int n = 0;
+	/* VT52: show text cursor while collecting input. */
+	printf("\033e");
+	fflush(stdout);
+	for (;;) {
+		long w = Crawcin();
+		unsigned char ch = (unsigned char)(w & 0xFF);
+		if (ch == '\r' || ch == '\n') {
+			printf("\n");
+			fflush(stdout);
+			break;
+		}
+		if (ch == 8 || ch == 127) {
+			if (n > 0) {
+				n--;
+				/* Erase one echoed character. */
+				printf("\b \b");
+				fflush(stdout);
+			}
+			continue;
+		}
+		if (ch >= ' ' && n + 1 < cap) {
+			buf[n++] = (char)ch;
+			putchar((int)ch);
+			fflush(stdout);
+		}
+	}
+	buf[n] = '\0';
+	/* VT52: keep cursor visible after entry as well. */
+	printf("\033e");
+	fflush(stdout);
+	return n;
+}
+
+static int st_digits_count(int v)
+{
+	int d = 1;
+	while (v >= 10) {
+		v /= 10;
+		d++;
+	}
+	return d;
+}
 
 static void st_fill_checkerboard_4x4(unsigned char *screen, int scr_w, int scr_h, int scr_stride)
 {
@@ -165,27 +490,111 @@ static void st_fill_checkerboard_4x4(unsigned char *screen, int scr_w, int scr_h
 
 /*
  * Test 7: pick entry in k_assets[] (console only, before video preview).
- * Keys 1-9 and 0 match array order for the first 10 slots; 's' selects SAM.
+ * Keys 1-9 and 0 match array order for the first 10 slots; 's' selects SILOMAKE,
+ * 'p' selects POWER, 'r' selects RADAR.GDI, 'i' selects PIPS, '.' selects .SHP,
+ * 'b' selects BAR3YLW, and 'd' selects BAR3RED.
  * Other keys default to 0 (E1).
  */
-static int st_read_build7_shape_choice(void)
+static int st_read_build7_shape_choice(const StBfMenuAsset *items, int count)
 {
-	printf(
-			"\n"
-			"1=E1 2=E2 3=GUN 4=SAM 5=MINIGUN 6=FIRE1 7=OPTIONS 8=TREX\n"
-			"9=ATOMSFX 0=A10 s=SILOMAKE\n"
-			"Choice: ");
-	fflush(stdout);
-	long w = Crawcin();
-	unsigned char ch = (unsigned char)(w & 0xFF);
-	printf("%c\n", ch ? ch : '?');
-	if (ch >= '1' && ch <= '9')
-		return (int)(ch - '1');
-	if (ch == '0')
-		return 9;
-	if (ch == 's' || ch == 'S')
-		return 10;
-	return 0;
+	if (!items || count <= 0) {
+		return 0;
+	}
+
+	const int total_digits = st_digits_count(count);
+	int max_name_len = 0;
+	for (int i = 0; i < count; i++) {
+		int n = (int)strlen(items[i].shp_name);
+		if (n > max_name_len) {
+			max_name_len = n;
+		}
+	}
+
+	/* Render for 80 columns and fit as many columns as possible. */
+	const int gap = 2;
+	int cell_w = total_digits + 2 + max_name_len; /* "NNN) NAME" */
+	if (cell_w < total_digits + 2 + 8) {
+		cell_w = total_digits + 2 + 8;
+	}
+	int cols = 80 / (cell_w + gap);
+	if (cols < 1) {
+		cols = 1;
+	}
+
+	/* Keep room for header + prompt lines on a 25-line text screen. */
+	const int rows = 20;
+	const int per_page = rows * cols;
+	int page = 0;
+	int page_count = (count + per_page - 1) / per_page;
+
+	for (;;) {
+		int start = page * per_page;
+		int end = start + per_page;
+		if (end > count) {
+			end = count;
+		}
+		int page_items = end - start;
+
+		printf("\nTest 7 assets (.SHP), page %d/%d  [n=next p=prev q=quit]\n",
+			page + 1, page_count);
+		for (int r = 0; r < rows; r++) {
+			int printed = 0;
+			for (int c = 0; c < cols; c++) {
+				int idx = start + c * rows + r;
+				if (idx >= end) {
+					continue;
+				}
+
+				char label[128];
+				snprintf(label, sizeof(label), "%*d) %s", total_digits, idx + 1, items[idx].shp_name);
+				if ((int)strlen(label) > cell_w) {
+					/* Truncate very long names to keep strict column fit. */
+					label[cell_w] = '\0';
+				}
+
+				if (printed) {
+					printf("%*s", gap, "");
+				}
+				printf("%-*s", cell_w, label);
+				printed = 1;
+			}
+			if (printed) {
+				printf("\n");
+			}
+		}
+
+		printf("Choice [1-%d, n, p, q]: ", count);
+		fflush(stdout);
+		char line[32];
+		st_read_index_line(line, (int)sizeof(line));
+		if (!line[0]) {
+			continue;
+		}
+
+		if (line[1] == '\0') {
+			char ch = (char)st_ascii_upper((unsigned char)line[0]);
+			if (ch == 'N') {
+				if (page + 1 < page_count) {
+					page++;
+				}
+				continue;
+			}
+			if (ch == 'P') {
+				if (page > 0) {
+					page--;
+				}
+				continue;
+			}
+			if (ch == 'Q') {
+				return 0;
+			}
+		}
+
+		int pick = atoi(line);
+		if (pick >= 1 && pick <= count) {
+			return pick - 1;
+		}
+	}
 }
 
 static int st_build7_frames_per_page(unsigned short tw, unsigned short th)
@@ -312,7 +721,7 @@ int st_run_build_frame_asset_autocheck(void)
 		const StBfAsset *a = &k_assets[ai];
 		unsigned char *raw = NULL;
 		size_t raw_len = 0;
-		int mx = st_mix_extract_file(a->mix, a->shp, &raw, &raw_len);
+		int mx = st_extract_asset_preferring_dos_conquer(a->mix, a->shp, &raw, &raw_len);
 		if (mx != 0 || !raw) {
 			printf("SKIP %s:%s err=%d\n", a->mix, a->shp, mx);
 			continue;
@@ -373,13 +782,17 @@ int st_run_interactive_build_frame_xor_grid(void)
 		return 1;
 	}
 
-	const int pick = st_read_build7_shape_choice();
-	const size_t n_menu = sizeof(k_assets) / sizeof(k_assets[0]);
-	const StBfAsset *sel = &k_assets[(pick >= 0 && (size_t)pick < n_menu) ? (size_t)pick : 0u];
+	StBfMenuAsset menu_assets[1024];
+	int menu_count = st_build7_collect_assets(menu_assets, (int)(sizeof(menu_assets) / sizeof(menu_assets[0])));
+	const int pick = st_read_build7_shape_choice(menu_assets, menu_count);
+	StBfMenuAsset *picked = &menu_assets[(pick >= 0 && pick < menu_count) ? pick : 0];
+	StBfAsset sel_copy = picked->asset;
+	sel_copy.shp = picked->shp_name;
+	const StBfAsset *sel = &sel_copy;
 
 	unsigned char *raw = NULL;
 	size_t raw_len = 0;
-	int mx = st_mix_extract_file(sel->mix, sel->shp, &raw, &raw_len);
+	int mx = st_extract_asset_preferring_dos_conquer(sel->mix, sel->shp, &raw, &raw_len);
 	if (mx != 0 || !raw) {
 		printf("SKIP %s:%s err=%d (%s)\n", sel->mix, sel->shp, mx, sel->desc);
 		free(chunky);

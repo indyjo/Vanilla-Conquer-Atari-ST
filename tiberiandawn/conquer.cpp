@@ -2653,7 +2653,7 @@ void CC_Draw_Shape(void const* shapefile,
 {
 #if true
     int predoffset;
-    char* shape_pointer;
+    char* draw_pointer;
     uintptr_t shape_size;
 
     if (shapefile && shapenum != -1) {
@@ -2668,13 +2668,15 @@ void CC_Draw_Shape(void const* shapefile,
         }
 
         if (shape_size) {
+            int draw_width = Get_Build_Frame_Width(shapefile);
+            int draw_height = Get_Build_Frame_Height(shapefile);
+            draw_pointer = (char*)shape_size;
+
             GraphicViewPortClass draw_window(LogicPage->Get_Graphic_Buffer(),
                                              WindowList[window][WINDOWX] + LogicPage->Get_XPos(),
                                              WindowList[window][WINDOWY] + LogicPage->Get_YPos(),
                                              WindowList[window][WINDOWWIDTH],
                                              WindowList[window][WINDOWHEIGHT]);
-
-            shape_pointer = (char*)shape_size;
 
             /*
             **	Special shadow drawing code (used for aircraft and bullets).
@@ -2695,9 +2697,9 @@ void CC_Draw_Shape(void const* shapefile,
                 if ((flags & (SHAPE_GHOST | SHAPE_FADING)) == (SHAPE_GHOST | SHAPE_FADING)) {
                     Buffer_Frame_To_Page(x,
                                          y,
-                                         Get_Build_Frame_Width(shapefile),
-                                         Get_Build_Frame_Height(shapefile),
-                                         shape_pointer,
+                                         draw_width,
+                                         draw_height,
+                                         draw_pointer,
                                          draw_window,
                                          flags | SHAPE_TRANS,
                                          ghostdata,
@@ -2708,9 +2710,9 @@ void CC_Draw_Shape(void const* shapefile,
                     if (flags & SHAPE_FADING) {
                         Buffer_Frame_To_Page(x,
                                              y,
-                                             Get_Build_Frame_Width(shapefile),
-                                             Get_Build_Frame_Height(shapefile),
-                                             shape_pointer,
+                                             draw_width,
+                                             draw_height,
+                                             draw_pointer,
                                              draw_window,
                                              flags | SHAPE_TRANS,
                                              fadingdata,
@@ -2720,18 +2722,18 @@ void CC_Draw_Shape(void const* shapefile,
                         if (flags & SHAPE_PREDATOR) {
                             Buffer_Frame_To_Page(x,
                                                  y,
-                                                 Get_Build_Frame_Width(shapefile),
-                                                 Get_Build_Frame_Height(shapefile),
-                                                 shape_pointer,
+                                                 draw_width,
+                                                 draw_height,
+                                                 draw_pointer,
                                                  draw_window,
                                                  flags | SHAPE_TRANS,
                                                  predoffset);
                         } else {
                             Buffer_Frame_To_Page(x,
                                                  y,
-                                                 Get_Build_Frame_Width(shapefile),
-                                                 Get_Build_Frame_Height(shapefile),
-                                                 shape_pointer,
+                                                 draw_width,
+                                                 draw_height,
+                                                 draw_pointer,
                                                  draw_window,
                                                  flags | SHAPE_TRANS,
                                                  ghostdata,

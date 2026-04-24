@@ -20,12 +20,20 @@ typedef struct {
 	char const *aud;
 } StAudioAssetTry;
 
+enum {
+	ST_AUDIO_RESULT_PASS = 0,
+	ST_AUDIO_RESULT_FAIL = 1,
+	ST_AUDIO_RESULT_SKIP = 2
+};
+
 static StAudioAssetTry const k_audio_tries[] = {
+	{ "SCOUNDS.MIX", "CLOCK1.AUD" },
+	{ "SCOUNDS.MIX", "BEEPY6.AUD" },
+	{ "SCOUNDS.MIX", "TEXT2.AUD" },
 	{ "SOUNDS.MIX", "CLOCK1.AUD" },
-	{ "AUD.MIX", "BEEPY6.AUD" },
-	{ "AUD.MIX", "TEXT2.AUD" },
-	{ "CONQUER.MIX", "SFX4.AUD" },
-	{ "SCORES.MIX", "AOI.AUD" },
+	{ "SOUNDS.MIX", "BEEPY6.AUD" },
+	{ "SOUNDS.MIX", "TEXT2.AUD" },
+	{ "SCORES.MIX", "IND2.AUD" },
 };
 
 int st_asset_audio_try_count(void)
@@ -84,20 +92,20 @@ static void st_audio_spin_until_done_or_timeout(void const* sample, int max_iter
 	}
 }
 
-/* Returns 0 skip/pass, 1 fail. Always frees raw. */
+/* Returns ST_AUDIO_RESULT_*; always frees raw. */
 static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char const *hit_aud)
 {
 	if (!st_audio_init_game_rate()) {
 		printf("SKIP audio (no STE DMA / Audio_Init)\n");
 		free(raw);
-		return 0;
+		return ST_AUDIO_RESULT_SKIP;
 	}
 
 	if (Play_Sample(raw, 255, 0xFF, 0) < 0) {
 		printf("FAIL audio Play_Sample %s:%s\n", hit_mix, hit_aud);
 		Sound_End();
 		free(raw);
-		return 1;
+		return ST_AUDIO_RESULT_FAIL;
 	}
 
 	st_audio_spin_until_done_or_timeout(raw, 20000000);
@@ -106,13 +114,13 @@ static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char co
 		Stop_Sample_Playing(raw);
 		Sound_End();
 		free(raw);
-		return 1;
+		return ST_AUDIO_RESULT_FAIL;
 	}
 
 	Sound_End();
 	free(raw);
 	printf("PASS audio %s from %s\n", hit_aud, hit_mix);
-	return 0;
+	return ST_AUDIO_RESULT_PASS;
 }
 
 int st_run_asset_audio_try_index(int idx)
@@ -131,12 +139,12 @@ int st_run_asset_audio_try_index(int idx)
 		if (raw) {
 			free(raw);
 		}
-		return 0;
+		return ST_AUDIO_RESULT_SKIP;
 	}
 	if (raw_len < 12u) {
 		printf("SKIP audio bad AUD size %s:%s\n", k_audio_tries[idx].mix, k_audio_tries[idx].aud);
 		free(raw);
-		return 0;
+		return ST_AUDIO_RESULT_SKIP;
 	}
 
 	return st_audio_play_loaded(raw, k_audio_tries[idx].mix, k_audio_tries[idx].aud);
@@ -167,8 +175,8 @@ int st_run_asset_audio_autotest(void)
 	}
 
 	if (!raw || !hit_mix || !hit_aud) {
-		printf("SKIP audio (no .AUD in tried MIXes — need e.g. SOUNDS.MIX or AUD.MIX)\n");
-		return 0;
+		printf("SKIP audio (no .AUD in tried MIXes - need e.g. SCOUNDS.MIX/SOUNDS.MIX or SCORES.MIX)\n");
+		return ST_AUDIO_RESULT_SKIP;
 	}
 
 	return st_audio_play_loaded(raw, hit_mix, hit_aud);

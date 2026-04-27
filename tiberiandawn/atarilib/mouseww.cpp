@@ -465,6 +465,17 @@ void WWMouseClass::Low_Show_Mouse(int x, int y)
 void WWMouseClass::Conditional_Hide_Mouse(int x1, int y1, int x2, int y2)
 {
 	MouseUpdate++;
+
+	if (Screen && CursorWidth > 0 && CursorHeight > 0) {
+		x1 -= (CursorWidth - MouseXHot);
+		if (x1 < 0) x1 = 0;
+		y1 -= (CursorHeight - MouseYHot);
+		if (y1 < 0) y1 = 0;
+		x2 += MouseXHot;
+		if (x2 > Screen->Get_Width()) x2 = Screen->Get_Width();
+		y2 += MouseYHot;
+		if (y2 > Screen->Get_Height()) y2 = Screen->Get_Height();
+	}
 	
 	if (!MCCount) {
 		MouseCXLeft		= x1;
@@ -477,6 +488,19 @@ void WWMouseClass::Conditional_Hide_Mouse(int x1, int y1, int x2, int y2)
 		if (y1 < MouseCYUpper) MouseCYUpper = y1;
 		if (x2 > MouseCXRight) MouseCXRight = x2;
 		if (y2 > MouseCYLower) MouseCYLower = y2;
+	}
+
+	if (!(MCFlags & CONDHIDDEN) && Screen && State == 0) {
+		const int mouse_x = Get_Mouse_X();
+		const int mouse_y = Get_Mouse_Y();
+		if (mouse_x >= MouseCXLeft && mouse_x <= MouseCXRight
+			&& mouse_y >= MouseCYUpper && mouse_y <= MouseCYLower) {
+			if (Screen->Lock()) {
+				Low_Hide_Mouse();
+				MCFlags |= CONDHIDDEN;
+				Screen->Unlock();
+			}
+		}
 	}
 	
 	MCFlags |= CONDHIDE;
@@ -501,8 +525,15 @@ void WWMouseClass::Conditional_Show_Mouse(void)
 	if (MCCount > 0) {
 		MCCount--;
 		if (MCCount == 0) {
-			MCFlags &= ~CONDHIDE;
-			MCFlags &= ~CONDHIDDEN;
+			if ((MCFlags & CONDHIDDEN) && Screen && State == 0) {
+				const int mouse_x = Get_Mouse_X();
+				const int mouse_y = Get_Mouse_Y();
+				if (Screen->Lock()) {
+					Low_Show_Mouse(mouse_x, mouse_y);
+					Screen->Unlock();
+				}
+			}
+			MCFlags = 0;
 		}
 	}
 	

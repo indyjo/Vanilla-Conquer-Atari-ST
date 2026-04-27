@@ -824,7 +824,7 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 		return FALSE;
 	}
 	SampleType = SAMPLE_SB;
-	SoundType = SFX_NONE;
+	SoundType = SFX_DMA_SOUND;
 	ste_dma_stop();
 	ste_dma_mixer_connect();
 	return TRUE;

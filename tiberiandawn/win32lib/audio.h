@@ -1,11 +1,37 @@
-/*
- * audio.h - Audio header for Atari ST/MiNT
- */
+//
+// Copyright 2020 Electronic Arts Inc.
+//
+// TiberianDawn.DLL and RedAlert.dll and corresponding source code is free 
+// software: you can redistribute it and/or modify it under the terms of 
+// the GNU General Public License as published by the Free Software Foundation, 
+// either version 3 of the License, or (at your option) any later version.
 
-#ifndef AUDIO_H
-#define AUDIO_H
+// TiberianDawn.DLL and RedAlert.dll and corresponding source code is distributed 
+// in the hope that it will be useful, but with permitted additional restrictions 
+// under Section 7 of the GPL. See the GNU General Public License in LICENSE.TXT 
+// distributed with this program. You should have received a copy of the 
+// GNU General Public License along with permitted additional restrictions 
+// with this program. If not, see https://github.com/electronicarts/CnC_Remastered_Collection
 
-#include "../COMMONLIB/wwstd.h"
+/***************************************************************************
+ **      C O N F I D E N T I A L --- W E S T W O O D   S T U D I O S      **
+ ***************************************************************************
+ *                                                                         *
+ *                 Project Name : Westwood 32 bit Library                  *
+ *                                                                         *
+ *                    File Name : AUDIO.H                                  *
+ *                                                                         *
+ *                   Programmer : Phil W. Gorrow                           *
+ *                                                                         *
+ *                   Start Date : March 10, 1995                           *
+ *                                                                         *
+ *                  Last Update : March 10, 1995   [PWG]                   *
+ *                                                                         *
+ *-------------------------------------------------------------------------*
+ * Functions:                                                              *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+#include "wwstd.h"
 
 /*=========================================================================*/
 /* AUD file header type																		*/
@@ -13,6 +39,10 @@
 #define	AUD_FLAG_STEREO	1
 #define	AUD_FLAG_16BIT		2
 
+// PWG 3-14-95: This structure used to have bit fields defined for Stereo
+//   and Bits.  These were removed because watcom packs them into a 32 bit
+//   flag entry even though they could have fit in a 8 bit entry.
+//#pragma pack(1);
 #pragma pack(push,1)
 typedef struct {
 	unsigned short int	Rate;				// Playback rate (hertz).
@@ -82,27 +112,26 @@ typedef enum {
 	SFX_LAST
 } SFX_Type;
 
+
+
 /*=========================================================================*/
 /* The following prototypes are for the file: SOUNDIO.CPP						*/
 /*=========================================================================*/
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int File_Stream_Sample(char const *filename, BOOL real_time_start);
-int File_Stream_Sample_Vol(char const *filename, int volume, BOOL real_time_start);
-void Sound_Callback(void);
+int File_Stream_Sample(char const *filename, BOOL real_time_start = FALSE);
+int File_Stream_Sample_Vol(char const *filename, int volume, BOOL real_time_start = FALSE);
+void __cdecl Sound_Callback(void);
+void __cdecl far maintenance_callback(void);
 void *Load_Sample(char const *filename);
 long Load_Sample_Into_Buffer(char const *filename, void *buffer, long size);
 long Sample_Read(int fh, void *buffer, long size);
 void Free_Sample(void const *sample);
-BOOL Audio_Init(HWND window, int bits_per_sample, BOOL stereo, int rate, int reverse_channels);
+BOOL Audio_Init( HWND window , int bits_per_sample, BOOL stereo , int rate , int reverse_channels);
 void Sound_End(void);
 void Stop_Sample(int handle);
 BOOL Sample_Status(int handle);
 BOOL Is_Sample_Playing(void const * sample);
 void Stop_Sample_Playing(void const * sample);
-int Play_Sample(void const *sample, int priority=0xFF, int volume=0xFF, signed short panloc=0x0);
+int Play_Sample(void const *sample, int priority=0xFF, int volume=0xFF, signed short panloc = 0x0);
 int Play_Sample_Handle(void const *sample, int priority, int volume, signed short panloc, int id);
 int Set_Sound_Vol(int volume);
 int Set_Score_Vol(int volume);
@@ -110,21 +139,21 @@ void Fade_Sample(int handle, int ticks);
 int Get_Free_Sample_Handle(int priority);
 int Get_Digi_Handle(void);
 long Sample_Length(void const *sample);
-void Restore_Sound_Buffers(void);
+void Restore_Sound_Buffers (void);
 BOOL Set_Primary_Buffer_Format(void);
-BOOL Start_Primary_Sound_Buffer(BOOL forced);
-void Stop_Primary_Sound_Buffer(void);
+BOOL Start_Primary_Sound_Buffer (BOOL forced);
+void Stop_Primary_Sound_Buffer (void);
 
-/* Function to call if we detect focus loss */
-extern void (*Audio_Focus_Loss_Function)(void);
+/*
+** Function to call if we detect focus loss
+*/
+extern	void (*Audio_Focus_Loss_Function)(void);
 
-/* External variables */
+
 extern int Misc;
 extern SFX_Type SoundType;
 extern Sample_Type SampleType;
 
-#ifdef __cplusplus
-}
-#endif
+extern CRITICAL_SECTION	GlobalAudioCriticalSection;
 
-#endif /* AUDIO_H */
+extern int StreamLowImpact;

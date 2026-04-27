@@ -1030,6 +1030,48 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (VP_Is_Planar(vp)) {
 		/* Full 8-bit palette index — Buffer_Put_Pixel runs C2P_Map8ToPlanar4 (do not mask to 4). */
 		unsigned char palidx = (unsigned char)color;
+		const int ax = vp->Get_XPos() + sx;
+		const int ay = vp->Get_YPos() + sy;
+		const int rect_width = dx - sx + 1;
+		const int rect_height = dy - sy + 1;
+		GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+		uint8_t *root = gb ? (uint8_t *)gb->Get_Buffer() : NULL;
+		const int planar_width = gb ? gb->Get_Width() : 0;
+		const int planar_height = gb ? gb->Get_Height() : 0;
+		const int planar_row_bytes = Get_Row_Stride(vp);
+		if (root
+			&& planar_row_bytes > 0
+			&& ax >= 0
+			&& ay >= 0
+			&& ax + rect_width <= planar_width
+			&& ay + rect_height <= planar_height) {
+			const int lead = (ax & 7) ? MIN(8 - (ax & 7), rect_width) : 0;
+			const int middle_width = ((rect_width - lead) / 8) * 8;
+			const int middle_sx = sx + lead;
+			const int tail_sx = middle_sx + middle_width;
+
+			if (middle_width > 0) {
+				for (int row = sy; row <= dy; row++) {
+					for (int col = sx; col < middle_sx; col++) {
+						Buffer_Put_Pixel(vp, col, row, palidx);
+					}
+					for (int col = tail_sx; col <= dx; col++) {
+						Buffer_Put_Pixel(vp, col, row, palidx);
+					}
+				}
+				C2P_Fill_Aligned8_Rect(
+					root,
+					planar_row_bytes,
+					planar_width,
+					planar_height,
+					ax + lead,
+					ay,
+					middle_width,
+					rect_height,
+					palidx);
+				return;
+			}
+		}
 		for (int row = sy; row <= dy; row++) {
 			for (int col = sx; col <= dx; col++) {
 				Buffer_Put_Pixel(vp, col, row, palidx);

@@ -342,6 +342,57 @@ extern "C" void ST_Planar_Clear(uint8_t *base, unsigned char color4)
 	}
 }
 
+extern "C" void C2P_Fill_Aligned8_Rect(
+	uint8_t *planar_base,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x,
+	int dst_y,
+	int pixel_width,
+	int pixel_height,
+	unsigned char pal_idx)
+{
+	if (!planar_base || pixel_width <= 0 || pixel_height <= 0)
+		return;
+	if (planar_row_bytes <= 0 || planar_width_pixels <= 0 || planar_height_pixels <= 0)
+		return;
+	if ((dst_x & 7) != 0 || (pixel_width & 7) != 0)
+		return;
+	if (dst_x < 0 || dst_y < 0
+		|| dst_x + pixel_width > planar_width_pixels
+		|| dst_y + pixel_height > planar_height_pixels) {
+		return;
+	}
+
+	C2P_InitPairLUT_Once();
+	for (int y = 0; y < pixel_height; y++) {
+		const int ay = dst_y + y;
+		const int yb = (ay & 3) << 2;
+		uint8_t *dst_line = planar_base + (size_t)ay * (size_t)planar_row_bytes;
+
+		/*
+		 * dst_x is 8-aligned, so the x dither phase starts at 0 and repeats for
+		 * every 8-pixel group on the row.
+		 */
+		const uint8_t c0 = C2P_MapDither[yb | 0][pal_idx];
+		const uint8_t c1 = C2P_MapDither[yb | 1][pal_idx];
+		const uint8_t c2 = C2P_MapDither[yb | 2][pal_idx];
+		const uint8_t c3 = C2P_MapDither[yb | 3][pal_idx];
+		const uint32_t v =
+			C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
+			C2P_PairLUT[1][(uint8_t)((c2 << 4) | c3)] |
+			C2P_PairLUT[2][(uint8_t)((c0 << 4) | c1)] |
+			C2P_PairLUT[3][(uint8_t)((c2 << 4) | c3)];
+
+		for (int x = 0; x < pixel_width; x += 8) {
+			const int ax = dst_x + x;
+			uint8_t *dst = dst_line + (ax >> 4) * 8 + ((ax >> 3) & 1);
+			C2P_Movep_Store(dst, v);
+		}
+	}
+}
+
 extern "C" void C2P_Blit_Linear8_To_Planar(
 	uint8_t *planar_base,
 	int dst_x, int dst_y,

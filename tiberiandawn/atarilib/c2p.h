@@ -62,6 +62,22 @@ unsigned char ST_Planar_GetPixel(const uint8_t *base, int x, int y);
 void ST_Planar_Clear(uint8_t *base, unsigned char color4);
 
 /*
+** Fill an 8-pixel-aligned rectangle in an ST-style interleaved planar surface.
+** Coordinates are relative to planar_base; dst_x and pixel_width must both be multiples of 8.
+** Uses the same 8-bit palette index -> dithered 4-bit ST mapping as PutPixel/C2P.
+*/
+void C2P_Fill_Aligned8_Rect(
+	uint8_t *planar_base,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x,
+	int dst_y,
+	int pixel_width,
+	int pixel_height,
+	unsigned char pal_idx);
+
+/*
 ** Blit row-major 8bpp source into planar ST buffer at (dst_x,dst_y).
 ** Clips to [0,320)x[0,200). If trans, skip source pixels == 0.
 ** Uses C2P_MapDither + PairLUT (same look as full-screen C2P).

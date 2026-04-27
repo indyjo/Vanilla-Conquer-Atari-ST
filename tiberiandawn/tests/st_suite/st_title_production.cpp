@@ -56,8 +56,8 @@ int st_run_interactive_title_production_path(void)
 
 	/*
 	 * INIT.CPP uses Set_Palette(GamePalette) long before title-screen draw, then memset(CurrentPalette,1)
-	 * immediately before Load_Title_Screen. Prime CurrentPalette with TEMPERAT.PAL so C2P /
-	 * Scale inside Load_Title_Screen see valid PaletteToST (cold start would leave stale tables).
+	 * immediately before Load_Title_Screen. Prime CurrentPalette with TEMPERAT.PAL so title
+	 * palette transitions start from the same state as the game.
 	 */
 	memset(CurrentPalette, 0x01, 768);
 	{

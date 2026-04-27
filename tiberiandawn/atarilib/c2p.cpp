@@ -92,13 +92,11 @@ static void C2P_InitPairLUT_Once(void)
 
 extern "C" unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char pal_idx)
 {
-	if (!C2P_LUT_InitDone)
-		C2P_Rebuild_Tables_From_CurrentPalette();
 	const int yb = (abs_y & 3) << 2;
 	return C2P_MapDither[yb | (abs_x & 3)][pal_idx];
 }
 
-extern "C" void C2P_Rebuild_Tables_From_CurrentPalette(void)
+static void C2P_Rebuild_Tables_From_SelectedWeights(void)
 {
 	C2P_InitPairLUT_Once();
 
@@ -119,13 +117,9 @@ extern "C" int C2P_Get_WeightSet(void)
 extern "C" void C2P_Select_WeightSet(int weight_set)
 {
 	const int normalized = (weight_set == C2P_WEIGHTSET_HTITLE) ? C2P_WEIGHTSET_HTITLE : C2P_WEIGHTSET_TEMPERAT;
-	if (normalized == C2P_WeightSet)
-		return;
-
 	C2P_WeightSet = normalized;
 	C2P_ActivePaletteWeights = (C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
-	if (C2P_LUT_InitDone)
-		C2P_Rebuild_Tables_From_CurrentPalette();
+	C2P_Rebuild_Tables_From_SelectedWeights();
 }
 
 /* movep.l d0,(a0) writes bytes to 0,2,4,6(a0): perfect for plane bytes. */
@@ -183,9 +177,6 @@ extern "C" void C2P_Render_Logical_To_Planar_Rect(
 		|| planar_width_pixels <= 0 || planar_height_pixels <= 0) {
 		return;
 	}
-	if (!C2P_LUT_InitDone)
-		C2P_Rebuild_Tables_From_CurrentPalette();
-
 	for (int y = 0; y < logical_h; y++) {
 		const uint8_t *src = logical + (size_t)y * (size_t)logical_stride;
 		const int apy = abs_y0 + y;
@@ -250,11 +241,6 @@ extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logi
 	const int screen_width = 320;
 	const int screen_height = 200;
 	const int bytes_per_line = 160; /* 20 groups * 8 bytes */
-
-	/* Ensure tables exist even if caller forgot to rebuild. */
-	if (!C2P_LUT_InitDone) {
-		C2P_Rebuild_Tables_From_CurrentPalette();
-	}
 
 	for (int y = 0; y < screen_height; y++) {
 		const uint8_t *src = logical + y * logical_stride;
@@ -364,9 +350,6 @@ extern "C" void C2P_Blit_Linear8_To_Planar(
 {
 	if (!planar_base || !src || w <= 0 || h <= 0 || src_stride <= 0)
 		return;
-	if (!C2P_LUT_InitDone)
-		C2P_Rebuild_Tables_From_CurrentPalette();
-
 	for (int yy = 0; yy < h; yy++) {
 		const int py = dst_y + yy;
 		if (py < 0 || py >= ST_PLANAR_HEIGHT)

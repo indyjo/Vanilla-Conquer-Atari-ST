@@ -15,30 +15,10 @@ extern unsigned char *GamePalette;
 /* Initialized to 255 (white) to match WIN32LIB behavior */
 extern "C" unsigned char CurrentPalette[768] = {255};
 
-/* Palette mapping: maps each original palette entry (0-255) to Atari ST color index (0-15) */
-/* Initialized to map all entries to color 0 (black) */
-extern "C" unsigned char PaletteToST[256] = {0};
-
-static int CalculateBrightness(unsigned char r, unsigned char g, unsigned char b)
-{
-    return (77 * r + 150 * g + 29 * b) >> 8;
-}
-
 static void Install_ST_Hardware_Palette_First16(const unsigned char *pal768)
 {
     if (!pal768) return;
     St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal768);
-}
-
-static void Rebuild_Palette_To_ST_Map(const unsigned char *pal768)
-{
-    for (int pal_idx = 0; pal_idx < 256; pal_idx++) {
-        unsigned char r = pal768[pal_idx * 3 + 0];
-        unsigned char g = pal768[pal_idx * 3 + 1];
-        unsigned char b = pal768[pal_idx * 3 + 2];
-        int brightness = CalculateBrightness(r, g, b);
-        PaletteToST[pal_idx] = (unsigned char)(brightness >> 2);
-    }
 }
 
 static void Apply_Palette_State(const unsigned char *pal768)
@@ -48,8 +28,6 @@ static void Apply_Palette_State(const unsigned char *pal768)
     }
 
     Install_ST_Hardware_Palette_First16(CurrentPalette);
-    Rebuild_Palette_To_ST_Map(CurrentPalette);
-    C2P_Rebuild_Tables_From_CurrentPalette();
 }
 
 static void Determine_Bump_Rate(const unsigned char *target_palette, unsigned int delay, short *ticks, short *rate)
@@ -116,12 +94,7 @@ extern "C" void Set_Palette(void *palette)
 {
     if (!palette) return;
 
-    unsigned char *pal = (unsigned char *)palette;
-    if (pal == GamePalette) {
-        C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-    }
-
-    Apply_Palette_State(pal);
+    Apply_Palette_State((unsigned char *)palette);
 }
 
 void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)())

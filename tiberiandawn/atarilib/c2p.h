@@ -14,15 +14,12 @@
 extern "C" {
 #endif
 
-/* Rebuild c2p dither map (palette-opt weights; TEMPERAT @ subset 0..15). Still call after Set_Palette(). */
-void C2P_Rebuild_Tables_From_CurrentPalette(void);
-
 enum {
 	C2P_WEIGHTSET_TEMPERAT = 0,
 	C2P_WEIGHTSET_HTITLE = 1
 };
 
-/* Select which palette-opt weight table drives 8-bit->4-bit mapping. */
+/* Select which palette-opt weight table drives 8-bit->4-bit mapping and rebuild dither tables. */
 void C2P_Select_WeightSet(int weight_set);
 int C2P_Get_WeightSet(void);
 

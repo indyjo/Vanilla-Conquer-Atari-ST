@@ -43,8 +43,6 @@
 #include	<mint/osbind.h>  // For XBIOS functions: Getrez, Cursconf
 #include	<mint/ostruct.h> // CURS_HIDE, CURS_SHOW
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
-#include	"palette.h"  // For PaletteToST mapping array
-#include	"c2p.h"
 #include	"st_temperat_palette.h"
 #include	"gbuffer.h"  // GBC_ST_PLANAR_LORES, Uses_ST_LoRes_Planar_Layout
 #include	"misc.h"     // Wait_Vert_Blank

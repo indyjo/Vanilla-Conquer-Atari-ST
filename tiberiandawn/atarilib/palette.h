@@ -18,9 +18,6 @@ void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)());
 /* Current palette buffer - copy of current DAC register values */
 extern unsigned char CurrentPalette[768];
 
-/* Palette mapping: maps each original palette entry (0-255) to Atari ST color index (0-15) */
-extern unsigned char PaletteToST[256];
-
 #ifdef __cplusplus
 }
 #endif

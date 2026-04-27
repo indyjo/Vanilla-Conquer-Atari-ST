@@ -1183,7 +1183,9 @@ bool Color_Cycle(void)
     **	passed to the system.
     */
     if (changed) {
+#ifndef ATARI_ST
         Wait_Vert_Blank();
+#endif
         Set_Palette(GamePalette);
         return (true);
     }
@@ -1214,6 +1216,12 @@ void Call_Back(void)
     int color;
     unsigned short magic_number;
     unsigned short crc;
+#endif
+
+#ifdef ATARI_ST
+    if (WWMouse) {
+        WWMouse->Process_Mouse();
+    }
 #endif
 
     /*

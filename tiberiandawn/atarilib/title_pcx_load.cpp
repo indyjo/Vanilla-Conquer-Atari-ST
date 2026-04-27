@@ -55,7 +55,6 @@ void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned ch
 		&& dst_w == 320 && dst_h == 200) {
 		const int lin_stride = SysMemPage.Get_Width() + SysMemPage.Get_Pitch();
 		if (lin_stride > 0 && SysMemPage.Get_Buffer()) {
-			C2P_Rebuild_Tables_From_CurrentPalette();
 			C2P_Render_Logical_To_ST_Screen(
 				(const uint8_t *)SysMemPage.Get_Buffer(),
 				lin_stride,

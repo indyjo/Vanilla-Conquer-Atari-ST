@@ -110,6 +110,10 @@ class WWMouseClass {
 		int						EraseBuffY;		// Y position of the hidden page background
 		int						EraseBuffHotX;	// X position of the hidden page background
 		int						EraseBuffHotY;	// Y position of the hidden page background
+		int						EraseBuffLeft;	// word-aligned left edge of saved erase rect
+		int						EraseBuffTop;	// top edge of saved erase rect
+		int						EraseBuffWords;	// width of saved erase rect in 16px words
+		int						EraseBuffH;		// saved erase rect height
 
 		int						EraseFlags;		// Records whether mutex has been released
 

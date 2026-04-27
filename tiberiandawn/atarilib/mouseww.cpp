@@ -156,11 +156,15 @@ WWMouseClass::WWMouseClass(GraphicViewPortClass *scr, int mouse_max_width, int m
 	MouseUpdate		= 0;
 	State				= 1;  // Start hidden (Windows compatibility: State=0 is visible, State>0 is hidden)
 
-	EraseBuffer		= new char[mouse_max_width * mouse_max_height];
+	EraseBuffer		= new char[blit_max_bytes];
 	EraseBuffX		= -1;
 	EraseBuffY  	= -1;
 	EraseBuffHotX	= -1;
 	EraseBuffHotY	= -1;
+	EraseBuffLeft	= -1;
+	EraseBuffTop	= -1;
+	EraseBuffWords	= 0;
+	EraseBuffH		= 0;
 	EraseFlags		= FALSE;
 
 	LastMouseBt		= -1;
@@ -892,13 +896,26 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 			EraseFlags = FALSE;
 		EraseBuffX = -1;
 		EraseBuffY = -1;
+		EraseBuffLeft = -1;
+		EraseBuffTop = -1;
+		EraseBuffWords = 0;
+		EraseBuffH = 0;
 		return;
 	}
 
-	EraseBuffX = x;
-	EraseBuffY = y;
-	EraseBuffHotX = MouseXHot;
-	EraseBuffHotY = MouseYHot;
+	if (using_external_surface) {
+		EraseBuffX = x;
+		EraseBuffY = y;
+		EraseBuffHotX = MouseXHot;
+		EraseBuffHotY = MouseYHot;
+	} else {
+		EraseBuffX = -1;
+		EraseBuffY = -1;
+		EraseBuffLeft = -1;
+		EraseBuffTop = -1;
+		EraseBuffWords = 0;
+		EraseBuffH = 0;
+	}
 
 	if (left < 0 || top < 0 || right > vpw || bottom > vph) {
 		const int clip_left = left < 0 ? 0 : left;
@@ -914,17 +931,28 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 				EraseFlags = FALSE;
 			EraseBuffX = -1;
 			EraseBuffY = -1;
+			EraseBuffLeft = -1;
+			EraseBuffTop = -1;
+			EraseBuffWords = 0;
+			EraseBuffH = 0;
 			return;
 		}
+		const int word_left = clip_left & ~15;
+		const int word_right = (clip_right + 15) & ~15;
+		const int words = (word_right - word_left) >> 4;
+		const int row_bytes = words * 8;
+		uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
+			+ clip_top * ST_PLANAR_BYTES_PER_LINE
+			+ ((word_left >> 4) * 8);
 		if (using_external_surface) {
-			const int word_left = clip_left & ~15;
-			const int word_right = (clip_right + 15) & ~15;
-			const int words = (word_right - word_left) >> 4;
-			const int row_bytes = words * 8;
-			uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
-				+ clip_top * ST_PLANAR_BYTES_PER_LINE
-				+ ((word_left >> 4) * 8);
-			ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, vis_h, ST_PLANAR_BYTES_PER_LINE, row_bytes);
+		ST_Copy_Bytes_2D(src_bg, (uint8_t *)EraseBuffer, row_bytes, vis_h,
+			ST_PLANAR_BYTES_PER_LINE, row_bytes);
+			EraseBuffLeft = word_left;
+			EraseBuffTop = clip_top;
+			EraseBuffWords = words;
+			EraseBuffH = vis_h;
+			ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, vis_h,
+				ST_PLANAR_BYTES_PER_LINE, row_bytes);
 			MouseBuffX = x;
 			MouseBuffY = y;
 			MouseBuffLeft = word_left;
@@ -932,7 +960,6 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 			MouseBuffWords = words;
 			MouseBuffH = vis_h;
 		}
-		Buffer_From_Page(clip_left, clip_top, vis_w, vis_h, EraseBuffer, scr);
 		const unsigned char *src = (const unsigned char *)MouseCursor + src_y * CursorWidth + src_x;
 		for (int row = 0; row < vis_h; row++) {
 			const unsigned char *s = src + row * CursorWidth;
@@ -946,8 +973,6 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		return;
 	}
 
-	Buffer_From_Page(left, top, CursorWidth, CursorHeight, EraseBuffer, scr);
-
 	/*
 	 * Word-aligned cursor block (all planar):
 	 * - OR skewed canonical cursor color (shift=0 source) directly into VRAM
@@ -957,11 +982,17 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 	const int shift = left - word_left;
 	const int words = (shift + CursorWidth + 15) >> 4;
 	const unsigned skew_bits = (unsigned)(shift & 15);
+	const int row_bytes = words * 8;
+	uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
+		+ top * ST_PLANAR_BYTES_PER_LINE
+		+ ((word_left >> 4) * 8);
 	if (using_external_surface) {
-		const int row_bytes = words * 8;
-		uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
-			+ top * ST_PLANAR_BYTES_PER_LINE
-			+ ((word_left >> 4) * 8);
+		ST_Copy_Bytes_2D(src_bg, (uint8_t *)EraseBuffer, row_bytes, CursorHeight,
+			ST_PLANAR_BYTES_PER_LINE, row_bytes);
+		EraseBuffLeft = word_left;
+		EraseBuffTop = top;
+		EraseBuffWords = words;
+		EraseBuffH = CursorHeight;
 		ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, CursorHeight, ST_PLANAR_BYTES_PER_LINE, row_bytes);
 		MouseBuffX = x;
 		MouseBuffY = y;
@@ -1012,26 +1043,25 @@ void WWMouseClass::Erase_Mouse(GraphicViewPortClass *scr, int forced)
 	if (!scr || (EraseBuffX < 0 && !forced))
 		return;
 	const int using_external_surface = (scr != Screen);
-	if (EraseBuffX >= 0 && EraseBuffY >= 0 && CursorWidth > 0 && CursorHeight > 0) {
+	if (EraseBuffWords > 0 && EraseBuffH > 0 && EraseBuffLeft >= 0 && EraseBuffTop >= 0) {
 		if (scr->Lock()) {
-			int left = EraseBuffX - EraseBuffHotX;
-			int top = EraseBuffY - EraseBuffHotY;
-			int vpw = scr->Get_Width();
-			int vph = scr->Get_Height();
-			int clip_left = left < 0 ? 0 : left;
-			int clip_top = top < 0 ? 0 : top;
-			int clip_right = left + CursorWidth;
-			int clip_bottom = top + CursorHeight;
-			if (clip_right > vpw) clip_right = vpw;
-			if (clip_bottom > vph) clip_bottom = vph;
-			const int vis_w = clip_right - clip_left;
-			const int vis_h = clip_bottom - clip_top;
-			if (vis_w > 0 && vis_h > 0)
-				Buffer_To_Page(clip_left, clip_top, vis_w, vis_h, EraseBuffer, scr);
+			GraphicBufferClass *gb = scr->Get_Graphic_Buffer();
+			if (gb && gb->Uses_ST_LoRes_Planar_Layout()) {
+				uint8_t *dst = (uint8_t *)gb->Get_Buffer()
+					+ EraseBuffTop * ST_PLANAR_BYTES_PER_LINE
+					+ ((EraseBuffLeft >> 4) * 8);
+				const int row_bytes = EraseBuffWords * 8;
+				ST_Copy_Bytes_2D((const uint8_t *)EraseBuffer, dst, row_bytes, EraseBuffH,
+					row_bytes, ST_PLANAR_BYTES_PER_LINE);
+			}
 			scr->Unlock();
 		}
 		EraseBuffX = -1;
 		EraseBuffY = -1;
+		EraseBuffLeft = -1;
+		EraseBuffTop = -1;
+		EraseBuffWords = 0;
+		EraseBuffH = 0;
 	}
 	if (using_external_surface)
 		EraseFlags = FALSE;

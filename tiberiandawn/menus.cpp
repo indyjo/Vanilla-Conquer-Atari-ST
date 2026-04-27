@@ -491,7 +491,11 @@ int Main_Menu(unsigned int timeout)
         D_EXIT_Y = 111 * scale_factor;
 
 #ifdef NEWMENU
+#ifdef ATARI_ST
+    int starty = 35;
+#else
     int starty = 25 * scale_factor;
+#endif
 #endif
 
     // Make sure any changes to buttons here are also reflected in the enum and handling in Select_Game in init.cpp.
@@ -522,11 +526,14 @@ int Main_Menu(unsigned int timeout)
 #ifdef NEWMENU
 #ifdef BONUS_MISSIONS
     TextButtonClass* buttons[8];
+    int button_ids[8];
 #else
     TextButtonClass* buttons[7];
+    int button_ids[7];
 #endif // BONUS_MISSIONS
 #else
     TextButtonClass* buttons[5];
+    int button_ids[5];
 #endif
     //	unsigned int starttime;
 
@@ -539,8 +546,10 @@ int Main_Menu(unsigned int timeout)
     int ystep = 15 * scale_factor;
 #endif // BONUS_MISSIONS
 
+#ifndef ATARI_ST
     if (expansions)
         ystep -= 2 * 2;
+#endif
     TextButtonClass expandbtn(BUTTON_EXPAND,
                               TXT_NEW_MISSIONS,
                               TPF_CENTER | TPF_6PT_GRAD | TPF_USE_GRAD_PAL | TPF_NOSHADOW,
@@ -728,6 +737,33 @@ int Main_Menu(unsigned int timeout)
     **	Fill array of button ptrs
     */
 #ifdef NEWMENU
+#ifdef ATARI_ST
+    if (expansions) {
+        curbutton = 0;
+    } else {
+        curbutton = 0;
+    }
+    int butt = 0;
+
+    if (expansions) {
+        buttons[butt++] = &expandbtn;
+        button_ids[butt - 1] = BUTTON_EXPAND;
+    }
+    buttons[butt++] = &startbtn;
+    button_ids[butt - 1] = BUTTON_START;
+#ifdef BONUS_MISSIONS
+    buttons[butt++] = &bonusbtn;
+    button_ids[butt - 1] = BUTTON_BONUS;
+#endif // BONUS_MISSIONS
+    buttons[butt++] = &loadbtn;
+    button_ids[butt - 1] = BUTTON_LOAD;
+    buttons[butt++] = &multibtn;
+    button_ids[butt - 1] = BUTTON_MULTI;
+    buttons[butt++] = &introbtn;
+    button_ids[butt - 1] = BUTTON_INTRO;
+    buttons[butt++] = &exitbtn;
+    button_ids[butt - 1] = BUTTON_EXIT;
+#else
     if (expansions) {
         curbutton = 0;
     } else {
@@ -744,13 +780,19 @@ int Main_Menu(unsigned int timeout)
     buttons[butt++] = &multibtn;
     buttons[butt++] = &introbtn;
     buttons[butt++] = &exitbtn;
+#endif
 #else
     curbutton = 0;
     buttons[0] = &startbtn;
+    button_ids[0] = BUTTON_START;
     buttons[1] = &loadbtn;
+    button_ids[1] = BUTTON_LOAD;
     buttons[2] = &multibtn;
+    button_ids[2] = BUTTON_MULTI;
     buttons[3] = &introbtn;
+    button_ids[3] = BUTTON_INTRO;
     buttons[4] = &exitbtn;
+    button_ids[4] = BUTTON_EXIT;
 #endif
     buttons[curbutton]->Turn_On();
 
@@ -812,8 +854,13 @@ int Main_Menu(unsigned int timeout)
             Version_Number();
 
             Fancy_Text_Print("%s",
+#ifdef ATARI_ST
+                             D_DIALOG_X + D_DIALOG_W - 5,
+                             D_DIALOG_Y + D_DIALOG_H - 10,
+#else
                              D_DIALOG_X + D_DIALOG_W - 5 * 2,
                              D_DIALOG_Y + D_DIALOG_H - 10 * 2,
+#endif
                              GREEN,
                              TBLACK,
                              TPF_6POINT | TPF_FULLSHADOW | TPF_RIGHT,
@@ -904,6 +951,17 @@ int Main_Menu(unsigned int timeout)
             buttons[curbutton]->Flag_To_Redraw();
             curbutton--;
 #ifdef NEWMENU
+#ifdef ATARI_ST
+            if (expansions) {
+                if (curbutton < 0) {
+                    curbutton = 5;
+                }
+            } else {
+                if (curbutton < 0) {
+                    curbutton = 4;
+                }
+            }
+#else
             if (expansions) {
                 if (curbutton < 0) {
                     curbutton = 5;
@@ -913,6 +971,7 @@ int Main_Menu(unsigned int timeout)
                     curbutton = 5;
                 }
             }
+#endif
 #else
             if (curbutton < 0) {
                 curbutton = 4;
@@ -927,6 +986,17 @@ int Main_Menu(unsigned int timeout)
             buttons[curbutton]->Flag_To_Redraw();
             curbutton++;
 #ifdef NEWMENU
+#ifdef ATARI_ST
+            if (expansions) {
+                if (curbutton > 5) {
+                    curbutton = 0;
+                }
+            } else {
+                if (curbutton > 4) {
+                    curbutton = 0;
+                }
+            }
+#else
             if (curbutton > 5) {
                 if (expansions) {
                     curbutton = 0;
@@ -934,6 +1004,7 @@ int Main_Menu(unsigned int timeout)
                     curbutton = 1;
                 }
             }
+#endif
 #else
             if (curbutton > 4) {
                 curbutton = 0;
@@ -946,7 +1017,11 @@ int Main_Menu(unsigned int timeout)
         case KN_RETURN:
             buttons[curbutton]->IsPressed = true;
             buttons[curbutton]->Draw_Me(true);
+#ifdef ATARI_ST
+            retval = button_ids[curbutton] - BUTTON_EXPAND;
+#else
             retval = curbutton;
+#endif
             process = false;
             break;
 

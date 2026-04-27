@@ -1,0 +1,757 @@
+{"id": 0, "symbol": "TXT_NONE", "expr": "0", "comment": "", "source_line": 16}
+{"id": 1, "symbol": "TXT_CREDIT_FORMAT", "expr": "1", "comment": " %3d.%02d", "source_line": 17}
+{"id": 2, "symbol": "TXT_BUTTON_UPGRADE", "expr": "2", "comment": " Upgrade", "source_line": 18}
+{"id": 3, "symbol": "TXT_UPGRADE", "expr": "3", "comment": " Upgrade Structure", "source_line": 19}
+{"id": 4, "symbol": "TXT_UPGRADE_BUTTON", "expr": "4", "comment": " Upgrade", "source_line": 20}
+{"id": 5, "symbol": "TXT_BUTTON_SELL", "expr": "5", "comment": " Sell", "source_line": 21}
+{"id": 6, "symbol": "TXT_SELL", "expr": "6", "comment": " Sell Structure", "source_line": 22}
+{"id": 7, "symbol": "TXT_DEMOLISH", "expr": "7", "comment": " Demolish Structure", "source_line": 23}
+{"id": 8, "symbol": "TXT_BUTTON_REPAIR", "expr": "8", "comment": " Repair", "source_line": 24}
+{"id": 9, "symbol": "TXT_REPAIR", "expr": "9", "comment": " Repair Structure", "source_line": 25}
+{"id": 10, "symbol": "TXT_REPAIR_BUTTON", "expr": "10", "comment": " Repair", "source_line": 26}
+{"id": 11, "symbol": "TXT_YOU", "expr": "11", "comment": " You:", "source_line": 27}
+{"id": 12, "symbol": "TXT_ENEMY", "expr": "12", "comment": " Enemy:", "source_line": 28}
+{"id": 13, "symbol": "TXT_BUILD_DEST", "expr": "13", "comment": " Buildings Destroyed By", "source_line": 29}
+{"id": 14, "symbol": "TXT_UNIT_DEST", "expr": "14", "comment": " Units Destroyed By", "source_line": 30}
+{"id": 15, "symbol": "TXT_TIB_HARV", "expr": "15", "comment": " Tiberium Harvested By", "source_line": 31}
+{"id": 16, "symbol": "TXT_SCORE_1", "expr": "16", "comment": " Score: %d", "source_line": 32}
+{"id": 17, "symbol": "TXT_RANK_OF", "expr": "17", "comment": " You have attained the rank", "source_line": 33}
+{"id": 18, "symbol": "TXT_YES", "expr": "18", "comment": " Yes", "source_line": 34}
+{"id": 19, "symbol": "TXT_NO", "expr": "19", "comment": " No", "source_line": 35}
+{"id": 20, "symbol": "TXT_READY", "expr": "20", "comment": " Ready", "source_line": 36}
+{"id": 21, "symbol": "TXT_HOLDING", "expr": "21", "comment": " Holding", "source_line": 37}
+{"id": 22, "symbol": "TXT_SCENARIO_WON", "expr": "22", "comment": " Accomplished", "source_line": 38}
+{"id": 23, "symbol": "TXT_SCENARIO_LOST", "expr": "23", "comment": " Failed", "source_line": 39}
+{"id": 24, "symbol": "TXT_CHOOSE_SIDE", "expr": "24", "comment": " Choose Your Side", "source_line": 40}
+{"id": 25, "symbol": "TXT_START_NEW_GAME", "expr": "25", "comment": " Start New Game", "source_line": 41}
+{"id": 26, "symbol": "TXT_INTRO", "expr": "26", "comment": " Intro & Sneak Peek", "source_line": 42}
+{"id": 27, "symbol": "TXT_CANCEL", "expr": "27", "comment": " Cancel", "source_line": 43}
+{"id": 28, "symbol": "TXT_ROCK", "expr": "28", "comment": " Rock", "source_line": 44}
+{"id": 29, "symbol": "TXT_CHOAM_RESUME", "expr": "29", "comment": " Resume Game", "source_line": 45}
+{"id": 30, "symbol": "TXT_CHOAM_BUILD_THIS", "expr": "30", "comment": " Build This", "source_line": 46}
+{"id": 31, "symbol": "TXT_THANK_YOU", "expr": "31", "comment": " Thank you for playing", "source_line": 47}
+{"id": 32, "symbol": "TXT_FAME", "expr": "32", "comment": " Hall of Fame", "source_line": 48}
+{"id": 33, "symbol": "TXT_GDI", "expr": "33", "comment": " Global Defense Initiative", "source_line": 49}
+{"id": 34, "symbol": "TXT_NOD", "expr": "34", "comment": " Brotherhood of Nod", "source_line": 50}
+{"id": 35, "symbol": "TXT_CIVILIAN", "expr": "35", "comment": " Civilian", "source_line": 51}
+{"id": 36, "symbol": "TXT_JP", "expr": "36", "comment": " Containment Team", "source_line": 52}
+{"id": 37, "symbol": "TXT_OK", "expr": "37", "comment": " OK", "source_line": 53}
+{"id": 38, "symbol": "TXT_TREE", "expr": "38", "comment": " Tree", "source_line": 54}
+{"id": 39, "symbol": "TXT_LEFT", "expr": "39", "comment": " \u0011", "source_line": 55}
+{"id": 40, "symbol": "TXT_RIGHT", "expr": "40", "comment": " \u0010", "source_line": 56}
+{"id": 41, "symbol": "TXT_UP", "expr": "41", "comment": "", "source_line": 57}
+{"id": 42, "symbol": "TXT_DOWN", "expr": "42", "comment": "", "source_line": 59}
+{"id": 43, "symbol": "TXT_CLEAR_MAP", "expr": "43", "comment": " Clear the map", "source_line": 60}
+{"id": 44, "symbol": "TXT_INHERIT_MAP", "expr": "44", "comment": " Inherit previous map", "source_line": 61}
+{"id": 45, "symbol": "TXT_CLEAR", "expr": "45", "comment": " Clear", "source_line": 62}
+{"id": 46, "symbol": "TXT_WATER", "expr": "46", "comment": " Water", "source_line": 63}
+{"id": 47, "symbol": "TXT_ROAD", "expr": "47", "comment": " Road", "source_line": 64}
+{"id": 48, "symbol": "TXT_TILE", "expr": "48", "comment": " Tile Object", "source_line": 65}
+{"id": 49, "symbol": "TXT_SLOPE", "expr": "49", "comment": " Slope", "source_line": 66}
+{"id": 50, "symbol": "TXT_BRUSH", "expr": "50", "comment": " Brush", "source_line": 67}
+{"id": 51, "symbol": "TXT_PATCH", "expr": "51", "comment": " Patch", "source_line": 68}
+{"id": 52, "symbol": "TXT_RIVER", "expr": "52", "comment": " River", "source_line": 69}
+{"id": 53, "symbol": "TXT_LOAD_MISSION", "expr": "53", "comment": " Load Mission", "source_line": 70}
+{"id": 54, "symbol": "TXT_SAVE_MISSION", "expr": "54", "comment": " Save Mission", "source_line": 71}
+{"id": 55, "symbol": "TXT_DELETE_MISSION", "expr": "55", "comment": " Delete Mission", "source_line": 72}
+{"id": 56, "symbol": "TXT_LOAD_BUTTON", "expr": "56", "comment": " Load", "source_line": 73}
+{"id": 57, "symbol": "TXT_SAVE_BUTTON", "expr": "57", "comment": " Save", "source_line": 74}
+{"id": 58, "symbol": "TXT_DELETE_BUTTON", "expr": "58", "comment": " Delete", "source_line": 75}
+{"id": 59, "symbol": "TXT_GAME_CONTROLS", "expr": "59", "comment": " Game Controls", "source_line": 76}
+{"id": 60, "symbol": "TXT_SOUND_CONTROLS", "expr": "60", "comment": " Sound Controls", "source_line": 77}
+{"id": 61, "symbol": "TXT_RESUME_MISSION", "expr": "61", "comment": " Resume Mission", "source_line": 78}
+{"id": 62, "symbol": "TXT_VISUAL_CONTROLS", "expr": "62", "comment": " Visual Controls", "source_line": 79}
+{"id": 63, "symbol": "TXT_QUIT_MISSION", "expr": "63", "comment": " Abort Mission", "source_line": 80}
+{"id": 64, "symbol": "TXT_EXIT_GAME", "expr": "64", "comment": " Exit Game", "source_line": 81}
+{"id": 65, "symbol": "TXT_OPTIONS", "expr": "65", "comment": " Options", "source_line": 82}
+{"id": 66, "symbol": "TXT_TIBERIUM", "expr": "66", "comment": " Tiberium", "source_line": 83}
+{"id": 67, "symbol": "TXT_TIBERIUM_ON", "expr": "67", "comment": " Tiberium On", "source_line": 84}
+{"id": 68, "symbol": "TXT_TIBERIUM_OFF", "expr": "68", "comment": " Tiberium Off", "source_line": 85}
+{"id": 69, "symbol": "TXT_SQUISH", "expr": "69", "comment": " Squish mark", "source_line": 86}
+{"id": 70, "symbol": "TXT_CRATER", "expr": "70", "comment": " Crater", "source_line": 87}
+{"id": 71, "symbol": "TXT_SCORCH", "expr": "71", "comment": " Scorch Mark", "source_line": 88}
+{"id": 72, "symbol": "TXT_BRIGHTNESS", "expr": "72", "comment": " BRIGHTNESS:", "source_line": 89}
+{"id": 73, "symbol": "TXT_MUSIC", "expr": "73", "comment": " MUSIC VOLUME", "source_line": 90}
+{"id": 74, "symbol": "TXT_VOLUME", "expr": "74", "comment": " SOUND VOLUME", "source_line": 91}
+{"id": 75, "symbol": "TXT_TINT", "expr": "75", "comment": " TINT:", "source_line": 92}
+{"id": 76, "symbol": "TXT_CONTRAST", "expr": "76", "comment": " CONTRAST:", "source_line": 93}
+{"id": 77, "symbol": "TXT_SPEED", "expr": "77", "comment": " GAME SPEED:", "source_line": 94}
+{"id": 78, "symbol": "TXT_SCROLLRATE", "expr": "78", "comment": " SCROLL RATE:", "source_line": 95}
+{"id": 79, "symbol": "TXT_COLOR", "expr": "79", "comment": " COLOR:", "source_line": 96}
+{"id": 80, "symbol": "TXT_RETURN_TO_GAME", "expr": "80", "comment": " Return to game", "source_line": 97}
+{"id": 81, "symbol": "TXT_ENEMY_SOLDIER", "expr": "81", "comment": " Enemy Soldier", "source_line": 98}
+{"id": 82, "symbol": "TXT_ENEMY_VEHICLE", "expr": "82", "comment": " Enemy Vehicle", "source_line": 99}
+{"id": 83, "symbol": "TXT_ENEMY_STRUCTURE", "expr": "83", "comment": " Enemy Structure", "source_line": 100}
+{"id": 84, "symbol": "TXT_FTANK", "expr": "84", "comment": " Flame Tank", "source_line": 101}
+{"id": 85, "symbol": "TXT_STANK", "expr": "85", "comment": " Stealth Tank", "source_line": 102}
+{"id": 86, "symbol": "TXT_LTANK", "expr": "86", "comment": " Light Tank", "source_line": 103}
+{"id": 87, "symbol": "TXT_MTANK", "expr": "87", "comment": " Med. Tank", "source_line": 104}
+{"id": 88, "symbol": "TXT_HTANK", "expr": "88", "comment": " Mammoth Tank", "source_line": 105}
+{"id": 89, "symbol": "TXT_DUNE_BUGGY", "expr": "89", "comment": " Nod Buggy", "source_line": 106}
+{"id": 90, "symbol": "TXT_SAM", "expr": "90", "comment": " SAM Site", "source_line": 107}
+{"id": 91, "symbol": "TXT_EYE", "expr": "91", "comment": " Advanced Com. Center", "source_line": 108}
+{"id": 92, "symbol": "TXT_MLRS", "expr": "92", "comment": " Rocket Launcher", "source_line": 109}
+{"id": 93, "symbol": "TXT_MHQ", "expr": "93", "comment": " Mobile HQ", "source_line": 110}
+{"id": 94, "symbol": "TXT_JEEP", "expr": "94", "comment": " Hum-vee", "source_line": 111}
+{"id": 95, "symbol": "TXT_TRANS", "expr": "95", "comment": " Transport Helicopter", "source_line": 112}
+{"id": 96, "symbol": "TXT_A10", "expr": "96", "comment": " A10", "source_line": 113}
+{"id": 97, "symbol": "TXT_C17", "expr": "97", "comment": " C17", "source_line": 114}
+{"id": 98, "symbol": "TXT_HARVESTER", "expr": "98", "comment": " Harvester", "source_line": 115}
+{"id": 99, "symbol": "TXT_ARTY", "expr": "99", "comment": " Artillery", "source_line": 116}
+{"id": 100, "symbol": "TXT_MSAM", "expr": "100", "comment": " S.S.M. Launcher", "source_line": 117}
+{"id": 101, "symbol": "TXT_E1", "expr": "101", "comment": " Minigunner", "source_line": 118}
+{"id": 102, "symbol": "TXT_E2", "expr": "102", "comment": " Grenadier", "source_line": 119}
+{"id": 103, "symbol": "TXT_E3", "expr": "103", "comment": " Bazooka", "source_line": 120}
+{"id": 104, "symbol": "TXT_E4", "expr": "104", "comment": " Flamethrower", "source_line": 121}
+{"id": 105, "symbol": "TXT_E5", "expr": "105", "comment": " Chem-warrior", "source_line": 122}
+{"id": 106, "symbol": "TXT_RAMBO", "expr": "106", "comment": " Commando", "source_line": 123}
+{"id": 107, "symbol": "TXT_HOVER", "expr": "107", "comment": " Hovercraft", "source_line": 124}
+{"id": 108, "symbol": "TXT_HELI", "expr": "108", "comment": " Attack Helicopter", "source_line": 125}
+{"id": 109, "symbol": "TXT_ORCA", "expr": "109", "comment": " Orca", "source_line": 126}
+{"id": 110, "symbol": "TXT_APC", "expr": "110", "comment": " APC", "source_line": 127}
+{"id": 111, "symbol": "TXT_GUARD_TOWER", "expr": "111", "comment": " Guard Tower", "source_line": 128}
+{"id": 112, "symbol": "TXT_COMMAND", "expr": "112", "comment": " Communications Center", "source_line": 129}
+{"id": 113, "symbol": "TXT_HELIPAD", "expr": "113", "comment": " Helicopter Pad", "source_line": 130}
+{"id": 114, "symbol": "TXT_AIRSTRIP", "expr": "114", "comment": " Airstrip", "source_line": 131}
+{"id": 115, "symbol": "TXT_STORAGE", "expr": "115", "comment": " Tiberium Silo", "source_line": 132}
+{"id": 116, "symbol": "TXT_CONST_YARD", "expr": "116", "comment": " Construction Yard", "source_line": 133}
+{"id": 117, "symbol": "TXT_REFINERY", "expr": "117", "comment": " Tiberium Refinery", "source_line": 134}
+{"id": 118, "symbol": "TXT_CIV1", "expr": "118", "comment": " Church", "source_line": 135}
+{"id": 119, "symbol": "TXT_CIV2", "expr": "119", "comment": " Han's and Gretel's", "source_line": 136}
+{"id": 120, "symbol": "TXT_CIV3", "expr": "120", "comment": " Hewitt's Manor", "source_line": 137}
+{"id": 121, "symbol": "TXT_CIV4", "expr": "121", "comment": " Ricktor's House", "source_line": 138}
+{"id": 122, "symbol": "TXT_CIV5", "expr": "122", "comment": " Gretchin's House", "source_line": 139}
+{"id": 123, "symbol": "TXT_CIV6", "expr": "123", "comment": " The Barn", "source_line": 140}
+{"id": 124, "symbol": "TXT_CIV7", "expr": "124", "comment": " Damon's pub", "source_line": 141}
+{"id": 125, "symbol": "TXT_CIV8", "expr": "125", "comment": " Fran's House", "source_line": 142}
+{"id": 126, "symbol": "TXT_CIV9", "expr": "126", "comment": " Music Factory", "source_line": 143}
+{"id": 127, "symbol": "TXT_CIV10", "expr": "127", "comment": " Toymaker's", "source_line": 144}
+{"id": 128, "symbol": "TXT_CIV11", "expr": "128", "comment": " Ludwig's House", "source_line": 145}
+{"id": 129, "symbol": "TXT_CIV12", "expr": "129", "comment": " Haystacks", "source_line": 146}
+{"id": 130, "symbol": "TXT_CIV13", "expr": "130", "comment": " Haystack", "source_line": 147}
+{"id": 131, "symbol": "TXT_CIV14", "expr": "131", "comment": " Wheat Field", "source_line": 148}
+{"id": 132, "symbol": "TXT_CIV15", "expr": "132", "comment": " Fallow Field", "source_line": 149}
+{"id": 133, "symbol": "TXT_CIV16", "expr": "133", "comment": " Corn Field", "source_line": 150}
+{"id": 134, "symbol": "TXT_CIV17", "expr": "134", "comment": " Celery Field", "source_line": 151}
+{"id": 135, "symbol": "TXT_CIV18", "expr": "135", "comment": " Potato Field", "source_line": 152}
+{"id": 136, "symbol": "TXT_CIV20", "expr": "136", "comment": " Sala's House", "source_line": 153}
+{"id": 137, "symbol": "TXT_CIV21", "expr": "137", "comment": " Abdul's House", "source_line": 154}
+{"id": 138, "symbol": "TXT_CIV22", "expr": "138", "comment": " Pablo's Wicked Pub", "source_line": 155}
+{"id": 139, "symbol": "TXT_CIV23", "expr": "139", "comment": " Village Well", "source_line": 156}
+{"id": 140, "symbol": "TXT_CIV24", "expr": "140", "comment": " Camel Trader", "source_line": 157}
+{"id": 141, "symbol": "TXT_CIV25", "expr": "141", "comment": " Church", "source_line": 158}
+{"id": 142, "symbol": "TXT_CIV26", "expr": "142", "comment": " Ali's House", "source_line": 159}
+{"id": 143, "symbol": "TXT_CIV27", "expr": "143", "comment": " Trader Ted's", "source_line": 160}
+{"id": 144, "symbol": "TXT_CIV28", "expr": "144", "comment": " Menelik's House", "source_line": 161}
+{"id": 145, "symbol": "TXT_CIV29", "expr": "145", "comment": " Prestor John's House", "source_line": 162}
+{"id": 146, "symbol": "TXT_CIV30", "expr": "146", "comment": " Village Well", "source_line": 163}
+{"id": 147, "symbol": "TXT_CIV31", "expr": "147", "comment": " Witch Doctor's Hut", "source_line": 164}
+{"id": 148, "symbol": "TXT_CIV32", "expr": "148", "comment": " Rikitikitembo's Hut", "source_line": 165}
+{"id": 149, "symbol": "TXT_CIV33", "expr": "149", "comment": " Roarke's Hut", "source_line": 166}
+{"id": 150, "symbol": "TXT_CIV34", "expr": "150", "comment": " Mubasa's Hut", "source_line": 167}
+{"id": 151, "symbol": "TXT_CIV35", "expr": "151", "comment": " Aksum's Hut", "source_line": 168}
+{"id": 152, "symbol": "TXT_CIV36", "expr": "152", "comment": " Mambo's Hut", "source_line": 169}
+{"id": 153, "symbol": "TXT_CIV37", "expr": "153", "comment": " The Studio", "source_line": 170}
+{"id": 154, "symbol": "TXT_CIVMISS", "expr": "154", "comment": " Technology Center", "source_line": 171}
+{"id": 155, "symbol": "TXT_TURRET", "expr": "155", "comment": " Gun Turret", "source_line": 172}
+{"id": 156, "symbol": "TXT_GUNBOAT", "expr": "156", "comment": " Gun Boat", "source_line": 173}
+{"id": 157, "symbol": "TXT_MCV", "expr": "157", "comment": " Mobile Construction Yard", "source_line": 174}
+{"id": 158, "symbol": "TXT_BIKE", "expr": "158", "comment": " Recon Bike", "source_line": 175}
+{"id": 159, "symbol": "TXT_POWER", "expr": "159", "comment": " Power Plant", "source_line": 176}
+{"id": 160, "symbol": "TXT_ADVANCED_POWER", "expr": "160", "comment": " Advanced Power Plant", "source_line": 177}
+{"id": 161, "symbol": "TXT_HOSPITAL", "expr": "161", "comment": " Hospital", "source_line": 178}
+{"id": 162, "symbol": "TXT_BARRACKS", "expr": "162", "comment": " Barracks", "source_line": 179}
+{"id": 163, "symbol": "TXT_CONCRETE", "expr": "163", "comment": " Concrete", "source_line": 180}
+{"id": 164, "symbol": "TXT_PUMP", "expr": "164", "comment": " Oil Pump", "source_line": 181}
+{"id": 165, "symbol": "TXT_TANKER", "expr": "165", "comment": " Oil Tanker", "source_line": 182}
+{"id": 166, "symbol": "TXT_SANDBAG_WALL", "expr": "166", "comment": " Sandbag Wall", "source_line": 183}
+{"id": 167, "symbol": "TXT_CYCLONE_WALL", "expr": "167", "comment": " Chain Link Fence", "source_line": 184}
+{"id": 168, "symbol": "TXT_BRICK_WALL", "expr": "168", "comment": " Concrete Wall", "source_line": 185}
+{"id": 169, "symbol": "TXT_BARBWIRE_WALL", "expr": "169", "comment": " Barbwire Fence", "source_line": 186}
+{"id": 170, "symbol": "TXT_WOOD_WALL", "expr": "170", "comment": " Wood Fence", "source_line": 187}
+{"id": 171, "symbol": "TXT_WEAPON_FACTORY", "expr": "171", "comment": " Weapons Factory", "source_line": 188}
+{"id": 172, "symbol": "TXT_AGUARD_TOWER", "expr": "172", "comment": " Advanced Guard Tower", "source_line": 189}
+{"id": 173, "symbol": "TXT_OBELISK", "expr": "173", "comment": " Obelisk Guard Tower", "source_line": 190}
+{"id": 174, "symbol": "TXT_BIO_LAB", "expr": "174", "comment": " Bio-Research Laboratory", "source_line": 191}
+{"id": 175, "symbol": "TXT_HAND", "expr": "175", "comment": " Hand of Nod", "source_line": 192}
+{"id": 176, "symbol": "TXT_TEMPLE", "expr": "176", "comment": " Temple of Nod", "source_line": 193}
+{"id": 177, "symbol": "TXT_FIX_IT", "expr": "177", "comment": " Repair Bay", "source_line": 194}
+{"id": 178, "symbol": "TXT_TAB_SIDEBAR", "expr": "178", "comment": " Sidebar", "source_line": 195}
+{"id": 179, "symbol": "TXT_TAB_BUTTON_CONTROLS", "expr": "179", "comment": " Options", "source_line": 196}
+{"id": 180, "symbol": "TXT_TAB_BUTTON_DATABASE", "expr": "180", "comment": " Database", "source_line": 197}
+{"id": 181, "symbol": "TXT_SHADOW", "expr": "181", "comment": " Unrevealed Terrain", "source_line": 198}
+{"id": 182, "symbol": "TXT_OPTIONS_MENU", "expr": "182", "comment": " Options Menu", "source_line": 199}
+{"id": 183, "symbol": "TXT_STOP", "expr": "183", "comment": " STOP", "source_line": 200}
+{"id": 184, "symbol": "TXT_PLAY", "expr": "184", "comment": " PLAY", "source_line": 201}
+{"id": 185, "symbol": "TXT_SHUFFLE", "expr": "185", "comment": " SHUFFLE", "source_line": 202}
+{"id": 186, "symbol": "TXT_REPEAT", "expr": "186", "comment": " REPEAT", "source_line": 203}
+{"id": 187, "symbol": "TXT_MUSIC_VOLUME", "expr": "187", "comment": " Music volume:", "source_line": 204}
+{"id": 188, "symbol": "TXT_SOUND_VOLUME", "expr": "188", "comment": " Sound volume:", "source_line": 205}
+{"id": 189, "symbol": "TXT_ON", "expr": "189", "comment": " On", "source_line": 206}
+{"id": 190, "symbol": "TXT_OFF", "expr": "190", "comment": " Off", "source_line": 207}
+{"id": 191, "symbol": "TXT_THEME_AOI", "expr": "191", "comment": " Act On Instinct", "source_line": 208}
+{"id": 192, "symbol": "TXT_THEME_TROUBLE", "expr": "192", "comment": " Looks Like Trouble", "source_line": 209}
+{"id": 193, "symbol": "TXT_THEME_IND", "expr": "193", "comment": " Industrial", "source_line": 210}
+{"id": 194, "symbol": "TXT_THEME_ROUT", "expr": "194", "comment": " Reaching Out", "source_line": 211}
+{"id": 195, "symbol": "TXT_THEME_OTP", "expr": "195", "comment": " On The Prowl", "source_line": 212}
+{"id": 196, "symbol": "TXT_THEME_PRP", "expr": "196", "comment": " Prepare For Battle", "source_line": 213}
+{"id": 197, "symbol": "TXT_THEME_JUSTDOIT", "expr": "197", "comment": " Just Do It!", "source_line": 214}
+{"id": 198, "symbol": "TXT_THEME_LINEFIRE", "expr": "198", "comment": " In The Line Of Fire", "source_line": 215}
+{"id": 199, "symbol": "TXT_THEME_MARCH", "expr": "199", "comment": " March To Doom", "source_line": 216}
+{"id": 200, "symbol": "TXT_THEME_STOPTHEM", "expr": "200", "comment": " Deception", "source_line": 217}
+{"id": 201, "symbol": "TXT_THEME_CCTHANG", "expr": "201", "comment": " C&C Thang", "source_line": 218}
+{"id": 202, "symbol": "TXT_THEME_BEFEARED", "expr": "202", "comment": " Enemies To Be Feared", "source_line": 219}
+{"id": 203, "symbol": "TXT_THEME_WARFARE", "expr": "203", "comment": " Warfare", "source_line": 220}
+{"id": 204, "symbol": "TXT_THEME_FWP", "expr": "204", "comment": " Fight, Win, Prevail", "source_line": 221}
+{"id": 205, "symbol": "TXT_THEME_DIE", "expr": "205", "comment": " Die!!", "source_line": 222}
+{"id": 206, "symbol": "TXT_THEME_NOMERCY", "expr": "206", "comment": " No Mercy", "source_line": 223}
+{"id": 207, "symbol": "TXT_THEME_TARGET", "expr": "207", "comment": " Mechanical Man", "source_line": 224}
+{"id": 208, "symbol": "TXT_THEME_IAM", "expr": "208", "comment": " I Am", "source_line": 225}
+{"id": 209, "symbol": "TXT_THEME_WIN1", "expr": "209", "comment": " Great Shot!", "source_line": 226}
+{"id": 210, "symbol": "TXT_MULTIPLAYER_GAME", "expr": "210", "comment": " Multiplayer Game", "source_line": 227}
+{"id": 211, "symbol": "TXT_NO_FILES", "expr": "211", "comment": " No files available", "source_line": 228}
+{"id": 212, "symbol": "TXT_DELETE_SINGLE_FILE", "expr": "212", "comment": " Do you want to delete this", "source_line": 229}
+{"id": 213, "symbol": "TXT_DELETE_MULTIPLE_FILES", "expr": "213", "comment": " Do you want to delete %d", "source_line": 230}
+{"id": 214, "symbol": "TXT_RESET_MENU", "expr": "214", "comment": " Reset Values", "source_line": 231}
+{"id": 215, "symbol": "TXT_CONFIRMATION", "expr": "215", "comment": " Confirmation", "source_line": 232}
+{"id": 216, "symbol": "TXT_CONFIRM_EXIT", "expr": "216", "comment": " Do you want to abort the", "source_line": 233}
+{"id": 217, "symbol": "TXT_MISSION_DESCRIPTION", "expr": "217", "comment": " Mission Description", "source_line": 234}
+{"id": 218, "symbol": "TXT_C1", "expr": "218", "comment": " Joe", "source_line": 235}
+{"id": 219, "symbol": "TXT_C2", "expr": "219", "comment": " Bill", "source_line": 236}
+{"id": 220, "symbol": "TXT_C3", "expr": "220", "comment": " Shelly", "source_line": 237}
+{"id": 221, "symbol": "TXT_C4", "expr": "221", "comment": " Maria", "source_line": 238}
+{"id": 222, "symbol": "TXT_C5", "expr": "222", "comment": " Eydie", "source_line": 239}
+{"id": 223, "symbol": "TXT_C6", "expr": "223", "comment": " Dave", "source_line": 240}
+{"id": 224, "symbol": "TXT_C7", "expr": "224", "comment": " Phil", "source_line": 241}
+{"id": 225, "symbol": "TXT_C8", "expr": "225", "comment": " Dwight", "source_line": 242}
+{"id": 226, "symbol": "TXT_C9", "expr": "226", "comment": " Erik", "source_line": 243}
+{"id": 227, "symbol": "TXT_MOEBIUS", "expr": "227", "comment": " Dr. Moebius", "source_line": 244}
+{"id": 228, "symbol": "TXT_BIB", "expr": "228", "comment": " Road Bib", "source_line": 245}
+{"id": 229, "symbol": "TXT_FASTER", "expr": "229", "comment": " Faster", "source_line": 246}
+{"id": 230, "symbol": "TXT_SLOWER", "expr": "230", "comment": " Slower", "source_line": 247}
+{"id": 231, "symbol": "TXT_ION_CANNON", "expr": "231", "comment": " Ion Cannon", "source_line": 248}
+{"id": 232, "symbol": "TXT_NUKE_STRIKE", "expr": "232", "comment": " Nuclear Strike", "source_line": 249}
+{"id": 233, "symbol": "TXT_AIR_STRIKE", "expr": "233", "comment": " Air Strike", "source_line": 250}
+{"id": 234, "symbol": "TXT_TREX", "expr": "234", "comment": " Tyrannosaurus Rex", "source_line": 251}
+{"id": 235, "symbol": "TXT_TRIC", "expr": "235", "comment": " Triceratops", "source_line": 252}
+{"id": 236, "symbol": "TXT_RAPT", "expr": "236", "comment": " Velociraptor", "source_line": 253}
+{"id": 237, "symbol": "TXT_STEG", "expr": "237", "comment": " Stegasaurus", "source_line": 254}
+{"id": 238, "symbol": "TXT_STEEL_CRATE", "expr": "238", "comment": " Steel Crate", "source_line": 255}
+{"id": 239, "symbol": "TXT_WOOD_CRATE", "expr": "239", "comment": " Wood Crate", "source_line": 256}
+{"id": 240, "symbol": "TXT_FLAG_SPOT", "expr": "240", "comment": " Flag Location", "source_line": 257}
+{"id": 241, "symbol": "TXT_G_D_I", "expr": "241", "comment": " GDI", "source_line": 258}
+{"id": 242, "symbol": "TXT_N_O_D", "expr": "242", "comment": " NOD", "source_line": 259}
+{"id": 243, "symbol": "TXT_UNABLE_READ_SCENARIO", "expr": "243", "comment": " Unable to read scenario!", "source_line": 260}
+{"id": 244, "symbol": "TXT_ERROR_LOADING_GAME", "expr": "244", "comment": " Error loading game!", "source_line": 261}
+{"id": 245, "symbol": "TXT_OBSOLETE_SAVEGAME", "expr": "245", "comment": " Obsolete saved game.", "source_line": 262}
+{"id": 246, "symbol": "TXT_MUSTENTER_DESCRIPTION", "expr": "246", "comment": " You must enter a", "source_line": 263}
+{"id": 247, "symbol": "TXT_ERROR_SAVING_GAME", "expr": "247", "comment": " Error saving game!", "source_line": 264}
+{"id": 248, "symbol": "TXT_DELETE_FILE_QUERY", "expr": "248", "comment": " Delete this file?", "source_line": 265}
+{"id": 249, "symbol": "TXT_EMPTY_SLOT", "expr": "249", "comment": " [EMPTY SLOT]", "source_line": 266}
+{"id": 250, "symbol": "TXT_SELECT_MPLAYER_GAME", "expr": "250", "comment": " Select Multiplayer Game", "source_line": 267}
+{"id": 251, "symbol": "TXT_MODEM_SERIAL", "expr": "251", "comment": " Modem/Serial", "source_line": 268}
+{"id": 252, "symbol": "TXT_NETWORK", "expr": "252", "comment": " Network", "source_line": 269}
+{"id": 253, "symbol": "TXT_INIT_NET_ERROR", "expr": "253", "comment": " Unable to initialize", "source_line": 270}
+{"id": 254, "symbol": "TXT_JOIN_NETWORK_GAME", "expr": "254", "comment": " Join Network Game", "source_line": 271}
+{"id": 255, "symbol": "TXT_NEW", "expr": "255", "comment": " New", "source_line": 272}
+{"id": 256, "symbol": "TXT_JOIN", "expr": "256", "comment": " Join", "source_line": 273}
+{"id": 257, "symbol": "TXT_SEND_MESSAGE", "expr": "257", "comment": " Send Message", "source_line": 274}
+{"id": 258, "symbol": "TXT_YOUR_NAME", "expr": "258", "comment": " Your Name:", "source_line": 275}
+{"id": 259, "symbol": "TXT_SIDE_COLON", "expr": "259", "comment": " Side:", "source_line": 276}
+{"id": 260, "symbol": "TXT_COLOR_COLON", "expr": "260", "comment": " Color:", "source_line": 277}
+{"id": 261, "symbol": "TXT_GAMES", "expr": "261", "comment": " Games", "source_line": 278}
+{"id": 262, "symbol": "TXT_PLAYERS", "expr": "262", "comment": " Players", "source_line": 279}
+{"id": 263, "symbol": "TXT_SCENARIO_COLON", "expr": "263", "comment": " Scenario:", "source_line": 280}
+{"id": 264, "symbol": "TXT_NOT_FOUND", "expr": "264", "comment": " >> NOT FOUND <<", "source_line": 281}
+{"id": 265, "symbol": "TXT_START_CREDITS_COLON", "expr": "265", "comment": " Starting Credits:", "source_line": 282}
+{"id": 266, "symbol": "TXT_BASES_COLON", "expr": "266", "comment": " Bases:", "source_line": 283}
+{"id": 267, "symbol": "TXT_TIBERIUM_COLON", "expr": "267", "comment": " Tiberium:", "source_line": 284}
+{"id": 268, "symbol": "TXT_CRATES_COLON", "expr": "268", "comment": " Crates:", "source_line": 285}
+{"id": 269, "symbol": "TXT_AI_PLAYERS_COLON", "expr": "269", "comment": " AI Players:", "source_line": 286}
+{"id": 270, "symbol": "TXT_REQUEST_DENIED", "expr": "270", "comment": " Request denied.", "source_line": 287}
+{"id": 271, "symbol": "TXT_UNABLE_PLAY_WAAUGH", "expr": "271", "comment": " Unable to play; scenario", "source_line": 288}
+{"id": 272, "symbol": "TXT_NOTHING_TO_JOIN", "expr": "272", "comment": " Nothing to join!", "source_line": 289}
+{"id": 273, "symbol": "TXT_NAME_ERROR", "expr": "273", "comment": " You must enter a name!", "source_line": 290}
+{"id": 274, "symbol": "TXT_DUPENAMES_NOTALLOWED", "expr": "274", "comment": " Duplicate names are not", "source_line": 291}
+{"id": 275, "symbol": "TXT_YOURGAME_OUTDATED", "expr": "275", "comment": " Your game version is", "source_line": 292}
+{"id": 276, "symbol": "TXT_DESTGAME_OUTDATED", "expr": "276", "comment": " Destination game version is", "source_line": 293}
+{"id": 277, "symbol": "TXT_THATGUYS_GAME", "expr": "277", "comment": " %s's Game", "source_line": 294}
+{"id": 278, "symbol": "TXT_THATGUYS_GAME_BRACKET", "expr": "278", "comment": " [%s's Game]", "source_line": 295}
+{"id": 279, "symbol": "TXT_NETGAME_SETUP", "expr": "279", "comment": " Network Game Setup", "source_line": 296}
+{"id": 280, "symbol": "TXT_REJECT", "expr": "280", "comment": " Reject", "source_line": 297}
+{"id": 281, "symbol": "TXT_CANT_REJECT_SELF", "expr": "281", "comment": " You can't reject yourself!", "source_line": 298}
+{"id": 282, "symbol": "TXT_SELECT_PLAYER_REJECT", "expr": "282", "comment": " You must select a player to", "source_line": 299}
+{"id": 283, "symbol": "TXT_BASES_ON", "expr": "283", "comment": " Bases On", "source_line": 300}
+{"id": 284, "symbol": "TXT_BASES_OFF", "expr": "284", "comment": " Bases Off", "source_line": 301}
+{"id": 285, "symbol": "TXT_CRATES_ON", "expr": "285", "comment": " Crates On", "source_line": 302}
+{"id": 286, "symbol": "TXT_CRATES_OFF", "expr": "286", "comment": " Crates Off", "source_line": 303}
+{"id": 287, "symbol": "TXT_AI_PLAYERS_ON", "expr": "287", "comment": " AI Players On", "source_line": 304}
+{"id": 288, "symbol": "TXT_AI_PLAYERS_OFF", "expr": "288", "comment": " AI Players Off", "source_line": 305}
+{"id": 289, "symbol": "TXT_SCENARIOS", "expr": "289", "comment": " Scenarios", "source_line": 306}
+{"id": 290, "symbol": "TXT_START_CREDITS", "expr": "290", "comment": " Starting Credits", "source_line": 307}
+{"id": 291, "symbol": "TXT_ONLY_ONE", "expr": "291", "comment": " Only one player?", "source_line": 308}
+{"id": 292, "symbol": "TXT_OOPS", "expr": "292", "comment": " Oops!", "source_line": 309}
+{"id": 293, "symbol": "TXT_TO", "expr": "293", "comment": " To %s:", "source_line": 310}
+{"id": 294, "symbol": "TXT_TO_ALL", "expr": "294", "comment": " To All:", "source_line": 311}
+{"id": 295, "symbol": "TXT_MESSAGE", "expr": "295", "comment": " Message:", "source_line": 312}
+{"id": 296, "symbol": "TXT_CONNECTION_LOST", "expr": "296", "comment": " Connection to %s lost!", "source_line": 313}
+{"id": 297, "symbol": "TXT_LEFT_GAME", "expr": "297", "comment": " %s has left the game.", "source_line": 314}
+{"id": 298, "symbol": "TXT_PLAYER_DEFEATED", "expr": "298", "comment": " %s has been defeated!", "source_line": 315}
+{"id": 299, "symbol": "TXT_WAITING_CONNECT", "expr": "299", "comment": " Waiting to Connect...", "source_line": 316}
+{"id": 300, "symbol": "TXT_NULL_CONNERR_CHECK_CABLES", "expr": "300", "comment": " Connection error! Check", "source_line": 317}
+{"id": 301, "symbol": "TXT_MODEM_CONNERR_REDIALING", "expr": "301", "comment": " Connection", "source_line": 318}
+{"id": 302, "symbol": "TXT_MODEM_CONNERR_WAITING", "expr": "302", "comment": " Connection error! Waiting", "source_line": 319}
+{"id": 303, "symbol": "TXT_SELECT_SERIAL_GAME", "expr": "303", "comment": " Select Serial Game", "source_line": 320}
+{"id": 304, "symbol": "TXT_DIAL_MODEM", "expr": "304", "comment": " Dial Modem", "source_line": 321}
+{"id": 305, "symbol": "TXT_ANSWER_MODEM", "expr": "305", "comment": " Answer Modem", "source_line": 322}
+{"id": 306, "symbol": "TXT_NULL_MODEM", "expr": "306", "comment": " Null Modem", "source_line": 323}
+{"id": 307, "symbol": "TXT_SETTINGS", "expr": "307", "comment": " Settings", "source_line": 324}
+{"id": 308, "symbol": "TXT_PORT_COLON", "expr": "308", "comment": " Port:", "source_line": 325}
+{"id": 309, "symbol": "TXT_IRQ_COLON", "expr": "309", "comment": " IRQ:", "source_line": 326}
+{"id": 310, "symbol": "TXT_BAUD_COLON", "expr": "310", "comment": " Baud:", "source_line": 327}
+{"id": 311, "symbol": "TXT_INIT_STRING", "expr": "311", "comment": " Init String:", "source_line": 328}
+{"id": 312, "symbol": "TXT_CWAIT_STRING", "expr": "312", "comment": " Call Waiting String:", "source_line": 329}
+{"id": 313, "symbol": "TXT_TONE_BUTTON", "expr": "313", "comment": " Tone Dialing", "source_line": 330}
+{"id": 314, "symbol": "TXT_PULSE_BUTTON", "expr": "314", "comment": " Pulse Dialing", "source_line": 331}
+{"id": 315, "symbol": "TXT_HOST_SERIAL_GAME", "expr": "315", "comment": " Host Serial Game", "source_line": 332}
+{"id": 316, "symbol": "TXT_OPPONENT_COLON", "expr": "316", "comment": " Opponent:", "source_line": 333}
+{"id": 317, "symbol": "TXT_USER_SIGNED_OFF", "expr": "317", "comment": " User signed off!", "source_line": 334}
+{"id": 318, "symbol": "TXT_JOIN_SERIAL_GAME", "expr": "318", "comment": " Join Serial Game", "source_line": 335}
+{"id": 319, "symbol": "TXT_PHONE_LIST", "expr": "319", "comment": " Phone List", "source_line": 336}
+{"id": 320, "symbol": "TXT_ADD", "expr": "320", "comment": " Add", "source_line": 337}
+{"id": 321, "symbol": "TXT_EDIT", "expr": "321", "comment": " Edit", "source_line": 338}
+{"id": 322, "symbol": "TXT_DIAL", "expr": "322", "comment": " Dial", "source_line": 339}
+{"id": 323, "symbol": "TXT_DEFAULT", "expr": "323", "comment": " Default", "source_line": 340}
+{"id": 324, "symbol": "TXT_DEFAULT_SETTINGS", "expr": "324", "comment": " Default Settings", "source_line": 341}
+{"id": 325, "symbol": "TXT_CUSTOM_SETTINGS", "expr": "325", "comment": " Custom Settings", "source_line": 342}
+{"id": 326, "symbol": "TXT_PHONE_LISTING", "expr": "326", "comment": " Phone Listing", "source_line": 343}
+{"id": 327, "symbol": "TXT_NAME_COLON", "expr": "327", "comment": " Name:", "source_line": 344}
+{"id": 328, "symbol": "TXT_NUMBER_COLON", "expr": "328", "comment": " Number:", "source_line": 345}
+{"id": 329, "symbol": "TXT_UNABLE_FIND_MODEM", "expr": "329", "comment": " Unable to find modem. Check", "source_line": 346}
+{"id": 330, "symbol": "TXT_NO_CARRIER", "expr": "330", "comment": " No carrier.", "source_line": 347}
+{"id": 331, "symbol": "TXT_LINE_BUSY", "expr": "331", "comment": " Line busy.", "source_line": 348}
+{"id": 332, "symbol": "TXT_NUMBER_INVALID", "expr": "332", "comment": " Number invalid.", "source_line": 349}
+{"id": 333, "symbol": "TXT_SYSTEM_NOT_RESPONDING", "expr": "333", "comment": " Other system not", "source_line": 350}
+{"id": 334, "symbol": "TXT_OUT_OF_SYNC", "expr": "334", "comment": " Games are out of sync!", "source_line": 351}
+{"id": 335, "symbol": "TXT_PACKET_TOO_LATE", "expr": "335", "comment": " Packet received too late!", "source_line": 352}
+{"id": 336, "symbol": "TXT_PLAYER_LEFT_GAME", "expr": "336", "comment": " Other player has left the", "source_line": 353}
+{"id": 337, "symbol": "TXT_FROM", "expr": "337", "comment": " From %s:%s", "source_line": 354}
+{"id": 338, "symbol": "TXT_MAP_P01", "expr": "338", "comment": " 2,728,000", "source_line": 355}
+{"id": 339, "symbol": "TXT_MAP_P02", "expr": "339", "comment": " 38,385,000", "source_line": 356}
+{"id": 340, "symbol": "TXT_MAP_P03", "expr": "340", "comment": " 10,373,000", "source_line": 357}
+{"id": 341, "symbol": "TXT_MAP_P04", "expr": "341", "comment": " 51,994,000", "source_line": 358}
+{"id": 342, "symbol": "TXT_MAP_P05", "expr": "342", "comment": " 80,387,000", "source_line": 359}
+{"id": 343, "symbol": "TXT_MAP_P06", "expr": "343", "comment": " 10,400,000", "source_line": 360}
+{"id": 344, "symbol": "TXT_MAP_P07", "expr": "344", "comment": " 5,300,000", "source_line": 361}
+{"id": 345, "symbol": "TXT_MAP_P08", "expr": "345", "comment": " 7,867,000", "source_line": 362}
+{"id": 346, "symbol": "TXT_MAP_P09", "expr": "346", "comment": " 10,333,000", "source_line": 363}
+{"id": 347, "symbol": "TXT_MAP_P10", "expr": "347", "comment": " 1,974,000", "source_line": 364}
+{"id": 348, "symbol": "TXT_MAP_P11", "expr": "348", "comment": " 23,169,000", "source_line": 365}
+{"id": 349, "symbol": "TXT_MAP_P12", "expr": "349", "comment": " 10,064,000", "source_line": 366}
+{"id": 350, "symbol": "TXT_MAP_P13", "expr": "350", "comment": " 3,285,000", "source_line": 367}
+{"id": 351, "symbol": "TXT_MAP_P14", "expr": "351", "comment": " 8,868,000", "source_line": 368}
+{"id": 352, "symbol": "TXT_MAP_P15", "expr": "352", "comment": " 10,337,000", "source_line": 369}
+{"id": 353, "symbol": "TXT_MAP_P16", "expr": "353", "comment": " 4,365,000", "source_line": 370}
+{"id": 354, "symbol": "TXT_MAP_P17", "expr": "354", "comment": " 1,607,000", "source_line": 371}
+{"id": 355, "symbol": "TXT_MAP_P18", "expr": "355", "comment": " 4,485,000", "source_line": 372}
+{"id": 356, "symbol": "TXT_MAP_P19", "expr": "356", "comment": " 56,386,000", "source_line": 373}
+{"id": 357, "symbol": "TXT_MAP_P20", "expr": "357", "comment": " 28,305,000", "source_line": 374}
+{"id": 358, "symbol": "TXT_MAP_P21", "expr": "358", "comment": " 5,238,000", "source_line": 375}
+{"id": 359, "symbol": "TXT_MAP_P22", "expr": "359", "comment": " 2,059,000", "source_line": 376}
+{"id": 360, "symbol": "TXT_MAP_P23", "expr": "360", "comment": " 13,497,000", "source_line": 377}
+{"id": 361, "symbol": "TXT_MAP_P24", "expr": "361", "comment": " 4,997,000", "source_line": 378}
+{"id": 362, "symbol": "TXT_MAP_P25", "expr": "362", "comment": " 88,500,000", "source_line": 379}
+{"id": 363, "symbol": "TXT_MAP_P26", "expr": "363", "comment": " 1,106,000", "source_line": 380}
+{"id": 364, "symbol": "TXT_MAP_P27", "expr": "364", "comment": " 12,658,000", "source_line": 381}
+{"id": 365, "symbol": "TXT_MAP_P28", "expr": "365", "comment": " 3,029,000", "source_line": 382}
+{"id": 366, "symbol": "TXT_MAP_P29", "expr": "366", "comment": " 39,084,000", "source_line": 383}
+{"id": 367, "symbol": "TXT_MAP_P30", "expr": "367", "comment": " 23,154,000", "source_line": 384}
+{"id": 368, "symbol": "TXT_MAP_P31", "expr": "368", "comment": " 8,902,000", "source_line": 385}
+{"id": 369, "symbol": "TXT_MAP_P32", "expr": "369", "comment": " 27,791,000", "source_line": 386}
+{"id": 370, "symbol": "TXT_MAP_P33", "expr": "370", "comment": " 1,574,000", "source_line": 387}
+{"id": 371, "symbol": "TXT_MAP_P34", "expr": "371", "comment": " 15,469,000", "source_line": 388}
+{"id": 372, "symbol": "TXT_MAP_P35", "expr": "372", "comment": " 1,300,000", "source_line": 389}
+{"id": 373, "symbol": "TXT_MAP_P36", "expr": "373", "comment": " 41,688,000", "source_line": 390}
+{"id": 374, "symbol": "TXT_MAP_A00", "expr": "374", "comment": " 24,900 SQ. MI.", "source_line": 391}
+{"id": 375, "symbol": "TXT_MAP_A01", "expr": "375", "comment": " 120,727 SQ. MI.", "source_line": 392}
+{"id": 376, "symbol": "TXT_MAP_A02", "expr": "376", "comment": " 80,134 SQ. MI.", "source_line": 393}
+{"id": 377, "symbol": "TXT_MAP_A03", "expr": "377", "comment": " 233,100 SQ. MI.", "source_line": 394}
+{"id": 378, "symbol": "TXT_MAP_A04", "expr": "378", "comment": " 137,838 SQ. MI.", "source_line": 395}
+{"id": 379, "symbol": "TXT_MAP_A05", "expr": "379", "comment": " 30,449 SQ. MI.", "source_line": 396}
+{"id": 380, "symbol": "TXT_MAP_A06", "expr": "380", "comment": " 18,932 SQ. MI.", "source_line": 397}
+{"id": 381, "symbol": "TXT_MAP_A07", "expr": "381", "comment": " 32,377 SQ. MI.", "source_line": 398}
+{"id": 382, "symbol": "TXT_MAP_A08", "expr": "382", "comment": " 35,919 SQ. MI.", "source_line": 399}
+{"id": 383, "symbol": "TXT_MAP_A09", "expr": "383", "comment": " 7,819 SQ. MI.", "source_line": 400}
+{"id": 384, "symbol": "TXT_MAP_A10", "expr": "384", "comment": " 91,699 SQ. MI.", "source_line": 401}
+{"id": 385, "symbol": "TXT_MAP_A11", "expr": "385", "comment": " 51,146 SQ. MI.", "source_line": 402}
+{"id": 386, "symbol": "TXT_MAP_A12", "expr": "386", "comment": " 11,100 SQ. MI.", "source_line": 403}
+{"id": 387, "symbol": "TXT_MAP_A13", "expr": "387", "comment": " 44,365 SQ. MI.", "source_line": 404}
+{"id": 388, "symbol": "TXT_MAP_A14", "expr": "388", "comment": " 39,449 SQ. MI.", "source_line": 405}
+{"id": 389, "symbol": "TXT_MAP_A15", "expr": "389", "comment": " 19,741 SQ. MI.", "source_line": 406}
+{"id": 390, "symbol": "TXT_MAP_A16", "expr": "390", "comment": " 17,413 SQ. MI.", "source_line": 407}
+{"id": 391, "symbol": "TXT_MAP_C00", "expr": "391", "comment": " RIGA", "source_line": 408}
+{"id": 392, "symbol": "TXT_MAP_C01", "expr": "392", "comment": " WARSAW", "source_line": 409}
+{"id": 393, "symbol": "TXT_MAP_C02", "expr": "393", "comment": " MINSK", "source_line": 410}
+{"id": 394, "symbol": "TXT_MAP_C03", "expr": "394", "comment": " KIEV", "source_line": 411}
+{"id": 395, "symbol": "TXT_MAP_C04", "expr": "395", "comment": " BERLIN", "source_line": 412}
+{"id": 396, "symbol": "TXT_MAP_C05", "expr": "396", "comment": " PRAGUE", "source_line": 413}
+{"id": 397, "symbol": "TXT_MAP_C06", "expr": "397", "comment": " BRATISLAVA", "source_line": 414}
+{"id": 398, "symbol": "TXT_MAP_C07", "expr": "398", "comment": " VIENNA", "source_line": 415}
+{"id": 399, "symbol": "TXT_MAP_C08", "expr": "399", "comment": " BUDAPEST", "source_line": 416}
+{"id": 400, "symbol": "TXT_MAP_C09", "expr": "400", "comment": " LJUBLJANA", "source_line": 417}
+{"id": 401, "symbol": "TXT_MAP_C10", "expr": "401", "comment": " BUCHAREST", "source_line": 418}
+{"id": 402, "symbol": "TXT_MAP_C11", "expr": "402", "comment": " ATHENS", "source_line": 419}
+{"id": 403, "symbol": "TXT_MAP_C12", "expr": "403", "comment": " TIRANA", "source_line": 420}
+{"id": 404, "symbol": "TXT_MAP_C13", "expr": "404", "comment": " SOFIA", "source_line": 421}
+{"id": 405, "symbol": "TXT_MAP_C14", "expr": "405", "comment": " BELGRADE", "source_line": 422}
+{"id": 406, "symbol": "TXT_MAP_C15", "expr": "406", "comment": " SARAJEVO", "source_line": 423}
+{"id": 407, "symbol": "TXT_MAP_C16", "expr": "407", "comment": " TALLINN", "source_line": 424}
+{"id": 408, "symbol": "TXT_MAP_C17", "expr": "408", "comment": " TRIPOLI", "source_line": 425}
+{"id": 409, "symbol": "TXT_MAP_C18", "expr": "409", "comment": " CAIRO", "source_line": 426}
+{"id": 410, "symbol": "TXT_MAP_C19", "expr": "410", "comment": " KHARTOUM", "source_line": 427}
+{"id": 411, "symbol": "TXT_MAP_C20", "expr": "411", "comment": " N'DJAMENA", "source_line": 428}
+{"id": 412, "symbol": "TXT_MAP_C21", "expr": "412", "comment": " NOUAKCHOTT", "source_line": 429}
+{"id": 413, "symbol": "TXT_MAP_C22", "expr": "413", "comment": " YAMOUSSOUKRO", "source_line": 430}
+{"id": 414, "symbol": "TXT_MAP_C23", "expr": "414", "comment": " PORTO-NOVO", "source_line": 431}
+{"id": 415, "symbol": "TXT_MAP_C24", "expr": "415", "comment": " ABUJA", "source_line": 432}
+{"id": 416, "symbol": "TXT_MAP_C25", "expr": "416", "comment": " LIBREVILLE", "source_line": 433}
+{"id": 417, "symbol": "TXT_MAP_C26", "expr": "417", "comment": " YAOUNDE", "source_line": 434}
+{"id": 418, "symbol": "TXT_MAP_C27", "expr": "418", "comment": " BANGUI", "source_line": 435}
+{"id": 419, "symbol": "TXT_MAP_C28", "expr": "419", "comment": " KINSHASA", "source_line": 436}
+{"id": 420, "symbol": "TXT_MAP_C29", "expr": "420", "comment": " CAIRO", "source_line": 437}
+{"id": 421, "symbol": "TXT_MAP_C30", "expr": "421", "comment": " LUANDA", "source_line": 438}
+{"id": 422, "symbol": "TXT_MAP_C31", "expr": "422", "comment": " DAR-ES-SALAAM", "source_line": 439}
+{"id": 423, "symbol": "TXT_MAP_C32", "expr": "423", "comment": " WINDHOEK", "source_line": 440}
+{"id": 424, "symbol": "TXT_MAP_C33", "expr": "424", "comment": " MAPUTO", "source_line": 441}
+{"id": 425, "symbol": "TXT_MAP_C34", "expr": "425", "comment": " GABARONE", "source_line": 442}
+{"id": 426, "symbol": "TXT_MAP_C35", "expr": "426", "comment": " CAPE TOWN", "source_line": 443}
+{"id": 427, "symbol": "TXT_MAP_GDP00", "expr": "427", "comment": " NEGLIGIBLE", "source_line": 444}
+{"id": 428, "symbol": "TXT_MAP_GDP01", "expr": "428", "comment": " $162.7 BLN", "source_line": 445}
+{"id": 429, "symbol": "TXT_MAP_GDP02", "expr": "429", "comment": " $47.6 BLN", "source_line": 446}
+{"id": 430, "symbol": "TXT_MAP_GDP03", "expr": "430", "comment": " $1,131 BLN", "source_line": 447}
+{"id": 431, "symbol": "TXT_MAP_GDP04", "expr": "431", "comment": " $120 BLN", "source_line": 448}
+{"id": 432, "symbol": "TXT_MAP_GDP05", "expr": "432", "comment": " $164 BLN", "source_line": 449}
+{"id": 433, "symbol": "TXT_MAP_GDP06", "expr": "433", "comment": " $60.1 BLN", "source_line": 450}
+{"id": 434, "symbol": "TXT_MAP_GDP07", "expr": "434", "comment": " $21 BLN", "source_line": 451}
+{"id": 435, "symbol": "TXT_MAP_GDP08", "expr": "435", "comment": " $71.9 BLN", "source_line": 452}
+{"id": 436, "symbol": "TXT_MAP_GDP09", "expr": "436", "comment": " $77 BLN", "source_line": 453}
+{"id": 437, "symbol": "TXT_MAP_GDP10", "expr": "437", "comment": " $4.0 BLN", "source_line": 454}
+{"id": 438, "symbol": "TXT_MAP_GDP11", "expr": "438", "comment": " $47.3 BLN", "source_line": 455}
+{"id": 439, "symbol": "TXT_MAP_GDP12", "expr": "439", "comment": " $120.1 BLN", "source_line": 456}
+{"id": 440, "symbol": "TXT_MAP_GDP13", "expr": "440", "comment": " $14.0 BLN", "source_line": 457}
+{"id": 441, "symbol": "TXT_MAP_GDP14", "expr": "441", "comment": " $28.9 BLN", "source_line": 458}
+{"id": 442, "symbol": "TXT_MAP_GDP15", "expr": "442", "comment": " $39.2 BLN", "source_line": 459}
+{"id": 443, "symbol": "TXT_MAP_GDP16", "expr": "443", "comment": " $12.1 BLN", "source_line": 460}
+{"id": 444, "symbol": "TXT_MAP_GDP17", "expr": "444", "comment": " $1.0 BLN", "source_line": 461}
+{"id": 445, "symbol": "TXT_MAP_GDP18", "expr": "445", "comment": " $10.0 BLN", "source_line": 462}
+{"id": 446, "symbol": "TXT_MAP_GDP19", "expr": "446", "comment": " $1.7 BLN", "source_line": 463}
+{"id": 447, "symbol": "TXT_MAP_GDP20", "expr": "447", "comment": " $28.0 BLN", "source_line": 464}
+{"id": 448, "symbol": "TXT_MAP_GDP21", "expr": "448", "comment": " $5.3 BLN", "source_line": 465}
+{"id": 449, "symbol": "TXT_MAP_GDP22", "expr": "449", "comment": " $11.6 BLN", "source_line": 466}
+{"id": 450, "symbol": "TXT_MAP_GDP23", "expr": "450", "comment": " $1.3 BLN", "source_line": 467}
+{"id": 451, "symbol": "TXT_MAP_GDP24", "expr": "451", "comment": " $6.6 BLN", "source_line": 468}
+{"id": 452, "symbol": "TXT_MAP_GDP25", "expr": "452", "comment": " $8.3 BLN", "source_line": 469}
+{"id": 453, "symbol": "TXT_MAP_GDP26", "expr": "453", "comment": " $6.9 BLN", "source_line": 470}
+{"id": 454, "symbol": "TXT_MAP_GDP27", "expr": "454", "comment": " $2.0 BLN", "source_line": 471}
+{"id": 455, "symbol": "TXT_MAP_GDP28", "expr": "455", "comment": " $3.1 BLN", "source_line": 472}
+{"id": 456, "symbol": "TXT_MAP_GDP29", "expr": "456", "comment": " $104.0 BLN", "source_line": 473}
+{"id": 457, "symbol": "TXT_MAP_PC00", "expr": "457", "comment": " JELGAVA", "source_line": 474}
+{"id": 458, "symbol": "TXT_MAP_PC01", "expr": "458", "comment": " GDANSK", "source_line": 475}
+{"id": 459, "symbol": "TXT_MAP_PC02", "expr": "459", "comment": " BYELISTOK", "source_line": 476}
+{"id": 460, "symbol": "TXT_MAP_PC03", "expr": "460", "comment": " BOBYRUSK", "source_line": 477}
+{"id": 461, "symbol": "TXT_MAP_PC04", "expr": "461", "comment": " IVANO-FRANKOVSK", "source_line": 478}
+{"id": 462, "symbol": "TXT_MAP_PC05", "expr": "462", "comment": " HANOVER", "source_line": 479}
+{"id": 463, "symbol": "TXT_MAP_PC06", "expr": "463", "comment": " DRESDEN", "source_line": 480}
+{"id": 464, "symbol": "TXT_MAP_PC07", "expr": "464", "comment": " OSTRAVA", "source_line": 481}
+{"id": 465, "symbol": "TXT_MAP_PC08", "expr": "465", "comment": " BRATISLAVA", "source_line": 482}
+{"id": 466, "symbol": "TXT_MAP_PC09", "expr": "466", "comment": " SALZBURG", "source_line": 483}
+{"id": 467, "symbol": "TXT_MAP_PC10", "expr": "467", "comment": " BUDAPEST", "source_line": 484}
+{"id": 468, "symbol": "TXT_MAP_PC11", "expr": "468", "comment": " TRIESTE", "source_line": 485}
+{"id": 469, "symbol": "TXT_MAP_PC12", "expr": "469", "comment": " ARAD", "source_line": 486}
+{"id": 470, "symbol": "TXT_MAP_PC13", "expr": "470", "comment": " CORINTH", "source_line": 487}
+{"id": 471, "symbol": "TXT_MAP_PC14", "expr": "471", "comment": " SHKODER", "source_line": 488}
+{"id": 472, "symbol": "TXT_MAP_PC15", "expr": "472", "comment": " SOFIA", "source_line": 489}
+{"id": 473, "symbol": "TXT_MAP_PC16", "expr": "473", "comment": " NIS", "source_line": 490}
+{"id": 474, "symbol": "TXT_MAP_PC17", "expr": "474", "comment": " BELGRADE", "source_line": 491}
+{"id": 475, "symbol": "TXT_MAP_PC18", "expr": "475", "comment": " ?", "source_line": 492}
+{"id": 476, "symbol": "TXT_MAP_PC19", "expr": "476", "comment": " PARNU", "source_line": 493}
+{"id": 477, "symbol": "TXT_MAP_PC20", "expr": "477", "comment": " TMASSAH", "source_line": 494}
+{"id": 478, "symbol": "TXT_MAP_PC21", "expr": "478", "comment": " AL-ALAMYN", "source_line": 495}
+{"id": 479, "symbol": "TXT_MAP_PC22", "expr": "479", "comment": " AL-KHARIJAH", "source_line": 496}
+{"id": 480, "symbol": "TXT_MAP_PC23", "expr": "480", "comment": " AL-UBAYYID", "source_line": 497}
+{"id": 481, "symbol": "TXT_MAP_PC24", "expr": "481", "comment": " KAFIA-KINGI", "source_line": 498}
+{"id": 482, "symbol": "TXT_MAP_PC25", "expr": "482", "comment": " OUM HADJER", "source_line": 499}
+{"id": 483, "symbol": "TXT_MAP_PC26", "expr": "483", "comment": " MAO", "source_line": 500}
+{"id": 484, "symbol": "TXT_MAP_PC27", "expr": "484", "comment": " TIDJIKDJA", "source_line": 501}
+{"id": 485, "symbol": "TXT_MAP_PC28", "expr": "485", "comment": " ABIDJAN", "source_line": 502}
+{"id": 486, "symbol": "TXT_MAP_PC29", "expr": "486", "comment": " PORTO-NOVO", "source_line": 503}
+{"id": 487, "symbol": "TXT_MAP_PC30", "expr": "487", "comment": " ABUJA", "source_line": 504}
+{"id": 488, "symbol": "TXT_MAP_PC31", "expr": "488", "comment": " KOULA-MOUTOU", "source_line": 505}
+{"id": 489, "symbol": "TXT_MAP_PC32", "expr": "489", "comment": " BERTOUA", "source_line": 506}
+{"id": 490, "symbol": "TXT_MAP_PC33", "expr": "490", "comment": " BANGASSOU", "source_line": 507}
+{"id": 491, "symbol": "TXT_MAP_PC34", "expr": "491", "comment": " LODJA", "source_line": 508}
+{"id": 492, "symbol": "TXT_MAP_PC35", "expr": "492", "comment": " KINSHASA", "source_line": 509}
+{"id": 493, "symbol": "TXT_MAP_PC36", "expr": "493", "comment": " LUXOR", "source_line": 510}
+{"id": 494, "symbol": "TXT_MAP_PC37", "expr": "494", "comment": " CAIUNDO", "source_line": 511}
+{"id": 495, "symbol": "TXT_MAP_PC38", "expr": "495", "comment": " MZUZU", "source_line": 512}
+{"id": 496, "symbol": "TXT_MAP_PC39", "expr": "496", "comment": " KEETMANSHOOP", "source_line": 513}
+{"id": 497, "symbol": "TXT_MAP_PC40", "expr": "497", "comment": " XAI-XAI", "source_line": 514}
+{"id": 498, "symbol": "TXT_MAP_PC41", "expr": "498", "comment": " GHANZI", "source_line": 515}
+{"id": 499, "symbol": "TXT_MAP_PC42", "expr": "499", "comment": " CAPE TOWN", "source_line": 516}
+{"id": 500, "symbol": "TXT_MAP_GDI", "expr": "500", "comment": " GDI PROGRESSION", "source_line": 517}
+{"id": 501, "symbol": "TXT_MAP_NOD", "expr": "501", "comment": " NOD PROGRESSION", "source_line": 518}
+{"id": 502, "symbol": "TXT_MAP_LOCATE", "expr": "502", "comment": " LOCATING COORDINATES", "source_line": 519}
+{"id": 503, "symbol": "TXT_MAP_NEXT_MISSION", "expr": "503", "comment": " OF NEXT MISSION", "source_line": 520}
+{"id": 504, "symbol": "TXT_MAP_SELECT", "expr": "504", "comment": " SELECT TERRITORY", "source_line": 521}
+{"id": 505, "symbol": "TXT_MAP_TO_ATTACK", "expr": "505", "comment": " TO ATTACK", "source_line": 522}
+{"id": 506, "symbol": "TXT_MAP_GDISTAT0", "expr": "506", "comment": " POPULATION:", "source_line": 523}
+{"id": 507, "symbol": "TXT_MAP_GDISTAT1", "expr": "507", "comment": " GEOGRAPHIC AREA:", "source_line": 524}
+{"id": 508, "symbol": "TXT_MAP_GDISTAT2", "expr": "508", "comment": " CAPITAL:", "source_line": 525}
+{"id": 509, "symbol": "TXT_MAP_GDISTAT3", "expr": "509", "comment": " GOVERNMENT:", "source_line": 526}
+{"id": 510, "symbol": "TXT_MAP_GDISTAT4", "expr": "510", "comment": " GROSS DOMESTIC PRODUCT:", "source_line": 527}
+{"id": 511, "symbol": "TXT_MAP_GDISTAT5", "expr": "511", "comment": " POINT OF CONFLICT:", "source_line": 528}
+{"id": 512, "symbol": "TXT_MAP_GDISTAT6", "expr": "512", "comment": " MILITARY POWER:", "source_line": 529}
+{"id": 513, "symbol": "TXT_MAP_NODSTAT0", "expr": "513", "comment": " EXPENDABILITY:", "source_line": 530}
+{"id": 514, "symbol": "TXT_MAP_NODSTAT1", "expr": "514", "comment": " GOVT CORRUPTABILITY:", "source_line": 531}
+{"id": 515, "symbol": "TXT_MAP_NODSTAT2", "expr": "515", "comment": " NET WORTH:", "source_line": 532}
+{"id": 516, "symbol": "TXT_MAP_NODSTAT3", "expr": "516", "comment": " MILITARY STRENGTH:", "source_line": 533}
+{"id": 517, "symbol": "TXT_MAP_NODSTAT4", "expr": "517", "comment": " MILITARY RESISTANCE:", "source_line": 534}
+{"id": 518, "symbol": "TXT_MAP_COUNTRYNAME0", "expr": "518", "comment": " LATVIA", "source_line": 535}
+{"id": 519, "symbol": "TXT_MAP_COUNTRYNAME1", "expr": "519", "comment": " POLAND", "source_line": 536}
+{"id": 520, "symbol": "TXT_MAP_COUNTRYNAME2", "expr": "520", "comment": " BELARUS", "source_line": 537}
+{"id": 521, "symbol": "TXT_MAP_COUNTRYNAME3", "expr": "521", "comment": " UKRAINE", "source_line": 538}
+{"id": 522, "symbol": "TXT_MAP_COUNTRYNAME4", "expr": "522", "comment": " GERMANY", "source_line": 539}
+{"id": 523, "symbol": "TXT_MAP_COUNTRYNAME5", "expr": "523", "comment": " CZECH REPUBLIC", "source_line": 540}
+{"id": 524, "symbol": "TXT_MAP_COUNTRYNAME6", "expr": "524", "comment": " SLOVAKIA", "source_line": 541}
+{"id": 525, "symbol": "TXT_MAP_COUNTRYNAME7", "expr": "525", "comment": " AUSTRIA", "source_line": 542}
+{"id": 526, "symbol": "TXT_MAP_COUNTRYNAME8", "expr": "526", "comment": " HUNGARY", "source_line": 543}
+{"id": 527, "symbol": "TXT_MAP_COUNTRYNAME9", "expr": "527", "comment": " SLOVENIA", "source_line": 544}
+{"id": 528, "symbol": "TXT_MAP_COUNTRYNAME10", "expr": "528", "comment": " ROMANIA", "source_line": 545}
+{"id": 529, "symbol": "TXT_MAP_COUNTRYNAME11", "expr": "529", "comment": " GREECE", "source_line": 546}
+{"id": 530, "symbol": "TXT_MAP_COUNTRYNAME12", "expr": "530", "comment": " ALBANIA", "source_line": 547}
+{"id": 531, "symbol": "TXT_MAP_COUNTRYNAME13", "expr": "531", "comment": " BULGARIA", "source_line": 548}
+{"id": 532, "symbol": "TXT_MAP_COUNTRYNAME14", "expr": "532", "comment": " YUGOSLAVIA", "source_line": 549}
+{"id": 533, "symbol": "TXT_MAP_COUNTRYNAME15", "expr": "533", "comment": " BOSNIA/HERZOGOVINA", "source_line": 550}
+{"id": 534, "symbol": "TXT_MAP_COUNTRYNAME16", "expr": "534", "comment": " LIBYA", "source_line": 551}
+{"id": 535, "symbol": "TXT_MAP_COUNTRYNAME17", "expr": "535", "comment": " EGYPT", "source_line": 552}
+{"id": 536, "symbol": "TXT_MAP_COUNTRYNAME18", "expr": "536", "comment": " SUDAN", "source_line": 553}
+{"id": 537, "symbol": "TXT_MAP_COUNTRYNAME19", "expr": "537", "comment": " CHAD", "source_line": 554}
+{"id": 538, "symbol": "TXT_MAP_COUNTRYNAME20", "expr": "538", "comment": " MAURITANIA", "source_line": 555}
+{"id": 539, "symbol": "TXT_MAP_COUNTRYNAME21", "expr": "539", "comment": " IVORY COAST", "source_line": 556}
+{"id": 540, "symbol": "TXT_MAP_COUNTRYNAME22", "expr": "540", "comment": " BENIN", "source_line": 557}
+{"id": 541, "symbol": "TXT_MAP_COUNTRYNAME23", "expr": "541", "comment": " NIGERIA", "source_line": 558}
+{"id": 542, "symbol": "TXT_MAP_COUNTRYNAME24", "expr": "542", "comment": " GABON", "source_line": 559}
+{"id": 543, "symbol": "TXT_MAP_COUNTRYNAME25", "expr": "543", "comment": " CAMEROON", "source_line": 560}
+{"id": 544, "symbol": "TXT_MAP_COUNTRYNAME26", "expr": "544", "comment": " CENTRAL AFRICAN REPUBLIC", "source_line": 561}
+{"id": 545, "symbol": "TXT_MAP_COUNTRYNAME27", "expr": "545", "comment": " ZAIRE", "source_line": 562}
+{"id": 546, "symbol": "TXT_MAP_COUNTRYNAME28", "expr": "546", "comment": " ANGOLA", "source_line": 563}
+{"id": 547, "symbol": "TXT_MAP_COUNTRYNAME29", "expr": "547", "comment": " TANZANIA", "source_line": 564}
+{"id": 548, "symbol": "TXT_MAP_COUNTRYNAME30", "expr": "548", "comment": " NAMIBIA", "source_line": 565}
+{"id": 549, "symbol": "TXT_MAP_COUNTRYNAME31", "expr": "549", "comment": " MOZAMBIQUE", "source_line": 566}
+{"id": 550, "symbol": "TXT_MAP_COUNTRYNAME32", "expr": "550", "comment": " BOTSWANA", "source_line": 567}
+{"id": 551, "symbol": "TXT_MAP_COUNTRYNAME33", "expr": "551", "comment": " SOUTH AFRICA", "source_line": 568}
+{"id": 552, "symbol": "TXT_MAP_COUNTRYNAME34", "expr": "552", "comment": " ESTONIA", "source_line": 569}
+{"id": 553, "symbol": "TXT_MAP_GOVT0", "expr": "553", "comment": " REPUBLIC", "source_line": 570}
+{"id": 554, "symbol": "TXT_MAP_GOVT1", "expr": "554", "comment": " DEMOCRATIC STATE", "source_line": 571}
+{"id": 555, "symbol": "TXT_MAP_GOVT2", "expr": "555", "comment": " FEDERAL REPUBLIC", "source_line": 572}
+{"id": 556, "symbol": "TXT_MAP_GOVT3", "expr": "556", "comment": " CONST. REPUBLIC", "source_line": 573}
+{"id": 557, "symbol": "TXT_MAP_GOVT4", "expr": "557", "comment": " PARL. DEMOCRACY", "source_line": 574}
+{"id": 558, "symbol": "TXT_MAP_GOVT5", "expr": "558", "comment": " PRES. PARL. REPUBLIC", "source_line": 575}
+{"id": 559, "symbol": "TXT_MAP_GOVT6", "expr": "559", "comment": " DEMOCRACY", "source_line": 576}
+{"id": 560, "symbol": "TXT_MAP_GOVT7", "expr": "560", "comment": " IN TRANSITION", "source_line": 577}
+{"id": 561, "symbol": "TXT_MAP_GOVT8", "expr": "561", "comment": " ISLAMIC SOCIALIST", "source_line": 578}
+{"id": 562, "symbol": "TXT_MAP_GOVT9", "expr": "562", "comment": " MILITARY", "source_line": 579}
+{"id": 563, "symbol": "TXT_MAP_GOVT10", "expr": "563", "comment": " ISLAMIC REPUBLIC", "source_line": 580}
+{"id": 564, "symbol": "TXT_MAP_GOVT11", "expr": "564", "comment": " PARL. REPUBLIC", "source_line": 581}
+{"id": 565, "symbol": "TXT_MAP_ARMY0", "expr": "565", "comment": " LOCAL MILITIA", "source_line": 582}
+{"id": 566, "symbol": "TXT_MAP_ARMY1", "expr": "566", "comment": " STATE MILITIA", "source_line": 583}
+{"id": 567, "symbol": "TXT_MAP_ARMY2", "expr": "567", "comment": " NATIONAL GUARD", "source_line": 584}
+{"id": 568, "symbol": "TXT_MAP_ARMY3", "expr": "568", "comment": " FREE STANDING ARMY", "source_line": 585}
+{"id": 569, "symbol": "TXT_MAP_ARMY4", "expr": "569", "comment": " ?", "source_line": 586}
+{"id": 570, "symbol": "TXT_MAP_ARMY5", "expr": "570", "comment": " NATIONAL POWER", "source_line": 587}
+{"id": 571, "symbol": "TXT_MAP_MILITARY0", "expr": "571", "comment": " RESPECTABLE", "source_line": 588}
+{"id": 572, "symbol": "TXT_MAP_MILITARY1", "expr": "572", "comment": " FORMIDABLE", "source_line": 589}
+{"id": 573, "symbol": "TXT_MAP_MILITARY2", "expr": "573", "comment": " LAUGHABLE", "source_line": 590}
+{"id": 574, "symbol": "TXT_MAP_MILITARY3", "expr": "574", "comment": " REASONABLE", "source_line": 591}
+{"id": 575, "symbol": "TXT_MAP_MILITARY4", "expr": "575", "comment": " INSIGNIFICANT", "source_line": 592}
+{"id": 576, "symbol": "TXT_MAP_CLICK2", "expr": "576", "comment": " CLICK TO CONTINUE", "source_line": 593}
+{"id": 577, "symbol": "TXT_MAP_LMH0", "expr": "577", "comment": " LOW", "source_line": 594}
+{"id": 578, "symbol": "TXT_MAP_LMH1", "expr": "578", "comment": " MEDIUM", "source_line": 595}
+{"id": 579, "symbol": "TXT_MAP_LMH2", "expr": "579", "comment": " HIGH", "source_line": 596}
+{"id": 580, "symbol": "TXT_SCORE_TIME", "expr": "580", "comment": " TIME:", "source_line": 597}
+{"id": 581, "symbol": "TXT_SCORE_LEAD", "expr": "581", "comment": " LEADERSHIP:", "source_line": 598}
+{"id": 582, "symbol": "TXT_SCORE_EFFI", "expr": "582", "comment": " EFFICIENCY:", "source_line": 599}
+{"id": 583, "symbol": "TXT_SCORE_TOTA", "expr": "583", "comment": " TOTAL SCORE:", "source_line": 600}
+{"id": 584, "symbol": "TXT_SCORE_CASU", "expr": "584", "comment": " CASUALTIES:", "source_line": 601}
+{"id": 585, "symbol": "TXT_SCORE_NEUT", "expr": "585", "comment": " NEUTRAL:", "source_line": 602}
+{"id": 586, "symbol": "TXT_SCORE_GDI", "expr": "586", "comment": " GDI:", "source_line": 603}
+{"id": 587, "symbol": "TXT_SCORE_BUIL", "expr": "587", "comment": " BUILDINGS LOST", "source_line": 604}
+{"id": 588, "symbol": "TXT_SCORE_BUIL1", "expr": "588", "comment": " BUILDINGS", "source_line": 605}
+{"id": 589, "symbol": "TXT_SCORE_BUIL2", "expr": "589", "comment": " LOST:", "source_line": 606}
+{"id": 590, "symbol": "TXT_SCORE_TOP", "expr": "590", "comment": " TOP SCORES", "source_line": 607}
+{"id": 591, "symbol": "TXT_SCORE_ENDCRED", "expr": "591", "comment": " ENDING CREDITS:", "source_line": 608}
+{"id": 592, "symbol": "TXT_SCORE_TIMEFORMAT1", "expr": "592", "comment": " %dh %dm", "source_line": 609}
+{"id": 593, "symbol": "TXT_SCORE_TIMEFORMAT2", "expr": "593", "comment": " %dm", "source_line": 610}
+{"id": 594, "symbol": "TXT_SCORE_NOD", "expr": "594", "comment": " NOD:", "source_line": 611}
+{"id": 595, "symbol": "TXT_DIALING", "expr": "595", "comment": " Dialing...", "source_line": 612}
+{"id": 596, "symbol": "TXT_DIALING_CANCELED", "expr": "596", "comment": " Dialing Canceled", "source_line": 613}
+{"id": 597, "symbol": "TXT_WAITING_FOR_CALL", "expr": "597", "comment": " Waiting for Call...", "source_line": 614}
+{"id": 598, "symbol": "TXT_ANSWERING_CANCELED", "expr": "598", "comment": " Answering Canceled", "source_line": 615}
+{"id": 599, "symbol": "TXT_E7", "expr": "599", "comment": " Engineer", "source_line": 616}
+{"id": 600, "symbol": "TXT_SPECIAL_OPTIONS", "expr": "600", "comment": " Special Options", "source_line": 617}
+{"id": 601, "symbol": "TXT_VISIBLE_TARGET", "expr": "601", "comment": " Targeting flash visible to", "source_line": 618}
+{"id": 602, "symbol": "TXT_TREE_TARGET", "expr": "602", "comment": " Allow targeting of trees.", "source_line": 619}
+{"id": 603, "symbol": "TXT_MCV_DEPLOY", "expr": "603", "comment": " Allow undeploy of", "source_line": 620}
+{"id": 604, "symbol": "TXT_SMART_DEFENCE", "expr": "604", "comment": " Employ smarter self defense", "source_line": 621}
+{"id": 605, "symbol": "TXT_SLOW_BUILD", "expr": "605", "comment": " Moderate production speed.", "source_line": 622}
+{"id": 606, "symbol": "TXT_THREE_POINT", "expr": "606", "comment": " Use three point turn logic.", "source_line": 623}
+{"id": 607, "symbol": "TXT_TIBERIUM_GROWTH", "expr": "607", "comment": " Tiberium will grow.", "source_line": 624}
+{"id": 608, "symbol": "TXT_TIBERIUM_SPREAD", "expr": "608", "comment": " Tiberium will spread.", "source_line": 625}
+{"id": 609, "symbol": "TXT_ROAD_PIECES", "expr": "609", "comment": " Disable building \"bib\"", "source_line": 626}
+{"id": 610, "symbol": "TXT_SCATTER", "expr": "610", "comment": " Allow running from", "source_line": 627}
+{"id": 611, "symbol": "TXT_MODEM_OR_LOOPBACK", "expr": "611", "comment": " Not a Null Modem Cable", "source_line": 628}
+{"id": 612, "symbol": "TXT_MAP", "expr": "612", "comment": " Map", "source_line": 629}
+{"id": 613, "symbol": "TXT_FROM_COMPUTER", "expr": "613", "comment": " From Computer:", "source_line": 630}
+{"id": 614, "symbol": "TXT_COMP_MSG1", "expr": "614", "comment": " Prepare to die!", "source_line": 631}
+{"id": 615, "symbol": "TXT_COMP_MSG2", "expr": "615", "comment": " How about a bullet", "source_line": 632}
+{"id": 616, "symbol": "TXT_COMP_MSG3", "expr": "616", "comment": " Incoming!", "source_line": 633}
+{"id": 617, "symbol": "TXT_COMP_MSG4", "expr": "617", "comment": " I see you!", "source_line": 634}
+{"id": 618, "symbol": "TXT_COMP_MSG5", "expr": "618", "comment": " Hey, I'm over here!", "source_line": 635}
+{"id": 619, "symbol": "TXT_COMP_MSG6", "expr": "619", "comment": " Come get some!", "source_line": 636}
+{"id": 620, "symbol": "TXT_COMP_MSG7", "expr": "620", "comment": " I got you!", "source_line": 637}
+{"id": 621, "symbol": "TXT_COMP_MSG8", "expr": "621", "comment": " You humans are never a", "source_line": 638}
+{"id": 622, "symbol": "TXT_COMP_MSG9", "expr": "622", "comment": " Abort, Retry, Ignore? (Ha", "source_line": 639}
+{"id": 623, "symbol": "TXT_COMP_MSG10", "expr": "623", "comment": " Format another? (Just", "source_line": 640}
+{"id": 624, "symbol": "TXT_COMP_MSG11", "expr": "624", "comment": " Beat me and I'll reboot!", "source_line": 641}
+{"id": 625, "symbol": "TXT_COMP_MSG12", "expr": "625", "comment": " You're artificial", "source_line": 642}
+{"id": 626, "symbol": "TXT_COMP_MSG13", "expr": "626", "comment": " My AI is better than your", "source_line": 643}
+{"id": 627, "symbol": "TXT_THEME_AIRSTRIKE", "expr": "627", "comment": " Air Strike", "source_line": 644}
+{"id": 628, "symbol": "TXT_THEME_HEAVYG", "expr": "628", "comment": " Demolition", "source_line": 645}
+{"id": 629, "symbol": "TXT_THEME_J1", "expr": "629", "comment": " Untamed Land", "source_line": 646}
+{"id": 630, "symbol": "TXT_THEME_JDI_V2", "expr": "630", "comment": " Take 'em Out", "source_line": 647}
+{"id": 631, "symbol": "TXT_THEME_RADIO", "expr": "631", "comment": " Radio", "source_line": 648}
+{"id": 632, "symbol": "TXT_THEME_RAIN", "expr": "632", "comment": " Rain In The Night", "source_line": 649}
+{"id": 633, "symbol": "TXT_THEME_IND2", "expr": "633", "comment": " Canyon Chase", "source_line": 650}
+{"id": 634, "symbol": "TXT_THEME_HEART", "expr": "634", "comment": " Heartbreak", "source_line": 651}
+{"id": 635, "symbol": "TXT_BLOSSOM_TREE", "expr": "635", "comment": " Blossom Tree", "source_line": 652}
+{"id": 636, "symbol": "TXT_RESTATE_MISSION", "expr": "636", "comment": " Restate", "source_line": 653}
+{"id": 637, "symbol": "TXT_COMPUTER", "expr": "637", "comment": " Computer", "source_line": 654}
+{"id": 638, "symbol": "TXT_COUNT", "expr": "638", "comment": " Unit Count:", "source_line": 655}
+{"id": 639, "symbol": "TXT_LEVEL", "expr": "639", "comment": " Tech Level:", "source_line": 656}
+{"id": 640, "symbol": "TXT_OPPONENT", "expr": "640", "comment": " Opponent", "source_line": 657}
+{"id": 641, "symbol": "TXT_KILLS_COLON", "expr": "641", "comment": " Kills:", "source_line": 658}
+{"id": 642, "symbol": "TXT_VIDEO", "expr": "642", "comment": " Video", "source_line": 659}
+{"id": 643, "symbol": "TXT_C10", "expr": "643", "comment": " Nikoomba", "source_line": 660}
+{"id": 644, "symbol": "TXT_CAPTURE_THE_FLAG", "expr": "644", "comment": " Capture The Flag", "source_line": 661}
+{"id": 645, "symbol": "TXT_THEME_VALK", "expr": "645", "comment": " Ride of the Valkyries", "source_line": 662}
+{"id": 646, "symbol": "TXT_OBJECTIVE", "expr": "646", "comment": " Mission Objective", "source_line": 663}
+{"id": 647, "symbol": "TXT_MISSION", "expr": "647", "comment": " Mission", "source_line": 664}
+{"id": 648, "symbol": "TXT_NO_SAVES", "expr": "648", "comment": " No saved games available.", "source_line": 665}
+{"id": 649, "symbol": "TXT_CIVILIAN_BUILDING", "expr": "649", "comment": " Civilian Building", "source_line": 666}
+{"id": 650, "symbol": "TXT_TECHNICIAN", "expr": "650", "comment": " Technician", "source_line": 667}
+{"id": 651, "symbol": "TXT_VISCEROID", "expr": "651", "comment": " Visceroid", "source_line": 668}
+{"id": 652, "symbol": "TXT_NO_SAVELOAD", "expr": "652", "comment": " Save game options are not", "source_line": 669}
+{"id": 653, "symbol": "TXT_DEFENDER_ADVANTAGE", "expr": "653", "comment": " Defender has the advantage.", "source_line": 670}
+{"id": 654, "symbol": "TXT_SHOW_NAMES", "expr": "654", "comment": " Show true object names.", "source_line": 671}
+{"id": 655, "symbol": "TXT_DELPHI", "expr": "655", "comment": " Agent Delphi", "source_line": 672}
+{"id": 656, "symbol": "TXT_TO_REPLAY", "expr": "656", "comment": " Would you like to replay", "source_line": 673}
+{"id": 657, "symbol": "TXT_RECONN_TO", "expr": "657", "comment": " Reconnecting to %s.", "source_line": 674}
+{"id": 658, "symbol": "TXT_PLEASE_WAIT", "expr": "658", "comment": " Please wait %02d seconds.", "source_line": 675}
+{"id": 659, "symbol": "TXT_SURRENDER", "expr": "659", "comment": " Do you wish to surrender?", "source_line": 676}
+{"id": 660, "symbol": "TXT_GDI_NAME", "expr": "660", "comment": " GLOBAL DEFENSE INITIATIVE", "source_line": 677}
+{"id": 661, "symbol": "TXT_NOD_NAME", "expr": "661", "comment": " BROTHERHOOD OF NOD", "source_line": 678}
+{"id": 662, "symbol": "TXT_SEL_TRANS", "expr": "662", "comment": " SELECT TRANSMISSION", "source_line": 679}
+{"id": 663, "symbol": "TXT_GAMENAME_MUSTBE_UNIQUE", "expr": "663", "comment": " Your game name must be", "source_line": 680}
+{"id": 664, "symbol": "TXT_GAME_IS_CLOSED", "expr": "664", "comment": " Game is closed.", "source_line": 681}
+{"id": 665, "symbol": "TXT_NAME_MUSTBE_UNIQUE", "expr": "665", "comment": " Your name must be unique.", "source_line": 682}
+{"id": 666, "symbol": "TXT_RECONNECTING_TO", "expr": "666", "comment": " Reconnecting to %s", "source_line": 683}
+{"id": 667, "symbol": "TXT_WAITING_FOR_CONNECTIONS", "expr": "667", "comment": " Waiting for connections...", "source_line": 684}
+{"id": 668, "symbol": "TXT_TIME_ALLOWED", "expr": "668", "comment": " Time allowed: %02d seconds", "source_line": 685}
+{"id": 669, "symbol": "TXT_PRESS_ESC", "expr": "669", "comment": " Press ESC to cancel.", "source_line": 686}
+{"id": 670, "symbol": "TXT_JUST_YOU_AND_ME", "expr": "670", "comment": " From Computer: It's just", "source_line": 687}
+{"id": 671, "symbol": "TXT_CAPTURE_THE_FLAG_COLON", "expr": "671", "comment": " Capture the Flag:", "source_line": 688}
+{"id": 672, "symbol": "TXT_CHAN", "expr": "672", "comment": " Dr. Chan", "source_line": 689}
+{"id": 673, "symbol": "TXT_HAS_ALLIED", "expr": "673", "comment": " %s has allied with %s", "source_line": 690}
+{"id": 674, "symbol": "TXT_AT_WAR", "expr": "674", "comment": " %s declares war on %s", "source_line": 691}
+{"id": 675, "symbol": "TXT_SEL_TARGET", "expr": "675", "comment": " Select a target", "source_line": 692}
+{"id": 676, "symbol": "TXT_SEPARATE_HELIPAD", "expr": "676", "comment": " Allow separate helipad", "source_line": 693}
+{"id": 677, "symbol": "TXT_RESIGN", "expr": "677", "comment": " Resign Game", "source_line": 694}
+{"id": 678, "symbol": "TXT_TIBERIUM_FAST", "expr": "678", "comment": " Tiberium grows quickly.", "source_line": 695}
+{"id": 679, "symbol": "TXT_ANSWERING", "expr": "679", "comment": " Answering...", "source_line": 696}
+{"id": 680, "symbol": "TXT_INITIALIZING_MODEM", "expr": "680", "comment": " Initializing Modem...", "source_line": 697}
+{"id": 681, "symbol": "TXT_SCENARIOS_DO_NOT_MATCH", "expr": "681", "comment": " Scenarios don't match.", "source_line": 698}
+{"id": 682, "symbol": "TXT_POWER_OUTPUT", "expr": "682", "comment": " Power Output", "source_line": 699}
+{"id": 683, "symbol": "TXT_POWER_OUTPUT_LOW", "expr": "683", "comment": " Power Output (low)", "source_line": 700}
+{"id": 684, "symbol": "TXT_CONTINUE", "expr": "684", "comment": " Continue", "source_line": 701}
+{"id": 685, "symbol": "TXT_QUEUE_FULL", "expr": "685", "comment": " Data Queue Overflow", "source_line": 702}
+{"id": 686, "symbol": "TXT_SPECIAL_WARNING", "expr": "686", "comment": " %s changed game options!", "source_line": 703}
+{"id": 687, "symbol": "TXT_CD_DIALOG_1", "expr": "687", "comment": " Please insert a Command &", "source_line": 704}
+{"id": 688, "symbol": "TXT_CD_DIALOG_2", "expr": "688", "comment": " Please insert CD %d (%s)", "source_line": 705}
+{"id": 689, "symbol": "TXT_CD_ERROR1", "expr": "689", "comment": " Command & Conquer is unable", "source_line": 706}
+{"id": 690, "symbol": "TXT_NO_SOUND_CARD", "expr": "690", "comment": " No Sound Card Detected", "source_line": 707}
+{"id": 691, "symbol": "TXT_UNKNOWN", "expr": "691", "comment": " UNKNOWN", "source_line": 708}
+{"id": 692, "symbol": "TXT_OLD_GAME", "expr": "692", "comment": " (old)", "source_line": 709}
+{"id": 693, "symbol": "TXT_NO_SPACE", "expr": "693", "comment": " Insufficient Disk Space to", "source_line": 710}
+{"id": 694, "symbol": "TXT_MUST_HAVE_SPACE", "expr": "694", "comment": " You must have %d megabytes", "source_line": 711}
+{"id": 695, "symbol": "TXT_RUN_SETUP", "expr": "695", "comment": " Run SETUP program first.", "source_line": 712}
+{"id": 696, "symbol": "TXT_WAITING_FOR_OPPONENT", "expr": "696", "comment": " Waiting for Opponent", "source_line": 713}
+{"id": 697, "symbol": "TXT_SELECT_SETTINGS", "expr": "697", "comment": " Please select 'Settings' to", "source_line": 714}
+{"id": 698, "symbol": "TXT_PRISON", "expr": "698", "comment": " Prison", "source_line": 715}
+{"id": 699, "symbol": "TXT_GAME_WAS_SAVED", "expr": "699", "comment": " Game Saved", "source_line": 716}
+{"id": 700, "symbol": "TXT_SPACE_CANT_SAVE", "expr": "700", "comment": " Insufficient disk space to", "source_line": 717}
+{"id": 701, "symbol": "TXT_INVALID_PORT_ADDRESS", "expr": "701", "comment": " Invalid Port/Address. COM", "source_line": 718}
+{"id": 702, "symbol": "TXT_INVALID_SETTINGS", "expr": "702", "comment": " Invalid Port and/or IRQ", "source_line": 719}
+{"id": 703, "symbol": "TXT_IRQ_ALREADY_IN_USE", "expr": "703", "comment": " IRQ already in use", "source_line": 720}
+{"id": 704, "symbol": "TXT_ABORT", "expr": "704", "comment": " Abort", "source_line": 721}
+{"id": 705, "symbol": "TXT_RESTART", "expr": "705", "comment": " Restart", "source_line": 722}
+{"id": 706, "symbol": "TXT_RESTARTING", "expr": "706", "comment": " Mission is", "source_line": 723}
+{"id": 707, "symbol": "TXT_LOADING", "expr": "707", "comment": " Mission is loading. Please", "source_line": 724}
+{"id": 708, "symbol": "TXT_ERROR_IN_INITSTRING", "expr": "708", "comment": " Error in the InitString", "source_line": 725}
+{"id": 709, "symbol": "TXT_ORDER_INFO", "expr": "709", "comment": " Order Info", "source_line": 726}
+{"id": 710, "symbol": "TXT_SCENES", "expr": "710", "comment": " Scenes", "source_line": 727}
+{"id": 711, "symbol": "TXT_NEW_MISSIONS", "expr": "711", "comment": " New Missions", "source_line": 728}
+{"id": 712, "symbol": "TXT_THEME_CHRG", "expr": "712", "comment": " Depth Charge", "source_line": 729}
+{"id": 713, "symbol": "TXT_THEME_DRON", "expr": "713", "comment": " Drone", "source_line": 730}
+{"id": 714, "symbol": "TXT_THEME_FIST", "expr": "714", "comment": " Iron Fist", "source_line": 731}
+{"id": 715, "symbol": "TXT_THEME_CREP", "expr": "715", "comment": " Creeping Upon", "source_line": 732}
+{"id": 716, "symbol": "TXT_THEME_80MX", "expr": "716", "comment": " C&C 80's Mix", "source_line": 733}
+{"id": 717, "symbol": "TXT_THEME_DRIL", "expr": "717", "comment": " Drill", "source_line": 734}
+{"id": 718, "symbol": "TXT_CD_DIALOG_3", "expr": "718", "comment": " Please insert the Covert", "source_line": 735}
+{"id": 719, "symbol": "TXT_THEME_RECON", "expr": "719", "comment": " Recon", "source_line": 736}
+{"id": 720, "symbol": "TXT_THEME_VOICE", "expr": "720", "comment": " Voice Rhythm", "source_line": 737}
+{"id": 721, "symbol": "TXT_ERROR_NO_INIT", "expr": "721", "comment": " Error - modem did not", "source_line": 738}
+{"id": 722, "symbol": "TXT_NO_FLOW_CONTROL_RESPONSE", "expr": "722", "comment": " Error - Modem failed to", "source_line": 739}
+{"id": 723, "symbol": "TXT_NO_COMPRESSION_RESPONSE", "expr": "723", "comment": " Error - Modem failed to", "source_line": 740}
+{"id": 724, "symbol": "TXT_NO_ERROR_CORRECTION_RESPONSE", "expr": "724", "comment": " Error - Modem failed to", "source_line": 741}
+{"id": 725, "symbol": "TXT_ERROR_NO_DISABLE", "expr": "725", "comment": " Error - unable to disable", "source_line": 742}
+{"id": 726, "symbol": "TXT_ERROR_TOO_MANY", "expr": "726", "comment": " Error - Too many errors", "source_line": 743}
+{"id": 727, "symbol": "TXT_IGNORE", "expr": "727", "comment": " Ignore", "source_line": 744}
+{"id": 728, "symbol": "TXT_CONNECTING", "expr": "728", "comment": " Connecting... Please Wait.", "source_line": 745}
+{"id": 729, "symbol": "TXT_EXPLAIN_REGISTRATION", "expr": "729", "comment": " To play Command & Conquer", "source_line": 746}
+{"id": 730, "symbol": "TXT_REGISTER", "expr": "730", "comment": " Register", "source_line": 747}
+{"id": 731, "symbol": "TXT_ERROR_UNABLE_TO_RUN_WCHAT", "expr": "731", "comment": " Wchat not installed. Please", "source_line": 748}
+{"id": 732, "symbol": "TXT_INTERNET", "expr": "732", "comment": " Internet Game", "source_line": 749}
+{"id": 733, "symbol": "TXT_UNABLE_TO_SET_VIDEO_MODE", "expr": "733", "comment": " Error - Unable to set the", "source_line": 750}
+{"id": 734, "symbol": "TXT_UNABLE_TO_ALLOCATE_PRIMARY_VIDEO_BUFFER", "expr": "734", "comment": " Error - Unable to allocate", "source_line": 751}
+{"id": 735, "symbol": "TXT_NO_DIAL_TONE", "expr": "735", "comment": " No dial tone. Ensure your", "source_line": 752}
+{"id": 736, "symbol": "TXT_MODEM_INITIALISATION", "expr": "736", "comment": " Modem Initialization", "source_line": 753}
+{"id": 737, "symbol": "TXT_DATA_COMPRESSION", "expr": "737", "comment": " Data Compression", "source_line": 754}
+{"id": 738, "symbol": "TXT_ERROR_CORRECTION", "expr": "738", "comment": " Error Correction", "source_line": 755}
+{"id": 739, "symbol": "TXT_HARDWARE_FLOW_CONTROL", "expr": "739", "comment": " Hardware Flow Control", "source_line": 756}
+{"id": 740, "symbol": "TXT_ADVANCED", "expr": "740", "comment": " Advanced", "source_line": 757}
+{"id": 741, "symbol": "TXT_JUST_INTRO", "expr": "741", "comment": " Intro", "source_line": 758}
+{"id": 742, "symbol": "TXT_READING_IMAGE_DATA", "expr": "742", "comment": " READING IMAGE DATA", "source_line": 759}
+{"id": 743, "symbol": "TXT_ANALYZING", "expr": "743", "comment": " ANALYZING", "source_line": 760}
+{"id": 744, "symbol": "TXT_ENHANCING_IMAGE_DATA", "expr": "744", "comment": " ENHANCING IMAGE DATA", "source_line": 761}
+{"id": 745, "symbol": "TXT_ISOLATING_OPERATIONAL_THEATER", "expr": "745", "comment": " ISOLATING OPERATIONAL", "source_line": 762}
+{"id": 746, "symbol": "TXT_ESTABLISHING_TRADITIONAL_BOUNDARIES", "expr": "746", "comment": " ESTABLISHING TRADITIONAL", "source_line": 763}
+{"id": 747, "symbol": "TXT_FOR_VISUAL_REFERENCE", "expr": "747", "comment": " FOR VISUAL REFERENCE", "source_line": 764}
+{"id": 748, "symbol": "TXT_ENHANCING_IMAGE", "expr": "748", "comment": " ENHANCING IMAGE", "source_line": 765}
+{"id": 749, "symbol": "TXT_BONUS_MISSIONS", "expr": "749", "comment": " Bonus Missions", "source_line": 766}
+{"id": 750, "symbol": "TXT_BONUS_MISSION_1", "expr": "750", "comment": " Bonus Mission 1", "source_line": 767}
+{"id": 751, "symbol": "TXT_BONUS_MISSION_2", "expr": "751", "comment": " Bonus Mission 2", "source_line": 768}
+{"id": 752, "symbol": "TXT_BONUS_MISSION_3", "expr": "752", "comment": " Bonus Mission 3", "source_line": 769}
+{"id": 753, "symbol": "TXT_BONUS_MISSION_4", "expr": "753", "comment": " Bonus Mission 4", "source_line": 770}
+{"id": 754, "symbol": "TXT_BONUS_MISSION_5", "expr": "754", "comment": " Bonus Mission 5", "source_line": 771}
+{"id": 755, "symbol": "TXT_LOW_POWER", "expr": "755", "comment": "", "source_line": 772}
+{"id": 756, "symbol": "TXT_INSUFFICIENT_FUNDS", "expr": "756", "comment": "", "source_line": 773}

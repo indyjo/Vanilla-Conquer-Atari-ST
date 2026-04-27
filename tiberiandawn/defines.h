@@ -59,7 +59,9 @@
 **  Define this to allow play of the bonus missions for the Gateway
 **  bundle deal.
 */
+#ifndef ATARI_ST
 //#define BONUS_MISSIONS
+#endif
 
 /**********************************************************************
 ** Handle expansion scnearios as a set of single missions with all

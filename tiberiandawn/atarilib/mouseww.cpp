@@ -56,7 +56,8 @@ static void ST_Copy_Bytes_2D(const uint8_t *src, uint8_t *dst, int row_bytes, in
 static void ST_Blit_Plane_Skew(
 	const uint8_t *src_base, uint8_t *dst_base,
 	int src_row_bytes, int dst_row_bytes,
-	int dst_words, int lines, int plane_idx, unsigned skew_bits, unsigned char op)
+	int dst_words, int lines, int plane_idx, unsigned skew_bits, unsigned char op,
+	unsigned short endmask1, unsigned short endmask2, unsigned short endmask3)
 {
 	if (!src_base || !dst_base || dst_words <= 0 || lines <= 0 || plane_idx < 0 || plane_idx > 3)
 		return;
@@ -72,9 +73,9 @@ static void ST_Blit_Plane_Skew(
 		*ST_BLT_REG(0xFFFF8A24UL) = (unsigned short)(sa >> 16);
 		*ST_BLT_REG(0xFFFF8A26UL) = (unsigned short)(sa & 0xFFFFu);
 	}
-	*ST_BLT_REG(0xFFFF8A28UL) = 0xFFFF;
-	*ST_BLT_REG(0xFFFF8A2AUL) = 0xFFFF;
-	*ST_BLT_REG(0xFFFF8A2CUL) = 0xFFFF;
+	*ST_BLT_REG(0xFFFF8A28UL) = endmask1;
+	*ST_BLT_REG(0xFFFF8A2AUL) = endmask2;
+	*ST_BLT_REG(0xFFFF8A2CUL) = endmask3;
 	*ST_BLT_REG(0xFFFF8A2EUL) = (unsigned short)dx;
 	*ST_BLT_REG(0xFFFF8A30UL) = (unsigned short)dst_y_inc;
 	{
@@ -98,10 +99,12 @@ static void ST_Blit_Plane_Skew(
 static void ST_Blit_Interleaved_Block_Skew(
 	const uint8_t *src, uint8_t *dst,
 	int src_row_bytes, int dst_row_bytes,
-	int dst_words, int lines, unsigned skew_bits, unsigned char op)
+	int dst_words, int lines, unsigned skew_bits, unsigned char op,
+	unsigned short endmask1, unsigned short endmask2, unsigned short endmask3)
 {
 	for (int pl = 0; pl < 4; pl++)
-		ST_Blit_Plane_Skew(src, dst, src_row_bytes, dst_row_bytes, dst_words, lines, pl, skew_bits, op);
+		ST_Blit_Plane_Skew(src, dst, src_row_bytes, dst_row_bytes, dst_words, lines, pl, skew_bits, op,
+			endmask1, endmask2, endmask3);
 }
 
 /***********************************************************************************************
@@ -233,6 +236,16 @@ void WWMouseClass::Clear_Cursor_Clip(void)
 void *WWMouseClass::Set_Cursor(int xhotspot, int yhotspot, void *cursor)
 {
 	void *old_cursor = PrevCursor;
+	const int was_visible = (State == 0 && Screen);
+	const int show_x = was_visible ? Get_Mouse_X() : 0;
+	const int show_y = was_visible ? Get_Mouse_Y() : 0;
+
+	MouseUpdate++;
+	if (was_visible && Screen->Lock()) {
+		Low_Hide_Mouse();
+		Screen->Unlock();
+	}
+
 	PrevCursor = (char *)cursor;
 	MouseXHot = xhotspot;
 	MouseYHot = yhotspot;
@@ -258,6 +271,11 @@ void *WWMouseClass::Set_Cursor(int xhotspot, int yhotspot, void *cursor)
 		CursorWidth = 0;
 		CursorHeight = 0;
 	}
+	if (was_visible && Screen->Lock()) {
+		Low_Show_Mouse(show_x, show_y);
+		Screen->Unlock();
+	}
+	MouseUpdate--;
 	return old_cursor;
 }
 
@@ -268,6 +286,16 @@ void *WWMouseClass::Set_Cursor(int xhotspot, int yhotspot, void *cursor)
  *=========================================================================*/
 void WWMouseClass::Set_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index)
 {
+	const int was_visible = (State == 0 && Screen);
+	const int show_x = was_visible ? Get_Mouse_X() : 0;
+	const int show_y = was_visible ? Get_Mouse_Y() : 0;
+
+	MouseUpdate++;
+	if (was_visible && Screen->Lock()) {
+		Low_Hide_Mouse();
+		Screen->Unlock();
+	}
+
 	MouseXHot = hotx;
 	MouseYHot = hoty;
 	PrevCursor = (char *)block;  /* non-null so Draw_Mouse runs */
@@ -276,6 +304,11 @@ void WWMouseClass::Set_Cursor_From_Block(int hotx, int hoty, void *block, int fr
 		CursorHeight = 0;
 		MouseBuffX = -1;
 		MouseBuffY = -1;
+		if (was_visible && Screen->Lock()) {
+			Low_Show_Mouse(show_x, show_y);
+			Screen->Unlock();
+		}
+		MouseUpdate--;
 		return;
 	}
 	CursorWidth = Get_TD_SHP_Width(block);
@@ -294,6 +327,11 @@ void WWMouseClass::Set_Cursor_From_Block(int hotx, int hoty, void *block, int fr
 	MouseBuffWords = 0;
 	MouseBuffH = 0;
 	Rebuild_Planar_Cursor_From_Decoded();
+	if (was_visible && Screen->Lock()) {
+		Low_Show_Mouse(show_x, show_y);
+		Screen->Unlock();
+	}
+	MouseUpdate--;
 }
 
 /***************************************************************************
@@ -878,6 +916,22 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 			EraseBuffY = -1;
 			return;
 		}
+		if (using_external_surface) {
+			const int word_left = clip_left & ~15;
+			const int word_right = (clip_right + 15) & ~15;
+			const int words = (word_right - word_left) >> 4;
+			const int row_bytes = words * 8;
+			uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
+				+ clip_top * ST_PLANAR_BYTES_PER_LINE
+				+ ((word_left >> 4) * 8);
+			ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, vis_h, ST_PLANAR_BYTES_PER_LINE, row_bytes);
+			MouseBuffX = x;
+			MouseBuffY = y;
+			MouseBuffLeft = word_left;
+			MouseBuffTop = clip_top;
+			MouseBuffWords = words;
+			MouseBuffH = vis_h;
+		}
 		Buffer_From_Page(clip_left, clip_top, vis_w, vis_h, EraseBuffer, scr);
 		const unsigned char *src = (const unsigned char *)MouseCursor + src_y * CursorWidth + src_x;
 		for (int row = 0; row < vis_h; row++) {
@@ -903,6 +957,28 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 	const int shift = left - word_left;
 	const int words = (shift + CursorWidth + 15) >> 4;
 	const unsigned skew_bits = (unsigned)(shift & 15);
+	if (using_external_surface) {
+		const int row_bytes = words * 8;
+		uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
+			+ top * ST_PLANAR_BYTES_PER_LINE
+			+ ((word_left >> 4) * 8);
+		ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, CursorHeight, ST_PLANAR_BYTES_PER_LINE, row_bytes);
+		MouseBuffX = x;
+		MouseBuffY = y;
+		MouseBuffLeft = word_left;
+		MouseBuffTop = top;
+		MouseBuffWords = words;
+		MouseBuffH = CursorHeight;
+	}
+	const int end = (left + CursorWidth - 1) & 15;
+	unsigned short endmask1 = (unsigned short)(0xFFFFu >> shift);
+	unsigned short endmask3 = (unsigned short)(0xFFFFu << (15 - end));
+	unsigned short endmask2 = 0xFFFFu;
+	if (words == 1) {
+		endmask1 = (unsigned short)(endmask1 & endmask3);
+		endmask2 = endmask1;
+		endmask3 = endmask1;
+	}
 	uint8_t *dst = (uint8_t *)gb->Get_Buffer()
 		+ top * ST_PLANAR_BYTES_PER_LINE
 		+ ((word_left >> 4) * 8);
@@ -914,7 +990,10 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		words,
 		CursorHeight,
 		skew_bits,
-		7 /* OP: D = D OR S */);
+		7 /* OP: D = D OR S */,
+		endmask1,
+		endmask2,
+		endmask3);
 }
 
 /***************************************************************************

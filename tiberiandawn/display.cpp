@@ -215,6 +215,11 @@ void DisplayClass::One_Time(void)
     TransIconset = MFCD::Retrieve("TRANS.ICN");
 
     ShadowShapes = MFCD::Retrieve("SHADOW.SHP");
+#ifdef ATARI_ST
+    if (!ST_Build_Shadow_Planar_Cache(ShadowShapes)) {
+        Fatal(STShadowPlanarCacheError);
+    }
+#endif
 
     Set_View_Dimensions(0, Map.Get_Tab_Height());
 
@@ -2553,6 +2558,9 @@ void DisplayClass::Redraw_Shadow(void)
                                     Cell_Shadow(cell, PlayerPtr); // Pass player pointer since we will only be rendering
                                                                   // in single player mode. ST - 3/6/2019 1:36PM
                                 if (shadow >= 0) {
+#ifdef ATARI_ST
+                                    if (!ST_Draw_Shadow_Mask_Slot((short)shadow, xpixel, ypixel))
+#endif
                                     CC_Draw_Shape(ShadowShapes,
                                                   shadow,
                                                   xpixel,
@@ -2617,6 +2625,11 @@ void DisplayClass::Redraw_Shadow_Rects(void)
                                 PlayerPtr)) { // Use PlayerPtr since we won't be rendering in MP. ST - 3/6/2019 2:49PM
                             if (!cellptr->Is_Visible(PlayerPtr)) { // Use PlayerPtr since we won't be rendering in MP.
                                                                    // ST - 3/6/2019 2:49PM
+#ifdef ATARI_ST
+                                if (ST_Draw_Shadow_Mask_Slot(ST_SHADOW_FULL_SLOT, xpixel, ypixel)) {
+                                    continue;
+                                }
+#endif
                                 int ww = CELL_PIXEL_W;
                                 int hh = CELL_PIXEL_H;
 

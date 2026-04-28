@@ -51,6 +51,27 @@ BOOL ST_Blitter_Planar_Rect_Blit(
 	int pixel_width,
 	int pixel_height);
 
+/**
+ * AND a 1bpp mask into all four planes of an ST planar destination.
+ * Mask bit 1 preserves the destination pixel; mask bit 0 clears it to black.
+ * The mask layout is one big-endian 16-pixel word every 2 bytes.
+ */
+BOOL ST_Blitter_Mask_And_Planar_Rect(
+	const uint8_t *mask_root,
+	int mask_row_bytes,
+	int mask_width_pixels,
+	int mask_height_pixels,
+	int sx,
+	int sy,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
+	int dx,
+	int dy,
+	int pixel_width,
+	int pixel_height);
+
 #ifdef __cplusplus
 }
 #endif

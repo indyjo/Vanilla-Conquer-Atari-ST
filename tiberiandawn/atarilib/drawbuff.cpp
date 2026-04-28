@@ -44,7 +44,7 @@ static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
 	if (p > 0L)
 		return (uint8_t *)p;
 #endif
-	return (uint8_t *)Alloc((unsigned long)bytes, MEM_NORMAL);
+	return NULL;
 }
 
 static BOOL Ensure_Terrain_Tile_Scratch(void)

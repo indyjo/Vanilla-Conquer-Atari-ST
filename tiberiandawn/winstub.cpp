@@ -549,6 +549,8 @@ long Buffer_Frame_To_Page_Ex(int x,
                                                               (const uint8_t*)raster_base,
                                                               src_x,
                                                               src_y,
+                                                              w,
+                                                              h,
                                                               ex->identity_key,
                                                               (unsigned long (*)(void*))lazy_miss_fn,
                                                               lazy_miss_ctx);

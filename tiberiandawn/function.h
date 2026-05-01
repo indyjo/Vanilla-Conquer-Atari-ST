@@ -517,6 +517,8 @@ void* Conquer_Build_Translucent_Table(void const* palette, TLucentType const* co
 /*
 **	Extras for Buffer_Frame_To_Page_Ex (same information the vararg Buffer_Frame_To_Page path
 **	packs from SHAPE_* flags). Pass NULL for ex when you only need a plain blit.
+**
+**	identity_key folds full-frame geometry in the planar LRU; viewport clip is not part of the key.
 */
 typedef unsigned long (*Bftp_Lazy_Frame_FillFn)(void* user_ctx);
 

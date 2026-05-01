@@ -17,9 +17,11 @@ extern "C" {
  *
  * Blits requiring a tier larger than 96 (sprite max side after 16-px width roundup) return 0.
  *
- * LRU keys mix identity_key, clip/subrect size, fade/ghost table fingerprint tokens — no framebuffer
- * or scratch-buffer addresses stored in cached keys (see internal BftpKey).
+ * LRU keys mix identity_key, full-frame size (+ stride), fade/ghost table fingerprint tokens —
+ * viewport clip (raster_ox/oy, blit_w/h) is not part of the key. One cache slot holds the entire
+ * decoded frame before clipping; each draw blits only the visible sub-rectangle.
  *
+ * full_w/full_h — unclipped frame width/height (same as logical stride rows / Buffer_Frame_To_Page w,h).
  * lazy_decode_miss: when non-NULL, invokes once on LRU cache miss — return must equal raster_base.
  */
 long ST_BFTP_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
@@ -35,6 +37,8 @@ long ST_BFTP_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
 	const uint8_t *raster_base,
 	int raster_ox,
 	int raster_oy,
+	int full_w,
+	int full_h,
 	long identity_key,
 	unsigned long (*lazy_decode_miss)(void *user_ctx),
 	void *lazy_decode_ctx);

@@ -42,9 +42,9 @@ struct BftpLazyGate {
 enum { BFTP_GHOST_SYNTH_BACKDROP_IX = 12 };
 
 struct BftpKey {
-	uint32_t src_key; /* geometry + logical identity (+ remap tokens folded in dispatch) */
-	uint16_t bw;
-	uint16_t bh;
+	uint32_t src_key; /* identity + full-frame w/h + stride (+ remap tokens folded in dispatch) */
+	uint16_t bw; /* full_w */
+	uint16_t bh; /* full_h */
 	uint8_t tier_idx;
 	uint8_t mode_pack; /* 0 plain, 1 fade, 2 ghost */
 	bool trans_flag;
@@ -119,12 +119,10 @@ extern "C" long ST_BFTP_Frame_Identity_Key(void const *blobs_root, int frame_ind
 }
 
 /*
- * Geometry + opaque identity_key — no buffer / scratch pointers.
+ * Full-frame geometry + opaque identity_key — no buffer pointers, no viewport clip/subrect.
  */
-static uint32_t bftp_lru_identity_hash(unsigned ox,
-	unsigned oy,
-	unsigned bw,
-	unsigned bh,
+static uint32_t bftp_lru_identity_hash(unsigned full_w,
+	unsigned full_h,
 	unsigned row_stride_px,
 	long identity_key)
 {
@@ -142,13 +140,9 @@ static uint32_t bftp_lru_identity_hash(unsigned ox,
 #endif
 	}
 
-	h ^= (uint32_t)ox;
+	h ^= (uint32_t)full_w;
 	h *= 16777619u;
-	h ^= (uint32_t)oy;
-	h *= 16777619u;
-	h ^= (uint32_t)bw;
-	h *= 16777619u;
-	h ^= (uint32_t)bh;
+	h ^= (uint32_t)full_h;
 	h *= 16777619u;
 	h ^= (uint32_t)row_stride_px;
 	return h;
@@ -298,6 +292,8 @@ static BOOL bftp_do_blitter(
 	const uint8_t *maskbm,
 	int mask_rowb,
 	int tier_dim,
+	int sx_abs,
+	int sy_abs,
 	int blit_w,
 	int blit_h)
 {
@@ -307,8 +303,8 @@ static BOOL bftp_do_blitter(
 			mask_rowb,
 			tier_dim,
 			tier_dim,
-			0,
-			0,
+			sx_abs,
+			sy_abs,
 			dst_root_fb,
 			ST_PLANAR_BYTES_PER_LINE,
 			ST_PLANAR_WIDTH,
@@ -322,8 +318,8 @@ static BOOL bftp_do_blitter(
 				planar_rowb,
 				tier_dim,
 				tier_dim,
-				0,
-				0,
+				sx_abs,
+				sy_abs,
 				dst_root_fb,
 				ST_PLANAR_BYTES_PER_LINE,
 				ST_PLANAR_WIDTH,
@@ -331,7 +327,7 @@ static BOOL bftp_do_blitter(
 				dx_abs,
 				dy_abs,
 				blit_w,
-				blit_h))
+			blit_h))
 			return FALSE;
 		return TRUE;
 	}
@@ -339,8 +335,8 @@ static BOOL bftp_do_blitter(
 		   planar_rowb,
 		   tier_dim,
 		   tier_dim,
-		   0,
-		   0,
+		   sx_abs,
+		   sy_abs,
 		   dst_root_fb,
 		   ST_PLANAR_BYTES_PER_LINE,
 		   ST_PLANAR_WIDTH,
@@ -442,17 +438,18 @@ static BOOL bftp_fill_slot_pixels(
 static long bftp_cached_tile_dispatch(uint8_t *dst_root_fb,
 	int ax0,
 	int ay0,
-	const uint8_t *src,
-	int bw,
-	int bh,
-	int stride,
+	int clip_w,
+	int clip_h,
+	int src_stride,
+	int full_w,
+	int full_h,
 	int trans,
 	const uint8_t *ghost_tab,
 	const uint8_t *fade_tab,
 	int tier_dim,
 	const uint8_t *raster_base,
-	int raster_ox,
-	int raster_oy,
+	int clip_ox,
+	int clip_oy,
 	long identity_key,
 	BftpLazyGate *lazy_gate)
 {
@@ -469,10 +466,10 @@ static long bftp_cached_tile_dispatch(uint8_t *dst_root_fb,
 		mode_pack = 0;
 
 	BftpKey want;
-	want.src_key = bftp_lru_identity_hash(
-	    (unsigned)raster_ox, (unsigned)raster_oy, (unsigned)bw, (unsigned)bh, (unsigned)stride, identity_key);
-	want.bw = (uint16_t)bw;
-	want.bh = (uint16_t)bh;
+	want.src_key = bftp_lru_identity_hash((unsigned)full_w, (unsigned)full_h,
+	    (unsigned)src_stride, identity_key);
+	want.bw = (uint16_t)full_w;
+	want.bh = (uint16_t)full_h;
 	want.tier_idx =
 	    (uint8_t)((tier_dim == BFTP_D32) ? 0 : (tier_dim == BFTP_D64) ? 1 : 2);
 	want.mode_pack = mode_pack;
@@ -498,10 +495,10 @@ static long bftp_cached_tile_dispatch(uint8_t *dst_root_fb,
 			    tr,
 			    slot,
 			    dst_root_fb,
-			    src,
-			    bw,
-			    bh,
-			    stride,
+			    raster_base,
+			    full_w,
+			    full_h,
+			    src_stride,
 			    ax0,
 			    ay0,
 			    trans,
@@ -525,11 +522,13 @@ static long bftp_cached_tile_dispatch(uint8_t *dst_root_fb,
 		    maskbm,
 		    tr->mask_bpl,
 		    tier_dim,
-		    bw,
-		    bh))
+		    clip_ox,
+		    clip_oy,
+		    clip_w,
+		    clip_h))
 		return 0;
 
-	return (long)((size_t)bw * (size_t)bh);
+	return (long)((size_t)clip_w * (size_t)clip_h);
 }
 
 /*
@@ -539,36 +538,25 @@ static long bftp_cached_tile_dispatch(uint8_t *dst_root_fb,
  * single rectangle (no tiling of oversized draws here).
  *
  * What it actually does:
- *   1) Square LRU slot side = max(blit height, blit width rounded up to ST 16-px words); pick tier
- *      32/64/96. If still too small, returns 0.
- *   2) Otherwise calls bftp_cached_tile_dispatch, which: looks up an LRU cache entry for this
- *      sprite fragment (identity_key, size, fade/ghost, etc.); on miss fills the slot from src
- *      (optionally running lazy_decode_miss once to decode into raster_base); then runs the ST
- *      blitter from that slot to dst_root_fb at (ax0, ay0).
+ *   1) Square LRU slot side from full decoded frame max(full_w, round16(full_h)), pick tier 32/64/96.
+ *   2) Otherwise calls bftp_cached_tile_dispatch, which: looks up an LRU cache entry for the full
+ *      decoded frame (identity_key, full_w/full_h, stride, fade/ghost); on miss fills from raster_base
+ *      (optionally lazy_decode_miss once); then blits only the visible clip via blitter sx/sy.
  *
  * Return: blit_w*blit_h if the blitter path reports success, else 0 (skip, bad blit, etc.).
  *
- * Parameters (all describe this one rectangle in both source and destination spaces):
- *   dst_root_fb   — Physical ST screen buffer base.
- *   ax0, ay0      — Where the top-left of the blit lands on that screen (absolute pixel coords).
- *   src           — Top-left of this rectangle inside the decoded raster (see raster_base/ox/oy).
- *   blit_w, blit_h, src_stride — Chunky bitmap layout (row-major).
- *   trans         — If set, color 0 means transparent (skip pixel / use mask).
- *   ghost_tab,
- *   fade_tab      — Optional remapping for ghost and fade; affect cache key and scratch fill.
- *   raster_base,
- *   raster_ox, raster_oy — Full-frame base and offset so src points at the correct sub-rectangle;
- *                  used for LRU identity and lazy decode invariants.
- *   identity_key — Fingerprint of which logical frame/tile this is (avoids cache collisions).
- *   lazy_gate    — If set, first cache miss may call fill() once to populate the decode buffer.
+ * Parameters:
+ *   full_w/full_h — Decoded chunky frame extents at raster_base (stride src_stride ≥ full_w).
+ *   Visible region: raster_ox, raster_oy, blit_w, blit_h — clip only affects the blitter, not LRU key.
  */
 static long bftp_planar_composite_impl(uint8_t *dst_root_fb,
 	int ax0,
 	int ay0,
-	const uint8_t *src,
 	int blit_w,
 	int blit_h,
 	int src_stride,
+	int full_w,
+	int full_h,
 	int trans,
 	const uint8_t *ghost_tab,
 	const uint8_t *fade_tab,
@@ -578,7 +566,7 @@ static long bftp_planar_composite_impl(uint8_t *dst_root_fb,
 	long identity_key,
 	BftpLazyGate *lazy_gate)
 {
-	const int tier_need = bftp_tier_need_pixels(blit_w, blit_h);
+	const int tier_need = bftp_tier_need_pixels(full_w, full_h);
 	const int tier_dim = bftp_pick_tier_dim(tier_need);
 
 	if (!tier_dim) {
@@ -588,10 +576,11 @@ static long bftp_planar_composite_impl(uint8_t *dst_root_fb,
 	const long acc = bftp_cached_tile_dispatch(dst_root_fb,
 	    ax0,
 	    ay0,
-	    src,
 	    blit_w,
 	    blit_h,
 	    src_stride,
+	    full_w,
+	    full_h,
 	    trans,
 	    ghost_tab,
 	    fade_tab,
@@ -617,12 +606,20 @@ long ST_BFTP_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	const uint8_t *raster_base,
 	int raster_ox,
 	int raster_oy,
+	int full_w,
+	int full_h,
 	long identity_key,
 	unsigned long (*lazy_decode_miss)(void *user_ctx),
 	void *lazy_decode_ctx)
 {
 	bftp_maybe_init();
 	if (!dst_root_fb || blit_w <= 0 || blit_h <= 0 || src_stride <= 0 || !raster_base)
+		return 0;
+	if (full_w <= 0 || full_h <= 0 || full_w > src_stride)
+		return 0;
+	if (raster_ox < 0 || raster_oy < 0)
+		return 0;
+	if (raster_ox + blit_w > full_w || raster_oy + blit_h > full_h)
 		return 0;
 	if (!g_bf_slab)
 		return 0;
@@ -641,10 +638,11 @@ long ST_BFTP_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	return bftp_planar_composite_impl(dst_root_fb,
 	    ax0,
 	    ay0,
-	    src,
 	    blit_w,
 	    blit_h,
 	    src_stride,
+	    full_w,
+	    full_h,
 	    trans,
 	    ghost_tab,
 	    fade_tab,

@@ -13,7 +13,6 @@
 #include "st_bftp_sprite_cache.h"
 #include "memflag.h"
 #include <string.h>  // For memset
-#include <stdio.h>  // For printf
 #include <stdint.h>
 
 #if defined(__MINT__)
@@ -1221,7 +1220,6 @@ extern "C" VOID Buffer_Fill_Quad(void *thisptr, VOID *span_buff, int x0, int y0,
 /*=========================================================================*/
 extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int icon, int x_pixel, int y_pixel, void const *remap)
 {
-	(void)remap;
 	if (!thisptr || !icondata || icon < 0) {
 		return;
 	}
@@ -1236,7 +1234,6 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	void *decoded_ptr = NULL;
 	int w = 0;
 	int h = 0;
-	const char *decode_path = "none";
 	/*
 	 * Most shape draws treat index 0 as transparent, but terrain/iconset tiles use
 	 * full 8bpp data where 0 is a valid color. Start with transparent semantics and
@@ -1280,7 +1277,6 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 					decoded_ptr = _ShapeBuffer;
 					w = (int)iw;
 					h = (int)ih;
-					decode_path = "iconset";
 					use_shape_transparency = FALSE;
 				}
 			}
@@ -1300,7 +1296,6 @@ iconset_decode_done:
 			int td_decoded = Decode_TD_SHP_Frame(icondata, icon, _ShapeBuffer, (int)_ShapeBufferSize);
 			if (td_decoded > 0) {
 				decoded_ptr = _ShapeBuffer;
-				decode_path = "td_shp";
 			}
 		}
 	}
@@ -1317,7 +1312,6 @@ iconset_decode_done:
 				int decoded = Decode_Shape_To_Buffer(shape, _ShapeBuffer, (int)_ShapeBufferSize);
 				if (decoded > 0) {
 					decoded_ptr = _ShapeBuffer;
-					decode_path = "shape";
 				}
 			}
 		}
@@ -1330,7 +1324,6 @@ iconset_decode_done:
 			w = (int)Get_Build_Frame_Width(icondata);
 			h = (int)Get_Build_Frame_Height(icondata);
 			decoded_ptr = (void *)frame_ptr;
-			decode_path = "build_frame";
 		}
 	}
 
@@ -1344,17 +1337,14 @@ iconset_decode_done:
 	/*
 	 * Fast terrain-tile path for ST planar targets:
 	 * decode -> 24x24 linear scratch -> 64x24 planar scratch -> blit to destination.
-	 * C2P phase is tile-local (0,0), independent of framebuffer destination.
+	 * Viewport clipping matches Buffer_Frame_To_Page (WINSTUB.CPP): C2P + blit only the
+	 * visible sub-rectangle so partially covered edge tiles stay on this path.
 	 */
 	if (w == ST_TILE_LINEAR_W && h == ST_TILE_LINEAR_H
 		&& !remap
 		&& AllowHardwareBlitFills
 		&& VP_Is_Planar(vp)
 		&& Ensure_Terrain_Tile_Scratch()) {
-		/*
-		 * Same viewport clip as Buffer_Frame_To_Page (WINSTUB.CPP): the fast path
-		 * always blits a full 24x24. If any edge is clipped, fall back to Frame_To_Page.
-		 */
 		const int vpw = vp->Get_Width();
 		const int vph = vp->Get_Height();
 		int dst_x = x_pixel;
@@ -1379,62 +1369,75 @@ iconset_decode_done:
 		if (dst_y + clip_blit_h > vph) {
 			clip_blit_h = vph - dst_y;
 		}
-		const BOOL stamp_fully_in_vp = (clip_blit_w == ST_TILE_LINEAR_W && clip_blit_h == ST_TILE_LINEAR_H
-			&& clip_src_x == 0 && clip_src_y == 0);
 
-		if (stamp_fully_in_vp) {
-		GraphicBufferClass *dst_gb = vp->Get_Graphic_Buffer();
-		uint8_t *dst_root = (dst_gb && GB_Uses_ST_Planar_Surface(dst_gb))
-			? (uint8_t *)dst_gb->Get_Buffer() : NULL;
-		const int dx_abs = vp->Get_XPos() + dst_x;
-		const int dy_abs = vp->Get_YPos() + dst_y;
-		if (dst_root
-			&& dx_abs >= 0 && dy_abs >= 0
-			&& dx_abs + ST_TILE_LINEAR_W <= ST_PLANAR_WIDTH
-			&& dy_abs + ST_TILE_LINEAR_H <= ST_PLANAR_HEIGHT) {
-			memcpy(g_tile_linear_24x24, decoded_ptr, (size_t)ST_TILE_LINEAR_BYTES);
-			/*
-			 * If index 0 must be transparent, the blitter D=S path is not correct.
-			 * In that case, fall back to Buffer_Frame_To_Page so transparency is applied.
-			 */
-			if (use_shape_transparency
-				&& memchr(g_tile_linear_24x24, 0, (size_t)ST_TILE_LINEAR_BYTES) != NULL) {
-				goto fast24_fallback;
-			}
+		if (clip_blit_w > 0 && clip_blit_h > 0) {
+			GraphicBufferClass *dst_gb = vp->Get_Graphic_Buffer();
+			uint8_t *dst_root = (dst_gb && GB_Uses_ST_Planar_Surface(dst_gb))
+				? (uint8_t *)dst_gb->Get_Buffer() : NULL;
+			const int dx_abs = vp->Get_XPos() + dst_x;
+			const int dy_abs = vp->Get_YPos() + dst_y;
+			if (dst_root
+				&& dx_abs >= 0 && dy_abs >= 0
+				&& dx_abs + clip_blit_w <= ST_PLANAR_WIDTH
+				&& dy_abs + clip_blit_h <= ST_PLANAR_HEIGHT) {
+				memcpy(g_tile_linear_24x24, decoded_ptr, (size_t)ST_TILE_LINEAR_BYTES);
+				/*
+				 * If index 0 must be transparent, the blitter D=S path is not correct.
+				 * Check only the sub-rect we would draw (matches viewport clip).
+				 */
+				if (use_shape_transparency) {
+					for (int ry = 0; ry < clip_blit_h; ry++) {
+						uint8_t *row = g_tile_linear_24x24
+							+ (size_t)(clip_src_y + ry) * ST_TILE_LINEAR_W + clip_src_x;
+						if (memchr(row, 0, (size_t)clip_blit_w) != NULL) {
+							goto fast24_fallback;
+						}
+					}
+				}
 
-			const int sx_src = 0;
-			memset(g_tile_planar_scratch, 0, (size_t)ST_TILE_PLANAR_BYTES);
-			C2P_Render_Logical_To_Planar_Rect(
-				g_tile_linear_24x24,
-				ST_TILE_LINEAR_W,
-				ST_TILE_LINEAR_H,
-				ST_TILE_LINEAR_W,
-				g_tile_planar_scratch,
-				ST_TILE_PLANAR_BPL,
-				ST_TILE_PLANAR_W,
-				ST_TILE_PLANAR_H,
-				sx_src,
-				0,
-				0,
-				0);
-
-			if (ST_Blitter_Planar_Rect_Blit(
+				const uint8_t *const log_top = g_tile_linear_24x24
+					+ (size_t)clip_src_y * ST_TILE_LINEAR_W + clip_src_x;
+				/*
+				 * Dither phase must follow **tile** coordinates (clip_src + local x/y), not screen
+				 * (dx_abs/dy_abs — those change every scroll step and flicker). Using clip_src as
+				 * abs base matches the full 24x24 path (clip_src 0 → abs 0, same as apx = column).
+				 */
+				memset(g_tile_planar_scratch, 0, (size_t)ST_TILE_PLANAR_BYTES);
+				C2P_Render_Logical_To_Planar_Rect(
+					log_top,
+					clip_blit_w,
+					clip_blit_h,
+					ST_TILE_LINEAR_W,
 					g_tile_planar_scratch,
 					ST_TILE_PLANAR_BPL,
 					ST_TILE_PLANAR_W,
 					ST_TILE_PLANAR_H,
-					sx_src, 0,
-					dst_root,
-					ST_PLANAR_BYTES_PER_LINE,
-					ST_PLANAR_WIDTH,
-					ST_PLANAR_HEIGHT,
-					dx_abs,
-					dy_abs,
-					ST_TILE_LINEAR_W,
-					ST_TILE_LINEAR_H)) {
-				return;
+					0,
+					0,
+					clip_src_x,
+					clip_src_y);
+
+				if (ST_Blitter_Planar_Rect_Blit(
+						g_tile_planar_scratch,
+						ST_TILE_PLANAR_BPL,
+						ST_TILE_PLANAR_W,
+						ST_TILE_PLANAR_H,
+						0,
+						0,
+						dst_root,
+						ST_PLANAR_BYTES_PER_LINE,
+						ST_PLANAR_WIDTH,
+						ST_PLANAR_HEIGHT,
+						dx_abs,
+						dy_abs,
+						clip_blit_w,
+						clip_blit_h)) {
+					return;
+				}
 			}
-		}
+		} else {
+			/* Tile fully outside viewport; nothing to draw. */
+			return;
 		}
 	}
 

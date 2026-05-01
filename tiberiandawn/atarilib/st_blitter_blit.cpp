@@ -4,6 +4,7 @@
 
 #include "st_blitter_blit.h"
 
+#include "st_frame_meter.h"
 #include <stddef.h>
 
 /*
@@ -297,6 +298,7 @@ static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 		+ (size_t)((dst_word_left >> 4) * 8);
 	const unsigned char skew_reg = (unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
 
+	ST_FRAME_BAR_BLIT_BEGIN();
 	for (short pl = 0; pl < 4; ++pl) {
 		ST_Blit_Copy_Plane_Skew_Masked(
 			src,
@@ -314,6 +316,7 @@ static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 			endmask3,
 			blit_op);
 	}
+	ST_FRAME_BAR_BLIT_END();
 	return TRUE;
 }
 
@@ -443,6 +446,7 @@ BOOL ST_Blitter_Mask_And_Planar_Rect(
 	 */
 	const unsigned char skew_reg = (unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
 
+	ST_FRAME_BAR_BLIT_BEGIN();
 	for (short pl = 0; pl < 4; ++pl) {
 		ST_Blit_And_Mask_To_Plane_Skew_Masked(
 			src,
@@ -459,5 +463,6 @@ BOOL ST_Blitter_Mask_And_Planar_Rect(
 			endmask2,
 			endmask3);
 	}
+	ST_FRAME_BAR_BLIT_END();
 	return TRUE;
 }

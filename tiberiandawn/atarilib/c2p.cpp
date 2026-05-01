@@ -3,6 +3,7 @@
  */
 
 #include "c2p.h"
+#include "st_frame_meter.h"
 #include <string.h>    /* memset */
 
 /* 4x4 Bayer threshold matrix, values 0..15 */
@@ -177,6 +178,7 @@ extern "C" void C2P_Render_Logical_To_Planar_Rect(
 		|| planar_width_pixels <= 0 || planar_height_pixels <= 0) {
 		return;
 	}
+	ST_FRAME_BAR_C2P_BEGIN();
 	for (int y = 0; y < logical_h; y++) {
 		const uint8_t *src = logical + (size_t)y * (size_t)logical_stride;
 		const int apy = abs_y0 + y;
@@ -230,6 +232,7 @@ extern "C" void C2P_Render_Logical_To_Planar_Rect(
 				nib);
 		}
 	}
+	ST_FRAME_BAR_C2P_END();
 }
 
 extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logical_stride, uint8_t *st_screen)
@@ -237,6 +240,7 @@ extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logi
 	if (!logical || !st_screen || logical_stride <= 0)
 		return;
 
+	ST_FRAME_BAR_C2P_BEGIN();
 	/* LoRes mode */
 	const int screen_width = 320;
 	const int screen_height = 200;
@@ -274,6 +278,7 @@ extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logi
 			C2P_Movep_Store(dst, v);
 		}
 	}
+	ST_FRAME_BAR_C2P_END();
 }
 
 static inline uint8_t *ST_ChunkPtr(uint8_t *base, int x, int y)
@@ -365,6 +370,7 @@ extern "C" void C2P_Fill_Aligned8_Rect(
 		return;
 	}
 
+	ST_FRAME_BAR_C2P_BEGIN();
 	C2P_InitPairLUT_Once();
 	for (int y = 0; y < pixel_height; y++) {
 		const int ay = dst_y + y;
@@ -391,6 +397,7 @@ extern "C" void C2P_Fill_Aligned8_Rect(
 			C2P_Movep_Store(dst, v);
 		}
 	}
+	ST_FRAME_BAR_C2P_END();
 }
 
 extern "C" void C2P_Blit_Linear8_To_Planar(
@@ -401,6 +408,7 @@ extern "C" void C2P_Blit_Linear8_To_Planar(
 {
 	if (!planar_base || !src || w <= 0 || h <= 0 || src_stride <= 0)
 		return;
+	ST_FRAME_BAR_C2P_BEGIN();
 	C2P_InitPairLUT_Once();
 
 	const int row_bytes = ST_PLANAR_BYTES_PER_LINE;
@@ -536,5 +544,6 @@ extern "C" void C2P_Blit_Linear8_To_Planar(
 			}
 		}
 	}
+	ST_FRAME_BAR_C2P_END();
 }
 

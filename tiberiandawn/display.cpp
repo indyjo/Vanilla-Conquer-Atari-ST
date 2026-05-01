@@ -2454,26 +2454,11 @@ void DisplayClass::Redraw_Icons(int draw_flags)
 {
 #ifdef ATARI_ST
     int y_start = -Coord_YLepton(TacticalCoord);
-    int y_span = TacLeptonHeight - y_start + CELL_LEPTON_H;
-    int icon_bucket = 0;
-
-    if (y_span <= 0) {
-        y_span = CELL_LEPTON_H;
-    }
 #endif
     IsShadowPresent = false;
 #ifdef ATARI_ST
     for (int y = y_start; y <= TacLeptonHeight; y += CELL_LEPTON_H) {
-        int next_bucket = ((y - y_start) * 4) / y_span;
-        if (next_bucket > 3) {
-            next_bucket = 3;
-        }
-        if (next_bucket != icon_bucket) {
-            if (next_bucket >= 1) {
-                Call_Back();
-            }
-            icon_bucket = next_bucket;
-        }
+        Call_Back();
 #else
     for (int y = -Coord_YLepton(TacticalCoord); y <= TacLeptonHeight; y += CELL_LEPTON_H) {
 #endif

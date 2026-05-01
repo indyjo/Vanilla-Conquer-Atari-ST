@@ -653,7 +653,8 @@ static const char *st_build7_remap_name(int remap_index)
 	return k_names[remap_index];
 }
 
-static void st_build7_status_line(int remap_index, int page_index, int page_count)
+static void st_build7_status_line(int remap_index, int page_index, int page_count,
+    unsigned short tw, unsigned short th, unsigned short tc)
 {
 	/*
 	 * VT52 direct cursor address:
@@ -661,7 +662,14 @@ static void st_build7_status_line(int remap_index, int page_index, int page_coun
 	 * ST low-res text console is 40x25, so row 24 is the bottom line.
 	 */
 	printf("\033Y%c%c", (char)(24 + 32), (char)(0 + 32));
-	printf("R:%s P:%d/%d SPC nxt H remap Y ok", st_build7_remap_name(remap_index), page_index + 1, page_count);
+	printf(
+	    "%ux%u F%u %s P:%d/%d SPC H Y",
+	    (unsigned)tw,
+	    (unsigned)th,
+	    (unsigned)tc,
+	    st_build7_remap_name(remap_index),
+	    page_index + 1,
+	    page_count);
 	fflush(stdout);
 }
 
@@ -815,11 +823,23 @@ int st_run_interactive_build_frame_xor_grid(void)
 		return 1;
 	}
 
+	unsigned long const buf_need = Get_Build_Frame_BufferBytes(raw);
+	printf(
+	    "%s:%s keyframe size %ux%u px (all frames), %u frames, buffer %lu bytes\n",
+	    sel->mix,
+	    sel->shp,
+	    (unsigned)tw,
+	    (unsigned)th,
+	    (unsigned)tc,
+	    (unsigned long)buf_need);
+
 	{
 		unsigned char pal[768];
 		memcpy(pal, kStTemperatPal768, 768);
 		Set_Palette(pal);
 	}
+	/* C2P LUTs are not filled by Set_Palette; must match TEMPERAT weights before any C2P. */
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 
 	Setscreen(-1L, -1L, 0);
 	unsigned char *planar = (unsigned char *)Logbase();
@@ -853,7 +873,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 		Setscreen((long)planar, (long)planar, -1L);
 		Vsync();
 		Vsync();
-		st_build7_status_line(remap_index, page_index, page_count);
+		st_build7_status_line(remap_index, page_index, page_count, tw, th, tc);
 
 		long w = Crawcin();
 		unsigned char ch = (unsigned char)(w & 0xFF);

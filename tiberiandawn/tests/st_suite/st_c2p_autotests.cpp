@@ -33,6 +33,7 @@ int st_run_c2p_autotests(void)
 
 	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 
 	for (int y = 0; y < 200; y++) {
 		for (int x = 0; x < 320; x++)

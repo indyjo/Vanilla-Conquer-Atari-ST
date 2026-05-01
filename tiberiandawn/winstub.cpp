@@ -526,8 +526,8 @@ long Buffer_Frame_To_Page_Ex(int x,
         raster_base = (void*)ex->lru_scratch_root;
     }
 
-    const uint8_t* src = (const uint8_t*)raster_base + static_cast<size_t>(src_y) * static_cast<size_t>(w)
-                         + static_cast<size_t>(src_x);
+    const uint8_t* src_raster = (const uint8_t*)raster_base + static_cast<size_t>(src_y) * static_cast<size_t>(w)
+                                + static_cast<size_t>(src_x);
 
     if (planar_bftp_route) {
         uint8_t* root = (uint8_t*)gb->Get_Buffer();
@@ -536,26 +536,48 @@ long Buffer_Frame_To_Page_Ex(int x,
         (void)predator;
         Bftp_Lazy_Frame_FillFn lazy_miss_fn = planar_decode_on_miss ? ex->lazy_frame_fill : nullptr;
         void* lazy_miss_ctx = planar_decode_on_miss ? ex->lazy_frame_ctx : nullptr;
-        return ST_BFTP_Buffer_Frame_Planar_Composite(root,
-                                                     ax0,
-                                                     ay0,
-                                                     src,
-                                                     blit_w,
-                                                     blit_h,
-                                                     w,
-                                                     trans,
-                                                     ghost_table,
-                                                     fade_table,
-                                                     (const uint8_t*)raster_base,
-                                                     src_x,
-                                                     src_y,
-                                                     ex->identity_key,
-                                                     (unsigned long (*)(void*))lazy_miss_fn,
-                                                     lazy_miss_ctx);
+        const long drew = ST_BFTP_Buffer_Frame_Planar_Composite(root,
+                                                              ax0,
+                                                              ay0,
+                                                              src_raster,
+                                                              blit_w,
+                                                              blit_h,
+                                                              w,
+                                                              trans,
+                                                              ghost_table,
+                                                              fade_table,
+                                                              (const uint8_t*)raster_base,
+                                                              src_x,
+                                                              src_y,
+                                                              ex->identity_key,
+                                                              (unsigned long (*)(void*))lazy_miss_fn,
+                                                              lazy_miss_ctx);
+        if (drew > 0) {
+            return drew;
+        }
+        /*
+         * Sprite cache tiers top out at 96×96; larger keyframe canvases (e.g. OPTIONS.SHP
+         * dialog chrome used for menu rivets) get tier_dim 0 and skip the blitter entirely.
+         * Decode on demand and use the pre-LRU C2P path, or per-pixel remap when ghost/fade.
+         */
+        if (planar_decode_on_miss && ex->lazy_frame_fill != nullptr && ex->lru_scratch_root != nullptr) {
+            unsigned long const built = (*ex->lazy_frame_fill)(ex->lazy_frame_ctx);
+            if (built == 0UL
+                || (const uint8_t*)(uintptr_t)built != (const uint8_t*)ex->lru_scratch_root) {
+                return 0;
+            }
+            raster_base = (void*)ex->lru_scratch_root;
+            src_raster = (const uint8_t*)raster_base + static_cast<size_t>(src_y) * static_cast<size_t>(w)
+                         + static_cast<size_t>(src_x);
+        }
+        if (ghost_table == nullptr && fade_table == nullptr) {
+            C2P_Blit_Linear8_To_Planar(root, ax0, ay0, src_raster, blit_w, blit_h, w, trans);
+            return static_cast<long>(static_cast<size_t>(blit_w) * static_cast<size_t>(blit_h));
+        }
     }
 
     for (int row = 0; row < blit_h; ++row) {
-        const uint8_t* srow = src + static_cast<size_t>(row) * static_cast<size_t>(w);
+        const uint8_t* srow = src_raster + static_cast<size_t>(row) * static_cast<size_t>(w);
         for (int col = 0; col < blit_w; ++col) {
             const uint8_t s_raw = srow[col];
             if (trans && s_raw == 0) {

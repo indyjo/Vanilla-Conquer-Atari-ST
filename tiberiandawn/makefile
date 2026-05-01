@@ -82,6 +82,11 @@ DEFINES = TRUE_FALSE_DEFINED
 # Platform-specific definitions
 ifeq ($(PLATFORM_LIB),ATARILIB)
 DEFINES += POSIX BIG_ENDIAN ATARI_ST
+# PROFILE_FRAME_BAR defines ST_FRAME_BAR_PROFILE (Hz200 frame/render/logic/theme bars in tab strip)
+PROFILE_FRAME_BAR ?= 1
+ifeq ($(PROFILE_FRAME_BAR),1)
+DEFINES += ST_FRAME_BAR_PROFILE
+endif
 else
 DEFINES += WIN32 _WINDOWS _USRDLL TIBERIANDAWN_EXPORTS
 endif
@@ -234,7 +239,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp,) \
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp,) \
 	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)
@@ -498,6 +503,7 @@ endif
 	@echo "Configuration Variables:"
 	@echo "  CONFIG=Debug   - Build debug version (default: Release)"
 	@echo "  CONFIG=Release - Build release version"
+	@echo "  PROFILE_FRAME_BAR=0 - Atari-only: disable Hz200 profiler (default: 1, -DST_FRAME_BAR_PROFILE)"
 	@echo "  PLATFORM=Win32 - Target platform (default: Win32)"
 	@echo "  CROSS_PREFIX   - Cross-compiler path (default: \$$HOME/opt/cross-mint/bin)"
 	@echo "  USE_ATARILIB   - Force use of ATARILIB (default: auto-detect)"
@@ -515,6 +521,7 @@ endif
 	@echo "  make cleanall            - Clean everything"
 ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  make st-tests            - Build cnc_st_tests.tos (ST on-machine suite)"
+	@echo "  make PROFILE_FRAME_BAR=0 - Atari build without tab-strip profiler (on by default)"
 endif
 	@echo ""
 	@echo "Cross-Compiler:"

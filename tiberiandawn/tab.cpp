@@ -37,6 +37,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "function.h"
+#include "atarilib/st_frame_meter.h"
 
 void const* TabClass::TabShape = NULL;
 
@@ -111,6 +112,14 @@ void TabClass::Draw_It(bool complete)
                 CC_Draw_Shape(TabShape, 0, 0, 0, WINDOW_MAIN, SHAPE_NORMAL);
                 CC_Draw_Shape(TabShape, 0, width - Eva_Width, 0, WINDOW_MAIN, SHAPE_NORMAL);
                 Draw_Credits_Tab();
+
+#if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
+                {
+                    int width_factor = (width == 320) ? 1 : 2;
+                    StFrameMeter_Draw(LogicPage, width_factor);
+                }
+#endif
+
                 LogicPage->Draw_Line(0, Tab_Height - 1, rightx, Tab_Height - 1, BLACK);
 
                 Fancy_Text_Print(TXT_TAB_BUTTON_CONTROLS, Eva_Width / 2, 0, fore, TBLACK, flags);

@@ -36,6 +36,7 @@
 
 #include "function.h"
 #include "logic.h"
+#include "atarilib/st_frame_meter.h"
 
 static unsigned FramesPerSecond = 0;
 
@@ -74,20 +75,20 @@ void LogicClass::Debug_Dump(MonoClass* mono) const
     AverageFramesPerSecond = TotalFrames / FPSDivider++;
 
     mono->Set_Cursor(21, 9);
-    mono->Print("ÚÄÄÄÄÄÄÄÄÄÄÂÄÄÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r"
-                "³Units.....³   ³Frame Rate:      Avg:      Frame:        ³\r"
-                "³Infantry..³   ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\r"
-                "³Aircraft..³   ³                                         ³\r"
-                "³Buildings.³   ³                                         ³\r"
-                "³Terrain...³   Ã                                         ´\r"
-                "³Bullets...³   ³                                         ³\r"
-                "³Anims.....³   ³                                         ³\r"
-                "³Teams.....³   Ã                                        Ä´\r"
-                "³Triggers..³   ³                                         ³\r"
-                "³Factories.³   ³                                         ³\r"
-                "³          ³   Ã                                         ´\r"
-                "³          ³   ³                                         ³\r"
-                "ÀÄÄÄÄÄÄÄÄÄÄÁÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄ´Spare CPU TimeÃÄÄÄÄÄÄÄÄÄÄÄÄÙ\r");
+    mono->Print("?\r"
+                "Units.....   Frame Rate:      Avg:      Frame:        \r"
+                "Infantry..   ?\r"
+                "Aircraft..                                            \r"
+                "Buildings.                                            \r"
+                "Terrain...                                            \r"
+                "Bullets...                                            \r"
+                "Anims.....                                            \r"
+                "Teams.....                                           ?\r"
+                "Triggers..                                            \r"
+                "Factories.                                            \r"
+                "                                                      \r"
+                "                                                      \r"
+                "?Spare CPU Time\r");
 
     _framecounter++;
     mono->Set_Cursor(70, 10);
@@ -177,6 +178,8 @@ void LogicClass::Debug_Dump(MonoClass* mono) const
  *=============================================================================================*/
 void LogicClass::AI(void)
 {
+    ST_FRAME_BAR_LOGIC_BEGIN();
+
     int index;
 
     FramesPerSecond++;
@@ -331,6 +334,7 @@ void LogicClass::AI(void)
 #endif
 
     //	Heap_Dump_Check( "After House AI" );
+    ST_FRAME_BAR_LOGIC_END();
 }
 
 /***********************************************************************************************

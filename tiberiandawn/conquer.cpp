@@ -69,6 +69,7 @@
 #include "common/vqaloader.h"
 #include "common/settings.h"
 #include "common/winasm.h"
+#include "atarilib/st_frame_meter.h"
 
 #ifdef ATARI_ST
 #include "st_bftp_sprite_cache.h"
@@ -1233,7 +1234,9 @@ void Call_Back(void)
     **	Score maintenance
     */
     if (SampleType) {
+        ST_FRAME_BAR_THEME_BEGIN();
         Theme.AI();
+        ST_FRAME_BAR_THEME_END();
         Speak_AI();
     }
 
@@ -1562,6 +1565,8 @@ bool Main_Loop()
     int y;
     int framedelay;
 
+    ST_FRAME_BAR_FRAME_BEGIN();
+
     //	InMainLoop = true;
 
     /*
@@ -1787,6 +1792,7 @@ bool Main_Loop()
 
     Sync_Delay();
     //	InMainLoop = false;
+    ST_FRAME_BAR_FRAME_END();
     return (!GameActive);
 }
 

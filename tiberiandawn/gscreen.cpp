@@ -45,6 +45,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "function.h"
+#include "atarilib/st_frame_meter.h"
 
 #include "common/filepcx.h"
 
@@ -359,6 +360,8 @@ void GScreenClass::Remove_A_Button(GadgetClass& gadget)
  *=============================================================================================*/
 void GScreenClass::Render(void)
 {
+    ST_FRAME_BAR_RENDER_BEGIN();
+
     // if (Buttons && Buttons->Is_List_To_Redraw()) {
     //	IsToRedraw = true;
     //}
@@ -399,6 +402,8 @@ void GScreenClass::Render(void)
 
         Set_Logic_Page(oldpage);
     }
+
+    ST_FRAME_BAR_RENDER_END();
 }
 
 #ifdef CHEAT_KEYS

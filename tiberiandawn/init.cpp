@@ -519,6 +519,26 @@ bool Init_Game(int, char*[])
     }
     Call_Back();
 
+#if defined(ATARI_ST)
+    /*
+     * MiNT free-memory snapshot after mandatory MIX payloads are cached (theater MIX loads later).
+     */
+    {
+        char st_mix_ram_msg[192];
+        long const st_largest = Ram_Free(MEM_NORMAL);
+        long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
+        snprintf(st_mix_ram_msg,
+                 sizeof(st_mix_ram_msg),
+                 "C&C ST - After MIX cache: largest free ST-RAM block %ld bytes (~%ld KiB); "
+                 "largest TT-RAM block %ld bytes (~%ld KiB).\n",
+                 st_largest,
+                 (st_largest > 0L) ? (st_largest / 1024L) : 0L,
+                 tt_largest,
+                 (tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
+        CCDebugString(st_mix_ram_msg);
+    }
+#endif
+
     //	malloc(2);
 
     /*

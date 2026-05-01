@@ -125,6 +125,21 @@ int main(int argc, char *argv[])
 {
 	printf("C&C - Starting up.\n");
 
+#if defined(ATARI_ST)
+	{
+		char st_ram_boot_msg[192];
+		long const st_largest = Ram_Free(MEM_NORMAL);
+		long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
+		snprintf(st_ram_boot_msg, sizeof(st_ram_boot_msg),
+			"C&C ST - At program start: largest free ST-RAM block %ld bytes (~%ld KiB); "
+			"largest TT-RAM block %ld bytes (~%ld KiB).\n",
+			st_largest, (st_largest > 0L) ? (st_largest / 1024L) : 0L,
+			tt_largest, (tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
+		printf("%s", st_ram_boot_msg);
+		fflush(stdout);
+	}
+#endif
+
 	/*
 	** Enable supervisor mode early for Atari ST
 	** This is required for direct hardware access (palette registers, etc.)

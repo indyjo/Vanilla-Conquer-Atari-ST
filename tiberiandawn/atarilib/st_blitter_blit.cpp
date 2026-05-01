@@ -63,7 +63,8 @@ static void ST_Blit_Copy_Plane_Skew_Masked(
 	BOOL reverse_y,
 	unsigned short endmask1,
 	unsigned short endmask2,
-	unsigned short endmask3)
+	unsigned short endmask3,
+	unsigned char blit_op)
 {
 	if (!src_base || !dst_base || words <= 0 || lines <= 0 || plane_idx < 0 || plane_idx > 3) {
 		return;
@@ -72,8 +73,14 @@ static void ST_Blit_Copy_Plane_Skew_Masked(
 	const short dx = reverse_x ? -8 : 8;
 	const short src_row_advance = reverse_y ? (short)-src_row_bytes : src_row_bytes;
 	const short dst_row_advance = reverse_y ? (short)-dst_row_bytes : dst_row_bytes;
-	const short src_y_inc = (short)(src_row_advance - (words - 1) * sx);
+	short src_y_inc = (short)(src_row_advance - (words - 1) * sx);
 	const short dst_y_inc = (short)(dst_row_advance - (words - 1) * dx);
+	if (skew_reg & 0x80u) {
+		src_y_inc = (short)(src_y_inc - sx); /* FXSR: one extra source word read at line start */
+	}
+	if (skew_reg & 0x40u) {
+		src_y_inc = (short)(src_y_inc + sx); /* NFSR: suppress final source read on the line */
+	}
 	const uint8_t *src_start = src_base
 		+ (reverse_y ? (size_t)(lines - 1) * (size_t)src_row_bytes : 0u)
 		+ (reverse_x ? (size_t)(words - 1) * 8u : 0u);
@@ -102,7 +109,7 @@ static void ST_Blit_Copy_Plane_Skew_Masked(
 	*ST_BLT_REG(0xFFFF8A36UL) = (unsigned short)words;
 	*ST_BLT_REG(0xFFFF8A38UL) = (unsigned short)lines;
 	*(volatile unsigned char *)0xFFFF8A3AUL = 2; /* HOP: source */
-	*(volatile unsigned char *)0xFFFF8A3BUL = 3; /* OP: D = S */
+	*(volatile unsigned char *)0xFFFF8A3BUL = blit_op; /* 3=D=S, 7=D|merge */
 	*(volatile unsigned char *)0xFFFF8A3DUL = skew_reg;
 	*(volatile unsigned char *)0xFFFF8A3CUL = 0x80; /* start */
 	ST_Blit_Wait_Idle();
@@ -201,7 +208,8 @@ BOOL ST_Blitter_Planar_Screen_Rect_Blit(
 		pixel_height);
 }
 
-BOOL ST_Blitter_Planar_Rect_Blit(
+
+static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 	const uint8_t *src_root,
 	int src_row_bytes,
 	int src_width_pixels,
@@ -215,7 +223,8 @@ BOOL ST_Blitter_Planar_Rect_Blit(
 	int dx_abs,
 	int dy_abs,
 	int pixel_width,
-	int pixel_height)
+	int pixel_height,
+	unsigned char blit_op)
 {
 	if (!src_root || !dst_root || !ST_Has_Blitter())
 		return FALSE;
@@ -241,11 +250,12 @@ BOOL ST_Blitter_Planar_Rect_Blit(
 	const short dst_start = (short)(dx_abs - dst_word_left);
 	const short words = (short)((dst_start + pixel_width + 15) >> 4);
 	const short src_word_left = (short)(sx_abs & ~15);
-	if (words <= 0 || src_word_left < 0 || (src_word_left + words * 16) > src_width_pixels) {
+	/* Source RAM must cover the sprite 16-pixel word run from sx, not dest word count * 16. */
+	const short src_words = (short)(((sx_abs & 15) + pixel_width + 15) >> 4);
+	if (words <= 0 || src_word_left < 0 || (src_word_left + src_words * 16) > src_width_pixels) {
 		return FALSE;
 	}
 
-	/* Skew nibble: (dst X mod 16 - src X mod 16) mod 16 (Atari manual). */
 	const unsigned char skew_low = (unsigned char)(((unsigned)(dx_abs & 15u) + 16u - (unsigned)(sx_abs & 15u)) % 16u);
 	unsigned char sm = (unsigned char)(sx_abs & 15u);
 	unsigned char dm = (unsigned char)(dx_abs & 15u);
@@ -257,22 +267,10 @@ BOOL ST_Blitter_Planar_Rect_Blit(
 	if (src_span_m1 == dst_span_m1)
 		skew_idx += 2;
 
-	/*
-	 * Same-surface overlap: negate X step only when dest is to the right of source,
-	 * negate Y step only when dest is below source (standard BitBlt / VDI rules).
-	 * Do not tie both to one row-major compare — a horizontal scroll must not set NFY,
-	 * and a vertical scroll must not set reverse X, or the blitter walks the wrong edge.
-	 * Needed before endmasks: negative X processes words right-to-left, so endmask1/3 swap.
-	 */
 	const BOOL same_surface = (src_root == dst_root);
 	const BOOL reverse_x = same_surface && (dx_abs > sx_abs);
 	const BOOL reverse_y = same_surface && (dy_abs > sy_abs);
 
-	/*
-	 * Skew FXSR/NFSR table matches forward (positive) X fetch. For negative X, flip the
-	 * sm/dm branch bit so prefetch flags match reversed read order when src/dst are
-	 * misaligned (skew nibble != 0).
-	 */
 	if (reverse_x && sm != dm)
 		skew_idx ^= 1;
 	if (skew_idx > 7)
@@ -297,11 +295,7 @@ BOOL ST_Blitter_Planar_Rect_Blit(
 		+ (size_t)((src_word_left >> 4) * 8);
 	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
 		+ (size_t)((dst_word_left >> 4) * 8);
-	unsigned char skew_flags = k_skew_fxsr_nfsr[skew_idx];
-	/* Empirically validated by Test10 skew-flag sweep: sw<dw requires FXSR/NFSR=00. */
-	if (src_span_m1 < dst_span_m1)
-		skew_flags = 0x00u;
-	const unsigned char skew_reg = (unsigned char)(skew_low | skew_flags);
+	const unsigned char skew_reg = (unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
 
 	for (short pl = 0; pl < 4; ++pl) {
 		ST_Blit_Copy_Plane_Skew_Masked(
@@ -317,9 +311,56 @@ BOOL ST_Blitter_Planar_Rect_Blit(
 			reverse_y,
 			endmask1,
 			endmask2,
-			endmask3);
+			endmask3,
+			blit_op);
 	}
 	return TRUE;
+}
+
+BOOL ST_Blitter_Planar_Rect_Blit(
+	const uint8_t *src_root,
+	int src_row_bytes,
+	int src_width_pixels,
+	int src_height_pixels,
+	int sx_abs,
+	int sy_abs,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
+	int dx_abs,
+	int dy_abs,
+	int pixel_width,
+	int pixel_height)
+{
+	return ST_Blitter_Planar_Rect_Blit_With_Op(
+		src_root, src_row_bytes, src_width_pixels, src_height_pixels,
+		sx_abs, sy_abs, dst_root, dst_row_bytes, dst_width_pixels, dst_height_pixels,
+		dx_abs, dy_abs, pixel_width, pixel_height,
+		3);
+}
+
+BOOL ST_Blitter_Planar_Rect_Blit_Or(
+	const uint8_t *src_root,
+	int src_row_bytes,
+	int src_width_pixels,
+	int src_height_pixels,
+	int sx_abs,
+	int sy_abs,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
+	int dx_abs,
+	int dy_abs,
+	int pixel_width,
+	int pixel_height)
+{
+	return ST_Blitter_Planar_Rect_Blit_With_Op(
+		src_root, src_row_bytes, src_width_pixels, src_height_pixels,
+		sx_abs, sy_abs, dst_root, dst_row_bytes, dst_width_pixels, dst_height_pixels,
+		dx_abs, dy_abs, pixel_width, pixel_height,
+		7);
 }
 
 BOOL ST_Blitter_Mask_And_Planar_Rect(
@@ -362,7 +403,8 @@ BOOL ST_Blitter_Mask_And_Planar_Rect(
 	const short dst_start = (short)(dx_abs - dst_word_left);
 	const short words = (short)((dst_start + pixel_width + 15) >> 4);
 	const short src_word_left = (short)(sx_abs & ~15);
-	if (words <= 0 || src_word_left < 0 || (src_word_left + words * 16) > mask_width_pixels) {
+	const short src_words = (short)(((sx_abs & 15) + pixel_width + 15) >> 4);
+	if (words <= 0 || src_word_left < 0 || (src_word_left + src_words * 16) > mask_width_pixels) {
 		return FALSE;
 	}
 

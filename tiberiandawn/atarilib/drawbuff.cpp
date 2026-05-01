@@ -10,6 +10,7 @@
 #include "c2p.h"
 #include "function.h"
 #include "st_blitter_blit.h"
+#include "st_bftp_sprite_cache.h"
 #include "memflag.h"
 #include <string.h>  // For memset
 #include <stdio.h>  // For printf
@@ -1438,10 +1439,23 @@ iconset_decode_done:
 	}
 
 fast24_fallback:
-	/* Match legacy Draw_Stamp semantics: viewport-relative opaque blit. */
-	Buffer_Frame_To_Page(
-		x_pixel, y_pixel, w, h, decoded_ptr, *vp,
-		SHAPE_WIN_REL | (use_shape_transparency ? ST_SHAPE_TRANS_FLAG : 0));
+	/*
+	 * Planar LRU keys include clip geometry; without a logical tile id, different icons with
+	 * the same clipped sub-rect (common at tactical edges while scrolling) would share slots.
+	 */
+	{
+		Bftp_ExArgs stamp_ex = { 0 };
+		stamp_ex.identity_key = ST_BFTP_Frame_Identity_Key(icondata, icon);
+		Buffer_Frame_To_Page_Ex(
+			x_pixel,
+			y_pixel,
+			w,
+			h,
+			decoded_ptr,
+			*vp,
+			SHAPE_WIN_REL | (use_shape_transparency ? ST_SHAPE_TRANS_FLAG : 0),
+			&stamp_ex);
+	}
 }
 
 /*=========================================================================*/

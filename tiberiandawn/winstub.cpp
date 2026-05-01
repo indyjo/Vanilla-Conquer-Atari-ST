@@ -44,6 +44,7 @@
 #ifdef POSIX
 #include "atarilib/c2p.h"
 #include "atarilib/drawbuff.h"
+#include "atarilib/st_bftp_sprite_cache.h"
 #include <cstdarg>
 #include <cstdint>
 #endif
@@ -429,30 +430,48 @@ bool Any_Locked()
 #ifdef POSIX
 /*
 ** Atari ST: KEYFBUFF.ASM is not linked for m68k; provide Buffer_Frame_To_Page here.
-** Centering + viewport clipping (9387d0d) fixes title-screen rivets drawn with SHAPE_CENTER.
 */
-void Buffer_Frame_To_Page(int x,
-                          int y,
-                          int w,
-                          int h,
-                          void* Buffer,
-                          GraphicViewPortClass& view,
-                          int flags,
-                          ...)
+extern "C" void Bftp_ExArgs_init_zero(Bftp_ExArgs* ex)
 {
-    if (!Buffer || w <= 0 || h <= 0) {
+    if (!ex) {
         return;
     }
+    ex->ghost_table = nullptr;
+    ex->fade_table = nullptr;
+    ex->fading_num = 0;
+    ex->predoffset = 0;
+    ex->identity_key = 0L;
+    ex->lazy_frame_fill = nullptr;
+    ex->lazy_frame_ctx = nullptr;
+    ex->lru_scratch_root = nullptr;
+}
 
-    va_list ap;
-    va_start(ap, flags);
+long Buffer_Frame_To_Page_Ex(int x,
+                             int y,
+                             int w,
+                             int h,
+                             void* Buffer,
+                             GraphicViewPortClass& view,
+                             int flags,
+                             Bftp_ExArgs const* ex_in)
+{
+    static Bftp_ExArgs const s_bftp_ex_empty = {0};
+    Bftp_ExArgs const* const ex = (ex_in != nullptr) ? ex_in : &s_bftp_ex_empty;
 
-    const int trans = (flags & 0x40) ? 1 : 0;    /* SHAPE_TRANS */
-    const int centered = (flags & 0x20) ? 1 : 0; /* SHAPE_CENTER */
-    const int ghost = (flags & 0x1000) ? 1 : 0;  /* SHAPE_GHOST */
-    const uint8_t* ghost_table = nullptr;
-    if (ghost) {
-        ghost_table = static_cast<const uint8_t*>(va_arg(ap, void*));
+    const uint8_t* ghost_table = (const uint8_t*)ex->ghost_table;
+    const uint8_t* fade_table = (const uint8_t*)ex->fade_table;
+    (void)ex->fading_num;
+    (void)ex->predoffset;
+
+    const int trans = (flags & 0x40) ? 1 : 0;
+    const int centered = (flags & 0x20) ? 1 : 0;
+    const int predator = (flags & 0x0200) ? 1 : 0;
+
+    if (w <= 0 || h <= 0) {
+        return 0;
+    }
+    if (!Buffer && ex->lazy_frame_fill == nullptr) {
+        return 0;
     }
 
     int draw_x = x;
@@ -489,64 +508,105 @@ void Buffer_Frame_To_Page(int x,
         blit_h = vph - dst_y;
     }
     if (blit_w <= 0 || blit_h <= 0) {
-        va_end(ap);
-        return;
+        return 0;
     }
 
-    const uint8_t* src = static_cast<const uint8_t*>(Buffer) + static_cast<size_t>(src_y) * static_cast<size_t>(w)
+    bool const planar_bftp_route = gb && gb->Is_ST_Planar();
+    bool const planar_decode_on_miss = planar_bftp_route && ex->lazy_frame_fill != nullptr && ex->lru_scratch_root != nullptr;
+
+    void* raster_base = Buffer;
+    if (ex->lazy_frame_fill != nullptr && !planar_decode_on_miss) {
+        unsigned long const built = (*ex->lazy_frame_fill)(ex->lazy_frame_ctx);
+        if (built == 0UL) {
+            return 0;
+        }
+        raster_base = (void*)(uintptr_t)built;
+    }
+    if (planar_decode_on_miss) {
+        raster_base = (void*)ex->lru_scratch_root;
+    }
+
+    const uint8_t* src = (const uint8_t*)raster_base + static_cast<size_t>(src_y) * static_cast<size_t>(w)
                          + static_cast<size_t>(src_x);
 
-    if (gb && gb->Is_ST_Planar()) {
-        uint8_t* root = static_cast<uint8_t*>(gb->Get_Buffer());
+    if (planar_bftp_route) {
+        uint8_t* root = (uint8_t*)gb->Get_Buffer();
         const int ax0 = view.Get_XPos() + dst_x;
         const int ay0 = view.Get_YPos() + dst_y;
-        if (!ghost_table) {
-            C2P_Blit_Linear8_To_Planar(root, ax0, ay0, src, blit_w, blit_h, w, trans);
-        } else {
-            const uint8_t* is_trans = ghost_table;
-            const uint8_t* blend_base = ghost_table + 256;
-            for (int row = 0; row < blit_h; ++row) {
-                const uint8_t* srow = src + static_cast<size_t>(row) * static_cast<size_t>(w);
-                const int ay = ay0 + row;
-                for (int col = 0; col < blit_w; ++col) {
-                    const uint8_t s = srow[col];
-                    if (trans && s == 0) {
-                        continue;
-                    }
-                    const int ax = ax0 + col;
-                    const uint8_t it = is_trans[s];
-                    uint8_t out = s;
-                    if (it != 0xFFu) {
-                        const uint8_t d = ST_Planar_GetPixel(root, ax, ay);
-                        out = blend_base[(static_cast<size_t>(it) << 8) + static_cast<size_t>(d)];
-                    }
-                    ST_Planar_PutPixel(root, ax, ay, C2P_Map8ToPlanar4(ax, ay, out));
-                }
-            }
-        }
-        va_end(ap);
-        return;
+        (void)predator;
+        Bftp_Lazy_Frame_FillFn lazy_miss_fn = planar_decode_on_miss ? ex->lazy_frame_fill : nullptr;
+        void* lazy_miss_ctx = planar_decode_on_miss ? ex->lazy_frame_ctx : nullptr;
+        return ST_BFTP_Buffer_Frame_Planar_Composite(root,
+                                                     ax0,
+                                                     ay0,
+                                                     src,
+                                                     blit_w,
+                                                     blit_h,
+                                                     w,
+                                                     trans,
+                                                     ghost_table,
+                                                     fade_table,
+                                                     (const uint8_t*)raster_base,
+                                                     src_x,
+                                                     src_y,
+                                                     ex->identity_key,
+                                                     (unsigned long (*)(void*))lazy_miss_fn,
+                                                     lazy_miss_ctx);
     }
 
     for (int row = 0; row < blit_h; ++row) {
         const uint8_t* srow = src + static_cast<size_t>(row) * static_cast<size_t>(w);
         for (int col = 0; col < blit_w; ++col) {
-            uint8_t px = srow[col];
-            if (trans && px == 0) {
+            const uint8_t s_raw = srow[col];
+            if (trans && s_raw == 0) {
                 continue;
             }
+            uint8_t out;
             if (ghost_table) {
-                const uint8_t it = ghost_table[px];
+                const uint8_t it = ghost_table[s_raw];
                 if (it != 0xFFu) {
                     uint8_t d = static_cast<uint8_t>(view.Get_Pixel(dst_x + col, dst_y + row));
-                    px = ghost_table[256 + (static_cast<size_t>(it) << 8) + static_cast<size_t>(d)];
+                    out = ghost_table[256 + (static_cast<size_t>(it) << 8) + static_cast<size_t>(d)];
+                } else {
+                    out = fade_table ? fade_table[s_raw] : s_raw;
                 }
+            } else {
+                out = fade_table ? fade_table[s_raw] : s_raw;
             }
-            view.Put_Pixel(dst_x + col, dst_y + row, px);
+            view.Put_Pixel(dst_x + col, dst_y + row, out);
         }
     }
+    return static_cast<long>(blit_w * blit_h);
+}
 
+long Buffer_Frame_To_Page(int x, int y, int w, int h, void* Buffer, GraphicViewPortClass& view, int flags, ...)
+{
+    va_list ap;
+    va_start(ap, flags);
+    const int ghost = (flags & 0x1000) ? 1 : 0;
+    const int fading = (flags & 0x0100) ? 1 : 0;
+    const int predator = (flags & 0x0200) ? 1 : 0;
+
+    Bftp_ExArgs ex = {0};
+
+    if (ghost && fading) {
+        ex.ghost_table = (const unsigned char*)va_arg(ap, void*);
+        ex.fade_table = (const unsigned char*)va_arg(ap, void*);
+        ex.fading_num = va_arg(ap, int);
+        ex.predoffset = va_arg(ap, int);
+    } else if (fading) {
+        ex.fade_table = (const unsigned char*)va_arg(ap, void*);
+        ex.fading_num = va_arg(ap, int);
+        ex.predoffset = va_arg(ap, int);
+    } else if (predator) {
+        ex.predoffset = va_arg(ap, int);
+    } else if (ghost) {
+        ex.ghost_table = (const unsigned char*)va_arg(ap, void*);
+        ex.predoffset = va_arg(ap, int);
+    }
     va_end(ap);
+
+    return Buffer_Frame_To_Page_Ex(x, y, w, h, Buffer, view, flags, &ex);
 }
 #endif
 

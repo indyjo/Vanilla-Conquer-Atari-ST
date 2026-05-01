@@ -61,8 +61,16 @@
 #include	<stddef.h>
 #include	"misc.h"
 
+/*
+ * Placement new: libstdc++ provides these when <new> is included. TUs that only
+ * include game headers still need the declarations for VectorClass buffer construction.
+ */
+#if defined(__GLIBCXX__)
+#include <new>
+#else
 inline void * operator new(size_t , void * pointer) {return(pointer);}
 inline void * operator new[](size_t , void * pointer) {return(pointer);}
+#endif
 
 
 /**************************************************************************

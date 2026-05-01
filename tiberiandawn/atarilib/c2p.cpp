@@ -219,7 +219,7 @@ extern "C" void C2P_Render_Logical_To_Planar_Rect(
 			const int apx = abs_x0 + x;
 			const int lx = dst_x0 + x;
 			const int ly = dst_y0 + y;
-			const uint8_t c4 = C2P_MapDither[yb | (apx & 3)][src[x]];
+			const uint8_t nib = C2P_MapDither[yb | (apx & 3)][src[x]];
 			Planar_Put_Pixel_RowBytes(
 				planar_base,
 				planar_row_bytes,
@@ -227,7 +227,7 @@ extern "C" void C2P_Render_Logical_To_Planar_Rect(
 				planar_height_pixels,
 				lx,
 				ly,
-				c4);
+				nib);
 		}
 	}
 }
@@ -401,22 +401,139 @@ extern "C" void C2P_Blit_Linear8_To_Planar(
 {
 	if (!planar_base || !src || w <= 0 || h <= 0 || src_stride <= 0)
 		return;
+	C2P_InitPairLUT_Once();
+
+	const int row_bytes = ST_PLANAR_BYTES_PER_LINE;
+	const int pw = ST_PLANAR_WIDTH;
+	const int ph = ST_PLANAR_HEIGHT;
+
 	for (int yy = 0; yy < h; yy++) {
 		const int py = dst_y + yy;
-		if (py < 0 || py >= ST_PLANAR_HEIGHT)
+		if (py < 0 || py >= ph)
 			continue;
+
 		const int yb = (py & 3) << 2;
 		const uint8_t *srcrow = src + (size_t)yy * (size_t)src_stride;
 
-		for (int xx = 0; xx < w; xx++) {
-			const int px = dst_x + xx;
-			if (px < 0 || px >= ST_PLANAR_WIDTH)
-				continue;
-			const uint8_t sp = srcrow[xx];
-			if (trans && sp == 0)
-				continue;
-			const uint8_t c4 = C2P_MapDither[yb | (px & 3)][sp];
-			ST_Planar_PutPixel(planar_base, px, py, c4);
+		int xx_lo = 0;
+		int xx_hi = w;
+		if (dst_x < 0) {
+			xx_lo = -dst_x;
+		}
+		if (dst_x + w > pw) {
+			xx_hi = w - ((dst_x + w) - pw);
+		}
+		if (xx_lo >= xx_hi)
+			continue;
+
+		const int logical_w = xx_hi - xx_lo;
+		const int dst_x0 = dst_x + xx_lo;
+		const int abs_x0 = dst_x + xx_lo;
+		const uint8_t *s = srcrow + xx_lo;
+		uint8_t *dst_line = planar_base + (size_t)py * (size_t)row_bytes;
+
+		int x = 0;
+
+		if (!trans) {
+			for (; x < logical_w && ((dst_x0 + x) & 7) != 0; x++) {
+				const int px = dst_x0 + x;
+				const uint8_t nib = C2P_MapDither[yb | (px & 3)][s[x]];
+				Planar_Put_Pixel_RowBytes(planar_base, row_bytes, pw, ph, px, py, nib);
+			}
+			for (; x + 8 <= logical_w; x += 8) {
+				const int apx = abs_x0 + x;
+				const int lx = dst_x0 + x;
+				uint8_t *dst = dst_line + (lx >> 4) * 8 + ((lx >> 3) & 1);
+
+				const uint8_t c0 = C2P_MapDither[yb | ((apx + 0) & 3)][s[x + 0]];
+				const uint8_t c1 = C2P_MapDither[yb | ((apx + 1) & 3)][s[x + 1]];
+				const uint8_t c2 = C2P_MapDither[yb | ((apx + 2) & 3)][s[x + 2]];
+				const uint8_t c3 = C2P_MapDither[yb | ((apx + 3) & 3)][s[x + 3]];
+				const uint8_t c4 = C2P_MapDither[yb | ((apx + 4) & 3)][s[x + 4]];
+				const uint8_t c5 = C2P_MapDither[yb | ((apx + 5) & 3)][s[x + 5]];
+				const uint8_t c6 = C2P_MapDither[yb | ((apx + 6) & 3)][s[x + 6]];
+				const uint8_t c7 = C2P_MapDither[yb | ((apx + 7) & 3)][s[x + 7]];
+
+				const uint32_t vv =
+				    C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
+				    C2P_PairLUT[1][(uint8_t)((c2 << 4) | c3)] |
+				    C2P_PairLUT[2][(uint8_t)((c4 << 4) | c5)] |
+				    C2P_PairLUT[3][(uint8_t)((c6 << 4) | c7)];
+
+				C2P_Movep_Store(dst, vv);
+			}
+			for (; x < logical_w; x++) {
+				const int px = dst_x0 + x;
+				const uint8_t nib = C2P_MapDither[yb | ((abs_x0 + x) & 3)][s[x]];
+				Planar_Put_Pixel_RowBytes(planar_base, row_bytes, pw, ph, px, py, nib);
+			}
+		} else {
+			for (; x < logical_w && ((dst_x0 + x) & 7) != 0; x++) {
+				const uint8_t sp = s[x];
+				if (sp == 0)
+					continue;
+				const int px = dst_x0 + x;
+				const uint8_t nib = C2P_MapDither[yb | (px & 3)][sp];
+				Planar_Put_Pixel_RowBytes(planar_base, row_bytes, pw, ph, px, py, nib);
+			}
+			for (; x + 8 <= logical_w; x += 8) {
+				int nonzero = 0;
+				for (int k = 0; k < 8; k++) {
+					if (s[x + k] != 0) {
+						nonzero = 1;
+						break;
+					}
+				}
+				if (nonzero == 0)
+					continue;
+
+				const int apx = abs_x0 + x;
+				const int lx = dst_x0 + x;
+				int opaque8 = 1;
+				for (int k = 0; k < 8; k++) {
+					if (s[x + k] == 0) {
+						opaque8 = 0;
+						break;
+					}
+				}
+
+				if (opaque8) {
+					uint8_t *dst = dst_line + (lx >> 4) * 8 + ((lx >> 3) & 1);
+					const uint8_t c0 = C2P_MapDither[yb | ((apx + 0) & 3)][s[x + 0]];
+					const uint8_t c1 = C2P_MapDither[yb | ((apx + 1) & 3)][s[x + 1]];
+					const uint8_t c2 = C2P_MapDither[yb | ((apx + 2) & 3)][s[x + 2]];
+					const uint8_t c3 = C2P_MapDither[yb | ((apx + 3) & 3)][s[x + 3]];
+					const uint8_t c4 = C2P_MapDither[yb | ((apx + 4) & 3)][s[x + 4]];
+					const uint8_t c5 = C2P_MapDither[yb | ((apx + 5) & 3)][s[x + 5]];
+					const uint8_t c6 = C2P_MapDither[yb | ((apx + 6) & 3)][s[x + 6]];
+					const uint8_t c7 = C2P_MapDither[yb | ((apx + 7) & 3)][s[x + 7]];
+
+					const uint32_t vv =
+					    C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
+					    C2P_PairLUT[1][(uint8_t)((c2 << 4) | c3)] |
+					    C2P_PairLUT[2][(uint8_t)((c4 << 4) | c5)] |
+					    C2P_PairLUT[3][(uint8_t)((c6 << 4) | c7)];
+
+					C2P_Movep_Store(dst, vv);
+				} else {
+					for (int k = 0; k < 8; k++) {
+						const uint8_t sp = s[x + k];
+						if (sp == 0)
+							continue;
+						const int px = dst_x0 + x + k;
+						const uint8_t nib = C2P_MapDither[yb | (px & 3)][sp];
+						Planar_Put_Pixel_RowBytes(planar_base, row_bytes, pw, ph, px, py, nib);
+					}
+				}
+			}
+			for (; x < logical_w; x++) {
+				const uint8_t sp = s[x];
+				if (sp == 0)
+					continue;
+				const int px = dst_x0 + x;
+				const uint8_t nib = C2P_MapDither[yb | (px & 3)][sp];
+				Planar_Put_Pixel_RowBytes(planar_base, row_bytes, pw, ph, px, py, nib);
+			}
 		}
 	}
 }

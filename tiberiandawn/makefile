@@ -90,6 +90,16 @@ endif
 # Put platform lib first so platform-specific headers take precedence over root headers
 INCLUDES = -I./$(PLATFORM_LIB) -I. -I./COMMONLIB
 
+# Some m68k-atari-mint installs omit libstdc++ from the primary sys-root; headers may live under sys-root-old.
+ifeq ($(PLATFORM_LIB),ATARILIB)
+MINT_CROSS_TOP := $(shell dirname "$(CROSS_PREFIX)")
+LIBSTDCPP_VER := $(shell "$(CXX)" -dumpversion 2>/dev/null || echo 14)
+MINT_LIBSTDCPP_INC := $(MINT_CROSS_TOP)/m68k-atari-mint/sys-root-old/usr/include/c++/$(LIBSTDCPP_VER)
+ifneq ($(wildcard $(MINT_LIBSTDCPP_INC)/list),)
+INCLUDES += -I$(MINT_LIBSTDCPP_INC) -I$(MINT_LIBSTDCPP_INC)/m68k-atari-mint
+endif
+endif
+
 # Common compiler flags (GCC style)
 CXXFLAGS_COMMON = -Wall -Wextra -fno-exceptions
 CXXFLAGS_COMMON += $(INCLUDES)
@@ -212,7 +222,7 @@ ROOT_CPP_SOURCES = \
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp $(PLATFORM_LIB)/buffer.cpp $(PLATFORM_LIB)/buffglbl.cpp \
 	$(PLATFORM_LIB)/ddraw.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/DrawMisc.cpp \
-	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_bftp_sprite_cache.cpp $(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp \
 	$(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/load.cpp \
 	$(PLATFORM_LIB)/loadfont.cpp $(PLATFORM_LIB)/loadpal.cpp $(PLATFORM_LIB)/mem.cpp \

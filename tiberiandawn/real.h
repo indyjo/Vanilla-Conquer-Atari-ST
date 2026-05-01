@@ -506,13 +506,18 @@ long Translucent_Table_Size(int count);
 void *Build_Translucent_Table(void const *palette, TLucentType const *control, int count, void *buffer);
 void *Conquer_Build_Translucent_Table(void const *palette, TLucentType const *control, int count, void *buffer);
 
+struct Bftp_ExArgs;
+
 /*
 **	KEYFBUFF.ASM
 */
 #ifdef __cplusplus
 extern "C" {
 #endif
+void Bftp_ExArgs_init_zero(struct Bftp_ExArgs *ex);
 long __cdecl Buffer_Frame_To_Page(int x, int y, int w, int h, void *Buffer, GraphicViewPortClass &view, int flags, ...);
+long __cdecl Buffer_Frame_To_Page_Ex(int x, int y, int w, int h, void *Buffer, GraphicViewPortClass &view, int flags,
+    struct Bftp_ExArgs const *ex);
 #ifdef __cplusplus
 }
 #endif

@@ -70,6 +70,11 @@
 #include "common/settings.h"
 #include "common/winasm.h"
 
+#ifdef ATARI_ST
+#include "st_bftp_sprite_cache.h"
+#include <limits.h>
+#endif
+
 #define SHAPE_TRANS 0x40
 
 void* Get_Shape_Header_Data(void* ptr);
@@ -2617,6 +2622,29 @@ void CC_Draw_Line(int x, int y, int x1, int y1, unsigned char color, int frame, 
 #endif
     LogicPage->Draw_Line(x, y, x1, y1, color);
 }
+
+#ifdef ATARI_ST
+struct CC_Draw_Shape_Lazy_Ctx {
+    void const* shapefile;
+    int shapenum;
+};
+
+static unsigned long CC_Draw_Shape_Lazy_Frame_Fill(void* user_ctx)
+{
+    CC_Draw_Shape_Lazy_Ctx* const cx = reinterpret_cast<CC_Draw_Shape_Lazy_Ctx*>(user_ctx);
+
+    unsigned long const shape_ret = Build_Frame(cx->shapefile, (unsigned short)cx->shapenum, _ShapeBuffer);
+
+    if (Get_Last_Frame_Length() > _ShapeBufferSize) {
+        Mono_Printf("Attempt to use shape buffer for size %d buffer is only size %ld",
+                    Get_Last_Frame_Length(),
+                    _ShapeBufferSize);
+        Keyboard->Get();
+    }
+    return shape_ret;
+}
+#endif
+
 /***********************************************************************************************
  * CC_Draw_Shape -- Custom draw shape handler.                                                 *
  *                                                                                             *
@@ -2661,10 +2689,79 @@ void CC_Draw_Shape(void const* shapefile,
 {
 #if true
     int predoffset;
-    char* draw_pointer;
-    uintptr_t shape_size;
 
     if (shapefile && shapenum != -1) {
+#ifdef ATARI_ST
+        unsigned long const bf_need = Get_Build_Frame_BufferBytes(shapefile);
+        if (bf_need != 0UL && bf_need > (unsigned long)_ShapeBufferSize) {
+            Mono_Printf("Attempt to use shape buffer for size %lu buffer is only size %ld\n",
+                        bf_need,
+                        _ShapeBufferSize);
+            Keyboard->Get();
+        }
+
+        int draw_width = Get_Build_Frame_Width(shapefile);
+        int draw_height = Get_Build_Frame_Height(shapefile);
+
+        if (draw_width > 0 && draw_height > 0) {
+            GraphicViewPortClass draw_window(LogicPage->Get_Graphic_Buffer(),
+                                             WindowList[window][WINDOWX] + LogicPage->Get_XPos(),
+                                             WindowList[window][WINDOWY] + LogicPage->Get_YPos(),
+                                             WindowList[window][WINDOWWIDTH],
+                                             WindowList[window][WINDOWHEIGHT]);
+
+            if ((flags & (SHAPE_FADING | SHAPE_PREDATOR)) == (SHAPE_FADING | SHAPE_PREDATOR)) {
+                flags = flags & ~(SHAPE_FADING | SHAPE_PREDATOR);
+                flags = flags | SHAPE_GHOST;
+                ghostdata = Map.SpecialGhost;
+            }
+
+            predoffset = Frame;
+
+            if (x > WindowList[window][WINDOWWIDTH] >> 1) {
+                predoffset = -predoffset;
+            }
+
+            if (draw_window.Lock()) {
+                CC_Draw_Shape_Lazy_Ctx lazy_ctx;
+                lazy_ctx.shapefile = shapefile;
+                lazy_ctx.shapenum = shapenum;
+
+                Bftp_ExArgs bftp_ex = {0};
+                bftp_ex.identity_key = ST_BFTP_Frame_Identity_Key(shapefile, shapenum);
+                bftp_ex.lazy_frame_fill = CC_Draw_Shape_Lazy_Frame_Fill;
+                bftp_ex.lazy_frame_ctx = &lazy_ctx;
+                bftp_ex.lru_scratch_root = (unsigned char const*)_ShapeBuffer;
+
+                unsigned const gbit = (((unsigned)(int)flags) & (unsigned)SHAPE_GHOST) != 0;
+                unsigned const fbit = (((unsigned)(int)flags) & (unsigned)SHAPE_FADING) != 0;
+                unsigned const pbit = (((unsigned)(int)flags) & (unsigned)SHAPE_PREDATOR) != 0;
+
+                if (gbit != 0U && fbit != 0U) {
+                    bftp_ex.ghost_table = (unsigned char const*)ghostdata;
+                    bftp_ex.fade_table = (unsigned char const*)fadingdata;
+                    bftp_ex.fading_num = 1;
+                    bftp_ex.predoffset = predoffset;
+                } else if (fbit != 0U) {
+                    bftp_ex.fade_table = (unsigned char const*)fadingdata;
+                    bftp_ex.fading_num = 1;
+                    bftp_ex.predoffset = predoffset;
+                } else if (pbit != 0U) {
+                    bftp_ex.predoffset = predoffset;
+                } else if (gbit != 0U) {
+                    bftp_ex.ghost_table = (unsigned char const*)ghostdata;
+                    bftp_ex.predoffset = predoffset;
+                }
+
+                int const bf_flags = (int)((unsigned)(int)flags | (unsigned)SHAPE_TRANS);
+
+                Buffer_Frame_To_Page_Ex(x, y, draw_width, draw_height, nullptr, draw_window, bf_flags, &bftp_ex);
+            }
+            draw_window.Unlock();
+        }
+#else
+    char* draw_pointer;
+    uintptr_t shape_size;
 
         /*
         ** Build frame returns a pointer now instead of the shapes length
@@ -2754,6 +2851,7 @@ void CC_Draw_Shape(void const* shapefile,
             //		} else {
             //			Mono_Printf( "Overrun ShapeBuffer!!!!!!!!!\n" );
         }
+#endif
     }
 #endif
 }

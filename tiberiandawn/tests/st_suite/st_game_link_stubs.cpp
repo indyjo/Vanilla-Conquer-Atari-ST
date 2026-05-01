@@ -135,3 +135,24 @@ long Buffer_Frame_To_Page(int x, int y, int w, int h, void *Buffer, GraphicViewP
 	return 0;
 }
 
+long Buffer_Frame_To_Page_Ex(int x, int y, int w, int h, void *Buffer, GraphicViewPortClass &view, int flags,
+    Bftp_ExArgs const *ex)
+{
+	(void)x;
+	(void)y;
+	(void)w;
+	(void)h;
+	(void)Buffer;
+	(void)view;
+	(void)flags;
+	(void)ex;
+	return 0;
+}
+
+void Bftp_ExArgs_init_zero(Bftp_ExArgs *ex)
+{
+	if (!ex)
+		return;
+	memset(ex, 0, sizeof(*ex));
+}
+

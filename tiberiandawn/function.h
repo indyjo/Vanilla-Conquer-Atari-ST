@@ -515,16 +515,55 @@ void* Build_Translucent_Table(void const* palette, TLucentType const* control, i
 void* Conquer_Build_Translucent_Table(void const* palette, TLucentType const* control, int count, void* buffer);
 
 /*
+**	Extras for Buffer_Frame_To_Page_Ex (same information the vararg Buffer_Frame_To_Page path
+**	packs from SHAPE_* flags). Pass NULL for ex when you only need a plain blit.
+*/
+typedef unsigned long (*Bftp_Lazy_Frame_FillFn)(void* user_ctx);
+
+typedef struct Bftp_ExArgs {
+    const unsigned char* ghost_table;
+    const unsigned char* fade_table;
+    int fading_num;
+    int predoffset;
+    long identity_key;
+    Bftp_Lazy_Frame_FillFn lazy_frame_fill;
+    void* lazy_frame_ctx;
+    const unsigned char* lru_scratch_root;
+} Bftp_ExArgs;
+
+/*
 **	KEYFBUFF.ASM
 */
-void Buffer_Frame_To_Page(int x,
-                          int y,
-                          int width,
-                          int height,
-                          void* shape,
-                          GraphicViewPortClass& viewport,
-                          int flags,
-                          ...);
+#ifdef __cplusplus
+extern "C" {
+#endif
+void Bftp_ExArgs_init_zero(Bftp_ExArgs* ex);
+long __cdecl Buffer_Frame_To_Page(int x, int y, int w, int h, void* Buffer, GraphicViewPortClass& view, int flags, ...);
+long __cdecl Buffer_Frame_To_Page_Ex(int x,
+                                     int y,
+                                     int w,
+                                     int h,
+                                     void* Buffer,
+                                     GraphicViewPortClass& view,
+                                     int flags,
+                                     Bftp_ExArgs const* ex);
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __cplusplus
+inline long Buffer_Frame_To_Page_Ex(int x,
+                                    int y,
+                                    int w,
+                                    int h,
+                                    void* Buffer,
+                                    GraphicViewPortClass& view,
+                                    int flags,
+                                    Bftp_ExArgs const& ex)
+{
+    return Buffer_Frame_To_Page_Ex(x, y, w, h, Buffer, view, flags, &ex);
+}
+#endif
 
 /*
 **	KEYFRAME.CPP

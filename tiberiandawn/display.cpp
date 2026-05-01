@@ -78,6 +78,271 @@
 #include "function.h"
 #include "common/fading.h"
 #include "ccini.h"
+#include "atarilib/st_frame_meter.h"
+
+#ifdef ATARI_ST
+#include "st_blitter_blit.h"
+
+#include <stdint.h>
+#include <string.h>
+#include <assert.h>
+
+#include <mint/osbind.h>
+
+namespace {
+	enum {
+		ST_SHADOW_TILE_W = 24,
+		ST_SHADOW_TILE_H = 24,
+		ST_SHADOW_MASK_PAD_X = 16,
+		ST_SHADOW_MASK_W = 64,
+		ST_SHADOW_MASK_ROW_BYTES = ST_SHADOW_MASK_W >> 3,
+		ST_SHADOW_MASK_BYTES = ST_SHADOW_MASK_ROW_BYTES * ST_SHADOW_TILE_H,
+		ST_SHADOW_FRAME_COUNT = 12,
+		ST_SHADOW_FULL_SLOT = ST_SHADOW_FRAME_COUNT,
+		ST_SHADOW_CACHE_SLOT_COUNT = ST_SHADOW_FRAME_COUNT + 1,
+		ST_SHADOW_CACHE_BYTES = ST_SHADOW_MASK_BYTES * ST_SHADOW_CACHE_SLOT_COUNT
+	};
+
+	static uint8_t *STShadowPlanarCache = 0;
+	static char STShadowPlanarCacheError[128];
+
+	/*
+	 * Address one fixed-size mask slot in the contiguous ST-RAM cache.
+	 */
+	static inline uint8_t *ST_Shadow_Cache_Slot(short slot)
+	{
+		assert(STShadowPlanarCache != 0);
+		assert(slot >= 0 && slot < ST_SHADOW_CACHE_SLOT_COUNT);
+		return STShadowPlanarCache + (size_t)slot * (size_t)ST_SHADOW_MASK_BYTES;
+	}
+
+	/*
+	 * Free the complete contiguous shadow mask cache.
+	 */
+	static void ST_Free_Shadow_Planar_Cache(void)
+	{
+		Mfree(STShadowPlanarCache);
+		STShadowPlanarCache = 0;
+	}
+
+	/*
+	 * Clear one bit in a big-endian 1bpp mask. Bit 0 in the mask means the
+	 * corresponding destination pixel will be darkened/cleared by the BLiTTER.
+	 */
+	static inline void ST_Shadow_Mask_Clear_Pixel(uint8_t *mask, short row_bytes, short x, short y)
+	{
+		uint8_t *byte = mask + (size_t)y * (size_t)row_bytes + (x >> 3);
+		*byte = (uint8_t)(*byte & (uint8_t)~(0x80u >> (x & 7)));
+	}
+
+	/*
+	 * Convert the original shadow shade color to a 0..16 Bayer coverage count.
+	 */
+	static short ST_Shadow_Mask_Clear_Count(uint8_t pixel)
+	{
+		if (pixel == 0) {
+			return 0;
+		}
+
+		short opacity = 255;
+		if (pixel == WHITE + 1) {
+			opacity = 130;
+		} else if (pixel == WHITE) {
+			opacity = 170;
+		} else if (pixel == LTGRAY || pixel == DKGRAY) {
+			opacity = 250;
+		}
+
+		short const clear_count = (short)((opacity * 16 + 127) / 255);
+		return clear_count > 16 ? 16 : clear_count;
+	}
+
+	/*
+	 * Decide whether one chunky shadow pixel clears its destination bit. The 4x4
+	 * Bayer phase is based on tile-local coordinates so cached masks are stable.
+	 */
+	static bool ST_Shadow_Mask_Should_Clear(uint8_t pixel, short x, short y)
+	{
+		static uint8_t const bayer4x4[16] = {
+			0,  8,  2, 10,
+			12, 4, 14,  6,
+			3, 11,  1,  9,
+			15, 7, 13,  5
+		};
+
+		short const clear_count = ST_Shadow_Mask_Clear_Count(pixel);
+		if (clear_count <= 0) {
+			return false;
+		}
+		if (clear_count >= 16) {
+			return true;
+		}
+		return bayer4x4[((y & 3) << 2) | (x & 3)] < clear_count;
+	}
+
+	/*
+	 * Decode one SHADOW.SHP frame into a padded 1bpp mask. The 16-pixel left
+	 * pad lets clipped shadows still provide full source words for skewing.
+	 */
+	static bool ST_Build_Shadow_Planar_Frame(void const *shapes, short frame)
+	{
+		if (!shapes || frame < 0 || frame >= ST_SHADOW_FRAME_COUNT) {
+			return false;
+		}
+
+		unsigned long const frame_ptr = Build_Frame(shapes, (unsigned short)frame, _ShapeBuffer);
+		if (!frame_ptr) {
+			return false;
+		}
+
+		assert(Get_Build_Frame_Width(shapes) == ST_SHADOW_TILE_W);
+		assert(Get_Build_Frame_Height(shapes) == ST_SHADOW_TILE_H);
+		assert((long)(ST_SHADOW_TILE_W * ST_SHADOW_TILE_H) <= _ShapeBufferSize);
+
+		uint8_t *mask = ST_Shadow_Cache_Slot(frame);
+		memset(mask, 0xFF, (size_t)ST_SHADOW_MASK_BYTES);
+
+		uint8_t const *source = (uint8_t const *)frame_ptr;
+		for (short y = 0; y < ST_SHADOW_TILE_H; y++) {
+			uint8_t const *source_row = source + (size_t)y * (size_t)ST_SHADOW_TILE_W;
+			for (short x = 0; x < ST_SHADOW_TILE_W; x++) {
+				if (ST_Shadow_Mask_Should_Clear(source_row[x], x, y)) {
+					ST_Shadow_Mask_Clear_Pixel(mask, ST_SHADOW_MASK_ROW_BYTES, (short)(ST_SHADOW_MASK_PAD_X + x), y);
+				}
+			}
+		}
+
+		return true;
+	}
+
+	/*
+	 * Allocate the full shadow cache en bloc and build every slot up front.
+	 * Slots 0..11 are SHADOW.SHP masks; slot 12 is the all-zero full-shadow mask.
+	 */
+	static bool ST_Build_Shadow_Planar_Cache(void const *shapes)
+	{
+		assert(STShadowPlanarCache == 0);
+		STShadowPlanarCacheError[0] = '\0';
+		if (!shapes) {
+			sprintf(STShadowPlanarCacheError, "Failed to build ST shadow mask cache: SHADOW.SHP missing");
+			return false;
+		}
+
+		assert(Get_Build_Frame_Count(shapes) >= ST_SHADOW_FRAME_COUNT);
+		if (Get_Build_Frame_Count(shapes) < ST_SHADOW_FRAME_COUNT) {
+			sprintf(STShadowPlanarCacheError,
+				"Failed to build ST shadow mask cache: frame count %u",
+				(unsigned)Get_Build_Frame_Count(shapes));
+			return false;
+		}
+
+		long const cache = Mxalloc((long)ST_SHADOW_CACHE_BYTES, MX_STRAM | MX_PRIVATE);
+		if (cache <= 0L) {
+			sprintf(STShadowPlanarCacheError,
+				"Failed to build ST shadow mask cache: Mxalloc(%u) returned %ld",
+				(unsigned)ST_SHADOW_CACHE_BYTES,
+				cache);
+			return false;
+		}
+		STShadowPlanarCache = (uint8_t *)cache;
+
+		for (short frame = 0; frame < ST_SHADOW_FRAME_COUNT; frame++) {
+			if (!ST_Build_Shadow_Planar_Frame(shapes, frame)) {
+				sprintf(STShadowPlanarCacheError,
+					"Failed to build ST shadow mask cache: frame %d decode failed",
+					(int)frame);
+				ST_Free_Shadow_Planar_Cache();
+				return false;
+			}
+		}
+
+		memset(ST_Shadow_Cache_Slot(ST_SHADOW_FULL_SLOT), 0, (size_t)ST_SHADOW_MASK_BYTES);
+		return true;
+	}
+
+	/*
+	 * Draw one cached 1bpp mask slot to the tactical window after clipping.
+	 * All slots use the same padded 64x24 source format.
+	 */
+	static bool ST_Draw_Shadow_Mask_Slot(
+		short slot,
+		int xpixel,
+		int ypixel)
+	{
+		if (slot < 0 || slot >= ST_SHADOW_CACHE_SLOT_COUNT || !LogicPage) {
+			return false;
+		}
+
+		GraphicBufferClass *gb = LogicPage->Get_Graphic_Buffer();
+		if (!gb || !gb->Uses_ST_LoRes_Planar_Layout()) {
+			return false;
+		}
+
+		short src_x = 0;
+		short src_y = 0;
+		short dst_x = (short)xpixel;
+		short dst_y = (short)ypixel;
+		short blit_w = ST_SHADOW_TILE_W;
+		short blit_h = ST_SHADOW_TILE_H;
+
+		short const tactical_w = (short)(WindowList[WINDOW_TACTICAL][WINDOWWIDTH] << 3);
+		short const tactical_h = (short)WindowList[WINDOW_TACTICAL][WINDOWHEIGHT];
+		if (dst_x < 0) {
+			src_x = (short)-dst_x;
+			blit_w -= src_x;
+			dst_x = 0;
+		}
+		if (dst_y < 0) {
+			src_y = (short)-dst_y;
+			blit_h -= src_y;
+			dst_y = 0;
+		}
+		if (dst_x + blit_w > tactical_w) {
+			blit_w = (short)(tactical_w - dst_x);
+		}
+		if (dst_y + blit_h > tactical_h) {
+			blit_h = (short)(tactical_h - dst_y);
+		}
+		if (blit_w <= 0 || blit_h <= 0) {
+			return true;
+		}
+
+		int const dx_abs = LogicPage->Get_XPos() + (WindowList[WINDOW_TACTICAL][WINDOWX] << 3) + dst_x;
+		int const dy_abs = LogicPage->Get_YPos() + WindowList[WINDOW_TACTICAL][WINDOWY] + dst_y;
+		if (dx_abs < 0 || dy_abs < 0
+			|| dx_abs + blit_w > ST_PLANAR_WIDTH
+			|| dy_abs + blit_h > ST_PLANAR_HEIGHT) {
+			return false;
+		}
+
+		uint8_t *dst_root = (uint8_t *)gb->Get_Buffer();
+		if (!dst_root) {
+			return false;
+		}
+
+		return ST_Blitter_Mask_And_Planar_Rect(
+			ST_Shadow_Cache_Slot(slot),
+			ST_SHADOW_MASK_ROW_BYTES,
+			ST_SHADOW_MASK_W,
+			ST_SHADOW_TILE_H,
+			ST_SHADOW_MASK_PAD_X + src_x,
+			src_y,
+			dst_root,
+			ST_PLANAR_BYTES_PER_LINE,
+			ST_PLANAR_WIDTH,
+			ST_PLANAR_HEIGHT,
+			dx_abs,
+			dy_abs,
+			blit_w,
+			blit_h) ? true : false;
+	}
+
+}
+#endif
+
+/*
+**	These layer control elements are used to group the displayable objects
+
 
 /*
 **	These layer control elements are used to group the displayable objects
@@ -2100,6 +2365,8 @@ void DisplayClass::Draw_It(bool forced)
     if (IsToRedraw || forced) {
         IsToRedraw = false;
 
+        ST_FRAME_BAR_MAP_PREP_BEGIN();
+
         /*
         **	In rubber band mode, mark all cells under the "rubber band" to be
         **	redrawn.
@@ -2356,13 +2623,17 @@ void DisplayClass::Draw_It(bool forced)
             CellRedraw.Set();
         }
 
+        ST_FRAME_BAR_MAP_PREP_END();
+
         // Colour_Debug(3);
         /*
         **	The first order of business is to redraw all the underlying icons that are
         **	flagged to be redrawn.
         */
         // Redraw_Icons(CELL_BLIT_ONLY);
+        ST_FRAME_BAR_MAP_ICONS_BEGIN();
         Redraw_Icons(0);
+        ST_FRAME_BAR_MAP_ICONS_END();
 
         /*
         **	Once the icons are drawn, duplicate the bottom line of the screen into the phantom
@@ -2382,22 +2653,27 @@ void DisplayClass::Draw_It(bool forced)
             **	first and then followed by all the layers in increasing altituded.
             */
             for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
+                ST_FRAME_BAR_MAP_LAYER_BEGIN((int)layer);
 #ifdef ATARI_ST
                 Call_Back();
 #endif
                 for (int index = 0; index < Layer[layer].Count(); index++) {
                     Layer[layer][index]->Render(forced);
                 }
+                ST_FRAME_BAR_MAP_LAYER_END((int)layer);
             }
 
             /*
             **	Finally, redraw the shadow overlay as necessary.
             */
             // Colour_Debug(5);
+            ST_FRAME_BAR_MAP_SHADOW_BEGIN();
             Redraw_Shadow();
         }
 
         Redraw_Shadow_Rects();
+
+        ST_FRAME_BAR_MAP_SHADOW_END();
 
         HidPage.Unlock();
 

@@ -60,12 +60,6 @@ static STTilePlanarCacheEntry g_tile_planar_cache[ST_TILE_PLANAR_CACHE_SLOTS];
 static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb);
 
 enum { ST_HZ200_ADDR = 0x4BA };
-static unsigned long g_tile_cache_stats_period_start_hz200 = 0;
-static unsigned long g_tile_cache_stats_tiles_c2p = 0;
-static unsigned long g_tile_cache_stats_tiles_cache_hit = 0;
-static unsigned long g_tile_cache_stats_decode_ticks = 0;
-static unsigned long g_tile_cache_stats_c2p_ticks = 0;
-static unsigned long g_tile_cache_stats_blit_ticks = 0;
 
 static inline unsigned long ST_Read_Hz200(void)
 {
@@ -74,29 +68,6 @@ static inline unsigned long ST_Read_Hz200(void)
 #else
 	return 0UL;
 #endif
-}
-
-static void ST_Tile_Cache_Stats_Maybe_Report(unsigned long hz_now)
-{
-	const unsigned long k_period_ticks = 5UL * 200UL;
-	unsigned long elapsed;
-
-	if (g_tile_cache_stats_period_start_hz200 == 0UL) {
-		g_tile_cache_stats_period_start_hz200 = hz_now;
-		return;
-	}
-
-	elapsed = hz_now - g_tile_cache_stats_period_start_hz200;
-	if (elapsed < k_period_ticks) {
-		return;
-	}
-
-	g_tile_cache_stats_period_start_hz200 = hz_now;
-	g_tile_cache_stats_tiles_c2p = 0UL;
-	g_tile_cache_stats_tiles_cache_hit = 0UL;
-	g_tile_cache_stats_decode_ticks = 0UL;
-	g_tile_cache_stats_c2p_ticks = 0UL;
-	g_tile_cache_stats_blit_ticks = 0UL;
 }
 
 static void ST_Tile_Cache_Debug_Toggle_Maybe(void)
@@ -176,8 +147,7 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 	GraphicViewPortClass *vp,
 	unsigned long identity_key,
 	int x_pixel,
-	int y_pixel,
-	unsigned long *out_blit_ticks)
+	int y_pixel)
 {
 	const int vpw = vp->Get_Width();
 	const int vph = vp->Get_Height();
@@ -231,7 +201,6 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 	}
 
 	{
-		unsigned long blit_hz0 = ST_Read_Hz200();
 		BOOL blit_ok = ST_Blitter_Planar_Rect_Blit(
 		g_tile_planar_cache_aligned,
 		ST_TILE_PLANAR_CACHE_BPL,
@@ -247,9 +216,6 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 		dy_abs,
 		clip_blit_w,
 		clip_blit_h);
-		if (out_blit_ticks) {
-			*out_blit_ticks = ST_Read_Hz200() - blit_hz0;
-		}
 		return blit_ok;
 	}
 }
@@ -1458,7 +1424,6 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	if (!remap && AllowHardwareBlitFills && VP_Is_Planar(vp) && Ensure_Terrain_Tile_Scratch()) {
 		ST_Tile_Cache_Debug_Toggle_Maybe();
 		BOOL maybe_24x24_tile = FALSE;
-		unsigned long cached_blit_ticks = 0UL;
 		const unsigned char *base = (const unsigned char *)icondata;
 		const unsigned short iw = Read_LE16_Unsafe(base + 0);
 		const unsigned short ih = Read_LE16_Unsafe(base + 2);
@@ -1473,17 +1438,13 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 				maybe_24x24_tile = TRUE;
 			}
 		}
-		if (maybe_24x24_tile && Try_Blit_Cached_Terrain_Tile(vp, stamp_identity_key, x_pixel, y_pixel, &cached_blit_ticks)) {
-			g_tile_cache_stats_tiles_cache_hit++;
-			g_tile_cache_stats_blit_ticks += cached_blit_ticks;
-			ST_Tile_Cache_Stats_Maybe_Report(ST_Read_Hz200());
+		if (maybe_24x24_tile && Try_Blit_Cached_Terrain_Tile(vp, stamp_identity_key, x_pixel, y_pixel)) {
 			return;
 		}
 	}
 	if (!_ShapeBuffer || _ShapeBufferSize <= 0) {
 		return;
 	}
-	unsigned long decode_hz0 = ST_Read_Hz200();
 
 	void *decoded_ptr = NULL;
 	int w = 0;
@@ -1584,7 +1545,6 @@ iconset_decode_done:
 	if (!decoded_ptr) {
 		return;
 	}
-	g_tile_cache_stats_decode_ticks += ST_Read_Hz200() - decode_hz0;
 
 	if (w <= 0 || h <= 0) {
 		return;
@@ -1673,7 +1633,6 @@ iconset_decode_done:
 
 				/* Cache the full 24x24 tile; clipping happens in blitter source coordinates. */
 				cache_entry = Reserve_Tile_Planar_Cache_Entry();
-				unsigned long c2p_hz0 = ST_Read_Hz200();
 				C2P_Render_Logical_To_Planar_Rect(
 					g_tile_linear_24x24,
 					ST_TILE_LINEAR_W,
@@ -1687,10 +1646,6 @@ iconset_decode_done:
 					(int)cache_entry->atlas_y,
 					0,
 					0);
-				g_tile_cache_stats_tiles_c2p++;
-				g_tile_cache_stats_c2p_ticks += ST_Read_Hz200() - c2p_hz0;
-
-				unsigned long blit_hz0 = ST_Read_Hz200();
 				if (ST_Blitter_Planar_Rect_Blit(
 						g_tile_planar_cache_aligned,
 						ST_TILE_PLANAR_CACHE_BPL,
@@ -1706,14 +1661,11 @@ iconset_decode_done:
 						dy_abs,
 						clip_blit_w,
 						clip_blit_h)) {
-					g_tile_cache_stats_blit_ticks += ST_Read_Hz200() - blit_hz0;
 					cache_entry->identity_key = stamp_identity_key;
 					cache_entry->last_used_tick = Next_Tile_Planar_Cache_Tick();
 					cache_entry->valid = TRUE;
-					ST_Tile_Cache_Stats_Maybe_Report(ST_Read_Hz200());
 					return;
 				}
-				g_tile_cache_stats_blit_ticks += ST_Read_Hz200() - blit_hz0;
 			}
 		} else {
 			/* Tile fully outside viewport; nothing to draw. */
@@ -1736,7 +1688,6 @@ fast24_fallback:
 			s_last_warn_hz200 = now_hz200;
 		}
 	}
-	ST_Tile_Cache_Stats_Maybe_Report(ST_Read_Hz200());
 	{
 		Bftp_ExArgs stamp_ex = { 0 };
 		stamp_ex.identity_key = stamp_identity_key;

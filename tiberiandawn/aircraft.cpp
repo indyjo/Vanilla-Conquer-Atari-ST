@@ -952,12 +952,15 @@ void AircraftClass::AI(void)
 bool AircraftClass::Mark(MarkType mark)
 {
     Validate();
-    if (FootClass::Mark(mark)) {
-        Map.Refresh_Cells(Coord_Cell(Coord), Occupy_List());
-        Map.Refresh_Cells(Coord_Cell(Coord), Overlap_List());
-        return (true);
+    if (!FootClass::Mark(mark)) {
+        return (false);
     }
-    return (false);
+    if (!Debug_Clipped_Tactical_Redraw) {
+        CELL const c = Coord_Cell(Coord);
+        Map.Refresh_Cells(c, Occupy_List());
+        Map.Refresh_Cells(c, Overlap_List());
+    }
+    return (true);
 }
 
 /***********************************************************************************************

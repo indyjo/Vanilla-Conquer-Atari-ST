@@ -190,6 +190,7 @@ public:
     ObjectClass* Next_Object(ObjectClass* object);
     ObjectClass* Prev_Object(ObjectClass* object);
     int Cell_Shadow(CELL cell, HouseClass* house);
+    bool Tactical_Cell_Hides_Objects_For_Local_Player(CELL anchor_cell);
     short const* Text_Overlap_List(char const* text, int x, int y, int lines = 1);
     bool Is_Spot_Free(COORDINATE coord) const;
     COORDINATE Closest_Free_Spot(COORDINATE coord, bool any = false) const;

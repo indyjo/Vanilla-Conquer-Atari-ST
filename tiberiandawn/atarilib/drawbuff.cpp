@@ -892,6 +892,9 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	int width = vp->Get_Width();
 	int height = vp->Get_Height();
 	if (width <= 0 || height <= 0) return;
+
+	// Reject lines that are completely outside the viewport
+	if (sx < 0 && dx < 0 || sy < 0 && dy < 0 || sx >= width && dx >= width || sy >= height && dy >= height) return;
 	
 	// Clip coordinates to viewport bounds
 	if (sx < 0) sx = 0;

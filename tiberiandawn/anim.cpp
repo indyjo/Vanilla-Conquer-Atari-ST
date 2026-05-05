@@ -201,6 +201,9 @@ bool AnimClass::Render(bool forced)
     Validate();
     if (Delay)
         return (false);
+    if (Debug_Clipped_Tactical_Redraw) {
+        return (ObjectClass::Render(true));
+    }
     IsToDisplay = true;
     return (ObjectClass::Render(forced));
 }
@@ -343,8 +346,13 @@ bool AnimClass::Mark(MarkType mark)
 {
     Validate();
     if (ObjectClass::Mark(mark)) {
-        Map.Refresh_Cells(Coord_Cell(Center_Coord()), Overlap_List());
-        //		ObjectClass::Mark(mark);
+        if (Debug_Clipped_Tactical_Redraw) {
+            if (mark == MARK_DOWN && IsDown) {
+                Map.Overlap_Down(Coord_Cell(Coord), this);
+            }
+        } else {
+            Map.Refresh_Cells(Coord_Cell(Center_Coord()), Overlap_List());
+        }
         return (true);
     }
     return (false);
@@ -515,11 +523,10 @@ short const* AnimClass::Overlap_List(void) const
  * HISTORY:                                                                                    *
  *   03/19/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
-short const* AnimClass::Occupy_List(void) const
+short const* AnimClass::Occupy_List(bool placement) const
 {
-    Validate();
+    (void)placement;
     static short _simple[] = {REFRESH_EOL};
-
     return (_simple);
 }
 

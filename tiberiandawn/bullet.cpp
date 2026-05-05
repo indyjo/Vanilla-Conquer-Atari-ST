@@ -209,8 +209,9 @@ BulletClass::BulletClass(BulletType id)
  *   06/20/1994 JLB : Created.                                                                 *
  *   01/05/1995 JLB : Handles projectiles with altitude.                                       *
  *=============================================================================================*/
-short const* BulletClass::Occupy_List(void) const
+short const* BulletClass::Occupy_List(bool placement) const
 {
+    (void)placement;
     Validate();
     switch (*this) {
     case BULLET_FLAME:
@@ -266,7 +267,7 @@ bool BulletClass::Mark(MarkType mark)
 {
     Validate();
     if (ObjectClass::Mark(mark)) {
-        if (!Class->IsInvisible) {
+        if (!Class->IsInvisible && !Debug_Clipped_Tactical_Redraw) {
             Map.Refresh_Cells(Coord_Cell(Coord), Occupy_List());
         }
         return (true);

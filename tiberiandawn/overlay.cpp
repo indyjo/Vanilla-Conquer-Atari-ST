@@ -222,7 +222,6 @@ bool OverlayClass::Mark(MarkType mark)
                         cellptr->OverlayData = 0;
                     }
                     cellptr->Overlay = Class->Type;
-                    cellptr->Redraw_Objects();
                 }
             } else {
 
@@ -233,7 +232,6 @@ bool OverlayClass::Mark(MarkType mark)
                     if (cellptr->Is_Generally_Clear() && cellptr->Overlay != OVERLAY_FLAG_SPOT) {
                         cellptr->Overlay = Class->Type;
                         cellptr->OverlayData = 0;
-                        cellptr->Redraw_Objects();
                         cellptr->Wall_Update();
 
                         /*
@@ -266,7 +264,6 @@ bool OverlayClass::Mark(MarkType mark)
                             cellptr->Overlay = Class->Type;
                             cellptr->OverlayData = 0;
                         }
-                        cellptr->Redraw_Objects();
                         if (Class->Land == LAND_TIBERIUM) {
                             cellptr->OverlayData = 1;
                             cellptr->Tiberium_Adjust();
@@ -315,6 +312,9 @@ bool OverlayClass::Mark(MarkType mark)
                 **	*****  Is this really needed?
                 */
                 cellptr->Recalc_Attributes();
+            }
+            if (!Debug_Clipped_Tactical_Redraw) {
+                cellptr->Redraw_Objects();
             }
             Delete_This();
             return (true);

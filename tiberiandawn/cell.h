@@ -141,7 +141,8 @@ public:
     **	this cell.
     */
     ObjectClass* OccupierPtr;
-    ObjectClass* Overlapper[3];
+        #define MAX_OVERLAPPERS 7
+        ObjectClass* Overlapper[MAX_OVERLAPPERS];
 
     /*
     **	Per-player view of whether a cell is mapped. One bit for each house type. ST - 3/5/2019 3:00PM

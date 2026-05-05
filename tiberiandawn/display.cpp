@@ -1969,6 +1969,35 @@ int DisplayClass::Cell_Shadow(CELL cell, HouseClass* house)
     return (value);
 }
 
+/***********************************************************************************************
+ * DisplayClass::Tactical_Cell_Hides_Objects_For_Local_Player -- Omit tactical sprite draw?    *
+ ***********************************************************************************************/
+
+bool DisplayClass::Tactical_Cell_Hides_Objects_For_Local_Player(CELL anchor_cell)
+{
+    if (Debug_Map || Debug_Unshroud) {
+        return (false);
+    }
+    HouseClass* house = PlayerPtr;
+    if (house == NULL || house->Class == NULL) {
+        return (false);
+    }
+    if ((unsigned)anchor_cell >= (unsigned)MAP_CELL_TOTAL) {
+        return (false);
+    }
+    CellClass* cellptr = &(*this)[anchor_cell];
+
+    if (!cellptr->Is_Visible(house) && !cellptr->Is_Mapped(house))
+        return (true);
+    if (cellptr->Is_Visible(house) && !cellptr->Is_Mapped(house)
+        && Cell_Shadow(anchor_cell, house) == -2) {
+        return (true);
+    }
+    if (cellptr->Is_Mapped(house) && !cellptr->Is_Visible(house))
+        return (true);
+    return (false);
+}
+
 #if (0)
 /***********************************************************************************************
  * DisplayClass::Cell_Shadow   -- Determine what shadow icon to use for the cell.              *
@@ -2418,8 +2447,10 @@ void DisplayClass::Draw_It(bool forced)
         **	Check for a movement of the tactical map. If there has been some
         **	movement, then part (or all) of the icons must be redrawn.
         */
-        if (Lepton_To_Pixel(Coord_X(DesiredTacticalCoord)) != Lepton_To_Pixel(Coord_X(TacticalCoord))
-            || Lepton_To_Pixel(Coord_Y(DesiredTacticalCoord)) != Lepton_To_Pixel(Coord_Y(TacticalCoord))) {
+        bool has_scrolled =
+            Lepton_To_Pixel(Coord_X(DesiredTacticalCoord)) != Lepton_To_Pixel(Coord_X(TacticalCoord))
+            || Lepton_To_Pixel(Coord_Y(DesiredTacticalCoord)) != Lepton_To_Pixel(Coord_Y(TacticalCoord));
+        if (has_scrolled) {
 
             int xmod = Lepton_To_Pixel(Coord_X(DesiredTacticalCoord));
             int ymod = Lepton_To_Pixel(Coord_Y(DesiredTacticalCoord));
@@ -2649,18 +2680,20 @@ void DisplayClass::Draw_It(bool forced)
             // Redraw_Icons(CELL_DRAW_ONLY);
 
             /*
-            **	Redraw the game objects layer by layer. The layer drawing occurs on the ground layer
-            **	first and then followed by all the layers in increasing altituded.
+            **	Clipped mode: tactical sprites from Redraw_Icons -> ST_Redraw only.
+            **	Unclipped redraw: layer-by-layer Render sweep (IsToDisplay / footprint via Mark paths).
             */
-            for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
-                ST_FRAME_BAR_MAP_LAYER_BEGIN((int)layer);
+            if (!Debug_Clipped_Tactical_Redraw) {
+                for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
+                    ST_FRAME_BAR_MAP_LAYER_BEGIN((int)layer);
 #ifdef ATARI_ST
-                Call_Back();
+                    Call_Back();
 #endif
-                for (int index = 0; index < Layer[layer].Count(); index++) {
-                    Layer[layer][index]->Render(forced);
+                    for (int index = 0; index < Layer[layer].Count(); index++) {
+                        Layer[layer][index]->Render(forced);
+                    }
+                    ST_FRAME_BAR_MAP_LAYER_END((int)layer);
                 }
-                ST_FRAME_BAR_MAP_LAYER_END((int)layer);
             }
 
             /*
@@ -2726,6 +2759,169 @@ void DisplayClass::Draw_It(bool forced)
  *   12/06/1994 JLB : Scans tactical view in separate row/colum loops                          *
  *   12/24/1994 JLB : Uses the cell bit flag array to determine what to redraw.                *
  *=============================================================================================*/
+namespace {
+
+/*
+**  Redraw_Icons helpers (clipped tactical redraw): per-cell object list and draw order.
+*/
+
+/*
+**  Append optr to list if active, non-null, not already present, and under cap.
+*/
+static inline void ST_Redraw_Cell_Enqueue_Object(ObjectClass *optr, ObjectClass *list[],
+    int &nlist, int cap)
+{
+    if (!optr || !optr->IsActive) {
+        return;
+    }
+    for (int k = 0; k < nlist; k++) {
+        if (list[k] == optr) {
+            return;
+        }
+    }
+    if (nlist >= cap) {
+        return;
+    }
+    list[nlist++] = optr;
+}
+
+/*
+**  Bubble-sort n pointers: lower In_Which_Layer() first; ties use lower Sort_Y() first.
+*/
+static void ST_Sort_Cell_Objects_For_Redraw(ObjectClass *list[], int n)
+{
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n - 1 - i; j++) {
+            LayerType const ln = list[j]->In_Which_Layer();
+            LayerType const lk = list[j + 1]->In_Which_Layer();
+            bool swap_needed = false;
+
+            if ((int)lk < (int)ln) {
+                swap_needed = true;
+            } else if ((int)lk == (int)ln) {
+                if (list[j + 1]->Sort_Y() < list[j]->Sort_Y()) {
+                    swap_needed = true;
+                }
+            }
+            if (swap_needed) {
+                ObjectClass *t = list[j];
+                list[j] = list[j + 1];
+                list[j + 1] = t;
+            }
+        }
+    }
+}
+
+/*
+**  After terrain for this cell: if Debug_Clipped_Tactical_Redraw, draw occupiers and
+**  overlappers with WINDOW_TACTICAL narrowed to the cell rectangle intersected with the
+**  tactical viewport (pixel space).
+*/
+static void ST_Redraw_Objects_Or_Cell_After_Terrain(int tac_cell_xpixel, int tac_cell_ypixel,
+    CellClass *cellptr)
+{
+    if (!Debug_Clipped_Tactical_Redraw) {
+        return;
+    }
+
+    if (cellptr != NULL &&
+        Map.Tactical_Cell_Hides_Objects_For_Local_Player(cellptr->Cell_Number())) {
+        return;
+    }
+
+    enum { OBJ_LIST_CAP = 64 };
+    ObjectClass *olist[OBJ_LIST_CAP];
+    int nobj = 0;
+
+    ObjectClass *optr = cellptr->Cell_Occupier();
+    while (optr) {
+        ST_Redraw_Cell_Enqueue_Object(optr, olist, nobj, OBJ_LIST_CAP);
+        optr = optr->Next;
+    }
+    for (unsigned oi = 0; oi < sizeof(cellptr->Overlapper) /
+        sizeof(cellptr->Overlapper[0]); oi++) {
+        ST_Redraw_Cell_Enqueue_Object(cellptr->Overlapper[oi], olist,
+            nobj, OBJ_LIST_CAP);
+    }
+
+    if (nobj == 0) {
+        return;
+    }
+
+    ST_Sort_Cell_Objects_For_Redraw(olist, nobj);
+
+    int viewport_x_rel = 0;
+    int viewport_y_rel = 0;
+    int viewport_w = CELL_PIXEL_W;
+    int viewport_h = CELL_PIXEL_H;
+
+    if (Debug_Clipped_Tactical_Redraw) {
+        /*
+        **  Intersect the cell with the tactical pixel rectangle [0, tac_w) x [0, tac_h).
+        **  If tac_cell_* is negative (partial row/column along the tactical left/top), a naive
+        **  viewport at TacPixelX + tac_cell_* shifts left of the tactical area and sprites clip
+        **  against the wrong edge (sidebar / screen edge glitch).
+        */
+        int const tac_w_px = Lepton_To_Pixel(Map.TacLeptonWidth);
+        int const tac_h_px = Lepton_To_Pixel(Map.TacLeptonHeight);
+        int const vis_x0 = tac_cell_xpixel > 0 ? tac_cell_xpixel : 0;
+        int const vis_y0 = tac_cell_ypixel > 0 ? tac_cell_ypixel : 0;
+        int const cell_rx = tac_cell_xpixel + CELL_PIXEL_W;
+        int const cell_by = tac_cell_ypixel + CELL_PIXEL_H;
+        int const vis_x1 = cell_rx < tac_w_px ? cell_rx : tac_w_px;
+        int const vis_y1 = cell_by < tac_h_px ? cell_by : tac_h_px;
+        if (vis_x1 <= vis_x0 || vis_y1 <= vis_y0) {
+            return;
+        }
+        viewport_x_rel = vis_x0;
+        viewport_y_rel = vis_y0;
+        viewport_w = vis_x1 - vis_x0;
+        viewport_h = vis_y1 - vis_y0;
+    } else {
+        /*
+        **  Unclipped redraw: one full cell strip (before tactical intersection on ST).
+        */
+        viewport_x_rel = tac_cell_xpixel;
+        viewport_y_rel = tac_cell_ypixel;
+    }
+
+    int const sx = WindowList[WINDOW_TACTICAL][WINDOWX];
+    int const sy = WindowList[WINDOW_TACTICAL][WINDOWY];
+    int const sw = WindowList[WINDOW_TACTICAL][WINDOWWIDTH];
+    int const sh = WindowList[WINDOW_TACTICAL][WINDOWHEIGHT];
+
+    WindowList[WINDOW_TACTICAL][WINDOWX] = Map.TacPixelX + viewport_x_rel;
+    WindowList[WINDOW_TACTICAL][WINDOWY] = Map.TacPixelY + viewport_y_rel;
+    WindowList[WINDOW_TACTICAL][WINDOWWIDTH] = viewport_w;
+    WindowList[WINDOW_TACTICAL][WINDOWHEIGHT] = viewport_h;
+
+    for (int ui = 0; ui < nobj; ui++) {
+        ObjectClass *obj = olist[ui];
+        if (obj == NULL) continue;
+        if (!obj->IsDown || obj->IsInLimbo) continue;
+
+        /*
+        **  Map.Coord_To_Pixel is tactical space (origin top-left of full tactical scroll).
+        **  Draw position is relative to (viewport_x_rel, viewport_y_rel).
+        */
+        COORDINATE const rend = obj->Render_Coord();
+        int px, py;
+        if (!Map.Coord_To_Pixel(rend, px, py)) {
+            continue;
+        }
+        px -= viewport_x_rel;
+        py -= viewport_y_rel;
+        obj->Draw_It(px, py, WINDOW_TACTICAL);
+    }
+
+    WindowList[WINDOW_TACTICAL][WINDOWX] = sx;
+    WindowList[WINDOW_TACTICAL][WINDOWY] = sy;
+    WindowList[WINDOW_TACTICAL][WINDOWWIDTH] = sw;
+    WindowList[WINDOW_TACTICAL][WINDOWHEIGHT] = sh;
+}
+
+} // namespace
+
 void DisplayClass::Redraw_Icons(int draw_flags)
 {
 #ifdef ATARI_ST
@@ -2757,9 +2953,16 @@ void DisplayClass::Redraw_Icons(int draw_flags)
                     **	If there is a portion of the underlying icon that could be visible,
                     **	then draw it.  Also draw the cell if the shroud is off.
                     */
-                    if (cellptr->Is_Visible(PlayerPtr)
-                        || Debug_Unshroud) { // Use PlayerPtr since we won't be rendering in MP. ST - 3/6/2019 2:49PM
-                        cellptr->Draw_It(xpixel, ypixel, draw_flags);
+                    bool cell_visible = cellptr->Is_Visible(PlayerPtr) || Debug_Unshroud;
+                    if (cell_visible) {
+                        if (!Debug_Clipped_Tactical_Redraw
+                            || !Tactical_Cell_Hides_Objects_For_Local_Player(cell)) {
+                            cellptr->Draw_It(xpixel, ypixel, draw_flags);
+                        }
+                        if (Debug_Clipped_Tactical_Redraw
+                            && !Tactical_Cell_Hides_Objects_For_Local_Player(cell)) {
+                            ST_Redraw_Objects_Or_Cell_After_Terrain(xpixel, ypixel, cellptr);
+                        }
                     }
 
                     /*
@@ -2830,6 +3033,21 @@ void DisplayClass::Redraw_Shadow(void)
                                                   SHAPE_GHOST,
                                                   NULL,
                                                   ShadowTrans);
+                                } else if (shadow == -2 && Debug_Clipped_Tactical_Redraw) {
+#ifdef ATARI_ST
+                                    if (!ST_Draw_Shadow_Mask_Slot((short)ST_SHADOW_FULL_SLOT, xpixel, ypixel))
+#endif
+                                    {
+                                        int ww = CELL_PIXEL_W;
+                                        int hh = CELL_PIXEL_H;
+                                        int lx = xpixel;
+                                        int ly = ypixel;
+                                        if (Clip_Rect(&lx, &ly, &ww, &hh, Lepton_To_Pixel(TacLeptonWidth), Lepton_To_Pixel(TacLeptonHeight)) >= 0) {
+                                            LogicPage->Fill_Rect(TacPixelX + lx, TacPixelY + ly,
+                                                TacPixelX + lx + ww - 1, TacPixelY + ly + hh - 1,
+                                                (unsigned char)BLACK);
+                                        }
+                                    }
                                 }
                             }
                         }

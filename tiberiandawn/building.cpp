@@ -434,26 +434,26 @@ void BuildingClass::Debug_Dump(MonoClass* mono) const
 {
     Validate();
     mono->Set_Cursor(0, 0);
-    mono->Print("ÚName:ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂMission:ÄÄÄÂTarCom:ÂÄÄÄÄÄÄÄÂRadio:ÂCoord:ÄÄÂÄÄÄÄÄÄÄÄÂSt:Ä¿\n"
-                "³                   ³           ³       ³       ³      ³        ³        ³    ³\n"
-                "ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂNÂYÂHealth:ÄÂÄÄÄÁÄÂTurret:ÂÄÄÄÄÄÁÂÄBuilding:ÄÄÂCargo:ÄÄÄÄÁÄÄÄÄ´\n"
-                "³Active........³ ³ ³        ³     ³       ³      ³            ³               ³\n"
-                "³Limbo.........³ ³ ÃÄÄÄÄÄÄÄÄÁÄÄÄÄÄÁÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\n"
-                "³Owned.........³ ³ ³Last Message:                                             ³\n"
-                "³Discovered....³ ³ ÃTimer:ÂArm:ÂÄÄÄÄÄÄÂTiberium:ÂFlash:ÂStage:ÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\n"
-                "³Selected......³ ³ ³      ³    ³      ³         ³      ³      ³                \n"
-                "³Teathered.....³ ³ ÃÄÄÄÄÄÄÁÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÙ                \n"
-                "³Locked on Map.³ ³ ³                                                           \n"
-                "³Is A Loaner...³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³Repairing.....³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³Recoiling.....³ ³ ³                                                           \n"
-                "³To Display....³ ³ ³                                                           \n"
-                "ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÁÄÙ                                                           \n");
+    mono->Print("Name:Mission:TarCom:Radio:Coord:St:?\n"
+                "                                                                      \n"
+                "NYHealth:Turret:Building:Cargo:?\n"
+                "Active........                                                       \n"
+                "Limbo.........  ?\n"
+                "Owned.........  Last Message:                                             \n"
+                "Discovered....  Timer:Arm:Tiberium:Flash:Stage:\n"
+                "Selected......                                                       \n"
+                "Teathered.....                  \n"
+                "Locked on Map.                                                             \n"
+                "Is A Loaner...                                                             \n"
+                "                                                                           \n"
+                "                                                                           \n"
+                "                                                                           \n"
+                "Repairing.....                                                             \n"
+                "                                                                           \n"
+                "                                                                           \n"
+                "Recoiling.....                                                             \n"
+                "To Display....                                                             \n"
+                "                                                           \n");
     mono->Set_Cursor(1, 1);
     mono->Printf("%s:%s", House->Class->IniName, Class->IniName);
     mono->Set_Cursor(35, 3);
@@ -664,7 +664,9 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
                       + ((int)Lepton_To_Pixel((int)Coord_Y(contact->Render_Coord()))
                          - (int)Lepton_To_Pixel((int)Coord_Y(Render_Coord())));
             contact->Draw_It(xxx, yyy, window);
-            contact->IsToDisplay = false;
+            if (!Debug_Clipped_Tactical_Redraw) {
+                contact->IsToDisplay = false;
+            }
         }
 
         /*
@@ -717,8 +719,6 @@ bool BuildingClass::Mark(MarkType mark)
 {
     Validate();
     if (TechnoClass::Mark(mark)) {
-        short const* offset = Overlap_List();
-        short const* occupy = Occupy_List();
         CELL cell = Coord_Cell(Coord);
         SmudgeType bib;
 
@@ -787,8 +787,12 @@ bool BuildingClass::Mark(MarkType mark)
             break;
 
         default:
-            Map.Refresh_Cells(cell, offset);
-            Map.Refresh_Cells(cell, occupy);
+            if (!Debug_Clipped_Tactical_Redraw) {
+                short const* offset = Overlap_List();
+                short const* occupy = Occupy_List();
+                Map.Refresh_Cells(cell, offset);
+                Map.Refresh_Cells(cell, occupy);
+            }
             break;
         }
         return (true);

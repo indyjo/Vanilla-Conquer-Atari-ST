@@ -121,7 +121,7 @@ public:
     virtual void Draw_It(int x, int y, WindowNumberType window);
     virtual bool Mark(MarkType mark = MARK_CHANGE);
     virtual void AI(void);
-    virtual short const* Occupy_List(void) const;
+    virtual short const* Occupy_List(bool placement = false) const;
     virtual short const* Overlap_List(void) const
     {
         return Occupy_List();

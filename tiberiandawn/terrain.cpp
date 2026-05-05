@@ -307,8 +307,6 @@ bool TerrainClass::Mark(MarkType mark)
 {
     Validate();
     if (ObjectClass::Mark(mark)) {
-        short const* overlap = Class->Overlap_List();
-        short const* occupy = Class->Occupy_List();
         CELL cell = Coord_Cell(Coord);
 
         switch (mark) {
@@ -321,8 +319,12 @@ bool TerrainClass::Mark(MarkType mark)
             break;
 
         default:
-            Map.Refresh_Cells(cell, overlap);
-            Map.Refresh_Cells(cell, occupy);
+            if (!Debug_Clipped_Tactical_Redraw) {
+                short const* overlap = Class->Overlap_List();
+                short const* occupy = Class->Occupy_List();
+                Map.Refresh_Cells(cell, overlap);
+                Map.Refresh_Cells(cell, occupy);
+            }
             break;
         }
         return (true);

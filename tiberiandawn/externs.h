@@ -85,6 +85,7 @@ extern bool Debug_Lose;
 extern bool Debug_Map;
 extern bool Debug_Win;
 extern bool Debug_Icon;
+extern bool Debug_Clipped_Tactical_Redraw;
 extern bool Debug_Passable;
 extern bool Debug_Unshroud;
 extern bool Debug_Threat;

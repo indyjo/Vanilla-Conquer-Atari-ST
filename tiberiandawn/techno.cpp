@@ -728,7 +728,7 @@ bool TechnoClass::Mark(MarkType mark)
         **	When redrawing an object, if there is another object teathered to this one,
         **	redraw it as well.
         */
-        if (IsTethered) {
+        if (!Debug_Clipped_Tactical_Redraw && IsTethered) {
             Transmit_Message(RADIO_REDRAW);
         }
         return (true);

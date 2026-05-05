@@ -235,10 +235,9 @@ bool SmudgeClass::Mark(MarkType mark)
                             }
                         }
 
-                        /*
-                        **	Flag everything that might be overlapping this cell to redraw itself.
-                        */
-                        cell->Redraw_Objects();
+                        if (!Debug_Clipped_Tactical_Redraw) {
+                            cell->Redraw_Objects();
+                        }
                     }
                 }
             }

@@ -394,36 +394,35 @@ void CellClass::Redraw_Objects(bool forced)
         */
         Map.Flag_Cell(cell);
 
-        /*
-        **	Flag the main object in the cell to be redrawn.
-        */
-        if (Cell_Occupier()) {
-            ObjectClass* optr = Cell_Occupier();
-            while (optr) {
+        if (!Debug_Clipped_Tactical_Redraw) {
+            /*
+            **	Unclipped redraw: mark occupiers/overlappers for layer Render(IsToDisplay).
+            */
+            if (Cell_Occupier()) {
+                ObjectClass* optr = Cell_Occupier();
+                while (optr) {
 #ifdef ATARI_ST
-                if (Is_Invalid_Object_Pointer(optr)) {
-                    char dbg[160];
-                    sprintf(dbg, "[Cell::Redraw_Objects] invalid chain ptr=%p cell=%d", (void*)optr, (int)cell);
-                    DBG_LOG(dbg);
-                    break;
-                }
+                    if (Is_Invalid_Object_Pointer(optr)) {
+                        char dbg[160];
+                        sprintf(dbg, "[Cell::Redraw_Objects] invalid chain ptr=%p cell=%d", (void*)optr, (int)cell);
+                        DBG_LOG(dbg);
+                        break;
+                    }
 #endif
-                if (optr->IsActive) {
-                    optr->Mark(MARK_CHANGE);
+                    if (optr->IsActive) {
+                        optr->Mark(MARK_CHANGE);
+                    }
+                    optr = optr->Next;
                 }
-                optr = optr->Next;
             }
-        }
 
-        /*
-        **	Flag any overlapping object in this cell to be redrawn.
-        */
-        for (int index = 0; index < sizeof(Overlapper) / sizeof(Overlapper[0]); index++) {
-            if (Overlapper[index]) {
-                if (!Overlapper[index]->IsActive) {
-                    Overlapper[index] = 0;
-                } else {
-                    Overlapper[index]->Mark(MARK_CHANGE);
+            for (int index = 0; index < (int)(sizeof(Overlapper) / sizeof(Overlapper[0])); index++) {
+                if (Overlapper[index]) {
+                    if (!Overlapper[index]->IsActive) {
+                        Overlapper[index] = 0;
+                    } else {
+                        Overlapper[index]->Mark(MARK_CHANGE);
+                    }
                 }
             }
         }

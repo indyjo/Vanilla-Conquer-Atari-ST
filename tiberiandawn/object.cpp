@@ -77,6 +77,73 @@
 
 #include "function.h"
 
+namespace {
+
+static void Flag_Cell_If_Redraw_Cell(CELL c)
+{
+    if ((unsigned)c < (unsigned)MAP_CELL_TOTAL && Map.In_View(c)) {
+        Map.Flag_Cell(c);
+    }
+}
+
+static bool Cell_Is_Redraw_Masked_In_View(CELL c)
+{
+    return ((unsigned)c < (unsigned)MAP_CELL_TOTAL && Map.In_View(c) && Map.Is_Cell_Flagged(c));
+}
+
+static void Flag_Redraw_Mask_Cells_From_Footprint(ObjectClass* obj)
+{
+    if (obj == NULL || !GameActive || obj->IsInLimbo || !obj->IsDown || !obj->IsActive) {
+        return;
+    }
+    CELL const anchor = Coord_Cell(obj->Coord);
+    short const* plist = obj->Occupy_List(false);
+    if (plist != NULL) {
+        if (*plist == REFRESH_SIDEBAR) {
+            plist++;
+        }
+        while (*plist != REFRESH_EOL) {
+            Flag_Cell_If_Redraw_Cell((CELL)(anchor + *plist++));
+        }
+    }
+    short const* olist = obj->Overlap_List();
+    if (olist != NULL) {
+        while (*olist != REFRESH_EOL) {
+            Flag_Cell_If_Redraw_Cell((CELL)(anchor + *olist++));
+        }
+    }
+}
+
+static bool Footprint_Has_Flagged_Redraw_Cell(ObjectClass const* obj)
+{
+    if (obj == NULL || !obj->IsDown || obj->IsInLimbo || !obj->IsActive) {
+        return (false);
+    }
+    CELL const anchor = Coord_Cell(obj->Coord);
+    short const* plist = obj->Occupy_List(false);
+    if (plist != NULL) {
+        if (*plist == REFRESH_SIDEBAR) {
+            plist++;
+        }
+        while (*plist != REFRESH_EOL) {
+            if (Cell_Is_Redraw_Masked_In_View((CELL)(anchor + *plist++))) {
+                return (true);
+            }
+        }
+    }
+    short const* olist = obj->Overlap_List();
+    if (olist != NULL) {
+        while (*olist != REFRESH_EOL) {
+            if (Cell_Is_Redraw_Masked_In_View((CELL)(anchor + *olist++))) {
+                return (true);
+            }
+        }
+    }
+    return (false);
+}
+
+} // namespace
+
 /*
 **	Selected objects have a special marking box around them. This is the shapes that are
 **	used for this purpose.
@@ -918,8 +985,12 @@ bool ObjectClass::Render(bool forced)
     COORDINATE coord = Render_Coord();
     CELL cell = Coord_Cell(coord);
 
-    if (Debug_Map || Debug_Unshroud || ((forced || IsToDisplay) && IsDown && !IsInLimbo)) {
-        IsToDisplay = false;
+    bool const allow_draw = Debug_Map || Debug_Unshroud
+        || (Debug_Clipped_Tactical_Redraw
+                ? ((forced || Footprint_Has_Flagged_Redraw_Cell(this)) && IsDown && !IsInLimbo)
+                : ((forced || IsToDisplay) && IsDown && !IsInLimbo));
+
+    if (allow_draw) {
 
         /*
         **	Draw the path as lines on the map if so directed and the object is one that
@@ -957,10 +1028,18 @@ bool ObjectClass::Render(bool forced)
 
         if (Map.Coord_To_Pixel(coord, x, y)) {
 
+            if (Debug_Clipped_Tactical_Redraw
+                && Map.Tactical_Cell_Hides_Objects_For_Local_Player(cell)) {
+                return (false);
+            }
+
             /*
             **	Draw the object itself
             */
             Draw_It(x, y, WINDOW_TACTICAL);
+            if (!Debug_Clipped_Tactical_Redraw) {
+                IsToDisplay = false;
+            }
 
 #ifdef SCENARIO_EDITOR
             /*
@@ -997,7 +1076,7 @@ bool ObjectClass::Render(bool forced)
  *=============================================================================================*/
 void ObjectClass::Debug_Dump(MonoClass* mono) const
 {
-    mono->Text_Print("X", 16 + (IsToDisplay ? 2 : 0), 18);
+    mono->Text_Print("X", 16 + ((Debug_Clipped_Tactical_Redraw ? Footprint_Has_Flagged_Redraw_Cell(this) : IsToDisplay) ? 2 : 0), 18);
     mono->Text_Print("X", 16 + (IsActive ? 2 : 0), 3);
     mono->Text_Print("X", 16 + (IsInLimbo ? 2 : 0), 4);
     // mono->Text_Print("X", 16 + (IsSelected?2:0), 7);
@@ -1110,16 +1189,14 @@ void ObjectTypeClass::One_Time(void)
  *=============================================================================================*/
 void ObjectClass::Mark_For_Redraw(void)
 {
-    if (!IsToDisplay) {
-        IsToDisplay = true;
-
-        /*
-        **	This tells the map rendering logic to "go through the motions" and call the
-        **	rendering function. In the rendering function, it will sort out what gets
-        **	rendered and what doesn't.
-        */
-        Map.Flag_To_Redraw(false);
+    if (Debug_Clipped_Tactical_Redraw) {
+        Flag_Redraw_Mask_Cells_From_Footprint(this);
+    } else {
+        if (!IsToDisplay) {
+            IsToDisplay = true;
+        }
     }
+    Map.Flag_To_Redraw(false);
 }
 
 /***********************************************************************************************
@@ -1495,8 +1572,9 @@ bool ObjectClass::Mark(MarkType mark)
         **	this game frame.
         */
         if (mark == MARK_CHANGE) {
-            if (IsToDisplay)
+            if (!Debug_Clipped_Tactical_Redraw && IsToDisplay) {
                 return (false);
+            }
             if (IsDown == true) {
                 Mark_For_Redraw();
                 return (true);

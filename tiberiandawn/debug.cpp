@@ -544,6 +544,15 @@ void Debug_Key(unsigned input)
             break;
 
         /*
+        **	F8 toggles unclipped vs clipped tactical redraw (cell footprints, terrain hide,
+        **	layer sweep, Refresh_Cells on Mark paths, tether RADIO_REDRAW when needed).
+        */
+        case KN_F8:
+            Debug_Clipped_Tactical_Redraw = (Debug_Clipped_Tactical_Redraw == false);
+            Map.Flag_To_Redraw(true);
+            break;
+
+        /*
         **	Shows sight and fire range in the form of circles emanating from the currently
         **	selected unit. The white circle is for sight range, the red circle is for
         **	fire range.

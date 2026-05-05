@@ -124,7 +124,7 @@ public:
     {
         return *Class;
     };
-    virtual short const* Occupy_List(void) const;
+        virtual short const* Occupy_List(bool placement = false) const;
     virtual short const* Overlap_List(void) const;
     virtual void Draw_It(int x, int y, WindowNumberType window);
     virtual void AI(void);

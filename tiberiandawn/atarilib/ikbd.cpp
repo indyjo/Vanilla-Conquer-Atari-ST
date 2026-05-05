@@ -29,6 +29,11 @@ static volatile unsigned char SkipCount = 0;
 static volatile unsigned char RelHeader = 0;
 static volatile signed char RelDX = 0;
 
+enum {
+	IKBD_MOUSE_WIDTH = 320,
+	IKBD_MOUSE_HEIGHT = 200
+};
+
 static void (*PrevIKBDVector)(void) = NULL;
 static volatile unsigned char HandlerInstalled = 0;
 
@@ -36,6 +41,28 @@ static volatile unsigned char * const IKBD_ACIA_STATUS = (volatile unsigned char
 static volatile unsigned char * const IKBD_ACIA_DATA = (volatile unsigned char *)0xFFFFFC02UL;
 static volatile unsigned char * const MFP_ISRA = (volatile unsigned char *)0xFFFFFA11UL;
 static const short IKBD_VECTOR_NUMBER = 0x46; /* vector at address $118 */
+
+static inline int IKBD_Clamp_Mouse_X(int x)
+{
+	if (x < 0) {
+		return 0;
+	}
+	if (x >= IKBD_MOUSE_WIDTH) {
+		return IKBD_MOUSE_WIDTH - 1;
+	}
+	return x;
+}
+
+static inline int IKBD_Clamp_Mouse_Y(int y)
+{
+	if (y < 0) {
+		return 0;
+	}
+	if (y >= IKBD_MOUSE_HEIGHT) {
+		return IKBD_MOUSE_HEIGHT - 1;
+	}
+	return y;
+}
 
 static inline void IKBD_Push_Event(unsigned char event_byte)
 {
@@ -190,8 +217,8 @@ static inline void IKBD_Parse_Byte(unsigned char value)
 
 	if (ParseState == IKBD_PARSE_REL_DY) {
 		signed char dy = (signed char)value;
-		MouseX += (int)RelDX;
-		MouseY += (int)dy;
+		MouseX = IKBD_Clamp_Mouse_X(MouseX + (int)RelDX);
+		MouseY = IKBD_Clamp_Mouse_Y(MouseY + (int)dy);
 		/*
 		** Header layout is %111110xy where x=left, y=right.
 		** Normalize to bit0=left, bit1=right with 1=pressed.
@@ -271,6 +298,10 @@ extern "C" void IKBD_ISR_Entry(void)
 
 static long IKBD_Install_Supervisor(void)
 {
+	char set_relative_mouse = 0x08;
+	Ikbdws(1, &set_relative_mouse);
+	MouseX = IKBD_MOUSE_WIDTH / 2;
+	MouseY = IKBD_MOUSE_HEIGHT / 2;
 	PrevIKBDVector = (void (*)(void))Setexc(IKBD_VECTOR_NUMBER, (void (*)())IKBD_ISR_Entry);
 	HandlerInstalled = 1;
 	return 1;

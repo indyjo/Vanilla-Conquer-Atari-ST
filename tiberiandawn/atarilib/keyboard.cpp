@@ -6,8 +6,32 @@
  */
 
 #include "keyboard.h"
-#include <mint/linea.h>  // MOUSE_BT
+#include "ikbd.h"
 #include <ctype.h>
+
+static void Pump_IKBD_To_Buffer(WWKeyboardClass *kbd)
+{
+	if (!kbd) {
+		return;
+	}
+
+	IKBD_Service();
+	IKBD_Get_Mouse_XY(&kbd->MouseQX, &kbd->MouseQY);
+
+	unsigned char event_byte = 0;
+	while (IKBD_Pop_Event(&event_byte)) {
+		int vk = (int)(event_byte & IKBD_EVENT_KEY_MASK);
+		BOOL release = (event_byte & IKBD_EVENT_RELEASE_BIT) != 0 ? TRUE : FALSE;
+		if (!kbd->Put_Key_Message((UINT)vk, release, FALSE)) {
+			break;
+		}
+		if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON) {
+			if (!kbd->Put(kbd->MouseQX) || !kbd->Put(kbd->MouseQY)) {
+				break;
+			}
+		}
+	}
+}
 
 /***********************************************************************************************
  * WWKeyboardClass::WWKeyboardClass -- Constructor for the Keyboard Class                    *
@@ -28,20 +52,34 @@ WWKeyboardClass::WWKeyboardClass()
 	MouseQX = 0;
 	MouseQY = 0;
 	CurrentCursor = 0;  // NULL equivalent for Atari ST
-	// Initialize remap tables (stub - needs proper initialization)
+
 	for (int i = 0; i < 256; i++) {
 		VKRemap[i] = (unsigned char)i;
+		ToggleKeys[i] = 0;
 	}
 	for (int i = 0; i < 2048; i++) {
-		AsciiRemap[i] = (unsigned char)(i & 0xFF);
+		AsciiRemap[i] = 0;
 	}
-	/* So Put_Key_Message sets WWKEY_VK_BIT for mouse buttons (see WIN32LIB/KEYBOARD.CPP) */
+	for (int c = 'a'; c <= 'z'; c++) {
+		AsciiRemap[c] = (unsigned char)c;
+		AsciiRemap[c | WWKEY_SHIFT_BIT] = (unsigned char)toupper(c);
+		AsciiRemap[toupper(c)] = (unsigned char)toupper(c);
+		AsciiRemap[toupper(c) | WWKEY_SHIFT_BIT] = (unsigned char)toupper(c);
+		VKRemap[c] = (unsigned char)toupper(c);
+		VKRemap[toupper(c)] = (unsigned char)toupper(c);
+		ToggleKeys[toupper(c)] = 1;
+	}
+	for (int c = '0'; c <= '9'; c++) {
+		AsciiRemap[c] = (unsigned char)c;
+		AsciiRemap[c | WWKEY_SHIFT_BIT] = (unsigned char)c;
+		VKRemap[c] = (unsigned char)c;
+	}
+	AsciiRemap[VK_SPACE] = (unsigned char)' ';
 	AsciiRemap[VK_LBUTTON] = 0;
 	AsciiRemap[VK_RBUTTON] = 0;
 	AsciiRemap[VK_MBUTTON] = 0;
 	for (int i = 0; i < 256; i++) {
 		Buffer[i] = 0;
-		ToggleKeys[i] = 0;
 	}
 
 	_Kbd = this;
@@ -59,6 +97,7 @@ WWKeyboardClass::WWKeyboardClass()
  *=============================================================================================*/
 BOOL WWKeyboardClass::Check(void)
 {
+	Pump_IKBD_To_Buffer(this);
 	if (Head == Tail) {
 		return FALSE;
 	}
@@ -162,6 +201,7 @@ int WWKeyboardClass::Get(void)
 {
 	int temp,bits;										// store temp holding spot for key
 
+	Pump_IKBD_To_Buffer(this);
 	while (!Check()) {}								// wait for key in buffer
 	temp = Buff_Get();								// get key from the buffer
 
@@ -197,6 +237,7 @@ int Check_Key(void)
 {
 	if (!_Kbd)
 		return KA_NONE;
+	Pump_IKBD_To_Buffer(_Kbd);
 	return _Kbd->Check() & ~WWKEY_SHIFT_BIT;
 }
 
@@ -204,6 +245,7 @@ int Check_Key_Num(void)
 {
 	if (!_Kbd)
 		return KN_NONE;
+	Pump_IKBD_To_Buffer(_Kbd);
 	int key = _Kbd->Check();
 	int flags = key & 0xFF00;
 	key = key & 0x00FF;
@@ -240,21 +282,7 @@ void Clear_KeyBuffer(void)
 int Key_Down(int key)
 {
 	int vk = key & 0xFF;
-
-	/*
-	** The gadget system polls mouse-button hold state through Key_Down().
-	** Wire that to the live LINE-A button bits so drag-select and held-click
-	** interactions can work on Atari too.
-	*/
-	if (vk == VK_LBUTTON) {
-		return (MOUSE_BT & 1) != 0;
-	}
-	if (vk == VK_RBUTTON) {
-		return (MOUSE_BT & 2) != 0;
-	}
-
-	// TODO: Implement keyboard key state checking for Atari ST
-	return 0; // Key not down
+	return IKBD_Key_Is_Down(vk);
 }
 
 void Stuff_Key_Num(int key)

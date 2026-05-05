@@ -46,6 +46,7 @@
 #include	"st_temperat_palette.h"
 #include	"gbuffer.h"  // GBC_ST_PLANAR_LORES, Uses_ST_LoRes_Planar_Layout
 #include	"misc.h"     // Wait_Vert_Blank
+#include	"ikbd.h"
 
 // Atari ST palette hardware register addresses
 // Palette registers are at $FF8240-$FF825E (16 registers, 16-bit each, 2 bytes apart)
@@ -317,6 +318,7 @@ int main(int argc, char *argv[])
 			printf("C&C - Creating mouse class.\n");
 			WWMouse = new WWMouseClass(&SeenBuff, 32, 32);
 			MouseInstalled = TRUE;
+			IKBD_Install();
 
 			/*
 			** See if we should run the intro
@@ -430,6 +432,7 @@ void Prog_End(const char *why, bool fatal)
 	// }
 #endif
 	printf("C&C - About to call Sound_End.\n");
+	IKBD_Uninstall();
 	Sound_End();
 	printf("C&C - Returned from Sound_End.\n");
 	if (WWMouse){

@@ -6,6 +6,7 @@
 
 #include "mouse.h"
 #include "keyboard.h"
+#include "ikbd.h"
 #include "gbuffer.h"
 #include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
 #include "c2p.h"       // ST_PLANAR_BYTES_PER_LINE
@@ -612,7 +613,7 @@ int WWMouseClass::Get_Mouse_X(void)
 	if (DLLForceMouseX >= 0) {
 		return DLLForceMouseX;
 	}
-	return MousePosX >= 0 ? MousePosX : GCURX;
+	return MousePosX;
 }
 
 /***************************************************************************
@@ -630,7 +631,7 @@ int WWMouseClass::Get_Mouse_Y(void)
 	if (DLLForceMouseY >= 0) {
 		return DLLForceMouseY;
 	}
-	return MousePosY >= 0 ? MousePosY : GCURY;
+	return MousePosY;
 }
 
 /***************************************************************************
@@ -645,8 +646,15 @@ int WWMouseClass::Get_Mouse_Y(void)
  *=========================================================================*/
 void WWMouseClass::Process_Mouse(void)
 {
-	int mouse_x = (DLLForceMouseX >= 0) ? DLLForceMouseX : GCURX;
-	int mouse_y = (DLLForceMouseY >= 0) ? DLLForceMouseY : GCURY;
+	int mouse_x = 0;
+	int mouse_y = 0;
+
+	if (DLLForceMouseX >= 0 && DLLForceMouseY >= 0) {
+		mouse_x = DLLForceMouseX;
+		mouse_y = DLLForceMouseY;
+	} else {
+		IKBD_Get_Mouse_XY(&mouse_x, &mouse_y);
+	}
 	
 	// Clamp to screen bounds if Screen is set
 	if (Screen) {
@@ -662,31 +670,9 @@ void WWMouseClass::Process_Mouse(void)
 	MousePosX = mouse_x;
 	MousePosY = mouse_y;
 
-	/* Live position for UI that reads _Kbd->MouseQX/Y without dequeuing keys */
+	/* Queue-compatible mouse position comes from IKBD packet decoding. */
 	if (_Kbd) {
-		_Kbd->MouseQX = mouse_x;
-		_Kbd->MouseQY = mouse_y;
-	}
-
-	/* Button edges from LINE-A MOUSE_BT (bit0=left, bit1=right), same as GCURX/GCURY */
-	if (_Kbd) {
-		int bt = (int)(MOUSE_BT & 3);
-		if (LastMouseBt < 0) {
-			LastMouseBt = bt;
-		} else {
-			int prev = LastMouseBt;
-			if ((bt ^ prev) & 1) {
-				_Kbd->Put_Key_Message(VK_LBUTTON, (bt & 1) == 0);
-				_Kbd->Put(mouse_x);
-				_Kbd->Put(mouse_y);
-			}
-			if ((bt ^ prev) & 2) {
-				_Kbd->Put_Key_Message(VK_RBUTTON, (bt & 2) == 0);
-				_Kbd->Put(mouse_x);
-				_Kbd->Put(mouse_y);
-			}
-			LastMouseBt = bt;
-		}
+		IKBD_Get_Mouse_XY(&_Kbd->MouseQX, &_Kbd->MouseQY);
 	}
 
 	/*
@@ -722,8 +708,9 @@ int Get_Mouse_X(void)
 		return DLLForceMouseX;
 	}
 	if (!_Mouse) {
-		// Fallback to LINE-A if no mouse object
-		return GCURX;
+		int x = 0;
+		IKBD_Get_Mouse_XY(&x, NULL);
+		return x;
 	}
 	((WWMouseClass *)_Mouse)->Process_Mouse();
 	return ((WWMouseClass *)_Mouse)->Get_Mouse_X();
@@ -736,8 +723,9 @@ int Get_Mouse_Y(void)
 		return DLLForceMouseY;
 	}
 	if (!_Mouse) {
-		// Fallback to LINE-A if no mouse object
-		return GCURY;
+		int y = 0;
+		IKBD_Get_Mouse_XY(NULL, &y);
+		return y;
 	}
 	((WWMouseClass *)_Mouse)->Process_Mouse();
 	return ((WWMouseClass *)_Mouse)->Get_Mouse_Y();

@@ -557,7 +557,7 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTD
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \
 	$(INTDIR)/CDFILE.o $(INTDIR)/misc.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
-	$(INTDIR)/keyboard.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/audio_ste.o $(INTDIR)/ws_adpcm_68k.o \
+	$(INTDIR)/keyboard.o $(INTDIR)/ikbd.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/audio_ste.o $(INTDIR)/ws_adpcm_68k.o \
 	$(INTDIR)/st_load_uncompress.o
 
 st-tests: $(ST_TEST_EXE)

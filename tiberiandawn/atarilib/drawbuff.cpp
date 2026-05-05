@@ -14,6 +14,7 @@
 #include "memflag.h"
 #include <string.h>  // For memset
 #include <stdint.h>
+#include <stdio.h>
 
 #if defined(__MINT__)
 #include <mint/osbind.h>
@@ -21,6 +22,7 @@
 
 /* Kept local to avoid including CONQUER.CPP private define. */
 static const int ST_SHAPE_TRANS_FLAG = 0x40;
+int IKBD_Key_Is_Down(int vk);
 static const int ST_TILE_LINEAR_W = 24;
 static const int ST_TILE_LINEAR_H = 24;
 static const int ST_TILE_LINEAR_BYTES = ST_TILE_LINEAR_W * ST_TILE_LINEAR_H;
@@ -28,14 +30,91 @@ static const int ST_TILE_LINEAR_BYTES = ST_TILE_LINEAR_W * ST_TILE_LINEAR_H;
  * Keep planar scratch wider than tile width so we can place the tile at sx = dx mod 16.
  * This makes src/dst nibble alignment equal (skew_low = 0), avoiding problematic skew cases.
  */
-static const int ST_TILE_PLANAR_W = 64;
-static const int ST_TILE_PLANAR_H = 24;
-static const int ST_TILE_PLANAR_BPL = (ST_TILE_PLANAR_W / 16) * 8;
-static const int ST_TILE_PLANAR_BYTES = ST_TILE_PLANAR_BPL * ST_TILE_PLANAR_H;
+static const int ST_TILE_PLANAR_CACHE_SLOTS = 128;
+static const int ST_TILE_PLANAR_CACHE_TILES_PER_ROW = 13; /* 13*24=312, keep 8px right margin */
+static const int ST_TILE_PLANAR_CACHE_W = 320;
+static const int ST_TILE_PLANAR_CACHE_ROWS =
+	(ST_TILE_PLANAR_CACHE_SLOTS + ST_TILE_PLANAR_CACHE_TILES_PER_ROW - 1) / ST_TILE_PLANAR_CACHE_TILES_PER_ROW;
+static const int ST_TILE_PLANAR_CACHE_H = ST_TILE_PLANAR_CACHE_ROWS * ST_TILE_LINEAR_H;
+static const int ST_TILE_PLANAR_CACHE_BPL = (ST_TILE_PLANAR_CACHE_W / 16) * 8;
+static const int ST_TILE_PLANAR_CACHE_BYTES = ST_TILE_PLANAR_CACHE_BPL * ST_TILE_PLANAR_CACHE_H;
+static const int ST_TILE_PLANAR_CACHE_ALIGN = 256;
 
 static uint8_t *g_tile_linear_24x24 = NULL;
-static uint8_t *g_tile_planar_scratch = NULL;
+static uint8_t *g_tile_planar_cache_raw = NULL;
+static uint8_t *g_tile_planar_cache_aligned = NULL;
 static BOOL g_tile_scratch_init_attempted = FALSE;
+static unsigned long g_tile_planar_cache_clock = 1;
+static BOOL g_tile_cache_debug_show = FALSE;
+static BOOL g_tile_cache_debug_key_prev = FALSE;
+
+typedef struct STTilePlanarCacheEntry_ {
+	unsigned long identity_key;
+	unsigned long last_used_tick;
+	unsigned short atlas_x;
+	unsigned short atlas_y;
+	BOOL valid;
+} STTilePlanarCacheEntry;
+
+static STTilePlanarCacheEntry g_tile_planar_cache[ST_TILE_PLANAR_CACHE_SLOTS];
+static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb);
+
+enum { ST_HZ200_ADDR = 0x4BA };
+static unsigned long g_tile_cache_stats_period_start_hz200 = 0;
+static unsigned long g_tile_cache_stats_tiles_c2p = 0;
+static unsigned long g_tile_cache_stats_tiles_cache_hit = 0;
+static unsigned long g_tile_cache_stats_decode_ticks = 0;
+static unsigned long g_tile_cache_stats_c2p_ticks = 0;
+static unsigned long g_tile_cache_stats_blit_ticks = 0;
+
+static inline unsigned long ST_Read_Hz200(void)
+{
+#if defined(ATARI_ST)
+	return *(volatile unsigned long *)ST_HZ200_ADDR;
+#else
+	return 0UL;
+#endif
+}
+
+static void ST_Tile_Cache_Stats_Maybe_Report(unsigned long hz_now)
+{
+	const unsigned long k_period_ticks = 5UL * 200UL;
+	unsigned long elapsed;
+
+	if (g_tile_cache_stats_period_start_hz200 == 0UL) {
+		g_tile_cache_stats_period_start_hz200 = hz_now;
+		return;
+	}
+
+	elapsed = hz_now - g_tile_cache_stats_period_start_hz200;
+	if (elapsed < k_period_ticks) {
+		return;
+	}
+
+	g_tile_cache_stats_period_start_hz200 = hz_now;
+	g_tile_cache_stats_tiles_c2p = 0UL;
+	g_tile_cache_stats_tiles_cache_hit = 0UL;
+	g_tile_cache_stats_decode_ticks = 0UL;
+	g_tile_cache_stats_c2p_ticks = 0UL;
+	g_tile_cache_stats_blit_ticks = 0UL;
+}
+
+static void ST_Tile_Cache_Debug_Toggle_Maybe(void)
+{
+#if defined(__MINT__)
+	BOOL down = IKBD_Key_Is_Down(VK_F10) ? TRUE : FALSE;
+	if (down && !g_tile_cache_debug_key_prev) {
+		g_tile_cache_debug_show = (g_tile_cache_debug_show == FALSE) ? TRUE : FALSE;
+		if (g_tile_cache_debug_show && g_tile_planar_cache_aligned) {
+			Setscreen(-1L, (long)g_tile_planar_cache_aligned, -1);
+			printf("TileCache debug view: ON (phys=tile atlas)\n");
+		} else if (VisiblePage.Get_Buffer()) {
+			Setscreen(-1L, (long)VisiblePage.Get_Buffer(), -1);
+		}
+	}
+	g_tile_cache_debug_key_prev = down;
+#endif
+}
 
 static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
 {
@@ -47,17 +126,162 @@ static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
 	return NULL;
 }
 
+static inline unsigned long Next_Tile_Planar_Cache_Tick(void)
+{
+	unsigned long t = ++g_tile_planar_cache_clock;
+	if (t == 0UL) {
+		int i;
+		g_tile_planar_cache_clock = 1UL;
+		for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
+			if (g_tile_planar_cache[i].valid) {
+				g_tile_planar_cache[i].last_used_tick = 1UL;
+			}
+		}
+		return 1UL;
+	}
+	return t;
+}
+
+static STTilePlanarCacheEntry *Find_Tile_Planar_Cache_Entry(
+	unsigned long identity_key)
+{
+	int i;
+	for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
+		STTilePlanarCacheEntry *e = &g_tile_planar_cache[i];
+		if (!e->valid)
+			continue;
+		if (e->identity_key == identity_key) {
+			e->last_used_tick = Next_Tile_Planar_Cache_Tick();
+			return e;
+		}
+	}
+	return NULL;
+}
+
+static STTilePlanarCacheEntry *Reserve_Tile_Planar_Cache_Entry(void)
+{
+	int i;
+	STTilePlanarCacheEntry *best = &g_tile_planar_cache[0];
+	for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
+		STTilePlanarCacheEntry *e = &g_tile_planar_cache[i];
+		if (!e->valid)
+			return e;
+		if (e->last_used_tick < best->last_used_tick)
+			best = e;
+	}
+	return best;
+}
+
+static BOOL Try_Blit_Cached_Terrain_Tile(
+	GraphicViewPortClass *vp,
+	unsigned long identity_key,
+	int x_pixel,
+	int y_pixel,
+	unsigned long *out_blit_ticks)
+{
+	const int vpw = vp->Get_Width();
+	const int vph = vp->Get_Height();
+	int dst_x = x_pixel;
+	int dst_y = y_pixel;
+	int clip_src_x = 0;
+	int clip_src_y = 0;
+	int clip_blit_w = ST_TILE_LINEAR_W;
+	int clip_blit_h = ST_TILE_LINEAR_H;
+	GraphicBufferClass *dst_gb;
+	uint8_t *dst_root;
+	int dx_abs;
+	int dy_abs;
+	STTilePlanarCacheEntry *cache_entry;
+
+	if (dst_x < 0) {
+		clip_src_x = -dst_x;
+		clip_blit_w -= clip_src_x;
+		dst_x = 0;
+	}
+	if (dst_y < 0) {
+		clip_src_y = -dst_y;
+		clip_blit_h -= clip_src_y;
+		dst_y = 0;
+	}
+	if (dst_x + clip_blit_w > vpw) {
+		clip_blit_w = vpw - dst_x;
+	}
+	if (dst_y + clip_blit_h > vph) {
+		clip_blit_h = vph - dst_y;
+	}
+	if (clip_blit_w <= 0 || clip_blit_h <= 0) {
+		return TRUE;
+	}
+
+	dst_gb = vp->Get_Graphic_Buffer();
+	dst_root = (dst_gb && GB_Uses_ST_Planar_Surface(dst_gb))
+		? (uint8_t *)dst_gb->Get_Buffer() : NULL;
+	dx_abs = vp->Get_XPos() + dst_x;
+	dy_abs = vp->Get_YPos() + dst_y;
+	if (!dst_root
+		|| dx_abs < 0 || dy_abs < 0
+		|| dx_abs + clip_blit_w > ST_PLANAR_WIDTH
+		|| dy_abs + clip_blit_h > ST_PLANAR_HEIGHT) {
+		return FALSE;
+	}
+
+	cache_entry = Find_Tile_Planar_Cache_Entry(identity_key);
+	if (!cache_entry) {
+		return FALSE;
+	}
+
+	{
+		unsigned long blit_hz0 = ST_Read_Hz200();
+		BOOL blit_ok = ST_Blitter_Planar_Rect_Blit(
+		g_tile_planar_cache_aligned,
+		ST_TILE_PLANAR_CACHE_BPL,
+		ST_TILE_PLANAR_CACHE_W,
+		ST_TILE_PLANAR_CACHE_H,
+		(int)cache_entry->atlas_x + clip_src_x,
+		(int)cache_entry->atlas_y + clip_src_y,
+		dst_root,
+		ST_PLANAR_BYTES_PER_LINE,
+		ST_PLANAR_WIDTH,
+		ST_PLANAR_HEIGHT,
+		dx_abs,
+		dy_abs,
+		clip_blit_w,
+		clip_blit_h);
+		if (out_blit_ticks) {
+			*out_blit_ticks = ST_Read_Hz200() - blit_hz0;
+		}
+		return blit_ok;
+	}
+}
+
 static BOOL Ensure_Terrain_Tile_Scratch(void)
 {
-	if (g_tile_linear_24x24 && g_tile_planar_scratch)
+	if (g_tile_linear_24x24 && g_tile_planar_cache_aligned)
 		return TRUE;
 	if (g_tile_scratch_init_attempted)
 		return FALSE;
 
 	g_tile_scratch_init_attempted = TRUE;
 	g_tile_linear_24x24 = (uint8_t *)Alloc((unsigned long)ST_TILE_LINEAR_BYTES, MEM_NORMAL);
-	g_tile_planar_scratch = Alloc_Planar_Blitter_Scratch((size_t)ST_TILE_PLANAR_BYTES);
-	return (g_tile_linear_24x24 && g_tile_planar_scratch) ? TRUE : FALSE;
+	g_tile_planar_cache_raw =
+		Alloc_Planar_Blitter_Scratch((size_t)(ST_TILE_PLANAR_CACHE_BYTES + ST_TILE_PLANAR_CACHE_ALIGN - 1));
+	if (g_tile_linear_24x24 && g_tile_planar_cache_raw) {
+		int i;
+		unsigned long long p = (unsigned long long)(const void *)g_tile_planar_cache_raw;
+		unsigned long long aligned = (p + (unsigned long long)(ST_TILE_PLANAR_CACHE_ALIGN - 1))
+			& ~((unsigned long long)(ST_TILE_PLANAR_CACHE_ALIGN - 1));
+		g_tile_planar_cache_aligned = (uint8_t *)(void *)aligned;
+		memset(g_tile_planar_cache_aligned, 0, (size_t)ST_TILE_PLANAR_CACHE_BYTES);
+		memset(g_tile_planar_cache, 0, sizeof(g_tile_planar_cache));
+		for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
+			g_tile_planar_cache[i].atlas_x =
+				(unsigned short)((i % ST_TILE_PLANAR_CACHE_TILES_PER_ROW) * ST_TILE_LINEAR_W);
+			g_tile_planar_cache[i].atlas_y =
+				(unsigned short)((i / ST_TILE_PLANAR_CACHE_TILES_PER_ROW) * ST_TILE_LINEAR_H);
+		}
+		return TRUE;
+	}
+	return FALSE;
 }
 
 static inline unsigned short Read_LE16_Unsafe(const unsigned char *p)
@@ -1230,9 +1454,36 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	if (!vp->Get_Graphic_Buffer()) {
 		return;
 	}
+	const unsigned long stamp_identity_key = ST_BFTP_Frame_Identity_Key(icondata, icon);
+	if (!remap && AllowHardwareBlitFills && VP_Is_Planar(vp) && Ensure_Terrain_Tile_Scratch()) {
+		ST_Tile_Cache_Debug_Toggle_Maybe();
+		BOOL maybe_24x24_tile = FALSE;
+		unsigned long cached_blit_ticks = 0UL;
+		const unsigned char *base = (const unsigned char *)icondata;
+		const unsigned short iw = Read_LE16_Unsafe(base + 0);
+		const unsigned short ih = Read_LE16_Unsafe(base + 2);
+		const unsigned short icount = Read_LE16_Unsafe(base + 4);
+		const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
+		if (iw == ST_TILE_LINEAR_W && ih == ST_TILE_LINEAR_H && icount > 0 && icons_off > 0) {
+			maybe_24x24_tile = TRUE;
+		} else {
+			const int tdw = Get_TD_SHP_Width(icondata);
+			const int tdh = Get_TD_SHP_Height(icondata);
+			if (tdw == ST_TILE_LINEAR_W && tdh == ST_TILE_LINEAR_H) {
+				maybe_24x24_tile = TRUE;
+			}
+		}
+		if (maybe_24x24_tile && Try_Blit_Cached_Terrain_Tile(vp, stamp_identity_key, x_pixel, y_pixel, &cached_blit_ticks)) {
+			g_tile_cache_stats_tiles_cache_hit++;
+			g_tile_cache_stats_blit_ticks += cached_blit_ticks;
+			ST_Tile_Cache_Stats_Maybe_Report(ST_Read_Hz200());
+			return;
+		}
+	}
 	if (!_ShapeBuffer || _ShapeBufferSize <= 0) {
 		return;
 	}
+	unsigned long decode_hz0 = ST_Read_Hz200();
 
 	void *decoded_ptr = NULL;
 	int w = 0;
@@ -1333,6 +1584,7 @@ iconset_decode_done:
 	if (!decoded_ptr) {
 		return;
 	}
+	g_tile_cache_stats_decode_ticks += ST_Read_Hz200() - decode_hz0;
 
 	if (w <= 0 || h <= 0) {
 		return;
@@ -1383,6 +1635,27 @@ iconset_decode_done:
 				&& dx_abs >= 0 && dy_abs >= 0
 				&& dx_abs + clip_blit_w <= ST_PLANAR_WIDTH
 				&& dy_abs + clip_blit_h <= ST_PLANAR_HEIGHT) {
+				STTilePlanarCacheEntry *cache_entry =
+					Find_Tile_Planar_Cache_Entry(stamp_identity_key);
+				if (cache_entry) {
+					if (ST_Blitter_Planar_Rect_Blit(
+							g_tile_planar_cache_aligned,
+							ST_TILE_PLANAR_CACHE_BPL,
+							ST_TILE_PLANAR_CACHE_W,
+							ST_TILE_PLANAR_CACHE_H,
+							(int)cache_entry->atlas_x + clip_src_x,
+							(int)cache_entry->atlas_y + clip_src_y,
+							dst_root,
+							ST_PLANAR_BYTES_PER_LINE,
+							ST_PLANAR_WIDTH,
+							ST_PLANAR_HEIGHT,
+							dx_abs,
+							dy_abs,
+							clip_blit_w,
+							clip_blit_h)) {
+						return;
+					}
+				}
 				memcpy(g_tile_linear_24x24, decoded_ptr, (size_t)ST_TILE_LINEAR_BYTES);
 				/*
 				 * If index 0 must be transparent, the blitter D=S path is not correct.
@@ -1398,35 +1671,33 @@ iconset_decode_done:
 					}
 				}
 
-				const uint8_t *const log_top = g_tile_linear_24x24
-					+ (size_t)clip_src_y * ST_TILE_LINEAR_W + clip_src_x;
-				/*
-				 * Dither phase must follow **tile** coordinates (clip_src + local x/y), not screen
-				 * (dx_abs/dy_abs — those change every scroll step and flicker). Using clip_src as
-				 * abs base matches the full 24x24 path (clip_src 0 → abs 0, same as apx = column).
-				 */
-				memset(g_tile_planar_scratch, 0, (size_t)ST_TILE_PLANAR_BYTES);
+				/* Cache the full 24x24 tile; clipping happens in blitter source coordinates. */
+				cache_entry = Reserve_Tile_Planar_Cache_Entry();
+				unsigned long c2p_hz0 = ST_Read_Hz200();
 				C2P_Render_Logical_To_Planar_Rect(
-					log_top,
-					clip_blit_w,
-					clip_blit_h,
+					g_tile_linear_24x24,
 					ST_TILE_LINEAR_W,
-					g_tile_planar_scratch,
-					ST_TILE_PLANAR_BPL,
-					ST_TILE_PLANAR_W,
-					ST_TILE_PLANAR_H,
+					ST_TILE_LINEAR_H,
+					ST_TILE_LINEAR_W,
+					g_tile_planar_cache_aligned,
+					ST_TILE_PLANAR_CACHE_BPL,
+					ST_TILE_PLANAR_CACHE_W,
+					ST_TILE_PLANAR_CACHE_H,
+					(int)cache_entry->atlas_x,
+					(int)cache_entry->atlas_y,
 					0,
-					0,
-					clip_src_x,
-					clip_src_y);
+					0);
+				g_tile_cache_stats_tiles_c2p++;
+				g_tile_cache_stats_c2p_ticks += ST_Read_Hz200() - c2p_hz0;
 
+				unsigned long blit_hz0 = ST_Read_Hz200();
 				if (ST_Blitter_Planar_Rect_Blit(
-						g_tile_planar_scratch,
-						ST_TILE_PLANAR_BPL,
-						ST_TILE_PLANAR_W,
-						ST_TILE_PLANAR_H,
-						0,
-						0,
+						g_tile_planar_cache_aligned,
+						ST_TILE_PLANAR_CACHE_BPL,
+						ST_TILE_PLANAR_CACHE_W,
+						ST_TILE_PLANAR_CACHE_H,
+						(int)cache_entry->atlas_x + clip_src_x,
+						(int)cache_entry->atlas_y + clip_src_y,
 						dst_root,
 						ST_PLANAR_BYTES_PER_LINE,
 						ST_PLANAR_WIDTH,
@@ -1435,8 +1706,14 @@ iconset_decode_done:
 						dy_abs,
 						clip_blit_w,
 						clip_blit_h)) {
+					g_tile_cache_stats_blit_ticks += ST_Read_Hz200() - blit_hz0;
+					cache_entry->identity_key = stamp_identity_key;
+					cache_entry->last_used_tick = Next_Tile_Planar_Cache_Tick();
+					cache_entry->valid = TRUE;
+					ST_Tile_Cache_Stats_Maybe_Report(ST_Read_Hz200());
 					return;
 				}
+				g_tile_cache_stats_blit_ticks += ST_Read_Hz200() - blit_hz0;
 			}
 		} else {
 			/* Tile fully outside viewport; nothing to draw. */
@@ -1446,12 +1723,23 @@ iconset_decode_done:
 
 fast24_fallback:
 	/*
-	 * Planar LRU keys include clip geometry; without a logical tile id, different icons with
-	 * the same clipped sub-rect (common at tactical edges while scrolling) would share slots.
+	 * Planar LRU keys use the logical tile identity; clip is handled by blitter source offsets.
 	 */
+	if (w == ST_TILE_LINEAR_W && h == ST_TILE_LINEAR_H
+		&& !remap
+		&& VP_Is_Planar(vp)) {
+		static unsigned long s_last_warn_hz200 = 0;
+		unsigned long now_hz200 = ST_Read_Hz200();
+		/* Limit warning spam: at most one warning per second. */
+		if (now_hz200 - s_last_warn_hz200 >= 200UL) {
+			printf("WARNING: terrain tile fell back from blitter fast path (icon=%d)\n", icon);
+			s_last_warn_hz200 = now_hz200;
+		}
+	}
+	ST_Tile_Cache_Stats_Maybe_Report(ST_Read_Hz200());
 	{
 		Bftp_ExArgs stamp_ex = { 0 };
-		stamp_ex.identity_key = ST_BFTP_Frame_Identity_Key(icondata, icon);
+		stamp_ex.identity_key = stamp_identity_key;
 		Buffer_Frame_To_Page_Ex(
 			x_pixel,
 			y_pixel,

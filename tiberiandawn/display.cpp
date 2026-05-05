@@ -285,7 +285,7 @@ namespace {
 		short blit_w = ST_SHADOW_TILE_W;
 		short blit_h = ST_SHADOW_TILE_H;
 
-		short const tactical_w = (short)(WindowList[WINDOW_TACTICAL][WINDOWWIDTH] << 3);
+		short const tactical_w = (short)WindowList[WINDOW_TACTICAL][WINDOWWIDTH];
 		short const tactical_h = (short)WindowList[WINDOW_TACTICAL][WINDOWHEIGHT];
 		if (dst_x < 0) {
 			src_x = (short)-dst_x;
@@ -307,7 +307,7 @@ namespace {
 			return true;
 		}
 
-		int const dx_abs = LogicPage->Get_XPos() + (WindowList[WINDOW_TACTICAL][WINDOWX] << 3) + dst_x;
+		int const dx_abs = LogicPage->Get_XPos() + WindowList[WINDOW_TACTICAL][WINDOWX] + dst_x;
 		int const dy_abs = LogicPage->Get_YPos() + WindowList[WINDOW_TACTICAL][WINDOWY] + dst_y;
 		if (dx_abs < 0 || dy_abs < 0
 			|| dx_abs + blit_w > ST_PLANAR_WIDTH

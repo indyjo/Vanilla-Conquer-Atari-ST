@@ -306,7 +306,7 @@ int main(int argc, char *argv[])
 			printf("C&C - Setting palette.\n");
 			/////////Set_Palette(Palette);
 
-			WindowList[0][WINDOWWIDTH] 	= SeenBuff.Get_Width() >> 3;
+			WindowList[0][WINDOWWIDTH] 	= SeenBuff.Get_Width();
 			WindowList[0][WINDOWHEIGHT]	= SeenBuff.Get_Height();
 
 			/*

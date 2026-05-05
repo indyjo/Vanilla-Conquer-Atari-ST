@@ -36,12 +36,12 @@ Sample_Type SampleType = SAMPLE_NONE;
 SFX_Type SoundType = SFX_NONE;
 GraphicBufferClass SysMemPage(320, 200, (void *)NULL);
 int WindowList[][8] = {
-	{0, 0, 40, 200, WHITE, BLACK, 0, 0},
-	{1, 75, 38, 100, WHITE, BLACK, 0, 0},
-	{0, 8, 40, 192, WHITE, LTGREY, 0, 0},
-	{12, 199 - 42, 16, 42, LTGREY, DKGREY, 0, 0},
+	{0, 0, 320, 200, WHITE, BLACK, 0, 0},
+	{8, 75, 304, 100, WHITE, BLACK, 0, 0},
+	{0, 8, 320, 192, WHITE, LTGREY, 0, 0},
+	{96, 199 - 42, 128, 42, LTGREY, DKGREY, 0, 0},
 	{0, 0, 0, 0, 0, 0, 0, 0},
-	{5, 30, 30, 140, 0, 0, 0, 0},
+	{40, 30, 240, 140, 0, 0, 0, 0},
 	{0, 0, 0, 0, 0, 0, 0, 0},
 	{0, 0, 0, 0, 0, 0, 0, 0},
 };

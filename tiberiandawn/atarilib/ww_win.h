@@ -10,9 +10,9 @@
 **	defines when accessing the WindowList.
 */
 typedef enum {
-	WINDOWX,			// X byte position of left edge.
+	WINDOWX,			// X pixel position of left edge.
 	WINDOWY,			// Y pixel position of top edge.
-	WINDOWWIDTH,	// Width in bytes of the window.
+	WINDOWWIDTH,	// Width in pixels of the window.
 	WINDOWHEIGHT,	// Height in pixels of the window.
 	WINDOWFCOL,		// Default foreground color.
 	WINDOWBCOL,		// Default background color.

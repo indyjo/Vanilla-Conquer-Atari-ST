@@ -403,8 +403,8 @@ int Do_Menu(char const** strings, bool blue)
     **	Adjust the window values to match the size of the
     **	specified menu.
     */
-    WindowList[WINDOW_MENU][WINDOWWIDTH] = MenuList[0][ITEMWIDTH] + 2;
-    WindowList[WINDOW_MENU][WINDOWX] = 19 - (length >> 4);
+    WindowList[WINDOW_MENU][WINDOWWIDTH] = (MenuList[0][ITEMWIDTH] + 2) << 3;
+    WindowList[WINDOW_MENU][WINDOWX] = (19 - (length >> 4)) << 3;
     WindowList[WINDOW_MENU][WINDOWY] = 174 - (unsigned)(MenuList[0][ITEMSHIGH] * (FontHeight + FontYSpacing));
     WindowList[WINDOW_MENU][WINDOWHEIGHT] = MenuList[0][ITEMSHIGH] * FontHeight + 5 /*11*/;
 

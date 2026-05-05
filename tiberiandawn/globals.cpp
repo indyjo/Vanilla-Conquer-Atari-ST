@@ -815,23 +815,23 @@ int* RandSeedPtr;
 int CustomSeed = 0;
 
 int WindowList[][9] = {
-    /* xbyte, ypixel, bytewid, pixelht, cursor color, bkgd color,	cursor x, cursor y */
+    /* xpixel, ypixel, width_px, pixelht, cursor color, bkgd color,	cursor x, cursor y */
 
     /* do not change the first 2 entries!! they are necc. to the system */
-    {0, 0, 40, 200, WHITE, BLACK, 0, 0},  /* screen window */
-    {1, 75, 38, 100, WHITE, BLACK, 0, 0}, /* DOS Error window */
+    {0, 0, 320, 200, WHITE, BLACK, 0, 0},  /* screen window */
+    {8, 75, 304, 100, WHITE, BLACK, 0, 0}, /* DOS Error window */
 
     // Tactical map.
-    {0, 0, 40, 200, WHITE, LTGREY, 0, 0},
+    {0, 0, 320, 200, WHITE, LTGREY, 0, 0},
 
     // Initial menu window.
-    {12, 199 - 42, 16, 42, LTGREY, DKGREY, 0, 0},
+    {96, 199 - 42, 128, 42, LTGREY, DKGREY, 0, 0},
 
     // Sidebar clipping window.
     {0, 0, 0, 0, 0, 0, 0, 0},
 
     // Scenario editor window.
-    {5, 30, 30, 140, 0, 0, 0, 0},
+    {40, 30, 240, 140, 0, 0, 0, 0},
 
     // Custom window.
     {0, 0, 0, 0, 0, 0, 0, 0},

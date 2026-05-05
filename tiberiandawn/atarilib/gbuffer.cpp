@@ -427,9 +427,9 @@ void GraphicViewPortClass::Draw_Stamp(void const *icondata, int icon, int x_pixe
 {
 	GraphicViewPortClass draw_window(
 		Get_Graphic_Buffer(),
-		(WindowList[clip_window][WINDOWX] << 3) + Get_XPos(),
+		WindowList[clip_window][WINDOWX] + Get_XPos(),
 		WindowList[clip_window][WINDOWY] + Get_YPos(),
-		WindowList[clip_window][WINDOWWIDTH] << 3,
+		WindowList[clip_window][WINDOWWIDTH],
 		WindowList[clip_window][WINDOWHEIGHT]);
 
 	if (draw_window.Get_Width() <= 0 || draw_window.Get_Height() <= 0) {

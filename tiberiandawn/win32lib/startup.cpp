@@ -203,7 +203,7 @@ int DLL_Startup(const char * command_line_in)
 
 	if (Ram_Free(MEM_NORMAL) < 5000000) {
 #ifdef GERMAN
-		printf("Zuwenig Hauptspeicher verfgbar.\n");
+		printf("Zuwenig Hauptspeicher verfgbar.\n");
 #else
 #ifdef FRENCH
 		printf("M‚moire vive (RAM) insuffisante.\n");
@@ -360,7 +360,7 @@ int DLL_Startup(const char * command_line_in)
 		if (Disk_Space_Available() < INIT_FREE_DISK_SPACE) {
 #ifdef GERMAN
 			char	disk_space_message [512];
-			sprintf (disk_space_message, "Nicht genug Festplattenplatz fr Command & Conquer.\nSie brauchen %d MByte freien Platz auf der Festplatte.", (INIT_FREE_DISK_SPACE) / (1024 * 1024));
+			sprintf (disk_space_message, "Nicht genug Festplattenplatz fr Command & Conquer.\nSie brauchen %d MByte freien Platz auf der Festplatte.", (INIT_FREE_DISK_SPACE) / (1024 * 1024));
 			MessageBox(NULL, disk_space_message, "Command & Conquer", MB_ICONEXCLAMATION|MB_OK);
 			if ( WindowsTimer )
 				delete WindowsTimer;
@@ -527,7 +527,7 @@ int DLL_Startup(const char * command_line_in)
 			CCDebugString ("C&C95 - Setting palette.\n");
 			/////////Set_Palette(Palette);
 
-			WindowList[0][WINDOWWIDTH] 	= SeenBuff.Get_Width() >> 3;
+			WindowList[0][WINDOWWIDTH] 	= SeenBuff.Get_Width();
 			WindowList[0][WINDOWHEIGHT]	= SeenBuff.Get_Height();
 
 			/*

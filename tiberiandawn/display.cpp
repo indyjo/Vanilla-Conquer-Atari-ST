@@ -2930,7 +2930,6 @@ void DisplayClass::Redraw_Icons(int draw_flags)
     IsShadowPresent = false;
 #ifdef ATARI_ST
     for (int y = y_start; y <= TacLeptonHeight; y += CELL_LEPTON_H) {
-        Call_Back();
 #else
     for (int y = -Coord_YLepton(TacticalCoord); y <= TacLeptonHeight; y += CELL_LEPTON_H) {
 #endif

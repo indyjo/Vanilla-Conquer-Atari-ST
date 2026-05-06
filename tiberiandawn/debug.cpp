@@ -550,6 +550,11 @@ void Debug_Key(unsigned input)
         case KN_F8:
             Debug_Clipped_Tactical_Redraw = (Debug_Clipped_Tactical_Redraw == false);
             Map.Flag_To_Redraw(true);
+            if (Debug_Clipped_Tactical_Redraw) {
+                CCDebugString("F8: tactical redraw -> clipped (cell-flag + per-cell clip + footprint)\n");
+            } else {
+                CCDebugString("F8: tactical redraw -> unclipped (Refresh_Cells / layer Render)\n");
+            }
             break;
 
         /*

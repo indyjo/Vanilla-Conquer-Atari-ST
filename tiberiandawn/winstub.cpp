@@ -44,7 +44,7 @@
 #ifdef POSIX
 #include "atarilib/c2p.h"
 #include "atarilib/drawbuff.h"
-#include "atarilib/st_bftp_sprite_cache.h"
+#include "atarilib/st_sprite_cache.h"
 #include <cstdarg>
 #include <cstdint>
 #endif
@@ -536,7 +536,7 @@ long Buffer_Frame_To_Page_Ex(int x,
         (void)predator;
         Bftp_Lazy_Frame_FillFn lazy_miss_fn = planar_decode_on_miss ? ex->lazy_frame_fill : nullptr;
         void* lazy_miss_ctx = planar_decode_on_miss ? ex->lazy_frame_ctx : nullptr;
-        const long drew = ST_BFTP_Buffer_Frame_Planar_Composite(root,
+        const long drew = ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(root,
                                                               ax0,
                                                               ay0,
                                                               src_raster,

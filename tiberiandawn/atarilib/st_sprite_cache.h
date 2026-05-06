@@ -1,9 +1,9 @@
 /*
- * st_bftp_sprite_cache.h — LRU-backed planar sprite cache for Buffer_Frame_To_Page (Atari ST).
+ * st_sprite_cache.h — LRU-backed planar sprite cache for Buffer_Frame_To_Page (Atari ST).
  */
 
-#ifndef ATARILIB_ST_BFTP_SPRITE_CACHE_H_
-#define ATARILIB_ST_BFTP_SPRITE_CACHE_H_
+#ifndef ATARILIB_ST_SPRITE_CACHE_H_
+#define ATARILIB_ST_SPRITE_CACHE_H_
 
 #include <stdint.h>
 
@@ -17,14 +17,15 @@ extern "C" {
  *
  * Blits requiring a tier larger than 96 (sprite max side after 16-px width roundup) return 0.
  *
- * LRU keys mix identity_key, full-frame size (+ stride), fade/ghost table fingerprint tokens —
- * viewport clip (raster_ox/oy, blit_w/h) is not part of the key. One cache slot holds the entire
- * decoded frame before clipping; each draw blits only the visible sub-rectangle.
+ * LRU keys mix identity_key with render-variant fingerprints (fade/ghost/trans state).
+ * Cache slots store a cropped (minimal non-transparent) representation plus insets; viewport clip
+ * (raster_ox/oy, blit_w/h) is not part of the key. Each draw intersects the requested clip with the
+ * cached crop and adjusts source/destination offsets so output matches the uncropped result.
  *
  * full_w/full_h — unclipped frame width/height (same as logical stride rows / Buffer_Frame_To_Page w,h).
  * lazy_decode_miss: when non-NULL, invokes once on LRU cache miss — return must equal raster_base.
  */
-long ST_BFTP_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
+long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
 	int ax0,
 	int ay0,
 	const uint8_t *src,
@@ -43,16 +44,16 @@ long ST_BFTP_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
 	unsigned long (*lazy_decode_miss)(void *user_ctx),
 	void *lazy_decode_ctx);
 
-void ST_BFTP_Init_Sprite_Caches(void);
+void ST_SPRITE_CACHE_Init(void);
 
 /*
  * Opaque identity for Bftp_ExArgs.identity_key: fingerprints shape/icon blob root + frame index
  * so planar LRU rows do not alias different tiles that share clip geometry (e.g. map stamps).
  */
-long ST_BFTP_Frame_Identity_Key(void const *blobs_root, int frame_index);
+long ST_SPRITE_CACHE_Frame_Identity_Key(void const *blobs_root, int frame_index);
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
 
-#endif /* ATARILIB_ST_BFTP_SPRITE_CACHE_H_ */
+#endif /* ATARILIB_ST_SPRITE_CACHE_H_ */

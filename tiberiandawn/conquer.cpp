@@ -72,7 +72,7 @@
 #include "atarilib/st_frame_meter.h"
 
 #ifdef ATARI_ST
-#include "st_bftp_sprite_cache.h"
+#include "st_sprite_cache.h"
 #include <limits.h>
 #endif
 
@@ -2734,7 +2734,7 @@ void CC_Draw_Shape(void const* shapefile,
                 lazy_ctx.shapenum = shapenum;
 
                 Bftp_ExArgs bftp_ex = {0};
-                bftp_ex.identity_key = ST_BFTP_Frame_Identity_Key(shapefile, shapenum);
+                bftp_ex.identity_key = ST_SPRITE_CACHE_Frame_Identity_Key(shapefile, shapenum);
                 bftp_ex.lazy_frame_fill = CC_Draw_Shape_Lazy_Frame_Fill;
                 bftp_ex.lazy_frame_ctx = &lazy_ctx;
                 bftp_ex.lru_scratch_root = (unsigned char const*)_ShapeBuffer;

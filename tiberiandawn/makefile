@@ -227,7 +227,7 @@ ROOT_CPP_SOURCES = \
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp $(PLATFORM_LIB)/buffer.cpp $(PLATFORM_LIB)/buffglbl.cpp \
 	$(PLATFORM_LIB)/ddraw.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/DrawMisc.cpp \
-	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_bftp_sprite_cache.cpp $(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp $(PLATFORM_LIB)/ikbd.cpp \
 	$(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/load.cpp \
 	$(PLATFORM_LIB)/loadfont.cpp $(PLATFORM_LIB)/loadpal.cpp $(PLATFORM_LIB)/mem.cpp \
@@ -553,7 +553,7 @@ ST_SUITE_DIR = tests/st_suite
 ST_TEST_EXE = $(OUTDIR)/cnc_st_tests.tos
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_mix_register.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
-	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_bftp_sprite_cache.o $(INTDIR)/drawrect.o \
+	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/drawrect.o \
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \
 	$(INTDIR)/CDFILE.o $(INTDIR)/misc.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \

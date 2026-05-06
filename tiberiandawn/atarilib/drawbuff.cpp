@@ -10,7 +10,7 @@
 #include "c2p.h"
 #include "function.h"
 #include "st_blitter_blit.h"
-#include "st_bftp_sprite_cache.h"
+#include "st_sprite_cache.h"
 #include "memflag.h"
 #include <string.h>  // For memset
 #include <stdint.h>
@@ -1420,7 +1420,7 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	if (!vp->Get_Graphic_Buffer()) {
 		return;
 	}
-	const unsigned long stamp_identity_key = ST_BFTP_Frame_Identity_Key(icondata, icon);
+	const unsigned long stamp_identity_key = ST_SPRITE_CACHE_Frame_Identity_Key(icondata, icon);
 	if (!remap && AllowHardwareBlitFills && VP_Is_Planar(vp) && Ensure_Terrain_Tile_Scratch()) {
 		ST_Tile_Cache_Debug_Toggle_Maybe();
 		BOOL maybe_24x24_tile = FALSE;

@@ -9,6 +9,60 @@
 #include "ikbd.h"
 #include <ctype.h>
 
+static BOOL Force_VK_Bit(UINT vk_key)
+{
+	switch (vk_key) {
+		case VK_LBUTTON:
+		case VK_RBUTTON:
+		case VK_MBUTTON:
+		case VK_ESCAPE:
+		case VK_RETURN:
+		case VK_LEFT:
+		case VK_RIGHT:
+		case VK_UP:
+		case VK_DOWN:
+		case VK_HOME:
+		case VK_END:
+		case VK_PRIOR:
+		case VK_NEXT:
+		case VK_INSERT:
+		case VK_DELETE:
+		case VK_TAB:
+		case VK_BACK:
+		case VK_SHIFT:
+		case VK_LSHIFT:
+		case VK_RSHIFT:
+		case VK_CONTROL:
+		case VK_LCONTROL:
+		case VK_RCONTROL:
+		case VK_MENU:
+		case VK_LMENU:
+		case VK_RMENU:
+		case VK_CAPITAL:
+		case VK_NUMLOCK:
+		case VK_SCROLL:
+		case VK_PAUSE:
+		case VK_PRINT:
+		case VK_SELECT:
+		case VK_F1:
+		case VK_F2:
+		case VK_F3:
+		case VK_F4:
+		case VK_F5:
+		case VK_F6:
+		case VK_F7:
+		case VK_F8:
+		case VK_F9:
+		case VK_F10:
+		case VK_F11:
+		case VK_F12:
+			return TRUE;
+		default:
+			break;
+	}
+	return FALSE;
+}
+
 static void Pump_IKBD_To_Buffer(WWKeyboardClass *kbd)
 {
 	if (!kbd) {
@@ -168,12 +222,25 @@ BOOL WWKeyboardClass::Put_Key_Message(UINT vk_key, BOOL release, BOOL dbl)
 {
 	int bits = 0;
 	/*
-	** No GetKeyState on Atari yet; keep modifier bits clear (same as mouse path on Win32).
+	** Mirror Win32 behavior: apply live modifier state for non-mouse keys.
+	** IKBD key-down state is maintained from make/break scan codes.
 	*/
 	if (vk_key != VK_LBUTTON && vk_key != VK_MBUTTON && vk_key != VK_RBUTTON) {
-		/* Placeholder for future IKBD modifier state */
+		int shift = IKBD_Key_Is_Down(VK_SHIFT) != 0;
+		int ctrl  = IKBD_Key_Is_Down(VK_CONTROL) != 0;
+		int alt   = IKBD_Key_Is_Down(VK_MENU) != 0;
+
+		if (shift) {
+			bits |= WWKEY_SHIFT_BIT;
+		}
+		if (ctrl) {
+			bits |= WWKEY_CTRL_BIT;
+		}
+		if (alt) {
+			bits |= WWKEY_ALT_BIT;
+		}
 	}
-	if (!AsciiRemap[vk_key | bits]) {
+	if (Force_VK_Bit(vk_key) || !AsciiRemap[vk_key | bits]) {
 		bits |= WWKEY_VK_BIT;
 	}
 	if (release) {

@@ -43,7 +43,7 @@ bool Debug_Cheat = false;
 bool Debug_Remap = false;
 bool Debug_Icon = false;
 bool Debug_Clipped_Tactical_Redraw = false; /* F8 / Debug_Flag: true = cell-flag + per-cell clip + footprint; false = unclipped redraw (Refresh_Cells / layer Render / IsToDisplay) */
-bool Debug_Flag = false;
+bool Debug_Flag = true;
 bool Debug_Lose = false;
 bool Debug_Win = false;
 bool Debug_Map = false;      // true = map editor mode

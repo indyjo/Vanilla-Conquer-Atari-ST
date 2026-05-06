@@ -106,7 +106,7 @@ static inline int IKBD_Map_Scan_To_VK(unsigned char scan)
 		case 0x1A: return '[';
 		case 0x1B: return ']';
 		case 0x1C: return VK_RETURN;
-		case 0x1D: return VK_CONTROL;
+		case 0x1D: return VK_LCONTROL;
 		case 0x1E: return 'A';
 		case 0x1F: return 'S';
 		case 0x20: return 'D';
@@ -119,7 +119,7 @@ static inline int IKBD_Map_Scan_To_VK(unsigned char scan)
 		case 0x27: return ';';
 		case 0x28: return '\'';
 		case 0x29: return '`';
-		case 0x2A: return VK_SHIFT;
+		case 0x2A: return VK_LSHIFT;
 		case 0x2B: return '\\';
 		case 0x2C: return 'Z';
 		case 0x2D: return 'X';
@@ -131,8 +131,8 @@ static inline int IKBD_Map_Scan_To_VK(unsigned char scan)
 		case 0x33: return ',';
 		case 0x34: return '.';
 		case 0x35: return '/';
-		case 0x36: return VK_SHIFT;
-		case 0x38: return VK_MENU;
+		case 0x36: return VK_RSHIFT;
+		case 0x38: return VK_LMENU;
 		case 0x39: return VK_SPACE;
 		case 0x3A: return VK_CAPITAL;
 		case 0x3B: return VK_F1;
@@ -371,6 +371,15 @@ void IKBD_Get_Mouse_XY(int *x, int *y)
 int IKBD_Key_Is_Down(int vk)
 {
 	vk &= 0x7F;
+	if (vk == VK_SHIFT) {
+		return (int)(KeyDown[VK_LSHIFT] | KeyDown[VK_RSHIFT]);
+	}
+	if (vk == VK_CONTROL) {
+		return (int)(KeyDown[VK_LCONTROL] | KeyDown[VK_RCONTROL]);
+	}
+	if (vk == VK_MENU) {
+		return (int)(KeyDown[VK_LMENU] | KeyDown[VK_RMENU]);
+	}
 	return (vk >= 0 && vk < 128) ? (int)KeyDown[vk] : 0;
 }
 

@@ -47,9 +47,6 @@
 
 #include	"function.h"
 
-#ifdef ATARI_ST
-#endif
-
 /************************************* Prototypes *********************************************/
 static void Assign_Houses(void);
 static void Remove_AI_Players(void);
@@ -224,9 +221,6 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 
 	ScenarioInit++;
 
-#ifdef ATARI_ST
-#endif
-
 	/*
 	**	Fetch working pointer to the INI staging buffer. Make sure that the buffer
 	**	is cleared out before proceeding.  (Don't use the HidPage for this, since
@@ -239,9 +233,6 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 	if (fresh) {
 		Clear_Scenario();
 	}
-
-#ifdef ATARI_ST
-#endif
 
 	/*
 	** If we are not dealing with scenario 1, or a multi player scenario
@@ -294,9 +285,6 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 		if (bytes_read < 0) bytes_read = 0;
 		buffer[bytes_read] = '\0';
 	}
-
-#ifdef ATARI_ST
-#endif
 
 	/*
 	** Init the Scenario CRC value
@@ -364,18 +352,12 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 	TeamTypeClass::Read_INI(buffer);
 	Call_Back();
 
-#ifdef ATARI_ST
-#endif
-
 	/*
 	**	Read in the specific information for each of the house types.  This creates
 	**	the houses of different types.
 	*/
 	HouseClass::Read_INI(buffer);
 	Call_Back();
-
-#ifdef ATARI_ST
-#endif
 
 	/*
 	**	Read in the trigger data. The triggers must be created before any other
@@ -384,21 +366,12 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 	TriggerClass::Read_INI(buffer);
 	Call_Back();
 
-#ifdef ATARI_ST
-#endif
-
-#ifdef ATARI_ST
-#endif
-
 	/*
 	**	Read in the map control values. This includes dimensions
 	**	as well as theater information.
 	*/
 	Map.Read_INI(buffer);
 	Call_Back();
-
-#ifdef ATARI_ST
-#endif
 
 	/*
 	**	Assign PlayerPtr by reading the player's house from the INI;
@@ -463,9 +436,6 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 	}
 	Call_Back();
 
-#ifdef ATARI_ST
-#endif
-
 	/*
 	**	Read in and place the 3D terrain objects.
 	*/
@@ -510,9 +480,6 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 	*/
 	SmudgeClass::Read_INI(buffer);
 	Call_Back();
-
-#ifdef ATARI_ST
-#endif
 
 	/*
 	**	Read in any briefing text.
@@ -707,9 +674,6 @@ bool Read_Scenario_Ini(char *root, bool fresh)
 	}
 
 	Call_Back();
-
-#ifdef ATARI_ST
-#endif
 
 	/*
 	**	Return with flag saying that the scenario file was read.

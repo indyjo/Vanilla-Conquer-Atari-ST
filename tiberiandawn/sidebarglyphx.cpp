@@ -406,7 +406,7 @@ bool SidebarGlyphxClass::StripClass::AI(KeyNumType& input, int, int)
                             switch (pending->What_Am_I()) {
                             case RTTI_UNIT:
                             case RTTI_AIRCRAFT:
-                                OutList.Add(EventClass(EventClass::PLACE, pending->What_Am_I(), -1));
+                                OutList.Add(EventClass(EventClass::PLACE, pending->What_Am_I(), (CELL)-1));
                                 if (!factory->Is_Blocked()) {
                                     Speak(VOX_UNIT_READY);
                                 }
@@ -419,7 +419,7 @@ bool SidebarGlyphxClass::StripClass::AI(KeyNumType& input, int, int)
                                 break;
 
                             case RTTI_INFANTRY:
-                                OutList.Add(EventClass(EventClass::PLACE, pending->What_Am_I(), -1));
+                                OutList.Add(EventClass(EventClass::PLACE, pending->What_Am_I(), (CELL)-1));
                                 if (!factory->Is_Blocked()) {
                                     Speak(VOX_UNIT_READY);
                                 }

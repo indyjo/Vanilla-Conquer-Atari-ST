@@ -1244,7 +1244,7 @@ CELL DisplayClass::Set_Cursor_Pos(CELL pos)
         x = Coord_XCell(TacticalCoord) + Lepton_To_Cell(TacLeptonWidth) - w;
     //	if (x+w >= TacMapX+TacWidth) x = TacMapX+TacWidth-w;
     if (y + h >= Coord_YCell(TacticalCoord) + Lepton_To_Cell(TacLeptonHeight))
-        x = Coord_YCell(TacticalCoord) + Lepton_To_Cell(TacLeptonHeight) - h;
+        y = Coord_YCell(TacticalCoord) + Lepton_To_Cell(TacLeptonHeight) - h;
     //	if (y+h >= TacMapY+TacHeight) y = TacMapY+TacHeight-h;
     pos = XY_Cell(x, y) - ZoneOffset;
 

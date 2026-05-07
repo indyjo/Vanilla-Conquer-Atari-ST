@@ -78,7 +78,84 @@ VQAHandle* Open_Movie(const char* name)
  *=============================================================================================*/
 void Choose_Side(void)
 {
-#ifdef REMASTER_BUILD
+#ifdef ATARI_ST
+    int factor = (SeenBuff.Get_Width() == 320) ? 1 : 2;
+    int dialog_w = 180 * factor;
+    int dialog_h = 50 * factor;
+    int dialog_x = (SeenBuff.Get_Width() - dialog_w) / 2;
+    int dialog_y = (SeenBuff.Get_Height() - dialog_h) / 2;
+    int button_w = 60 * factor;
+    int button_h = 14 * factor;
+    int gdi_x = dialog_x + (12 * factor);
+    int nod_x = dialog_x + dialog_w - button_w - (12 * factor);
+    int button_y = dialog_y + dialog_h - button_h - (8 * factor);
+    int chosen = 0;
+
+    Hide_Mouse();
+    Load_Title_Screen("TITLE.CPS", &HidPage, Palette);
+    Blit_Hid_Page_To_Seen_Buff();
+    Set_Palette(Palette);
+
+    Dialog_Box(dialog_x, dialog_y, dialog_w, dialog_h);
+    Fancy_Text_Print(TXT_NONE, 0, 0, TBLACK, TBLACK, TPF_6PT_GRAD | TPF_NOSHADOW);
+    Fancy_Text_Print(TXT_SIDE_COLON, dialog_x + (dialog_w / 2), dialog_y + (8 * factor),
+        CC_GREEN, TBLACK, TPF_CENTER | TPF_6PT_GRAD | TPF_USE_GRAD_PAL | TPF_NOSHADOW);
+
+    Draw_Box(gdi_x, button_y, button_w, button_h, BOXSTYLE_GREEN_RAISED, false);
+    Draw_Box(nod_x, button_y, button_w, button_h, BOXSTYLE_GREEN_RAISED, false);
+    Fancy_Text_Print(TXT_G_D_I, gdi_x + (button_w / 2), button_y + (2 * factor),
+        CC_GREEN, TBLACK, TPF_CENTER | TPF_6PT_GRAD | TPF_USE_GRAD_PAL | TPF_NOSHADOW);
+    Fancy_Text_Print(TXT_N_O_D, nod_x + (button_w / 2), button_y + (2 * factor),
+        CC_GREEN, TBLACK, TPF_CENTER | TPF_6PT_GRAD | TPF_USE_GRAD_PAL | TPF_NOSHADOW);
+    Show_Mouse();
+
+    Keyboard->Clear();
+    while (!chosen) {
+        Call_Back();
+        if (Keyboard->Check()) {
+            KeyNumType key = (KeyNumType)(Keyboard->Get() & 0x10FF);
+            switch (key) {
+            case KN_LMOUSE:
+                if (Keyboard->MouseQY >= button_y && Keyboard->MouseQY < (button_y + button_h)) {
+                    if (Keyboard->MouseQX >= gdi_x && Keyboard->MouseQX < (gdi_x + button_w)) {
+                        chosen = 1;
+                    }
+                    if (Keyboard->MouseQX >= nod_x && Keyboard->MouseQX < (nod_x + button_w)) {
+                        chosen = 2;
+                    }
+                }
+                break;
+
+            case KN_G:
+                chosen = 1;
+                break;
+
+            case KN_N:
+                chosen = 2;
+                break;
+
+            case KN_RETURN:
+            case KN_ESC:
+                chosen = 1;
+                break;
+
+            default:
+                break;
+            }
+        }
+    }
+    Keyboard->Clear();
+
+    if (chosen == 2) {
+        Whom = HOUSE_BAD;
+        ScenPlayer = SCEN_PLAYER_NOD;
+    } else {
+        Whom = HOUSE_GOOD;
+        ScenPlayer = SCEN_PLAYER_GDI;
+    }
+    return;
+
+#elif defined(REMASTER_BUILD)
     // static char const _yellowpal[]={0x0,0x0,0xC9,0x0,0xBA,0x0,0x93,0x0,0x61,0x0,0x0,0x0,0x0,0x0,0xEE,0x0};
     // static char const _redpal[]   ={0x0,0x0,0xA8,0x0,0xD9,0x0,0xDA,0x0,0xE1,0x0,0x0,0x0,0x0,0x0,0xD4,0x0};
     // static char const _graypal[]  ={0x0,0x0,0x17,0x0,0x10,0x0,0x12,0x0,0x14,0x0,0x0,0x0,0x0,0x0,0x1C,0x0};

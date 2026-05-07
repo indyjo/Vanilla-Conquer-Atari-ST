@@ -45,6 +45,9 @@
 #include "atarilib/c2p.h"
 #include "atarilib/drawbuff.h"
 #include "atarilib/st_sprite_cache.h"
+#ifdef ATARI_ST
+#include "atarilib/ikbd.h"
+#endif
 #include <cstdarg>
 #include <cstdint>
 #endif

@@ -25,6 +25,13 @@ int C2P_Get_WeightSet(void);
 
 /* Map 8-bit palette index to one ST 4-bit color using current dither tables (absolute pixel coords). */
 unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char pal_idx);
+/* Nearest-map LUT (8-bit VGA index -> ST 4-bit index). */
+extern uint8_t C2P_MapNearestLUT[256];
+/* Inline nearest-map helper (no spatial dithering). */
+static inline unsigned char C2P_Map8ToNearest4(unsigned char pal_idx)
+{
+	return C2P_MapNearestLUT[pal_idx];
+}
 
 /* Convert one 320x200 8-bit buffer to ST planar screen (Physbase). */
 void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logical_stride, uint8_t *st_screen);

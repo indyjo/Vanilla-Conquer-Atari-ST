@@ -11,6 +11,7 @@
 #include "function.h"
 #include "st_blitter_blit.h"
 #include "st_sprite_cache.h"
+#include "st_planar_draw.h"
 #include "memflag.h"
 #include <string.h>  // For memset
 #include <stdint.h>
@@ -1095,6 +1096,51 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	if (sy >= height) sy = height - 1;
 	if (dx >= width) dx = width - 1;
 	if (dy >= height) dy = height - 1;
+
+	/* Planar special-cases: route pure H/V lines to the optimized span drawers. */
+	if (VP_Is_Planar(vp) && (sx == dx || sy == dy)) {
+		GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+		uint16_t *root = (gb && GB_Uses_ST_Planar_Surface(gb)) ? (uint16_t *)gb->Get_Buffer() : NULL;
+		const int planar_w = gb ? gb->Get_Width() : 0;
+		const int planar_h = gb ? gb->Get_Height() : 0;
+		const short planar_row_words = (short)(Get_Row_Stride(vp) >> 1);
+		const int x1_abs = vp->Get_XPos() + sx;
+		const int y1_abs = vp->Get_YPos() + sy;
+		const int x2_abs = vp->Get_XPos() + dx;
+		const int y2_abs = vp->Get_YPos() + dy;
+		const unsigned char color4 = C2P_Map8ToNearest4(color);
+
+		if (root
+			&& planar_row_words > 0
+			&& planar_w > 0 && planar_h > 0
+			&& x1_abs >= 0 && y1_abs >= 0
+			&& x2_abs >= 0 && y2_abs >= 0
+			&& x1_abs < planar_w && y1_abs < planar_h
+			&& x2_abs < planar_w && y2_abs < planar_h) {
+			if (sy == dy) {
+				short x1 = (short)x1_abs;
+				short x2 = (short)x2_abs;
+				if (x1 > x2) {
+					short t = x1;
+					x1 = x2;
+					x2 = t;
+				}
+				ST_Planar_Draw_HLine_Fast(root, planar_row_words, (short)y1_abs, x1, x2, color4);
+				return;
+			}
+			if (sx == dx) {
+				short y1 = (short)y1_abs;
+				short y2 = (short)y2_abs;
+				if (y1 > y2) {
+					short t = y1;
+					y1 = y2;
+					y2 = t;
+				}
+				ST_Planar_Draw_VLine_Fast(root, planar_row_words, (short)x1_abs, y1, y2, color4);
+				return;
+			}
+		}
+	}
 	
 	// Simple line drawing using Bresenham's algorithm
 	int x0 = sx, y0 = sy, x1 = dx, y1 = dy;
@@ -1147,31 +1193,133 @@ extern "C" VOID Buffer_Draw_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	// Clip coordinates to viewport bounds
 	int width = vp->Get_Width();
 	int height = vp->Get_Height();
-	if (sx < 0) sx = 0;
-	if (sy < 0) sy = 0;
-	if (dx >= width) dx = width - 1;
-	if (dy >= height) dy = height - 1;
-	
-	// Check if rectangle is valid
+
+	// Accept either corner order, matching Win32 Draw_Rect behavior.
+	if (sx > dx) {
+		int t = sx;
+		sx = dx;
+		dx = t;
+	}
+	if (sy > dy) {
+		int t = sy;
+		sy = dy;
+		dy = t;
+	}
+
+	enum {
+		RECT_EDGE_LEFT   = 1 << 0,
+		RECT_EDGE_TOP    = 1 << 1,
+		RECT_EDGE_RIGHT  = 1 << 2,
+		RECT_EDGE_BOTTOM = 1 << 3
+	};
+	unsigned char edge_flags = (unsigned char)(RECT_EDGE_LEFT | RECT_EDGE_TOP | RECT_EDGE_RIGHT | RECT_EDGE_BOTTOM);
+
+	if (sx < 0) {
+		sx = 0;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_LEFT);
+	}
+	if (sy < 0) {
+		sy = 0;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_TOP);
+	}
+	if (dx >= width) {
+		dx = width - 1;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_RIGHT);
+	}
+	if (dy >= height) {
+		dy = height - 1;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_BOTTOM);
+	}
+	if (!edge_flags) return;
+
+	// Check if rectangle collapsed after viewport-local clipping.
 	if (sx > dx || sy > dy) return;
-	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
+
+	/*
+	**	Second-stage clip in buffer-absolute coordinates. This handles viewports
+	**	that are only partially inside their backing buffer.
+	*/
+	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+	const int buffer_w = gb ? gb->Get_Width() : 0;
+	const int buffer_h = gb ? gb->Get_Height() : 0;
+	if (buffer_w <= 0 || buffer_h <= 0) return;
+	int x1_abs = vp->Get_XPos() + sx;
+	int y1_abs = vp->Get_YPos() + sy;
+	int x2_abs = vp->Get_XPos() + dx;
+	int y2_abs = vp->Get_YPos() + dy;
+	if (x1_abs >= buffer_w) {
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_LEFT);
+	}
+	if (x1_abs < 0) {
+		x1_abs = 0;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_LEFT);
+	}
+	if (y1_abs >= buffer_h) {
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_TOP);
+	}
+	if (y1_abs < 0) {
+		y1_abs = 0;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_TOP);
+	}
+	if (x2_abs < 0) {
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_RIGHT);
+	}
+	if (x2_abs >= buffer_w) {
+		x2_abs = buffer_w - 1;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_RIGHT);
+	}
+	if (y2_abs < 0) {
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_BOTTOM);
+	}
+	if (y2_abs >= buffer_h) {
+		y2_abs = buffer_h - 1;
+		edge_flags = (unsigned char)(edge_flags & ~RECT_EDGE_BOTTOM);
+	}
+	if (x2_abs < 0) x2_abs = 0;
+	if (y2_abs < 0) y2_abs = 0;
+	if (x1_abs >= buffer_w) x1_abs = buffer_w - 1;
+	if (y1_abs >= buffer_h) y1_abs = buffer_h - 1;
+	if (!edge_flags) return;
 	
 	if (VP_Is_Planar(vp)) {
-		/* Full 8-bit palette index — Buffer_Put_Pixel runs C2P_Map8ToPlanar4 (do not mask to 4). */
-		unsigned char palidx = (unsigned char)color;
-		for (int xx = sx; xx <= dx; xx++) {
-			Buffer_Put_Pixel(vp, xx, sy, palidx);
-			Buffer_Put_Pixel(vp, xx, dy, palidx);
-		}
-		for (int yy = sy; yy <= dy; yy++) {
-			Buffer_Put_Pixel(vp, sx, yy, palidx);
-			Buffer_Put_Pixel(vp, dx, yy, palidx);
+		/* Color is an ST 4-bit index (0..15). */
+		uint16_t *root = (gb && GB_Uses_ST_Planar_Surface(gb)) ? (uint16_t *)gb->Get_Buffer() : NULL;
+		const int planar_row_bytes = Get_Row_Stride(vp);
+		const short planar_row_words = (short)(planar_row_bytes >> 1);
+		const int planar_w = gb ? gb->Get_Width() : 0;
+		const int planar_h = gb ? gb->Get_Height() : 0;
+
+		if (root
+			&& planar_row_bytes > 0
+			&& planar_w > 0 && planar_h > 0
+			&& x1_abs >= 0 && y1_abs >= 0
+			&& x2_abs < planar_w && y2_abs < planar_h) {
+			unsigned char color4 = C2P_Map8ToNearest4(color);
+			if (edge_flags & RECT_EDGE_TOP) {
+				ST_Planar_Draw_HLine_Fast(root, planar_row_words, (short)y1_abs, (short)x1_abs, (short)x2_abs, color4);
+			}
+			if ((edge_flags & RECT_EDGE_BOTTOM) && y2_abs != y1_abs) {
+				ST_Planar_Draw_HLine_Fast(root, planar_row_words, (short)y2_abs, (short)x1_abs, (short)x2_abs, color4);
+			}
+			if (edge_flags & RECT_EDGE_LEFT) {
+				ST_Planar_Draw_VLine_Fast(root, planar_row_words, (short)x1_abs, (short)y1_abs, (short)y2_abs, color4);
+			}
+			if ((edge_flags & RECT_EDGE_RIGHT) && x2_abs != x1_abs) {
+				ST_Planar_Draw_VLine_Fast(root, planar_row_words, (short)x2_abs, (short)y1_abs, (short)y2_abs, color4);
+			}
 		}
 		return;
 	}
 
+	/* Convert back to viewport-local for generic branch below. */
+	sx = x1_abs - vp->Get_XPos();
+	sy = y1_abs - vp->Get_YPos();
+	dx = x2_abs - vp->Get_XPos();
+	dy = y2_abs - vp->Get_YPos();
+
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) return;
 	
 	// Calculate row stride (pitch + xadd)
 	int row_stride = Get_Row_Stride(vp);

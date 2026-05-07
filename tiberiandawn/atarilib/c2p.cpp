@@ -28,6 +28,7 @@ static const uint8_t Bayer4x4[16] = {
 ** Filled from palette-opt (TEMPERAT.PAL, subset 0..15); see kC2PPaletteOptWeight.
 */
 static uint8_t C2P_MapDither[16][256];
+uint8_t C2P_MapNearestLUT[256];
 
 /* Pair LUTs: 4 pair positions (pixels 0-1,2-3,4-5,6-7) and two-nibble index. */
 static uint32_t C2P_PairLUT[4][256];
@@ -107,6 +108,19 @@ static void C2P_Rebuild_Tables_From_SelectedWeights(void)
 		for (int src = 0; src < 256; src++) {
 			C2P_MapDither[b][src] = C2P_STIndex_FromOptWeights(xb, yb, (uint8_t)src);
 		}
+	}
+
+	for (int src = 0; src < 256; src++) {
+		const uint8_t *w = C2P_ActivePaletteWeights[src];
+		int best_k = 0;
+		int best_w = (int)w[0];
+		for (int k = 1; k < 16; k++) {
+			if ((int)w[k] > best_w) {
+				best_w = (int)w[k];
+				best_k = k;
+			}
+		}
+		C2P_MapNearestLUT[src] = (uint8_t)best_k;
 	}
 }
 

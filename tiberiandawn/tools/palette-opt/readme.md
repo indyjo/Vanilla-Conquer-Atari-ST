@@ -33,9 +33,17 @@ Requires a normal C99 compiler and `math` (`-lm`).
 ```bash
 ./palette-opt           # all 256 entries
 ./palette-opt 0 16      # entries 0..15 only
+./palette-opt -p SOME.PAL --dump some.w16
+./palette-opt -p SCRSCN1.WSA --dump SCRSCN1.W16
 ```
 
-Output is C-style `{ ... }, // index: residual` lines.
+`-p/--palette` accepts either:
+- raw 768-byte `.PAL` (6-bit RGB channels), or
+- `.WSA` with embedded palette (uses the first 16 palette indices as the ST subset).
+
+`--dump out.w16` writes raw 256*16 bytes (`kC2PPaletteOptWeight` layout).
+
+Console output remains C-style `{ ... }, // index: residual` lines.
 
 ## Upstream
 

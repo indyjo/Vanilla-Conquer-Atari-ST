@@ -17,6 +17,14 @@
 #include <stdint.h>
 #include <string.h>     // memset
 
+static int Mouse_Planar_Row_Bytes(GraphicBufferClass *gb)
+{
+	if (!gb || !gb->Is_ST_Planar())
+		return ST_PLANAR_BYTES_PER_LINE;
+	int const p = gb->Get_Pitch();
+	return (p > 0) ? p : ST_Planar_Row_Bytes(gb->Get_Width());
+}
+
 // Global mouse object pointer
 void* _Mouse = NULL;
 
@@ -432,12 +440,13 @@ void WWMouseClass::Low_Hide_Mouse(void)
 	GraphicBufferClass *gb = Screen->Get_Graphic_Buffer();
 	if (!gb || !gb->Uses_ST_LoRes_Planar_Layout())
 		return;
+	const int scr_bpl = Mouse_Planar_Row_Bytes(gb);
 	if (MouseBuffWords > 0 && MouseBuffH > 0 && MouseBuffLeft >= 0 && MouseBuffTop >= 0) {
 		uint8_t *dst = (uint8_t *)gb->Get_Buffer()
-			+ MouseBuffTop * ST_PLANAR_BYTES_PER_LINE
+			+ MouseBuffTop * scr_bpl
 			+ ((MouseBuffLeft >> 4) * 8);
 		const int row_bytes = MouseBuffWords * 8;
-		ST_Copy_Bytes_2D((const uint8_t *)MouseBuffer, dst, row_bytes, MouseBuffH, row_bytes, ST_PLANAR_BYTES_PER_LINE);
+		ST_Copy_Bytes_2D((const uint8_t *)MouseBuffer, dst, row_bytes, MouseBuffH, row_bytes, scr_bpl);
 	}
 	MouseBuffX = -1;
 	MouseBuffY = -1;
@@ -454,6 +463,7 @@ void WWMouseClass::Low_Show_Mouse(int x, int y)
 	GraphicBufferClass *gb = Screen->Get_Graphic_Buffer();
 	if (!gb || !gb->Uses_ST_LoRes_Planar_Layout())
 		return;
+	const int scr_bpl = Mouse_Planar_Row_Bytes(gb);
 
 	int vpw = Screen->Get_Width();
 	int vph = Screen->Get_Height();
@@ -483,9 +493,9 @@ void WWMouseClass::Low_Show_Mouse(int x, int y)
 	const int words = (word_right - word_left) >> 4;
 	const int row_bytes = words * 8;
 	uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
-		+ clip_top * ST_PLANAR_BYTES_PER_LINE
+		+ clip_top * scr_bpl
 		+ ((word_left >> 4) * 8);
-	ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, vis_h, ST_PLANAR_BYTES_PER_LINE, row_bytes);
+	ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, vis_h, scr_bpl, row_bytes);
 
 	MouseBuffLeft = word_left;
 	MouseBuffTop = clip_top;
@@ -866,6 +876,7 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 	if (!gb || !gb->Uses_ST_LoRes_Planar_Layout()) {
 		return;
 	}
+	const int scr_bpl = Mouse_Planar_Row_Bytes(gb);
 	int vpw = scr->Get_Width();
 	int vph = scr->Get_Height();
 	int x = Get_Mouse_X();
@@ -930,17 +941,17 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		const int words = (word_right - word_left) >> 4;
 		const int row_bytes = words * 8;
 		uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
-			+ clip_top * ST_PLANAR_BYTES_PER_LINE
+			+ clip_top * scr_bpl
 			+ ((word_left >> 4) * 8);
 		if (using_external_surface) {
 		ST_Copy_Bytes_2D(src_bg, (uint8_t *)EraseBuffer, row_bytes, vis_h,
-			ST_PLANAR_BYTES_PER_LINE, row_bytes);
+			scr_bpl, row_bytes);
 			EraseBuffLeft = word_left;
 			EraseBuffTop = clip_top;
 			EraseBuffWords = words;
 			EraseBuffH = vis_h;
 			ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, vis_h,
-				ST_PLANAR_BYTES_PER_LINE, row_bytes);
+				scr_bpl, row_bytes);
 			MouseBuffX = x;
 			MouseBuffY = y;
 			MouseBuffLeft = word_left;
@@ -972,16 +983,16 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 	const unsigned skew_bits = (unsigned)(shift & 15);
 	const int row_bytes = words * 8;
 	uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
-		+ top * ST_PLANAR_BYTES_PER_LINE
+		+ top * scr_bpl
 		+ ((word_left >> 4) * 8);
 	if (using_external_surface) {
 		ST_Copy_Bytes_2D(src_bg, (uint8_t *)EraseBuffer, row_bytes, CursorHeight,
-			ST_PLANAR_BYTES_PER_LINE, row_bytes);
+			scr_bpl, row_bytes);
 		EraseBuffLeft = word_left;
 		EraseBuffTop = top;
 		EraseBuffWords = words;
 		EraseBuffH = CursorHeight;
-		ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, CursorHeight, ST_PLANAR_BYTES_PER_LINE, row_bytes);
+		ST_Copy_Bytes_2D(src_bg, (uint8_t *)MouseBuffer, row_bytes, CursorHeight, scr_bpl, row_bytes);
 		MouseBuffX = x;
 		MouseBuffY = y;
 		MouseBuffLeft = word_left;
@@ -999,13 +1010,13 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		endmask3 = endmask1;
 	}
 	uint8_t *dst = (uint8_t *)gb->Get_Buffer()
-		+ top * ST_PLANAR_BYTES_PER_LINE
+		+ top * scr_bpl
 		+ ((word_left >> 4) * 8);
 	ST_Blit_Interleaved_Block_Skew(
 		(const uint8_t *)MousePlanarColorPre,
 		dst,
 		MouseBlitRowBytes,
-		ST_PLANAR_BYTES_PER_LINE,
+		scr_bpl,
 		words,
 		CursorHeight,
 		skew_bits,
@@ -1035,12 +1046,13 @@ void WWMouseClass::Erase_Mouse(GraphicViewPortClass *scr, int forced)
 		if (scr->Lock()) {
 			GraphicBufferClass *gb = scr->Get_Graphic_Buffer();
 			if (gb && gb->Uses_ST_LoRes_Planar_Layout()) {
+				const int scr_bpl = Mouse_Planar_Row_Bytes(gb);
 				uint8_t *dst = (uint8_t *)gb->Get_Buffer()
-					+ EraseBuffTop * ST_PLANAR_BYTES_PER_LINE
+					+ EraseBuffTop * scr_bpl
 					+ ((EraseBuffLeft >> 4) * 8);
 				const int row_bytes = EraseBuffWords * 8;
 				ST_Copy_Bytes_2D((const uint8_t *)EraseBuffer, dst, row_bytes, EraseBuffH,
-					row_bytes, ST_PLANAR_BYTES_PER_LINE);
+					row_bytes, scr_bpl);
 			}
 			scr->Unlock();
 		}

@@ -7,6 +7,8 @@
 #include "st_build_frame_assets.h"
 #include "st_font_browser.h"
 #include "st_mix_register.h"
+#include "st_planar_line_bench.h"
+#include "st_wsa_playback.h"
 
 #include <mint/osbind.h>
 
@@ -38,6 +40,8 @@ static void print_banner(void)
 	printf("9 Auto: TITLE 8-way blitter scroll\n");
 	printf("b Auto: 24x24 tile skew matrix\n");
 	printf("f Interactive: font browser (.FNT)\n");
+	printf("w Interactive: WSA playback\n");
+	printf("l Auto: planar line benchmark\n");
 	printf("a Audio tests (submenu)\n");
 	printf("0 Exit\n");
 	printf("Choice: ");
@@ -168,6 +172,14 @@ int main(void)
 		case 'f':
 		case 'F':
 			st_run_interactive_font_browser();
+			break;
+		case 'w':
+		case 'W':
+			st_run_interactive_wsa_playback();
+			break;
+		case 'l':
+		case 'L':
+			(void)st_run_planar_line_bench();
 			break;
 		case '0':
 		case 27: /* ESC */

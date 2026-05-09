@@ -19,6 +19,13 @@ CROSS_TARGET = m68k-atari-mint
 
 # Build configuration: Debug or Release
 CONFIG ?= Release
+# Accept lowercase config values from command line.
+ifeq ($(CONFIG),debug)
+override CONFIG := Debug
+endif
+ifeq ($(CONFIG),release)
+override CONFIG := Release
+endif
 
 # Compiler selection (uses cross-compiler from CROSS_PREFIX)
 CXX = $(CROSS_PREFIX)/$(CROSS_TARGET)-g++
@@ -220,7 +227,8 @@ ROOT_CPP_SOURCES = \
 	TARCOM.CPP TARGET.CPP TDATA.CPP TEAM.CPP TEAMTYPE.CPP \
 	TECHNO.CPP TEMPLATE.CPP TERRAIN.CPP TEXTBTN.CPP THEME.CPP \
 	TOGGLE.CPP TRIGGER.CPP TURRET.CPP TXTLABEL.CPP UDATA.CPP UNIT.CPP \
-	UTRACKER.CPP VECTOR.CPP VISUDLG.CPP WINSTUB.CPP
+	UTRACKER.CPP VECTOR.CPP 	VISUDLG.CPP WINSTUB.CPP wsa.cpp \
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),wsa_atari_weights.cpp,)
 
 # Platform library C++ sources (WIN32LIB or ATARILIB)
 # ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP
@@ -240,7 +248,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
 	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp,) \
-	$(PLATFORM_LIB)/wsa.cpp $(PLATFORM_LIB)/_diptabl.cpp
+	$(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)
 # Root directory files use uppercase .ASM, ATARILIB files use lowercase .asm (as tracked in git)
@@ -474,6 +482,8 @@ clean:
 	@rm -f $(OUTDIR)/cnc.tos
 	@rm -f $(OUTDIR)/cncd.tos
 	@rm -f $(OUTDIR)/cnc_st_tests.tos
+	@rm -f $(OUTDIR)/tstcnc.tos
+	@rm -f $(OUTDIR)/tstcncd.tos
 	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/title_pcx_load_st_tests.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/st_blitter_blit.o
 
 # Clean all configurations
@@ -492,7 +502,7 @@ help:
 	@echo "Targets:"
 ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  all      - Build the TOS executable (default)"
-	@echo "  st-tests - Build cnc_st_tests.tos (on-machine / interactive suite)"
+	@echo "  st-tests - Build tstcnc(.d).tos (on-machine / interactive suite)"
 else
 	@echo "  all      - Build the DLL (default)"
 endif
@@ -520,7 +530,7 @@ endif
 	@echo "  make clean               - Clean current configuration"
 	@echo "  make cleanall            - Clean everything"
 ifeq ($(PLATFORM_LIB),ATARILIB)
-	@echo "  make st-tests            - Build cnc_st_tests.tos (ST on-machine suite)"
+	@echo "  make st-tests            - Build tstcnc(.d).tos (ST on-machine suite)"
 	@echo "  make PROFILE_FRAME_BAR=0 - Atari build without tab-strip profiler (on by default)"
 endif
 	@echo ""
@@ -546,12 +556,16 @@ endif
 	@echo "  - Resource files require windres (may not be available)"
 
 #=============================================================================
-# Atari ST on-machine test harness (cnc_st_tests.tos — own main(), not the game)
+# Atari ST on-machine test harness (tstcnc(.d).tos — own main(), not the game)
 #=============================================================================
 ifeq ($(PLATFORM_LIB),ATARILIB)
 ST_SUITE_DIR = tests/st_suite
-ST_TEST_EXE = $(OUTDIR)/cnc_st_tests.tos
-ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o
+ifeq ($(CONFIG),Debug)
+ST_TEST_EXE = $(OUTDIR)/tstcncd.tos
+else
+ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
+endif
+ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/drawrect.o \
 	$(INTDIR)/st_planar_draw.o \
@@ -629,6 +643,10 @@ $(INTDIR)/st_mix_register.o: $(ST_SUITE_DIR)/st_mix_register.cpp | $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 $(INTDIR)/st_planar_line_bench.o: $(ST_SUITE_DIR)/st_planar_line_bench.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_wsa_playback.o: $(ST_SUITE_DIR)/st_wsa_playback.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 

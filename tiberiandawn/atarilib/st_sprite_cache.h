@@ -26,6 +26,9 @@ extern "C" {
  * lazy_decode_miss: when non-NULL, invokes once on LRU cache miss — return must equal raster_base.
  */
 long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
 	int ax0,
 	int ay0,
 	const uint8_t *src,

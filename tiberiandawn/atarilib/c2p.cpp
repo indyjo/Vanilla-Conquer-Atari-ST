@@ -34,8 +34,158 @@ uint8_t C2P_MapNearestLUT[256];
 static uint32_t C2P_PairLUT[4][256];
 static int C2P_LUT_InitDone = 0;
 static int C2P_WeightSet = C2P_WEIGHTSET_TEMPERAT;
+static uint8_t C2P_CustomPaletteWeights[256][16];
+static int C2P_CustomWeightsEnabled = 0;
 
 static const uint8_t (*C2P_ActivePaletteWeights)[16] = kC2PPaletteOptWeight;
+
+/*
+ * STDOOM-style full-width C2P (see STDOOM atari_c2p.c: bayer4_* + c2p_1x_lorez).
+ * Fragment table: per scanline phase (y&3), palette index, pixel slot 0..7 within movep octet —
+ * same Bayer + weight policy as init_c2p_table() lorez path in STDOOM.
+ */
+static uint32_t C2P_STDOOM_FragLUT[4][256][8];
+
+/* STDOOM bayer4_color — threshold uses row `phase` (0..3) and column `px%4`. */
+static int C2P_Bayer4_Color_Lorez(const uint8_t *weights, int phase, int px)
+{
+	unsigned char bayer_lwb = 0, bayer_upb = 0;
+	for (int c = 0; c < 16; c++) {
+		bayer_upb += weights[c];
+		const int rank = (int)Bayer4x4[(phase << 2) | (px & 3)];
+		if (rank >= bayer_lwb && rank < bayer_upb)
+			return c;
+		bayer_lwb += weights[c];
+	}
+	return 15;
+}
+
+/* One chunky pixel -> longword planar fragment for movep (STDOOM bayer4_lorez_pdata). */
+static uint32_t C2P_Lorez_PData_FromWeights(const uint8_t *weights, int phase, int px)
+{
+	const int c = C2P_Bayer4_Color_Lorez(weights, phase, px);
+	uint32_t pdata = 0;
+	if (c & 1)
+		pdata |= 0x01000000u;
+	if (c & 2)
+		pdata |= 0x00010000u;
+	if (c & 4)
+		pdata |= 0x00000100u;
+	if (c & 8)
+		pdata |= 0x00000001u;
+	return pdata << (unsigned)(7 - px);
+}
+
+static void C2P_Rebuild_STDOOM_FragLUT(void)
+{
+	for (int pal = 0; pal < 256; pal++) {
+		const uint8_t *weights = C2P_ActivePaletteWeights[pal];
+		for (int phase = 0; phase < 4; phase++) {
+			for (int px = 0; px < 8; px++)
+				C2P_STDOOM_FragLUT[phase][pal][px] =
+				    C2P_Lorez_PData_FromWeights(weights, phase, px);
+		}
+	}
+}
+
+/* movep.l d0,(a0) writes bytes to 0,2,4,6(a0): plane bytes for ST interleaved layout. */
+static inline void C2P_Movep_Store(uint8_t *dst_plane_bytes, uint32_t plane_bytes)
+{
+#if defined(__m68k__)
+	__asm__ volatile(
+		"movep.l %0,0(%1)"
+		:
+		: "d"(plane_bytes), "a"(dst_plane_bytes)
+		: "memory");
+#else
+	dst_plane_bytes[0] = (uint8_t)(plane_bytes >> 24);
+	dst_plane_bytes[2] = (uint8_t)(plane_bytes >> 16);
+	dst_plane_bytes[4] = (uint8_t)(plane_bytes >> 8);
+	dst_plane_bytes[6] = (uint8_t)(plane_bytes >> 0);
+#endif
+}
+
+/*
+ * STDOOM c2p_1x_lorez — hand-tuned m68k inner loop; host fallback ORs the same fragments.
+ */
+#if defined(__m68k__)
+static void C2P_1x_Lorez_STDOOM(uint8_t *out, const uint8_t *in, unsigned short pixels, uint32_t (*table)[8])
+{
+	if (pixels < 16)
+		return;
+	unsigned short groups = (unsigned short)(pixels / 16u - 1u);
+	uint32_t pdata = 0;
+	const uint32_t mask = 0x00ff00ffu << 5;
+	__asm__ volatile(
+		"0:                                         \n\t"
+		"movem.l    (%[in])+, %%d0-%%d1             \n\t"
+		"move.l     %%d0,%%d2                       \n\t"
+		"lsl.l      #5,%%d2                         \n\t"
+		"and.l      %[mask],%%d2                    \n\t"
+		"move.l     12(%[table],%%d2.w), %[pdata]   \n\t"
+		"swap       %%d2                            \n\t"
+		"or.l       4(%[table],%%d2.w), %[pdata]    \n\t"
+		"lsr.l      #3,%%d0                         \n\t"
+		"and.l      %[mask],%%d0                    \n\t"
+		"or.l       8(%[table],%%d0.w), %[pdata]    \n\t"
+		"swap       %%d0                            \n\t"
+		"or.l       (%[table],%%d0.w), %[pdata]     \n\t"
+		"move.l     %%d1,%%d2                       \n\t"
+		"lsl.l      #5,%%d2                         \n\t"
+		"and.l      %[mask],%%d2                    \n\t"
+		"or.l       28(%[table],%%d2.w), %[pdata]   \n\t"
+		"swap       %%d2                            \n\t"
+		"or.l       20(%[table],%%d2.w), %[pdata]   \n\t"
+		"lsr.l      #3,%%d1                         \n\t"
+		"and.l      %[mask],%%d1                    \n\t"
+		"or.l       24(%[table],%%d1.w), %[pdata]   \n\t"
+		"swap       %%d1                            \n\t"
+		"or.l       16(%[table],%%d1.w), %[pdata]   \n\t"
+		"movep.l    %[pdata], 0(%[out])             \n\t"
+		"movem.l    (%[in])+, %%d0-%%d1             \n\t"
+		"move.l     %%d0,%%d2                       \n\t"
+		"lsl.l      #5,%%d2                         \n\t"
+		"and.l      %[mask],%%d2                    \n\t"
+		"move.l     12(%[table],%%d2.w), %[pdata]   \n\t"
+		"swap       %%d2                            \n\t"
+		"or.l       4(%[table],%%d2.w), %[pdata]    \n\t"
+		"lsr.l      #3,%%d0                         \n\t"
+		"and.l      %[mask],%%d0                    \n\t"
+		"or.l       8(%[table],%%d0.w), %[pdata]    \n\t"
+		"swap       %%d0                            \n\t"
+		"or.l       (%[table],%%d0.w), %[pdata]     \n\t"
+		"move.l     %%d1,%%d2                       \n\t"
+		"lsl.l      #5,%%d2                         \n\t"
+		"and.l      %[mask],%%d2                    \n\t"
+		"or.l       28(%[table],%%d2.w), %[pdata]   \n\t"
+		"swap       %%d2                            \n\t"
+		"or.l       20(%[table],%%d2.w), %[pdata]   \n\t"
+		"lsr.l      #3,%%d1                         \n\t"
+		"and.l      %[mask],%%d1                    \n\t"
+		"or.l       24(%[table],%%d1.w), %[pdata]   \n\t"
+		"swap       %%d1                            \n\t"
+		"or.l       16(%[table],%%d1.w), %[pdata]   \n\t"
+		"movep.l    %[pdata], 1(%[out])             \n\t"
+		"lea        8(%[out]), %[out]               \n\t"
+		"dbra.w     %[groups],0b                    \n\t"
+		: [out] "+a"(out), [in] "+a"(in), [pdata] "+d"(pdata), [groups] "+d"(groups)
+		: [table] "a"(table), [mask] "d"(mask)
+		: "d0", "d1", "d2", "memory");
+}
+#else
+static void C2P_1x_Lorez_STDOOM(uint8_t *out, const uint8_t *in, unsigned short pixels, uint32_t (*table)[8])
+{
+	for (unsigned x = 0; x + 8 <= (unsigned)pixels; x += 8) {
+		uint32_t pdata = 0;
+		for (int k = 0; k < 8; k++)
+			pdata |= table[in[x + (unsigned)k]][k];
+		const unsigned group = x >> 4;
+		const unsigned half = (x >> 3) & 1u;
+		uint8_t *dst = out + group * 8u + half;
+		C2P_Movep_Store(dst, pdata);
+	}
+}
+#endif /* __m68k__ */
 
 /* Map 8-bit logical color to ST index 0..15 using palette-opt weights + Bayer rank. */
 static uint8_t C2P_STIndex_FromOptWeights(int x_mod4, int y_mod4, uint8_t src_idx)
@@ -122,6 +272,8 @@ static void C2P_Rebuild_Tables_From_SelectedWeights(void)
 		}
 		C2P_MapNearestLUT[src] = (uint8_t)best_k;
 	}
+
+	C2P_Rebuild_STDOOM_FragLUT();
 }
 
 extern "C" int C2P_Get_WeightSet(void)
@@ -133,26 +285,29 @@ extern "C" void C2P_Select_WeightSet(int weight_set)
 {
 	const int normalized = (weight_set == C2P_WEIGHTSET_HTITLE) ? C2P_WEIGHTSET_HTITLE : C2P_WEIGHTSET_TEMPERAT;
 	C2P_WeightSet = normalized;
-	C2P_ActivePaletteWeights = (C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
+	if (!C2P_CustomWeightsEnabled) {
+		C2P_ActivePaletteWeights = (C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
+	}
 	C2P_Rebuild_Tables_From_SelectedWeights();
 }
 
-/* movep.l d0,(a0) writes bytes to 0,2,4,6(a0): perfect for plane bytes. */
-static inline void C2P_Movep_Store(uint8_t *dst_plane_bytes, uint32_t plane_bytes)
+extern "C" int C2P_Install_CustomWeights(const uint8_t *weights_256x16)
 {
-#if defined(__m68k__)
-	__asm__ volatile(
-		"movep.l %0,0(%1)"
-		:
-		: "d"(plane_bytes), "a"(dst_plane_bytes)
-		: "memory");
-#else
-	/* Non-m68k fallback: write the bytes explicitly with the same spacing. */
-	dst_plane_bytes[0] = (uint8_t)(plane_bytes >> 24);
-	dst_plane_bytes[2] = (uint8_t)(plane_bytes >> 16);
-	dst_plane_bytes[4] = (uint8_t)(plane_bytes >> 8);
-	dst_plane_bytes[6] = (uint8_t)(plane_bytes >> 0);
-#endif
+	if (!weights_256x16)
+		return 0;
+
+	memcpy(C2P_CustomPaletteWeights, weights_256x16, sizeof(C2P_CustomPaletteWeights));
+	C2P_CustomWeightsEnabled = 1;
+	C2P_ActivePaletteWeights = C2P_CustomPaletteWeights;
+	C2P_Rebuild_Tables_From_SelectedWeights();
+	return 1;
+}
+
+extern "C" void C2P_Clear_CustomWeights(void)
+{
+	C2P_CustomWeightsEnabled = 0;
+	C2P_ActivePaletteWeights = (C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
+	C2P_Rebuild_Tables_From_SelectedWeights();
 }
 
 static inline void Planar_Put_Pixel_RowBytes(
@@ -249,9 +404,16 @@ extern "C" void C2P_Render_Logical_To_Planar_Rect(
 	ST_FRAME_BAR_C2P_END();
 }
 
-extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logical_stride, uint8_t *st_screen)
+extern "C" void C2P_Render_Logical_To_ST_Screen(
+	const uint8_t *logical,
+	int logical_stride,
+	uint8_t *st_screen,
+	int start_line_y,
+	int line_y_step)
 {
 	if (!logical || !st_screen || logical_stride <= 0)
+		return;
+	if (line_y_step < 1)
 		return;
 
 	ST_FRAME_BAR_C2P_BEGIN();
@@ -260,68 +422,29 @@ extern "C" void C2P_Render_Logical_To_ST_Screen(const uint8_t *logical, int logi
 	const int screen_height = 200;
 	const int bytes_per_line = 160; /* 20 groups * 8 bytes */
 
-	for (int y = 0; y < screen_height; y++) {
-		const uint8_t *src = logical + y * logical_stride;
+	if (start_line_y < 0 || start_line_y >= screen_height)
+		return;
+
+	for (int y = start_line_y; y < screen_height; y += line_y_step) {
+		const uint8_t *src = logical + (size_t)y * (size_t)logical_stride;
 		uint8_t *dst_line = st_screen + y * bytes_per_line;
 
-		const int yb = (y & 3) << 2;
-
-		/* Process 8 pixels at a time: two writes per 16-pixel ST group. */
-		for (int x = 0; x < screen_width; x += 8) {
-			const int group = x >> 4;              /* 0..19 */
-			const int half = (x >> 3) & 1;         /* 0 for pixels 0..7, 1 for 8..15 */
-			uint8_t *dst = dst_line + group * 8 + half;
-
-			/* Map+ dither: 8 chunky palette indices -> 8 ST 4-bit colors. */
-			const uint8_t c0 = C2P_MapDither[yb | ((x + 0) & 3)][src[x + 0]];
-			const uint8_t c1 = C2P_MapDither[yb | ((x + 1) & 3)][src[x + 1]];
-			const uint8_t c2 = C2P_MapDither[yb | ((x + 2) & 3)][src[x + 2]];
-			const uint8_t c3 = C2P_MapDither[yb | ((x + 3) & 3)][src[x + 3]];
-			const uint8_t c4 = C2P_MapDither[yb | ((x + 4) & 3)][src[x + 4]];
-			const uint8_t c5 = C2P_MapDither[yb | ((x + 5) & 3)][src[x + 5]];
-			const uint8_t c6 = C2P_MapDither[yb | ((x + 6) & 3)][src[x + 6]];
-			const uint8_t c7 = C2P_MapDither[yb | ((x + 7) & 3)][src[x + 7]];
-
-			/* Table-based pack: 4 pair LUTs -> one 32-bit register with plane bytes. */
-			const uint32_t v =
-				C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
-				C2P_PairLUT[1][(uint8_t)((c2 << 4) | c3)] |
-				C2P_PairLUT[2][(uint8_t)((c4 << 4) | c5)] |
-				C2P_PairLUT[3][(uint8_t)((c6 << 4) | c7)];
-
-			C2P_Movep_Store(dst, v);
-		}
+		C2P_1x_Lorez_STDOOM(dst_line, src, (unsigned short)screen_width, C2P_STDOOM_FragLUT[y & 3]);
 	}
 	ST_FRAME_BAR_C2P_END();
 }
 
-static inline uint8_t *ST_ChunkPtr(uint8_t *base, int x, int y)
+extern "C" void ST_Planar_PutPixel(uint8_t *base, int row_bytes, int pw, int ph, int x, int y, unsigned char color4)
 {
-	return base + y * ST_PLANAR_BYTES_PER_LINE + (x >> 4) * 8 + ((x >> 3) & 1);
+	Planar_Put_Pixel_RowBytes(base, row_bytes, pw, ph, x, y, color4);
 }
 
-extern "C" void ST_Planar_PutPixel(uint8_t *base, int x, int y, unsigned char color4)
+static inline unsigned char Planar_Get_Pixel_RowBytes(
+	const uint8_t *base, int row_bytes, int width_px, int height_px, int x, int y)
 {
-	if (!base || x < 0 || x >= ST_PLANAR_WIDTH || y < 0 || y >= ST_PLANAR_HEIGHT)
-		return;
-	uint8_t *p = ST_ChunkPtr(base, x, y);
-	const int bitnum = 7 - (x & 7);
-	const uint8_t mask = (uint8_t)(1u << bitnum);
-	const uint8_t c = (uint8_t)(color4 & 15);
-	for (int pl = 0; pl < 4; pl++) {
-		uint8_t *pb = p + pl * 2;
-		if (c & (uint8_t)(1u << pl))
-			*pb |= mask;
-		else
-			*pb &= (uint8_t)~mask;
-	}
-}
-
-extern "C" unsigned char ST_Planar_GetPixel(const uint8_t *base, int x, int y)
-{
-	if (!base || x < 0 || x >= ST_PLANAR_WIDTH || y < 0 || y >= ST_PLANAR_HEIGHT)
+	if (!base || x < 0 || y < 0 || x >= width_px || y >= height_px || row_bytes <= 0)
 		return 0;
-	const uint8_t *p = ST_ChunkPtr((uint8_t *)base, x, y);
+	const uint8_t *p = base + y * row_bytes + (x >> 4) * 8 + ((x >> 3) & 1);
 	const int bitnum = 7 - (x & 7);
 	const uint8_t mask = (uint8_t)(1u << bitnum);
 	uint8_t c = 0;
@@ -332,16 +455,21 @@ extern "C" unsigned char ST_Planar_GetPixel(const uint8_t *base, int x, int y)
 	return c;
 }
 
-extern "C" void ST_Planar_Clear(uint8_t *base, unsigned char color4)
+extern "C" unsigned char ST_Planar_GetPixel(const uint8_t *base, int row_bytes, int pw, int ph, int x, int y)
 {
-	if (!base)
+	return Planar_Get_Pixel_RowBytes(base, row_bytes, pw, ph, x, y);
+}
+
+extern "C" void ST_Planar_Clear(uint8_t *base, int row_bytes, int pw, int ph, unsigned char color4)
+{
+	if (!base || row_bytes <= 0 || pw <= 0 || ph <= 0)
 		return;
 	const uint8_t c = (uint8_t)(color4 & 15);
 	/*
 	 * Avoid libc memset for ST screen clears here.
 	 * On-target diagnostics show font data adjacent to the planar buffer being clobbered
 	 * after Clear(0); using the explicit planar store loop keeps writes confined to the
-	 * exact ST interleaved layout (200 lines * 160 bytes).
+	 * exact ST interleaved layout.
 	 */
 	C2P_InitPairLUT_Once();
 	const uint8_t pair_idx = (uint8_t)((c << 4) | c);
@@ -350,9 +478,9 @@ extern "C" void ST_Planar_Clear(uint8_t *base, unsigned char color4)
 		C2P_PairLUT[1][pair_idx] |
 		C2P_PairLUT[2][pair_idx] |
 		C2P_PairLUT[3][pair_idx];
-	for (int y = 0; y < ST_PLANAR_HEIGHT; y++) {
-		uint8_t *dst_line = base + y * ST_PLANAR_BYTES_PER_LINE;
-		for (int x = 0; x < ST_PLANAR_WIDTH; x += 8) {
+	for (int y = 0; y < ph; y++) {
+		uint8_t *dst_line = base + y * row_bytes;
+		for (int x = 0; x < pw; x += 8) {
 			const int group = x >> 4;
 			const int half = (x >> 3) & 1;
 			uint8_t *dst = dst_line + group * 8 + half;
@@ -418,16 +546,21 @@ extern "C" void C2P_Blit_Linear8_To_Planar(
 	uint8_t *planar_base,
 	int dst_x, int dst_y,
 	const uint8_t *src, int w, int h, int src_stride,
-	int trans)
+	int trans,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels)
 {
 	if (!planar_base || !src || w <= 0 || h <= 0 || src_stride <= 0)
+		return;
+	if (planar_row_bytes <= 0 || planar_width_pixels <= 0 || planar_height_pixels <= 0)
 		return;
 	ST_FRAME_BAR_C2P_BEGIN();
 	C2P_InitPairLUT_Once();
 
-	const int row_bytes = ST_PLANAR_BYTES_PER_LINE;
-	const int pw = ST_PLANAR_WIDTH;
-	const int ph = ST_PLANAR_HEIGHT;
+	const int row_bytes = planar_row_bytes;
+	const int pw = planar_width_pixels;
+	const int ph = planar_height_pixels;
 
 	for (int yy = 0; yy < h; yy++) {
 		const int py = dst_y + yy;

@@ -271,8 +271,8 @@ int st_run_interactive_blitter_planar(void)
 							kDirName[d], inc, ox, oy);
 					any_fail = 1;
 				} else {
-					unsigned char got = ST_Planar_GetPixel(planar, MID_X, MID_Y);
-					unsigned char exp = ST_Planar_GetPixel(hidden, ox, oy);
+					unsigned char got = ST_Planar_GetPixel(planar, 160, 320, 200, MID_X, MID_Y);
+					unsigned char exp = ST_Planar_GetPixel(hidden, 160, 320, 200, ox, oy);
 					if (got != exp) {
 						printf(
 								"  FAIL center pixel: %s inc=%d mid(%d,%d) got=%u exp=%u hidden(%d,%d)\n",
@@ -383,7 +383,7 @@ static int st_try_load_temperate_template_tile(unsigned char *dst24x24)
 		for (int y = 0; y < ST_PLANAR_HEIGHT; y++) {
 			for (int x = 0; x < ST_PLANAR_WIDTH; x++) {
 				const unsigned char bg = (((x >> 4) ^ (y >> 4)) & 1) ? 2 : 4;
-				ST_Planar_PutPixel(preview, x, y, bg);
+				ST_Planar_PutPixel(preview, 160, 320, 200, x, y, bg);
 			}
 		}
 
@@ -404,7 +404,7 @@ static int st_try_load_temperate_template_tile(unsigned char *dst24x24)
 			const int row = i / cols;
 			const int dx = col * cell_w + 8;
 			const int dy = row * cell_h + 8;
-			C2P_Blit_Linear8_To_Planar(preview, dx, dy, framebuf, iw, ih, iw, 0);
+			C2P_Blit_Linear8_To_Planar(preview, dx, dy, framebuf, iw, ih, iw, 0, 160, 320, 200);
 		}
 
 		Setscreen((long)preview, (long)preview, -1L);
@@ -500,7 +500,7 @@ static void st_planar_copy_ref(
 	for (int yy = 0; yy < h; yy++) {
 		for (int xx = 0; xx < w; xx++) {
 			const unsigned char c = src_get_pixel(src, src_row_bytes, src_width, src_height, sx + xx, sy + yy);
-			ST_Planar_PutPixel(dst, dx + xx, dy + yy, c);
+			ST_Planar_PutPixel(dst, 160, 320, 200, dx + xx, dy + yy, c);
 		}
 	}
 }
@@ -574,8 +574,8 @@ int st_run_blitter_tile_skew_matrix(void)
 		for (int y = 0; y < ST_PLANAR_HEIGHT; y++) {
 			for (int x = 0; x < ST_PLANAR_WIDTH; x++) {
 				const unsigned char bg = (((x >> 4) ^ (y >> 4)) & 1) ? 2 : 4;
-				ST_Planar_PutPixel(screen_hw, x, y, bg);
-				ST_Planar_PutPixel(screen_ref, x, y, bg);
+				ST_Planar_PutPixel(screen_hw, 160, 320, 200, x, y, bg);
+				ST_Planar_PutPixel(screen_ref, 160, 320, 200, x, y, bg);
 			}
 		}
 

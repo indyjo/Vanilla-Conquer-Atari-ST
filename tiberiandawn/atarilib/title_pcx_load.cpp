@@ -58,7 +58,9 @@ void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned ch
 			C2P_Render_Logical_To_ST_Screen(
 				(const uint8_t *)SysMemPage.Get_Buffer(),
 				lin_stride,
-				(uint8_t *)dst_gb->Get_Buffer());
+				(uint8_t *)dst_gb->Get_Buffer(),
+				0,
+				1);
 			title_drawn = true;
 		}
 	}

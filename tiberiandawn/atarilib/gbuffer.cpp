@@ -184,7 +184,7 @@ void GraphicViewPortClass::Attach(GraphicBufferClass *gbuffer, int x, int y, int
 	/*======================================================================*/
 	/* Get a pointer to the top left edge of the buffer.							*/
 	/*======================================================================*/
-	if (gbuffer->Uses_ST_LoRes_Planar_Layout()) {
+	if (gbuffer->Is_ST_Planar()) {
 		/* Planar: Offset is buffer root; all pixels use (XPos+x, YPos+y) in drawbuff. */
 		Offset = gbuffer->Get_Offset();
 	} else {
@@ -199,8 +199,8 @@ void GraphicViewPortClass::Attach(GraphicBufferClass *gbuffer, int x, int y, int
  	XAdd			= gbuffer->Get_Width() - w;
  	Width			= w;
  	Height		= h;
-	if (gbuffer->Uses_ST_LoRes_Planar_Layout()) {
-		Pitch = ST_PLANAR_BYTES_PER_LINE;
+	if (gbuffer->Is_ST_Planar()) {
+		Pitch = gbuffer->Get_Pitch();
 	} else {
 		// On Atari, backing buffers use Pitch==0 to mean 'no padding; row stride = Width'.
 		// Viewports, however, use (Pitch + XAdd) as the per-scanline stride. If we simply
@@ -281,8 +281,10 @@ void GraphicBufferClass::Init(int w, int h, void *buffer, long size, int flags)
 		Allocated	= FALSE;							//		it as user allocated
 	} else {
 		if (SurfaceFormat) {
-			if (!Size)
-				Size = 32768; /* room for 320x200 planar + alignment headroom */
+			if (!Size) {
+				const long row_b = (long)ST_Planar_Row_Bytes(w);
+				Size = row_b * (long)h;
+			}
 		} else {
 			if (!Size) Size = w*h;
 		}
@@ -292,31 +294,12 @@ void GraphicBufferClass::Init(int w, int h, void *buffer, long size, int flags)
 	Offset			= (long)Buffer;				// Get offset to the buffer
 	IsDirectDraw	= FALSE;
 
-	if (SurfaceFormat) {
-		Pitch = ST_PLANAR_BYTES_PER_LINE;
-	} else {
-		Pitch			= 0;								// No padding; row stride = Width
-	}
+	/* Planar: Pitch = byte offset between scanlines. Linear: padding after each Width-wide row. */
+	Pitch			= SurfaceFormat ? ST_Planar_Row_Bytes(w) : 0;
 	XAdd			= 0;										// Record XAdd of Buffer
 	XPos			= 0;										// Record XPos of Buffer
 	YPos			= 0;										// Record YPos of Buffer
 	GraphicBuff	= this;									// Get a pointer to our self
-}
-
-/***************************************************************************
- * GBC::USES_ST_LORES_PLANAR_LAYOUT -- ST 320×200 planar surface detection   *
- ***************************************************************************/
-BOOL GraphicBufferClass::Uses_ST_LoRes_Planar_Layout(void) const
-{
-	if (Is_ST_Planar())
-		return TRUE;
-	if (Width != ST_PLANAR_WIDTH || Height != ST_PLANAR_HEIGHT)
-		return FALSE;
-	if (Pitch != ST_PLANAR_BYTES_PER_LINE)
-		return FALSE;
-	if (Size < (long)ST_PLANAR_SCREEN_BYTES || Size > 65536L)
-		return FALSE;
-	return TRUE;
 }
 
 /***************************************************************************
@@ -959,7 +942,13 @@ GraphicBufferClass::GraphicBufferClass(int w, int h, void *buffer)
  *=========================================================================*/
 GraphicBufferClass::GraphicBufferClass(int w, int h, int flags)
 {
-	long sz = (flags & GBC_ST_PLANAR_LORES) ? 32768L : (long)(w * h);
+	long sz;
+	if (flags & GBC_ST_PLANAR_LORES) {
+		long row_b = (long)ST_Planar_Row_Bytes(w);
+		sz = row_b * (long)h;
+	} else {
+		sz = (long)(w * h);
+	}
 	Init(w, h, NULL, sz, flags);
 }
 

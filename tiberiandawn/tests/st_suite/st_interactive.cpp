@@ -84,7 +84,7 @@ int st_run_interactive_gradient(void)
 		}
 	}
 
-	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar);
+	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar, 0, 1);
 	Setscreen((long)planar, (long)planar, -1L);
 	Vsync();
 

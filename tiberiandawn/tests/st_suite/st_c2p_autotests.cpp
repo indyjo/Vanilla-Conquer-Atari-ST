@@ -40,13 +40,13 @@ int st_run_c2p_autotests(void)
 			chunky[y * 320 + x] = (unsigned char)((x + y * 3) & 255);
 	}
 
-	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar);
+	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar, 0, 1);
 
 	/* Corners should not collapse to identical nibbles for this pattern */
-	unsigned char c00 = ST_Planar_GetPixel(planar, 0, 0);
-	unsigned char c10 = ST_Planar_GetPixel(planar, 319, 0);
-	unsigned char c01 = ST_Planar_GetPixel(planar, 0, 199);
-	unsigned char c11 = ST_Planar_GetPixel(planar, 319, 199);
+	unsigned char c00 = ST_Planar_GetPixel(planar, 160, 320, 200, 0, 0);
+	unsigned char c10 = ST_Planar_GetPixel(planar, 160, 320, 200, 319, 0);
+	unsigned char c01 = ST_Planar_GetPixel(planar, 160, 320, 200, 0, 199);
+	unsigned char c11 = ST_Planar_GetPixel(planar, 160, 320, 200, 319, 199);
 	if (c00 == c10 && c10 == c01 && c01 == c11) {
 		st_wrap_puts(
 				"FAIL: planar corners identical (unexpected for this pattern).",

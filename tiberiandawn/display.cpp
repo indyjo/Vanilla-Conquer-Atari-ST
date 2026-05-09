@@ -82,6 +82,7 @@
 
 #ifdef ATARI_ST
 #include "st_blitter_blit.h"
+#include "c2p.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -309,9 +310,12 @@ namespace {
 
 		int const dx_abs = LogicPage->Get_XPos() + WindowList[WINDOW_TACTICAL][WINDOWX] + dst_x;
 		int const dy_abs = LogicPage->Get_YPos() + WindowList[WINDOW_TACTICAL][WINDOWY] + dst_y;
+		int const dst_bpl = (gb->Get_Pitch() > 0) ? gb->Get_Pitch() : ST_Planar_Row_Bytes(gb->Get_Width());
+		int const dst_pw = gb->Get_Width();
+		int const dst_ph = gb->Get_Height();
 		if (dx_abs < 0 || dy_abs < 0
-			|| dx_abs + blit_w > ST_PLANAR_WIDTH
-			|| dy_abs + blit_h > ST_PLANAR_HEIGHT) {
+			|| dx_abs + blit_w > dst_pw
+			|| dy_abs + blit_h > dst_ph) {
 			return false;
 		}
 
@@ -328,9 +332,9 @@ namespace {
 			ST_SHADOW_MASK_PAD_X + src_x,
 			src_y,
 			dst_root,
-			ST_PLANAR_BYTES_PER_LINE,
-			ST_PLANAR_WIDTH,
-			ST_PLANAR_HEIGHT,
+			dst_bpl,
+			dst_pw,
+			dst_ph,
 			dx_abs,
 			dy_abs,
 			blit_w,

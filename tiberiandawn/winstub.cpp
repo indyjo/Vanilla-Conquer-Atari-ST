@@ -50,6 +50,7 @@
 #endif
 #include <cstdarg>
 #include <cstdint>
+#include <cstring>
 #endif
 
 void output(short, short)
@@ -539,7 +540,11 @@ long Buffer_Frame_To_Page_Ex(int x,
         (void)predator;
         Bftp_Lazy_Frame_FillFn lazy_miss_fn = planar_decode_on_miss ? ex->lazy_frame_fill : nullptr;
         void* lazy_miss_ctx = planar_decode_on_miss ? ex->lazy_frame_ctx : nullptr;
+        const int dst_planar_bpl = (gb->Get_Pitch() > 0) ? gb->Get_Pitch() : ST_Planar_Row_Bytes(gb->Get_Width());
         const long drew = ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(root,
+                                                              dst_planar_bpl,
+                                                              gb->Get_Width(),
+                                                              gb->Get_Height(),
                                                               ax0,
                                                               ay0,
                                                               src_raster,
@@ -576,9 +581,50 @@ long Buffer_Frame_To_Page_Ex(int x,
                          + static_cast<size_t>(src_x);
         }
         if (ghost_table == nullptr && fade_table == nullptr) {
-            C2P_Blit_Linear8_To_Planar(root, ax0, ay0, src_raster, blit_w, blit_h, w, trans);
+            C2P_Blit_Linear8_To_Planar(root, ax0, ay0, src_raster, blit_w, blit_h, w, trans,
+                dst_planar_bpl, gb->Get_Width(), gb->Get_Height());
             return static_cast<long>(static_cast<size_t>(blit_w) * static_cast<size_t>(blit_h));
         }
+    }
+
+    uint8_t* dst_base = (uint8_t*)view.Get_Offset();
+    const int dst_stride = view.Get_Pitch() + view.Get_XAdd();
+    if (dst_base != nullptr && dst_stride > 0) {
+        if (!trans && ghost_table == nullptr && fade_table == nullptr) {
+            for (int row = 0; row < blit_h; ++row) {
+                const uint8_t* srow = src_raster + static_cast<size_t>(row) * static_cast<size_t>(w);
+                uint8_t* drow = dst_base + static_cast<size_t>(dst_y + row) * static_cast<size_t>(dst_stride)
+                                + static_cast<size_t>(dst_x);
+                memcpy(drow, srow, static_cast<size_t>(blit_w));
+            }
+            return static_cast<long>(blit_w * blit_h);
+        }
+
+        for (int row = 0; row < blit_h; ++row) {
+            const uint8_t* srow = src_raster + static_cast<size_t>(row) * static_cast<size_t>(w);
+            uint8_t* drow = dst_base + static_cast<size_t>(dst_y + row) * static_cast<size_t>(dst_stride)
+                            + static_cast<size_t>(dst_x);
+            for (int col = 0; col < blit_w; ++col) {
+                const uint8_t s_raw = srow[col];
+                if (trans && s_raw == 0) {
+                    continue;
+                }
+                uint8_t out;
+                if (ghost_table) {
+                    const uint8_t it = ghost_table[s_raw];
+                    if (it != 0xFFu) {
+                        const uint8_t d = drow[col];
+                        out = ghost_table[256 + (static_cast<size_t>(it) << 8) + static_cast<size_t>(d)];
+                    } else {
+                        out = fade_table ? fade_table[s_raw] : s_raw;
+                    }
+                } else {
+                    out = fade_table ? fade_table[s_raw] : s_raw;
+                }
+                drow[col] = out;
+            }
+        }
+        return static_cast<long>(blit_w * blit_h);
     }
 
     for (int row = 0; row < blit_h; ++row) {

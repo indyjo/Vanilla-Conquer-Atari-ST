@@ -58,7 +58,6 @@ typedef struct STTilePlanarCacheEntry_ {
 } STTilePlanarCacheEntry;
 
 static STTilePlanarCacheEntry g_tile_planar_cache[ST_TILE_PLANAR_CACHE_SLOTS];
-static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb);
 
 enum { ST_HZ200_ADDR = 0x4BA };
 
@@ -144,6 +143,19 @@ static STTilePlanarCacheEntry *Reserve_Tile_Planar_Cache_Entry(void)
 	return best;
 }
 
+static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb)
+{
+	return gb && gb->Is_ST_Planar();
+}
+
+static inline int GB_ST_Planar_Row_Bytes(GraphicBufferClass *gb)
+{
+	if (!gb || !gb->Is_ST_Planar())
+		return 0;
+	int const p = gb->Get_Pitch();
+	return (p > 0) ? p : ST_Planar_Row_Bytes(gb->Get_Width());
+}
+
 static BOOL Try_Blit_Cached_Terrain_Tile(
 	GraphicViewPortClass *vp,
 	unsigned long identity_key,
@@ -189,10 +201,10 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 		? (uint8_t *)dst_gb->Get_Buffer() : NULL;
 	dx_abs = vp->Get_XPos() + dst_x;
 	dy_abs = vp->Get_YPos() + dst_y;
-	if (!dst_root
+	if (!dst_gb || !dst_root
 		|| dx_abs < 0 || dy_abs < 0
-		|| dx_abs + clip_blit_w > ST_PLANAR_WIDTH
-		|| dy_abs + clip_blit_h > ST_PLANAR_HEIGHT) {
+		|| dx_abs + clip_blit_w > dst_gb->Get_Width()
+		|| dy_abs + clip_blit_h > dst_gb->Get_Height()) {
 		return FALSE;
 	}
 
@@ -202,6 +214,7 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 	}
 
 	{
+		int const dst_bpl = GB_ST_Planar_Row_Bytes(dst_gb);
 		BOOL blit_ok = ST_Blitter_Planar_Rect_Blit(
 		g_tile_planar_cache_aligned,
 		ST_TILE_PLANAR_CACHE_BPL,
@@ -210,9 +223,9 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 		(int)cache_entry->atlas_x + clip_src_x,
 		(int)cache_entry->atlas_y + clip_src_y,
 		dst_root,
-		ST_PLANAR_BYTES_PER_LINE,
-		ST_PLANAR_WIDTH,
-		ST_PLANAR_HEIGHT,
+		dst_bpl,
+		dst_gb->Get_Width(),
+		dst_gb->Get_Height(),
 		dx_abs,
 		dy_abs,
 		clip_blit_w,
@@ -264,35 +277,12 @@ static inline unsigned long Read_LE32_Unsafe(const unsigned char *p)
 		| ((unsigned long)p[3] << 24);
 }
 
-/* Delegates to GraphicBufferClass::Uses_ST_LoRes_Planar_Layout (see gbuffer.cpp). */
-static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb)
-{
-	return gb && gb->Uses_ST_LoRes_Planar_Layout();
-}
-
 static inline BOOL VP_Is_Planar(GraphicViewPortClass *vp)
 {
 	if (!vp)
 		return FALSE;
 	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (!gb)
-		return FALSE;
-	if (GB_Uses_ST_Planar_Surface(gb))
-		return TRUE;
-	/*
-	 * Defensive fallback: some callers still construct 320x200 ST draw buffers through
-	 * older paths where the planar surface flag can be lost. Treat canonical ST layout
-	 * geometry as planar so clear/draw paths never overrun by using 320-byte chunky rows.
-	 */
-	if (vp->Get_XPos() == 0 && vp->Get_YPos() == 0
-	    && vp->Get_Width() == ST_PLANAR_WIDTH
-	    && vp->Get_Height() == ST_PLANAR_HEIGHT
-	    && vp->Get_Pitch() == ST_PLANAR_BYTES_PER_LINE
-	    && gb->Get_Size() >= (long)ST_PLANAR_SCREEN_BYTES
-	    && gb->Get_Size() <= 65536L) {
-		return TRUE;
-	}
-	return FALSE;
+	return gb != NULL && GB_Uses_ST_Planar_Surface(gb);
 }
 
 /* True when vp is the embedded GraphicViewPort part of a GraphicBufferClass (same object). */
@@ -306,16 +296,18 @@ static inline BOOL VP_Is_Root_Graphic_Buffer(GraphicViewPortClass *vp)
 
 /*
  * Row stride in bytes for indexing src_base[y*stride + x]:
- * - Planar ST: fixed 160 bytes/line (must not use Width+Pitch — Pitch is 160 for planar too).
+ * - Planar ST: physical bytes per scanline for the full buffer (same for root and sub-viewports;
+ *   coordinates use XPos/YPos + local x,y; never add XAdd — that is only for linear sub-windows).
  * - Root GraphicBufferClass (linear): Init stores Pitch as padding after Width (stride = Width+Pitch+XAdd).
- * - Attached viewports: Pitch+XAdd holds the backing buffer's bytes-per-row (see Attach in gbuffer.cpp).
+ * - Attached linear viewports: Pitch+XAdd holds the backing buffer's bytes-per-row (see Attach in gbuffer.cpp).
  */
 static inline int Get_Row_Stride(GraphicViewPortClass *vp) {
 	if (!vp)
 		return 0;
 	GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
-	if (gb && GB_Uses_ST_Planar_Surface(gb))
-		return ST_PLANAR_BYTES_PER_LINE;
+	if (gb && GB_Uses_ST_Planar_Surface(gb)) {
+		return GB_ST_Planar_Row_Bytes(gb);
+	}
 	if (VP_Is_Root_Graphic_Buffer(vp))
 		return vp->Get_Width() + vp->Get_Pitch() + vp->Get_XAdd();
 	int s = vp->Get_Pitch() + vp->Get_XAdd();
@@ -405,11 +397,12 @@ extern "C" void Buffer_Put_Pixel(void *thisptr, int x, int y, unsigned char colo
 	if (y < 0 || y >= vp->Get_Height()) return;
 
 	if (VP_Is_Planar(vp)) {
-		uint8_t *root = (uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		GraphicBufferClass *gbp = vp->Get_Graphic_Buffer();
+		uint8_t *root = (uint8_t *)gbp->Get_Buffer();
 		const int ax = vp->Get_XPos() + x;
 		const int ay = vp->Get_YPos() + y;
 		const unsigned char c4 = C2P_Map8ToPlanar4(ax, ay, (unsigned char)color);
-		ST_Planar_PutPixel(root, ax, ay, c4);
+		ST_Planar_PutPixel(root, GB_ST_Planar_Row_Bytes(gbp), gbp->Get_Width(), gbp->Get_Height(), ax, ay, c4);
 		return;
 	}
 
@@ -498,8 +491,10 @@ extern "C" int Buffer_Get_Pixel(void *thisptr, int x, int y)
 	if (y < 0 || y >= vp->Get_Height()) return 0;
 
 	if (VP_Is_Planar(vp)) {
-		const uint8_t *root = (const uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
-		return (int)ST_Planar_GetPixel(root, vp->Get_XPos() + x, vp->Get_YPos() + y);
+		GraphicBufferClass *gbg = vp->Get_Graphic_Buffer();
+		const uint8_t *root = (const uint8_t *)gbg->Get_Buffer();
+		return (int)ST_Planar_GetPixel(root, GB_ST_Planar_Row_Bytes(gbg), gbg->Get_Width(), gbg->Get_Height(),
+			vp->Get_XPos() + x, vp->Get_YPos() + y);
 	}
 	
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
@@ -534,18 +529,21 @@ extern "C" void Buffer_Clear(void *thisptr, unsigned char color)
 		GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
 		uint8_t *root = (uint8_t *)gb->Get_Buffer();
 		unsigned char c4 = (unsigned char)(color & 15);
+		int const rb = GB_ST_Planar_Row_Bytes(gb);
+		int const pwb = gb->Get_Width();
+		int const phb = gb->Get_Height();
 		/*
-		 * Full-screen clear: use same movep/LUT path as C2P (solid ST nibble). Per-pixel PutPixel
+		 * Full-buffer clear: use same movep/LUT path as C2P (solid ST nibble). Per-pixel PutPixel
 		 * works but is slow; sub-rect clears still use PutPixel.
 		 */
 		if (vp->Get_XPos() == 0 && vp->Get_YPos() == 0
-		    && width == ST_PLANAR_WIDTH && height == ST_PLANAR_HEIGHT) {
-			ST_Planar_Clear(root, c4);
+		    && width == pwb && height == phb) {
+			ST_Planar_Clear(root, rb, pwb, phb, c4);
 			return;
 		}
 		for (int row = 0; row < height; row++) {
 			for (int col = 0; col < width; col++) {
-				ST_Planar_PutPixel(root, vp->Get_XPos() + col, vp->Get_YPos() + row, c4);
+				ST_Planar_PutPixel(root, rb, pwb, phb, vp->Get_XPos() + col, vp->Get_YPos() + row, c4);
 			}
 		}
 		return;
@@ -605,13 +603,17 @@ extern "C" long Buffer_To_Page(int x, int y, int w, int h, void *Buffer, void *v
 	if (x + w > vpw || y + h > vph || x < 0 || y < 0) return 0;
 
 	if (VP_Is_Planar(vp)) {
-		uint8_t *root = (uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		GraphicBufferClass *gbt = vp->Get_Graphic_Buffer();
+		uint8_t *root = (uint8_t *)gbt->Get_Buffer();
 		const int ax0 = vp->Get_XPos() + x;
 		const int ay0 = vp->Get_YPos() + y;
 		const unsigned char *src = (const unsigned char *)Buffer;
+		int const rb = GB_ST_Planar_Row_Bytes(gbt);
+		int const pwb = gbt->Get_Width();
+		int const phb = gbt->Get_Height();
 		for (int row = 0; row < h; row++) {
 			for (int col = 0; col < w; col++) {
-				ST_Planar_PutPixel(root, ax0 + col, ay0 + row, src[row * w + col]);
+				ST_Planar_PutPixel(root, rb, pwb, phb, ax0 + col, ay0 + row, src[row * w + col]);
 			}
 		}
 		return (long)(w * h);
@@ -643,11 +645,15 @@ extern "C" long Buffer_From_Page(int x, int y, int w, int h, void *Buffer, void 
 	if (x + w > vpw || y + h > vph || x < 0 || y < 0) return 0;
 
 	if (VP_Is_Planar(vp)) {
-		const uint8_t *root = (const uint8_t *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		GraphicBufferClass *gbf = vp->Get_Graphic_Buffer();
+		const uint8_t *root = (const uint8_t *)gbf->Get_Buffer();
 		unsigned char *dest = (unsigned char *)Buffer;
+		int const rb = GB_ST_Planar_Row_Bytes(gbf);
+		int const pwb = gbf->Get_Width();
+		int const phb = gbf->Get_Height();
 		for (int row = 0; row < h; row++) {
 			for (int col = 0; col < w; col++) {
-				dest[row * w + col] = ST_Planar_GetPixel(root,
+				dest[row * w + col] = ST_Planar_GetPixel(root, rb, pwb, phb,
 					vp->Get_XPos() + x + col, vp->Get_YPos() + y + row);
 			}
 		}
@@ -732,6 +738,38 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 	uint8_t *dst_root = GB_Uses_ST_Planar_Surface(dest_gb) ? (uint8_t *)dest_gb->Get_Buffer() : NULL;
 
 	/*
+	** Fast linear -> planar path: use bulk C2P conversion instead of per-pixel
+	** ST_Planar_PutPixel writes in the generic loop below.
+	*/
+	if (!src_planar && dst_planar && !trans && dst_root) {
+		const int dst_x0 = dest_vp->Get_XPos() + dx_pixel;
+		const int dst_y0 = dest_vp->Get_YPos() + dy_pixel;
+		const int dst_w = dest_gb->Get_Width();
+		const int dst_h = dest_gb->Get_Height();
+		if (dst_x0 >= 0 && dst_y0 >= 0
+			&& dst_x0 + pixel_width <= dst_w
+			&& dst_y0 + pixel_height <= dst_h) {
+			const uint8_t *logical = (const uint8_t *)src_base
+				+ (size_t)y_pixel * (size_t)src_stride
+				+ (size_t)x_pixel;
+			C2P_Render_Logical_To_Planar_Rect(
+				logical,
+				pixel_width,
+				pixel_height,
+				src_stride,
+				dst_root,
+				dest_stride,
+				dst_w,
+				dst_h,
+				dst_x0,
+				dst_y0,
+				dst_x0,
+				dst_y0);
+			return TRUE;
+		}
+	}
+
+	/*
 	** ST planar self-blit fast path: hardware blitter with skew/masks
 	** (see st_blitter_blit.cpp).
 	*/
@@ -743,21 +781,45 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 		const int sy_abs = src_vp->Get_YPos() + y_pixel;
 		const int dx_abs = dest_vp->Get_XPos() + dx_pixel;
 		const int dy_abs = dest_vp->Get_YPos() + dy_pixel;
-		if (ST_Blitter_Planar_Screen_Rect_Blit(
-				src_root, dst_root, sx_abs, sy_abs, dx_abs, dy_abs, pixel_width, pixel_height)) {
+		const int src_bpl = GB_ST_Planar_Row_Bytes(src_gb);
+		const int dst_bpl = GB_ST_Planar_Row_Bytes(dest_gb);
+		if (ST_Blitter_Planar_Rect_Blit(
+				src_root,
+				src_bpl,
+				src_gb->Get_Width(),
+				src_gb->Get_Height(),
+				sx_abs,
+				sy_abs,
+				dst_root,
+				dst_bpl,
+				dest_gb->Get_Width(),
+				dest_gb->Get_Height(),
+				dx_abs,
+				dy_abs,
+				pixel_width,
+				pixel_height)) {
 			return TRUE;
 		}
 	}
 
-	/* Full-screen planar -> planar: byte-identical copy (same layout as C2P / Setscreen). */
-	if (src_planar && dst_planar && !trans
-		&& pixel_width == ST_PLANAR_WIDTH && pixel_height == ST_PLANAR_HEIGHT
-		&& x_pixel == 0 && y_pixel == 0 && dx_pixel == 0 && dy_pixel == 0
-		&& src_vp->Get_XPos() == 0 && src_vp->Get_YPos() == 0
-		&& dest_vp->Get_XPos() == 0 && dest_vp->Get_YPos() == 0
-		&& src_root && dst_root) {
-		memcpy(dst_root, src_root, (size_t)ST_PLANAR_SCREEN_BYTES);
-		return TRUE;
+	/* Full-buffer planar -> planar: byte-identical copy (same layout as C2P / Setscreen). */
+	{
+		const int src_bpl = GB_ST_Planar_Row_Bytes(src_gb);
+		const int dst_bpl = GB_ST_Planar_Row_Bytes(dest_gb);
+		const long src_bytes = (long)src_bpl * (long)src_gb->Get_Height();
+		if (src_planar && dst_planar && !trans
+			&& pixel_width == src_gb->Get_Width() && pixel_height == src_gb->Get_Height()
+			&& src_gb->Get_Width() == dest_gb->Get_Width()
+			&& src_gb->Get_Height() == dest_gb->Get_Height()
+			&& src_bpl == dst_bpl
+			&& x_pixel == 0 && y_pixel == 0 && dx_pixel == 0 && dy_pixel == 0
+			&& src_vp->Get_XPos() == 0 && src_vp->Get_YPos() == 0
+			&& dest_vp->Get_XPos() == 0 && dest_vp->Get_YPos() == 0
+			&& src_root && dst_root
+			&& src_bytes == (long)dst_bpl * (long)dest_gb->Get_Height()) {
+			memcpy(dst_root, src_root, (size_t)src_bytes);
+			return TRUE;
+		}
 	}
 
 	for (int y = 0; y < pixel_height; y++) {
@@ -765,6 +827,9 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 			unsigned char pixel;
 			if (src_planar) {
 				pixel = ST_Planar_GetPixel(src_root,
+					GB_ST_Planar_Row_Bytes(src_gb),
+					src_gb->Get_Width(),
+					src_gb->Get_Height(),
 					src_vp->Get_XPos() + x_pixel + x,
 					src_vp->Get_YPos() + y_pixel + y);
 			} else {
@@ -777,7 +842,11 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 				const int ay = dest_vp->Get_YPos() + dy_pixel + y;
 				unsigned char c4 = (unsigned char)(src_planar ? (pixel & 15)
 					: C2P_Map8ToPlanar4(ax, ay, pixel));
-				ST_Planar_PutPixel(dst_root, ax, ay, c4);
+				ST_Planar_PutPixel(dst_root,
+					GB_ST_Planar_Row_Bytes(dest_gb),
+					dest_gb->Get_Width(),
+					dest_gb->Get_Height(),
+					ax, ay, c4);
 			} else {
 				dest_base[(dy_pixel + y) * dest_stride + dx_pixel + x] = pixel;
 			}
@@ -825,6 +894,9 @@ extern "C" BOOL Linear_Scale_To_Linear(void *src, void *dest, int src_x, int src
 			unsigned char pixel;
 			if (src_planar) {
 				pixel = ST_Planar_GetPixel(src_root,
+					GB_ST_Planar_Row_Bytes(src_gb),
+					src_gb->Get_Width(),
+					src_gb->Get_Height(),
 					src_vp->Get_XPos() + src_x + sx,
 					src_vp->Get_YPos() + src_y + sy);
 			} else {
@@ -838,7 +910,11 @@ extern "C" BOOL Linear_Scale_To_Linear(void *src, void *dest, int src_x, int src
 				const int ay = dest_vp->Get_YPos() + dst_y + dy;
 				unsigned char c4 = (unsigned char)(src_planar ? (out & 15)
 					: C2P_Map8ToPlanar4(ax, ay, out));
-				ST_Planar_PutPixel(dst_root, ax, ay, c4);
+				ST_Planar_PutPixel(dst_root,
+					GB_ST_Planar_Row_Bytes(dest_gb),
+					dest_gb->Get_Width(),
+					dest_gb->Get_Height(),
+					ax, ay, c4);
 			} else {
 				dest_row[dx] = out;
 			}
@@ -1739,10 +1815,13 @@ iconset_decode_done:
 				? (uint8_t *)dst_gb->Get_Buffer() : NULL;
 			const int dx_abs = vp->Get_XPos() + dst_x;
 			const int dy_abs = vp->Get_YPos() + dst_y;
-			if (dst_root
+			const int dst_bpl_fb = dst_gb ? GB_ST_Planar_Row_Bytes(dst_gb) : 0;
+			const int dst_pw_fb = dst_gb ? dst_gb->Get_Width() : 0;
+			const int dst_ph_fb = dst_gb ? dst_gb->Get_Height() : 0;
+			if (dst_root && dst_gb
 				&& dx_abs >= 0 && dy_abs >= 0
-				&& dx_abs + clip_blit_w <= ST_PLANAR_WIDTH
-				&& dy_abs + clip_blit_h <= ST_PLANAR_HEIGHT) {
+				&& dx_abs + clip_blit_w <= dst_pw_fb
+				&& dy_abs + clip_blit_h <= dst_ph_fb) {
 				STTilePlanarCacheEntry *cache_entry =
 					Find_Tile_Planar_Cache_Entry(stamp_identity_key);
 				if (cache_entry) {
@@ -1754,9 +1833,9 @@ iconset_decode_done:
 							(int)cache_entry->atlas_x + clip_src_x,
 							(int)cache_entry->atlas_y + clip_src_y,
 							dst_root,
-							ST_PLANAR_BYTES_PER_LINE,
-							ST_PLANAR_WIDTH,
-							ST_PLANAR_HEIGHT,
+							dst_bpl_fb,
+							dst_pw_fb,
+							dst_ph_fb,
 							dx_abs,
 							dy_abs,
 							clip_blit_w,
@@ -1802,9 +1881,9 @@ iconset_decode_done:
 						(int)cache_entry->atlas_x + clip_src_x,
 						(int)cache_entry->atlas_y + clip_src_y,
 						dst_root,
-						ST_PLANAR_BYTES_PER_LINE,
-						ST_PLANAR_WIDTH,
-						ST_PLANAR_HEIGHT,
+						dst_bpl_fb,
+						dst_pw_fb,
+						dst_ph_fb,
 						dx_abs,
 						dy_abs,
 						clip_blit_w,

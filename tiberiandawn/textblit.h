@@ -25,7 +25,7 @@ public:
 
     void Add(int x, int y, int dx, int dy, int w, int h);
     void Clear(void);
-    void Update(void);
+    void Update(GraphicViewPortClass& dest);
 
 private:
     typedef struct

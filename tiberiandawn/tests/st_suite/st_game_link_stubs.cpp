@@ -9,6 +9,7 @@
 #include "function.h"
 #include "gbuffer.h"
 #include "audio.h"
+#include "st_frame_meter.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -156,4 +157,32 @@ void Bftp_ExArgs_init_zero(Bftp_ExArgs *ex)
 		return;
 	memset(ex, 0, sizeof(*ex));
 }
+
+void GlyphX_Debug_Print(char const *msg)
+{
+	(void)msg;
+}
+
+#if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
+/*
+ * st-tests links renderer pieces that emit ST_FRAME_BAR_* hooks, but does not
+ * link the full game map/logic stack that st_frame_meter.cpp depends on.
+ * Provide no-op hooks for the test harness executable.
+ */
+void StFrameMeter_FrameBegin(void) {}
+void StFrameMeter_FrameEnd(void) {}
+void StFrameMeter_RenderBegin(void) {}
+void StFrameMeter_RenderEnd(void) {}
+void StFrameMeter_LogicBegin(void) {}
+void StFrameMeter_LogicEnd(void) {}
+void StFrameMeter_ThemeBegin(void) {}
+void StFrameMeter_ThemeEnd(void) {}
+void StFrameMeter_C2PBegin(void) {}
+void StFrameMeter_C2PEnd(void) {}
+void StFrameMeter_BlitBegin(void) {}
+void StFrameMeter_BlitEnd(void) {}
+void StFrameMeter_MapPhaseBegin(StFrameMeterMapPhase) {}
+void StFrameMeter_MapPhaseEnd(StFrameMeterMapPhase) {}
+void StFrameMeter_Draw(GraphicViewPortClass *, int) {}
+#endif
 

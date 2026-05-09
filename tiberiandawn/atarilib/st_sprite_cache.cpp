@@ -483,6 +483,9 @@ static void sprite_cache_maybe_init(void)
 static BOOL sprite_cache_do_blitter(
 	BOOL use_trans_merge,
 	uint8_t *dst_root_fb,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
 	int dx_abs,
 	int dy_abs,
 	const uint8_t *planar,
@@ -504,9 +507,9 @@ static BOOL sprite_cache_do_blitter(
 			sx_abs,
 			sy_abs,
 			dst_root_fb,
-			ST_PLANAR_BYTES_PER_LINE,
-			ST_PLANAR_WIDTH,
-			ST_PLANAR_HEIGHT,
+			dst_row_bytes,
+			dst_width_pixels,
+			dst_height_pixels,
 			dx_abs,
 			dy_abs,
 			blit_w,
@@ -519,9 +522,9 @@ static BOOL sprite_cache_do_blitter(
 				sx_abs,
 				sy_abs,
 				dst_root_fb,
-				ST_PLANAR_BYTES_PER_LINE,
-				ST_PLANAR_WIDTH,
-				ST_PLANAR_HEIGHT,
+				dst_row_bytes,
+				dst_width_pixels,
+				dst_height_pixels,
 				dx_abs,
 				dy_abs,
 				blit_w,
@@ -536,9 +539,9 @@ static BOOL sprite_cache_do_blitter(
 		   sx_abs,
 		   sy_abs,
 		   dst_root_fb,
-		   ST_PLANAR_BYTES_PER_LINE,
-		   ST_PLANAR_WIDTH,
-		   ST_PLANAR_HEIGHT,
+		   dst_row_bytes,
+		   dst_width_pixels,
+		   dst_height_pixels,
 		   dx_abs,
 		   dy_abs,
 		   blit_w,
@@ -647,6 +650,9 @@ static BOOL sprite_cache_fill_slot_pixels(
 
 /* Probes tiers, fills on miss, and blits cropped intersection. */
 static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
 	int ax0,
 	int ay0,
 	int clip_w,
@@ -788,6 +794,9 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 
 	if (!sprite_cache_do_blitter(use_merge ? TRUE : FALSE,
 		    dst_root_fb,
+		    dst_row_bytes,
+		    dst_width_pixels,
+		    dst_height_pixels,
 		    dst_x,
 		    dst_y,
 		    planar,
@@ -823,6 +832,9 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
  *   Visible region: raster_ox, raster_oy, blit_w, blit_h — clip affects blit intersection only.
  */
 static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
 	int ax0,
 	int ay0,
 	int blit_w,
@@ -840,6 +852,9 @@ static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
 	SpriteCacheLazyGate *lazy_gate)
 {
 	const long acc = sprite_cache_cached_tile_dispatch(dst_root_fb,
+	    dst_row_bytes,
+	    dst_width_pixels,
+	    dst_height_pixels,
 	    ax0,
 	    ay0,
 	    blit_w,
@@ -859,6 +874,9 @@ static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
 }
 
 long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
 	int ax0,
 	int ay0,
 	const uint8_t *src,
@@ -879,7 +897,8 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 {
 	sprite_cache_maybe_init();
 	sprite_cache_dump_stats_and_reset_maybe();
-	if (!dst_root_fb || blit_w <= 0 || blit_h <= 0 || src_stride <= 0 || !raster_base)
+	if (!dst_root_fb || dst_row_bytes <= 0 || dst_width_pixels <= 0 || dst_height_pixels <= 0
+		|| blit_w <= 0 || blit_h <= 0 || src_stride <= 0 || !raster_base)
 		return 0;
 	if (full_w <= 0 || full_h <= 0 || full_w > src_stride)
 		return 0;
@@ -902,6 +921,9 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	}
 
 	return sprite_cache_planar_composite_impl(dst_root_fb,
+	    dst_row_bytes,
+	    dst_width_pixels,
+	    dst_height_pixels,
 	    ax0,
 	    ay0,
 	    blit_w,

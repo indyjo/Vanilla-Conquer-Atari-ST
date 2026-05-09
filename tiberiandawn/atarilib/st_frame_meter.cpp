@@ -42,11 +42,21 @@ static unsigned long s_map_phase_hz0[ST_FM_MAP_PHASE_COUNT];
 static unsigned int s_map_phase_depth[ST_FM_MAP_PHASE_COUNT];
 static unsigned long s_map_phase_sum_this_frame[ST_FM_MAP_PHASE_COUNT];
 
+static unsigned long s_c2p_sum_this_frame;
+static unsigned int s_c2p_depth;
+static unsigned long s_c2p_hz0;
+
+static unsigned long s_blit_sum_this_frame;
+static unsigned int s_blit_depth;
+static unsigned long s_blit_hz0;
+
 static unsigned long s_period_hz_start;
 static unsigned long s_period_sum_frame;
 static unsigned long s_period_sum_render;
 static unsigned long s_period_sum_logic;
 static unsigned long s_period_sum_theme;
+static unsigned long s_period_sum_c2p;
+static unsigned long s_period_sum_blit;
 static unsigned long s_period_sum_map_phase[ST_FM_MAP_PHASE_COUNT];
 static unsigned long s_period_frames;
 
@@ -54,6 +64,8 @@ static unsigned long s_disp_frame_avg;
 static unsigned long s_disp_render_avg;
 static unsigned long s_disp_logic_avg;
 static unsigned long s_disp_theme_avg;
+static unsigned long s_disp_c2p_avg;
+static unsigned long s_disp_blit_avg;
 static unsigned long s_disp_map_phase_avg[ST_FM_MAP_PHASE_COUNT];
 
 static void St_FrameMeter_MaybeRollPeriod(unsigned long hz_now)
@@ -73,6 +85,8 @@ static void St_FrameMeter_MaybeRollPeriod(unsigned long hz_now)
 		s_disp_render_avg = s_period_sum_render / s_period_frames;
 		s_disp_logic_avg = s_period_sum_logic / s_period_frames;
 		s_disp_theme_avg = s_period_sum_theme / s_period_frames;
+		s_disp_c2p_avg = s_period_sum_c2p / s_period_frames;
+		s_disp_blit_avg = s_period_sum_blit / s_period_frames;
 		for (int pi = 0; pi < (int)ST_FM_MAP_PHASE_COUNT; ++pi) {
 			s_disp_map_phase_avg[pi] = s_period_sum_map_phase[pi] / s_period_frames;
 		}
@@ -83,6 +97,8 @@ static void St_FrameMeter_MaybeRollPeriod(unsigned long hz_now)
 	s_period_sum_render = 0;
 	s_period_sum_logic = 0;
 	s_period_sum_theme = 0;
+	s_period_sum_c2p = 0;
+	s_period_sum_blit = 0;
 	for (int pi = 0; pi < (int)ST_FM_MAP_PHASE_COUNT; ++pi) {
 		s_period_sum_map_phase[pi] = 0;
 	}
@@ -97,6 +113,8 @@ void StFrameMeter_FrameBegin(void)
 	s_render_sum_this_frame = 0;
 	s_theme_sum_this_frame = 0;
 	s_logic_sum_this_frame = 0;
+	s_c2p_sum_this_frame = 0;
+	s_blit_sum_this_frame = 0;
 	for (int pi = 0; pi < (int)ST_FM_MAP_PHASE_COUNT; ++pi) {
 		s_map_phase_sum_this_frame[pi] = 0;
 	}
@@ -111,6 +129,8 @@ void StFrameMeter_FrameEnd(void)
 	s_period_sum_render += s_render_sum_this_frame;
 	s_period_sum_logic += s_logic_sum_this_frame;
 	s_period_sum_theme += s_theme_sum_this_frame;
+	s_period_sum_c2p += s_c2p_sum_this_frame;
+	s_period_sum_blit += s_blit_sum_this_frame;
 	for (int pi = 0; pi < (int)ST_FM_MAP_PHASE_COUNT; ++pi) {
 		s_period_sum_map_phase[pi] += s_map_phase_sum_this_frame[pi];
 	}
@@ -190,6 +210,36 @@ void StFrameMeter_MapPhaseEnd(StFrameMeterMapPhase phase)
 	}
 	unsigned long hz1 = St_FrameMeter_ReadHz200();
 	s_map_phase_sum_this_frame[ix] += hz1 - s_map_phase_hz0[ix];
+}
+
+void StFrameMeter_C2PBegin(void)
+{
+	if (s_c2p_depth++ == 0) {
+		s_c2p_hz0 = St_FrameMeter_ReadHz200();
+	}
+}
+
+void StFrameMeter_C2PEnd(void)
+{
+	if (s_c2p_depth == 0 || --s_c2p_depth != 0) {
+		return;
+	}
+	s_c2p_sum_this_frame += St_FrameMeter_ReadHz200() - s_c2p_hz0;
+}
+
+void StFrameMeter_BlitBegin(void)
+{
+	if (s_blit_depth++ == 0) {
+		s_blit_hz0 = St_FrameMeter_ReadHz200();
+	}
+}
+
+void StFrameMeter_BlitEnd(void)
+{
+	if (s_blit_depth == 0 || --s_blit_depth != 0) {
+		return;
+	}
+	s_blit_sum_this_frame += St_FrameMeter_ReadHz200() - s_blit_hz0;
 }
 
 void StFrameMeter_Draw(GraphicViewPortClass *page, int width_factor)

@@ -144,6 +144,9 @@ int main(int argc, char *argv[])
 	/*
 	** Enable supervisor mode early for Atari ST
 	** This is required for direct hardware access (palette registers, etc.)
+	** This executable stays supervisor for its lifetime — no paired Super(save) exit.
+	** Any future Super(0)/return pair in port code must use SuperToUser(save), not Super(save),
+	** on plain TOS/EmuTOS (stack vs USP bookkeeping); see mint/osbind.h SuperToUser commentary.
 	*/
 	Super(0L);
 

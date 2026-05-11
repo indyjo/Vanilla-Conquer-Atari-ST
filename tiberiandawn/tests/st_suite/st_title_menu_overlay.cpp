@@ -206,7 +206,7 @@ int st_run_interactive_title_menu_overlay(void)
 	if (gmx != 0 || !grad_raw) {
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("SKIP: LOCAL.MIX %s err=%d\n", ST_GRAD_FONT_NAME, gmx);
 		return 0;
 	}
@@ -215,7 +215,7 @@ int st_run_interactive_title_menu_overlay(void)
 		free(grad_raw);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		if (gf)
 			fclose(gf);
 		printf("SKIP: cannot write %s\n", ST_GRAD_FONT_NAME);
@@ -233,7 +233,7 @@ int st_run_interactive_title_menu_overlay(void)
 	if (!grad_font) {
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("SKIP: Load_Alloc_Data failed for font\n");
 		return 0;
 	}
@@ -279,6 +279,6 @@ int st_run_interactive_title_menu_overlay(void)
 
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 	return ok ? 0 : 1;
 }

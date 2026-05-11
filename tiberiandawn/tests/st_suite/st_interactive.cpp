@@ -48,7 +48,7 @@ int st_run_interactive_gradient(void)
 		free(chunky);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("  FAIL: allocation\n");
 		return 1;
 	}
@@ -59,7 +59,7 @@ int st_run_interactive_gradient(void)
 		free(chunky);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("  FAIL: no logbase\n");
 		return 1;
 	}
@@ -92,7 +92,7 @@ int st_run_interactive_gradient(void)
 
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 
 	free(chunky);
 	return ok ? 0 : 1;

@@ -198,7 +198,7 @@ int st_run_interactive_blitter_planar(void)
 	if (!hidden) {
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("  FAIL: allocation (hidden)\n");
 		return 1;
 	}
@@ -209,7 +209,7 @@ int st_run_interactive_blitter_planar(void)
 		free(hidden);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("  FAIL: no Logbase\n");
 		return 1;
 	}
@@ -293,7 +293,7 @@ int st_run_interactive_blitter_planar(void)
 	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 
 	free(hidden);
 	return any_fail ? 1 : 0;
@@ -531,7 +531,7 @@ int st_run_blitter_tile_skew_matrix(void)
 		free(planar_scratch);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("  FAIL: allocation\n");
 		return 1;
 	}
@@ -551,7 +551,7 @@ int st_run_blitter_tile_skew_matrix(void)
 		C2P_Select_WeightSet(old_weight_set);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("  FAIL: no template/frame selected\n");
 		return 1;
 	}
@@ -652,6 +652,6 @@ int st_run_blitter_tile_skew_matrix(void)
 	C2P_Select_WeightSet(old_weight_set);
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 	return (mismatches == 0) ? 0 : 1;
 }

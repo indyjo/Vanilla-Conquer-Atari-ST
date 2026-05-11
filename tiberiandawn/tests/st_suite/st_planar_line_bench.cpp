@@ -76,7 +76,7 @@ int st_run_planar_line_bench(void)
 			(int)len, reps, pixels, dt);
 	}
 
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 	free(buf);
 	return 0;
 }

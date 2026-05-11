@@ -80,6 +80,6 @@ int st_run_interactive_title_production_path(void)
 	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 	return ok ? 0 : 1;
 }

@@ -107,7 +107,7 @@ static void audio_tests_submenu(void)
 		printf("Unknown option.\n");
 	}
 	st_conterm_keyclick_mute_pop();
-	Super(ssp);
+	SuperToUser(ssp);
 }
 
 int main(void)
@@ -126,7 +126,7 @@ int main(void)
 			{
 				long old_ssp = Super(0L);
 				st_run_c2p_autotests();
-				Super(old_ssp);
+				SuperToUser(old_ssp);
 			}
 			break;
 		case '2':
@@ -151,7 +151,7 @@ int main(void)
 			int bf = st_run_build_frame_asset_autocheck();
 			int au = st_run_asset_audio_autotest();
 			st_conterm_keyclick_mute_pop();
-			Super(old_ssp);
+			SuperToUser(old_ssp);
 			printf("Auto C2P: %s\n", r ? "FAIL" : "PASS");
 			printf("Auto Build_Frame assets: %s (fail count=%d)\n",
 					bf ? "FAIL" : "PASS", bf);

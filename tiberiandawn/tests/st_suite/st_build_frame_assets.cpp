@@ -785,7 +785,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 		free(chunky);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("FAIL: oom chunky\n");
 		return 1;
 	}
@@ -806,7 +806,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 		free(chunky);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		return 1;
 	}
 
@@ -819,7 +819,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 		free(chunky);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		return 1;
 	}
 
@@ -847,7 +847,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 		free(chunky);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		return 1;
 	}
 	St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
@@ -895,6 +895,6 @@ int st_run_interactive_build_frame_xor_grid(void)
 
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 	return ok ? 0 : 1;
 }

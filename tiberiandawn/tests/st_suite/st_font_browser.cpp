@@ -311,7 +311,7 @@ int st_run_interactive_font_browser(void)
 	if (!tos_screen) {
 		st_fb_hw_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("SKIP: no logbase\n");
 		return 1;
 	}
@@ -369,7 +369,7 @@ int st_run_interactive_font_browser(void)
 
 	st_fb_hw_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 	printf("\nFont browser done.\n");
 	return 0;
 }

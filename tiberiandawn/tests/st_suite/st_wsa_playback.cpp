@@ -207,14 +207,14 @@ extern "C" int st_run_interactive_wsa_playback(void)
 	unsigned char *tos_screen = (unsigned char *)Logbase();
 	screen = new GraphicBufferClass();
 	if (!screen) {
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("WSA: FAIL OOM setting up screen objects\n");
 		return 1;
 	}
 	screen->Init(320, 200, tos_screen, 32768L, (int)GBC_ST_PLANAR_LORES);
 	screen_vp = new GraphicViewPortClass(screen, 0, 0, 320, 200);
 	if (!screen_vp) {
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("WSA: FAIL OOM setting up screen viewport\n");
 		return 1;
 	}
@@ -229,7 +229,7 @@ extern "C" int st_run_interactive_wsa_playback(void)
 		Set_Logic_Page(old_logic);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("WSA: FAIL OOM setting up logical buffer\n");
 		return 1;
 	}
@@ -239,7 +239,7 @@ extern "C" int st_run_interactive_wsa_playback(void)
 		Set_Logic_Page(old_logic);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("WSA: FAIL OOM setting up logical viewport\n");
 		return 1;
 	}
@@ -270,7 +270,7 @@ extern "C" int st_run_interactive_wsa_playback(void)
 		Set_Logic_Page(old_logic);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("WSA: FAIL invalid frame count for %s\n", opened_name ? opened_name : "(unknown)");
 		return 1;
 	}
@@ -300,7 +300,7 @@ extern "C" int st_run_interactive_wsa_playback(void)
 	Set_Logic_Page(old_logic);
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 
 	printf("WSA: %s (%s)\n", ok ? "PASS" : "FAIL", opened_name ? opened_name : "(unknown)");
 	return ok ? 0 : 1;

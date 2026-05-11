@@ -66,7 +66,7 @@ int st_run_interactive_title_mouse_cursor(void)
 	if (mmx != 0 || !mouse_raw) {
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("SKIP: LOCAL.MIX %s err=%d\n", ST_MOUSE_MIX_NAME, mmx);
 		return 0;
 	}
@@ -76,7 +76,7 @@ int st_run_interactive_title_mouse_cursor(void)
 		free(mouse_raw);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		if (mf)
 			fclose(mf);
 		printf("SKIP: cannot write %s\n", ST_MOUSE_TEMP_FILE);
@@ -94,7 +94,7 @@ int st_run_interactive_title_mouse_cursor(void)
 	if (!mouse_block) {
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
-		Super(old_ssp);
+		SuperToUser(old_ssp);
 		printf("SKIP: Load_Alloc_Data failed for mouse shape\n");
 		return 0;
 	}
@@ -162,6 +162,6 @@ int st_run_interactive_title_mouse_cursor(void)
 	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
-	Super(old_ssp);
+	SuperToUser(old_ssp);
 	return ok ? 0 : 1;
 }

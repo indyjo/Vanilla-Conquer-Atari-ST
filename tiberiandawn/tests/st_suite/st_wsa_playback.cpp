@@ -54,7 +54,7 @@ static void st_draw_palette_grid_16x16(unsigned char *chunky320x200)
 {
 	const int grid_px = 16 * 8;
 	const int x0 = (320 - grid_px) / 2;
-	const int y0 = 200 - grid_px;
+	const int y0 = (200 - grid_px) / 2;
 
 	memset(chunky320x200, 0, 320 * 200);
 	for (int gy = 0; gy < 16; gy++) {

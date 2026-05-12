@@ -46,6 +46,9 @@
 
 #include "function.h"
 #include "common/framelimit.h"
+#ifdef ATARI_ST
+#include <stdio.h>
+#endif
 
 extern int PreserveVQAScreen;
 
@@ -557,7 +560,13 @@ void Do_Win(void)
                     Scen.Scenario++;
                 }
 
+#ifdef ATARI_ST
+                printf("[Scenario] Do_Win after Score.Presentation, Scenario=%d calling Map_Selection\n", Scen.Scenario);
+#endif
                 Map_Selection();
+#ifdef ATARI_ST
+                printf("[Scenario] Do_Win Map_Selection returned\n");
+#endif
             }
             Scen.Scenario++;
             Keyboard->Clear();
@@ -607,6 +616,9 @@ void Do_Win(void)
     }
     SabotagedType = STRUCT_NONE;
 
+#ifdef ATARI_ST
+    printf("[Scenario] Do_Win before Map.Render + Fade (next scenario load)\n");
+#endif
     Map.Render();
     Fade_Palette_To(GamePalette, FADE_PALETTE_FAST, Call_Back);
     Show_Mouse();

@@ -74,6 +74,8 @@ typedef enum {
 	// and the animation is not linear or if the destination is modified between frames.
 	WSA_OPEN_TO_PAGE  = WSA_OPEN_DIRECT ,
 	WSA_OPEN_TO_BUFFER= WSA_OPEN_INDIRECT ,
+	/* Atari ST port: defer per-WSA C2P .W16 install until Install_Animation_C2P_WeightSet (ignored on Win32). */
+	WSA_DEFERRED_C2P_WEIGHTSET = 0x0004,
 
 } WSAOpenType;
 

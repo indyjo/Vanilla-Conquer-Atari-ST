@@ -32,6 +32,8 @@ typedef enum {
 	WSA_OPEN_DIRECT		= 0x0002,	// Animate directly to page or viewport.
 	WSA_OPEN_TO_PAGE  = WSA_OPEN_DIRECT,
 	WSA_OPEN_TO_BUFFER= WSA_OPEN_INDIRECT,
+	/* Atari ST: skip WSA_Atari_TryInstallC2PWeights in Open_Animation; call Install_Animation_C2P_WeightSet before first C2P blit. */
+	WSA_DEFERRED_C2P_WEIGHTSET = 0x0004,
 } WSAOpenType;
 
 /*=========================================================================*/
@@ -40,6 +42,9 @@ typedef enum {
 
 void *Open_Animation(char const *file_name, char *user_buffer, long user_buffer_size, WSAOpenType user_flags, unsigned char *palette=NULL);
 void Close_Animation(void *handle);
+#ifdef ATARI_ST
+void Install_Animation_C2P_WeightSet(void *handle);
+#endif
 BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int frame_number, int x_pixel=0, int y_pixel=0, WSAType flags_and_prio=WSA_NORMAL, void *magic_cols=NULL, void *magic=NULL);
 int Get_Animation_Frame_Count(void *handle);
 int Get_Animation_X(void const *handle);

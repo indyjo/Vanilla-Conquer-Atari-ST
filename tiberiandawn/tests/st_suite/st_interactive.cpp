@@ -69,11 +69,11 @@ int st_run_interactive_gradient(void)
 	St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
 	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 
-	/* 16x16 cells, 8x8 px each: logical colors 0..255; 128x128 grid bottom-centered. */
+	/* 16x16 cells, 8x8 px each: logical colors 0..255; 128x128 grid centered on screen. */
 	memset(chunky, 0, (size_t)(320 * 200));
 	const int grid_px = 16 * 8;
 	const int x0 = (320 - grid_px) / 2;
-	const int y0 = 200 - grid_px;
+	const int y0 = (200 - grid_px) / 2;
 	for (int gy = 0; gy < 16; gy++) {
 		for (int gx = 0; gx < 16; gx++) {
 			unsigned char c = (unsigned char)(gy * 16 + gx);

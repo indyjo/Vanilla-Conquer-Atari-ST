@@ -57,6 +57,22 @@ typedef struct {
 	unsigned long anim_mem_size;
 } SysAnimHeaderType;
 
+#ifdef ATARI_ST
+extern "C" void Install_Animation_C2P_WeightSet(void *handle)
+{
+	SysAnimHeaderType *sys_header;
+
+	if (!handle) {
+		return;
+	}
+	sys_header = (SysAnimHeaderType *)handle;
+	if (!sys_header->file_name[0]) {
+		return;
+	}
+	WSA_Atari_TryInstallC2PWeights(sys_header->file_name);
+}
+#endif
+
 // Keep compatibility with historical ANIMATE tool behavior.
 #define EXTRA_CHARS_ANIMATE_NOT_KNOW_ABOUT (sizeof(short) + sizeof(unsigned long))
 
@@ -339,7 +355,9 @@ extern "C" void *Open_Animation(char const *file_name, char *user_buffer, long u
 	LCW_Uncompress(delta_back, delta_buffer, sys_header->largest_frame_size);
 	sys_header->flags = (short)anim_flags;
 #ifdef ATARI_ST
-	WSA_Atari_TryInstallC2PWeights(file_name);
+	if ((user_flags & WSA_DEFERRED_C2P_WEIGHTSET) == 0) {
+		WSA_Atari_TryInstallC2PWeights(file_name);
+	}
 #endif
 	return user_buffer;
 }
@@ -404,12 +422,13 @@ extern "C" BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int fram
 
 #ifdef ATARI_ST
 	/*
-	 * Direct WSA decode assumes a tightly packed destination rectangle.
-	 * If viewport pitch padding is present, each wrap advances by dest_width,
-	 * which can overrun smaller backing stores and corrupt unrelated heap data.
+	 * Direct XOR decode uses nextrow = dest_width while each row only touches
+	 * pixel_width bytes (see Apply_XOR_Delta_To_Page_Or_Viewport). Row stride
+	 * may be larger than the anim width (e.g. 320 SysMemPage vs narrower WSA).
+	 * Reject only when the viewport cannot hold one full scanline of the anim.
 	 */
-	if (direct_to_dest && dest_width != (int)sys_header->pixel_width) {
-		assert(0 && "WSA direct decode requested on padded viewport");
+	if (direct_to_dest && dest_width < (int)sys_header->pixel_width) {
+		assert(0 && "WSA direct decode: viewport row stride < animation width");
 		view.Unlock();
 		return FALSE;
 	}

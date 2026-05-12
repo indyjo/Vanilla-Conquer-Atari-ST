@@ -1932,6 +1932,10 @@ void Call_Back_Delay(int time)
 			BlitList.Update(*PseudoSeenBuff);
 			Interpolate_2X_Scale(PseudoSeenBuff , &HidPage ,NULL);
 #endif
+			// For debugging the PseudoSeenBuff might be defined as an alias to the VisiblePage.
+			// If so, no blitting is needed.
+			if (PseudoSeenBuff->Get_Buffer() == VisiblePage.Get_Buffer())
+				continue;
 			WWMouse->Draw_Mouse(&HidPage);
 			Blit_Hid_Page_To_Seen_Buff();
 			WWMouse->Erase_Mouse(&HidPage, TRUE);

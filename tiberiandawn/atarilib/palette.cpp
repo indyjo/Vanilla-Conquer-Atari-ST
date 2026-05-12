@@ -8,6 +8,10 @@
 
 #include <string.h>
 
+#ifdef ATARI_ST
+#include "c2p.h"
+#endif
+
 extern unsigned char *GamePalette;
 
 /* Current palette buffer - copy of current DAC register values */
@@ -95,6 +99,88 @@ extern "C" void Set_Palette(void *palette)
 
     Apply_Palette_State((unsigned char *)palette);
 }
+
+#ifdef ATARI_ST
+
+void Palette_Debug_Fill_Index_Grid_Chunky(
+	unsigned char *chunky,
+	int width_pixels,
+	int height_pixels,
+	int row_stride_bytes)
+{
+	if (!chunky || width_pixels <= 0 || height_pixels <= 0)
+		return;
+	if (row_stride_bytes < width_pixels)
+		return;
+
+	const int grid_px = 16 * 8;
+	if (width_pixels < grid_px || height_pixels < grid_px)
+		return;
+
+	const int x0 = (width_pixels - grid_px) / 2;
+	const int y0 = (height_pixels - grid_px) / 2;
+
+	for (int y = 0; y < height_pixels; ++y) {
+		memset(chunky + (long)y * row_stride_bytes, 0, (size_t)width_pixels);
+	}
+
+	for (int gy = 0; gy < 16; ++gy) {
+		for (int gx = 0; gx < 16; ++gx) {
+			unsigned char c = (unsigned char)(gy * 16 + gx);
+			for (int dy = 0; dy < 8; ++dy) {
+				unsigned char *row = chunky + (long)(y0 + gy * 8 + dy) * row_stride_bytes;
+				for (int dx = 0; dx < 8; ++dx) {
+					row[x0 + gx * 8 + dx] = c;
+				}
+			}
+		}
+	}
+}
+
+void Palette_Debug_Draw_Index_Grid_To_Planar320(
+	unsigned char *planar_base,
+	int planar_row_bytes,
+	const unsigned char *rgb768_preview)
+{
+	if (!planar_base)
+		return;
+	if (planar_row_bytes <= 0)
+		return;
+
+	if (rgb768_preview) {
+		Set_Palette((void *)rgb768_preview);
+	}
+
+	const long plane_bytes = (long)planar_row_bytes * (long)ST_PLANAR_HEIGHT;
+	if (plane_bytes > 0) {
+		memset(planar_base, 0, (size_t)plane_bytes);
+	}
+
+	const int grid_px = 16 * 8;
+	const int x0 = (ST_PLANAR_WIDTH - grid_px) / 2;
+	const int y0 = (ST_PLANAR_HEIGHT - grid_px) / 2;
+
+	for (int gy = 0; gy < 16; ++gy) {
+		for (int gx = 0; gx < 16; ++gx) {
+			unsigned char const pal_idx = (unsigned char)(gy * 16 + gx);
+			C2P_Fill_Aligned8_Rect(
+				(uint8_t *)planar_base,
+				planar_row_bytes,
+				ST_PLANAR_WIDTH,
+				ST_PLANAR_HEIGHT,
+				x0 + gx * 8,
+				y0 + gy * 8,
+				8,
+				8,
+				pal_idx);
+		}
+	}
+
+	Wait_Vert_Blank();
+	Wait_Vert_Blank();
+}
+
+#endif /* ATARI_ST */
 
 void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)())
 {

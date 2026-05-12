@@ -3,7 +3,6 @@
  */
 
 #include "palette.h"
-#include "c2p.h"
 #include "misc.h"
 #include "st_temperat_palette.h"
 
@@ -102,9 +101,13 @@ void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)())
     if (!palette1) return;
 
     unsigned char *target_palette = (unsigned char *)palette1;
-    if (target_palette == GamePalette) {
-        C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-    }
+    /*
+     * No longer pin C2P to the TEMPERAT weight set when fading to GamePalette:
+     * the per-theater weight LUT is now installed in DisplayClass::Init_Theater
+     * via Theater_Atari_TryInstallC2PWeights(), and forcing TEMPERAT here would
+     * undo that for every Fade_Palette_To(GamePalette, ...) call (e.g. the
+     * mission intro/outro fade chain in INIT.CPP).
+     */
 
     short ticks_per_step = 0;
     short jump = 1;

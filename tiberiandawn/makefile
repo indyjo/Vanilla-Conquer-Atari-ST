@@ -228,7 +228,7 @@ ROOT_CPP_SOURCES = \
 	TECHNO.CPP TEMPLATE.CPP TERRAIN.CPP TEXTBTN.CPP THEME.CPP \
 	TOGGLE.CPP TRIGGER.CPP TURRET.CPP TXTLABEL.CPP UDATA.CPP UNIT.CPP \
 	UTRACKER.CPP VECTOR.CPP 	VISUDLG.CPP WINSTUB.CPP wsa.cpp \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),wsa_atari_weights.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),wsa_atari_weights.cpp theater_atari_weights.cpp,)
 
 # Platform library C++ sources (WIN32LIB or ATARILIB)
 # ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP

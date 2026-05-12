@@ -4,7 +4,7 @@
 
 #include "c2p.h"
 #include "st_frame_meter.h"
-#include <string.h>    /* memset */
+#include <stddef.h>
 
 /* 4x4 Bayer threshold matrix, values 0..15 */
 static const uint8_t Bayer4x4[16] = {
@@ -29,15 +29,13 @@ static const uint8_t Bayer4x4[16] = {
 */
 static uint8_t C2P_MapDither[16][256];
 uint8_t C2P_MapNearestLUT[256];
+/* Bit 7: exactly one non-zero weight in row; bits 0..3: that ST color when set. */
+uint8_t C2P_PaletteIndexClean4LUT[256];
 
 /* Pair LUTs: 4 pair positions (pixels 0-1,2-3,4-5,6-7) and two-nibble index. */
 static uint32_t C2P_PairLUT[4][256];
 static int C2P_LUT_InitDone = 0;
 static int C2P_WeightSet = C2P_WEIGHTSET_TEMPERAT;
-static uint8_t C2P_CustomPaletteWeights[256][16];
-static int C2P_CustomWeightsEnabled = 0;
-
-static const uint8_t (*C2P_ActivePaletteWeights)[16] = kC2PPaletteOptWeight;
 
 /*
  * STDOOM-style full-width C2P (see STDOOM atari_c2p.c: bayer4_* + c2p_1x_lorez).
@@ -76,10 +74,10 @@ static uint32_t C2P_Lorez_PData_FromWeights(const uint8_t *weights, int phase, i
 	return pdata << (unsigned)(7 - px);
 }
 
-static void C2P_Rebuild_STDOOM_FragLUT(void)
+static void C2P_Rebuild_STDOOM_FragLUT(const uint8_t (*active_weights)[16])
 {
 	for (int pal = 0; pal < 256; pal++) {
-		const uint8_t *weights = C2P_ActivePaletteWeights[pal];
+		const uint8_t *weights = active_weights[pal];
 		for (int phase = 0; phase < 4; phase++) {
 			for (int px = 0; px < 8; px++)
 				C2P_STDOOM_FragLUT[phase][pal][px] =
@@ -188,14 +186,13 @@ static void C2P_1x_Lorez_STDOOM(uint8_t *out, const uint8_t *in, unsigned short 
 #endif /* __m68k__ */
 
 /* Map 8-bit logical color to ST index 0..15 using palette-opt weights + Bayer rank. */
-static uint8_t C2P_STIndex_FromOptWeights(int x_mod4, int y_mod4, uint8_t src_idx)
+static uint8_t C2P_STIndex_FromOptWeights(int x_mod4, int y_mod4, const uint8_t *w_row)
 {
 	const int b = (y_mod4 << 2) | x_mod4;
 	const int rank = (int)Bayer4x4[b];
-	const uint8_t *w = C2P_ActivePaletteWeights[src_idx];
 	int cum = 0;
 	for (int k = 0; k < 16; k++) {
-		cum += (int)w[k];
+		cum += (int)w_row[k];
 		if (rank < cum)
 			return (uint8_t)k;
 	}
@@ -248,32 +245,64 @@ extern "C" unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char p
 	return C2P_MapDither[yb | (abs_x & 3)][pal_idx];
 }
 
-static void C2P_Rebuild_Tables_From_SelectedWeights(void)
+/*
+** Bake MapDither / nearest / clean4 / STDOOM_FragLUT from a 256×16 weight matrix read only
+** during this rebuild (no copy of the matrix is retained in C2P).
+**
+** C2P_InitPairLUT_Once: fills C2P_PairLUT from nibble pairs (independent of weights; lazy one-time).
+** MapDither[][]: Bayer cell (x&3,y&3) × weights -> ST nibble for C2P_Map8ToPlanar4.
+** MapNearestLUT + PaletteIndexClean4LUT: one pass over each 16-entry weight row.
+** STDOOM_FragLUT: movep-ready longword fragments for C2P_1x_Lorez_STDOOM (phase × pal × slot).
+*/
+static void C2P_Rebuild_Tables_From_WeightRows(const uint8_t (*weights)[16])
 {
 	C2P_InitPairLUT_Once();
 
+	/* Per (x%4,y%4) Bayer cell: 8-bit VGA index -> dithered ST nibble (C2P_Map8ToPlanar4). */
 	for (int b = 0; b < 16; b++) {
 		const int xb = b & 3;
 		const int yb = b >> 2;
 		for (int src = 0; src < 256; src++) {
-			C2P_MapDither[b][src] = C2P_STIndex_FromOptWeights(xb, yb, (uint8_t)src);
+			C2P_MapDither[b][src] = C2P_STIndex_FromOptWeights(xb, yb, weights[src]);
 		}
 	}
 
+	/*
+	 * One pass per palette index: dominant ST color (C2P_MapNearestLUT) and "clean row"
+	 * flag+color for C2P_Is_Palette_Index_Clean4 (C2P_PaletteIndexClean4LUT: bit7 + nibble).
+	 */
 	for (int src = 0; src < 256; src++) {
-		const uint8_t *w = C2P_ActivePaletteWeights[src];
+		const uint8_t *w = weights[src];
 		int best_k = 0;
 		int best_w = (int)w[0];
-		for (int k = 1; k < 16; k++) {
-			if ((int)w[k] > best_w) {
-				best_w = (int)w[k];
+		int clean_k = -1;
+		int nonzero = 0;
+		for (int k = 0; k < 16; k++) {
+			const int wk = (int)w[k];
+			if (wk > best_w) {
+				best_w = wk;
 				best_k = k;
+			}
+			if (wk != 0) {
+				nonzero++;
+				clean_k = k;
 			}
 		}
 		C2P_MapNearestLUT[src] = (uint8_t)best_k;
+		C2P_PaletteIndexClean4LUT[src] =
+			(nonzero == 1) ? (uint8_t)(0x80u | (unsigned)clean_k) : (uint8_t)0;
 	}
 
-	C2P_Rebuild_STDOOM_FragLUT();
+	/* Full-screen lorez inner loop: phase × pal × pixel-slot -> OR-able movep fragments. */
+	C2P_Rebuild_STDOOM_FragLUT(weights);
+}
+
+/* Rebuild LUTs from the built-in matrix selected by C2P_WeightSet. */
+static void C2P_Rebuild_Tables_From_SelectedWeights(void)
+{
+	const uint8_t (*builtin)[16] =
+		(C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
+	C2P_Rebuild_Tables_From_WeightRows(builtin);
 }
 
 extern "C" int C2P_Get_WeightSet(void)
@@ -285,9 +314,6 @@ extern "C" void C2P_Select_WeightSet(int weight_set)
 {
 	const int normalized = (weight_set == C2P_WEIGHTSET_HTITLE) ? C2P_WEIGHTSET_HTITLE : C2P_WEIGHTSET_TEMPERAT;
 	C2P_WeightSet = normalized;
-	if (!C2P_CustomWeightsEnabled) {
-		C2P_ActivePaletteWeights = (C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
-	}
 	C2P_Rebuild_Tables_From_SelectedWeights();
 }
 
@@ -296,17 +322,12 @@ extern "C" int C2P_Install_CustomWeights(const uint8_t *weights_256x16)
 	if (!weights_256x16)
 		return 0;
 
-	memcpy(C2P_CustomPaletteWeights, weights_256x16, sizeof(C2P_CustomPaletteWeights));
-	C2P_CustomWeightsEnabled = 1;
-	C2P_ActivePaletteWeights = C2P_CustomPaletteWeights;
-	C2P_Rebuild_Tables_From_SelectedWeights();
+	C2P_Rebuild_Tables_From_WeightRows((const uint8_t (*)[16])(const void *)weights_256x16);
 	return 1;
 }
 
 extern "C" void C2P_Clear_CustomWeights(void)
 {
-	C2P_CustomWeightsEnabled = 0;
-	C2P_ActivePaletteWeights = (C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
 	C2P_Rebuild_Tables_From_SelectedWeights();
 }
 

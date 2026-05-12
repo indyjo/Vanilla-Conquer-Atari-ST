@@ -12,10 +12,11 @@ extern "C" {
 #endif
 
 /*
- * Rasterize decoded shape bytes into LRU pool texture + composite with blitter.
+ * Rasterize decoded shape bytes into an LRU pool planar scratch + composite with blitter.
  * Ghost approximates translucent drawing via checkerboard mask dither (fully cacheable).
  *
- * Blits requiring a tier larger than 96 (sprite max side after 16-px width roundup) return 0.
+ * Blits that need more planar or mask bytes than the largest tier slot (same byte budget as a 96×96
+ * reference tile) return 0 from the cache path and fall back to software C2P in Buffer_Frame_To_Page_Ex.
  *
  * LRU keys mix identity_key with render-variant fingerprints (fade/ghost/trans state).
  * Cache slots store a cropped (minimal non-transparent) representation plus insets; viewport clip
@@ -48,6 +49,18 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
 	void *lazy_decode_ctx);
 
 void ST_SPRITE_CACHE_Init(void);
+
+/*
+ * Purge the sprite cache and rebuild tier slot pools with the given capacities. Pool indices 0..3
+ * correspond to slab layouts sized like 16², 32², 64², 96² reference sprites (planar+mask bytes each);
+ * LRU picks the smallest pool whose per-slot planar and mask byte caps fit the tight crop layout.
+ * Any count may be 0 to disable that tier; at least one tier must be non-zero. Values are clamped
+ * internally to a safe maximum. Returns 0 on success, -1 if the arguments are invalid or allocation fails.
+ */
+int ST_SPRITE_CACHE_Reconfigure_TierCapacities(int cap_16, int cap_32, int cap_64, int cap_96);
+
+/* Restore compile-time default tier capacities (purges the cache). */
+void ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults(void);
 
 /*
  * Opaque identity for Bftp_ExArgs.identity_key: fingerprints shape/icon blob root + frame index

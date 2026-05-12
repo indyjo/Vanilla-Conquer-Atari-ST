@@ -8,12 +8,11 @@
 #include "function.h"
 #include "c2p.h"
 #include <stdio.h>
-#include <string.h>
 
 extern "C" void WSA_Atari_TryInstallC2PWeights(const char *wsa_filename)
 {
 	char w16_name[32];
-	unsigned char weights[256 * 16];
+	uint8_t weights[256 * 16];
 	size_t i;
 	CCFileClass file("");
 	long got;

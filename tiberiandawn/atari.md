@@ -4,7 +4,7 @@ This file collects Atari ST port specific implementation notes.
 
 ## W16 Weightset Format
 
-`*.W16` is a raw binary C2P weight table used by `C2P_Install_CustomWeights()`.
+`*.W16` is a raw binary C2P weight table: `C2P_Install_CustomWeights()` reads it once to rebuild all derived LUTs; C2P does not retain the weight matrix or a pointer to it.
 
 - Total size: `4096` bytes (`256 * 16`)
 - Layout: 256 consecutive rows, one per 8-bit source palette index (`0..255`)
@@ -28,7 +28,7 @@ offset = src * 16 + k
 
 The interactive WSA test (`tests/st_suite/st_wsa_playback.cpp`) tries to load `X.W16` before playing `X.WSA`.
 
-- If found and valid (4096 bytes), it installs the table via `C2P_Install_CustomWeights()`.
+- If found and valid (4096 bytes), it installs via `C2P_Install_CustomWeights()` (synchronous bake; no retained pointer).
 - If not found, it prints a warning and falls back to built-in C2P weights.
 
 ## Regenerating W16 Files

@@ -35,6 +35,20 @@ int st_run_c2p_autotests(void)
 	Set_Palette(pal);
 	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 
+	/* Clean representability API checks against current TEMPERAT weight set. */
+	{
+		uint8_t out_color = 0xEEu;
+		if (!C2P_Is_Palette_Index_Clean4(0, &out_color) || out_color != 0) {
+			st_wrap_puts("FAIL: C2P_Is_Palette_Index_Clean4 expected pal 0 -> color 0.", ST_TEXT_MAXCOL);
+			failures++;
+		}
+		out_color = 0xA5u;
+		if (C2P_Is_Palette_Index_Clean4(16, &out_color) || out_color != 0xA5u) {
+			st_wrap_puts("FAIL: C2P_Is_Palette_Index_Clean4 expected pal 16 non-clean and unchanged out.", ST_TEXT_MAXCOL);
+			failures++;
+		}
+	}
+
 	for (int y = 0; y < 200; y++) {
 		for (int x = 0; x < 320; x++)
 			chunky[y * 320 + x] = (unsigned char)((x + y * 3) & 255);

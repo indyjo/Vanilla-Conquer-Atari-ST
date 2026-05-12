@@ -46,7 +46,12 @@
 
 /* function.h must precede EXTERNS.H: EXTERNS pulls house.h -> heap.h which uses FileClass,
  * defined only after rawfile.h/wwfile.h via function.h (same order as CONQUER.CPP). */
+#include "COMMONLIB/wwstd.h"
 #include "c2p.h"
+#include <cstdio>
+#ifdef ATARI_ST
+#include "st_sprite_cache.h"
+#endif
 #include	"function.h"
 #include "EXTERNS.H"
 #include "gbuffer.h"
@@ -626,14 +631,15 @@ void ScoreClass::Presentation(void)
 
 	if (Special.IsJurassic && AreThingiesEnabled) return;
 
-	bool owns_pseudo_seen = true;
 #ifdef ATARI_ST
-	PseudoSeenBuff = SysMemPage.Get_Graphic_Buffer();
-	owns_pseudo_seen = false;
+	/* Aliases of HidPage backing store — no separate alloc (320×200 score layout). */
+	PseudoSeenBuff = HidPage.Get_Graphic_Buffer();
+	TextPrintBuffer = HidPage.Get_Graphic_Buffer();
+	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 64, 0);
 #else
 	PseudoSeenBuff = new GraphicBufferClass(320,200,(void*)NULL);
-#endif
 	TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height(), (void*)NULL);
+#endif
 	TextPrintBuffer->Clear();
 	BlitList.Clear();
 	Disable_Uncompressed_Shapes ();
@@ -730,17 +736,13 @@ void ScoreClass::Presentation(void)
 /* --- Now display the background animation --- */
 	Hide_Mouse();
 	Animate_Frame(anim, SysMemPage, 1);
-#ifndef ATARI_ST
 	SysMemPage.Blit(*PseudoSeenBuff);
-#endif
 	Increase_Palette_Luminance (Palette , 30,30,30,63);
 #ifndef ATARI_ST
 	InterpolationPalette = Palette;
 	InterpolationPaletteChanged = TRUE;
 	Read_Interpolation_Palette(inter_pal);
 	Interpolate_2X_Scale( PseudoSeenBuff , &SeenBuff , inter_pal);
-#else
-	Blit_Hid_Page_To_Seen_Buff();
 #endif
 	Fade_Palette_To(Palette, FADE_PALETTE_FAST, Call_Back);
 
@@ -749,14 +751,29 @@ void ScoreClass::Presentation(void)
 	int frame = 1;
 	StreamLowImpact = true;
 	while (frame < Get_Animation_Frame_Count(anim)) {
-		Animate_Frame(anim, *PseudoSeenBuff, frame++);
+		Animate_Frame(anim, SysMemPage, frame++);
 		////////////////Interpolate_2X_Scale( PseudoSeenBuff , &SeenBuff , NULL);
+#ifdef ATARI_ST
+		// Directly render to screen in an interlaced fashion for performance.
+		Call_Back();
+		C2P_Render_Logical_To_ST_Screen(
+			(uint8_t *)SysMemPage.Get_Buffer(),
+			SysMemPage.Get_Width(),
+			(uint8_t *)SeenBuff.Get_Graphic_Buffer()->Get_Buffer(),
+			frame & 1,
+			2);
+#else
 		Call_Back_Delay(2);
+#endif
 	}
 	StreamLowImpact = false;
 	Call_Back();
 	Close_Animation(anim);
 
+	// On Atari ST, the animation end frame is only in SeenBuff, we need to blit it back to HidPage.
+#ifdef ATARI_ST
+	SeenBuff.Blit(*PseudoSeenBuff);
+#endif
 	/*
 	** Background's up, so now load various shapes and animations
 	*/
@@ -769,7 +786,9 @@ void ScoreClass::Presentation(void)
 	ScoreObjs[2] = new ScoreTimeClass(8, 172, hiscore2shape, 10, 4);
 
 	/* Now display the stuff */
+#ifndef ATARI_ST
 	PseudoSeenBuff->Blit(SysMemPage);
+#endif
 
 
 	if (house == HOUSE_BAD) {
@@ -1011,6 +1030,7 @@ void ScoreClass::Presentation(void)
 	Fade_Palette_To(BlackPalette, FADE_PALETTE_FAST, NULL);
 	VisiblePage.Clear();
 	#ifdef ATARI_ST
+	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
 	C2P_Clear_CustomWeights();
 	#endif
 	Set_Palette(GamePalette);
@@ -1021,10 +1041,11 @@ void ScoreClass::Presentation(void)
 
 	Set_Logic_Page (SeenBuff);
 
-	if (owns_pseudo_seen) {
-		delete PseudoSeenBuff;
-	}
+#ifndef ATARI_ST
+	delete PseudoSeenBuff;
 	delete TextPrintBuffer;
+#endif
+	PseudoSeenBuff = NULL;
 	TextPrintBuffer = NULL;
 	BlitList.Clear();
 	Enable_Uncompressed_Shapes();
@@ -1189,8 +1210,8 @@ void ScoreClass::Do_Nod_Buildings_Graph(void)
 		*/
 #ifndef ATARI_ST
 		Interpolate_2X_Scale(PseudoSeenBuff , &HidPage ,NULL);
-#endif
 		BlitList.Update(*PseudoSeenBuff);
+#endif
 		WWMouse->Draw_Mouse(&HidPage);
 		Blit_Hid_Page_To_Seen_Buff();
 		WWMouse->Erase_Mouse(&HidPage, TRUE);
@@ -1361,12 +1382,12 @@ void ScoreClass::Do_Nod_Casualties_Graph(void)
 	*/
 	Draw_InfantryMen();
 	SysMemPage.Blit(*PseudoSeenBuff, 0, 0, BARGRAPH_X, CASUALTY_Y, 320-BARGRAPH_X, 34);
+#ifndef ATARI_ST
 	BlitList.Update(*PseudoSeenBuff);
 	//Interpolate_2X_Scale( PseudoSeenBuff , &SeenBuff, NULL);
 	/*
 	** Extra font related stuff. ST - 7/29/96 2:22PM
 	*/
-#ifndef ATARI_ST
 	Interpolate_2X_Scale(PseudoSeenBuff , &HidPage ,NULL);
 #endif
 	WWMouse->Draw_Mouse(&HidPage);
@@ -1523,7 +1544,7 @@ void ScoreClass::Print_Minutes(int minutes)
  * HISTORY:                                                                                    *
  *   04/07/1995 BWG : Created.                                                                 *
  *=============================================================================================*/
-void ScoreClass::Count_Up_Print(char *str, int percent, int max, int xpos, int ypos)
+void ScoreClass::Count_Up_Print(const char *str, int percent, int max, int xpos, int ypos)
 {
 	char destbuf[64];
 	int width;
@@ -1579,23 +1600,23 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos, char const pal[])
 	/*
 	** Ready the hidpage so it can restore background under zoomed letters
 	*/
+#ifndef ATARI_ST
 	PseudoSeenBuff->Blit(SysMemPage);
+#endif
 
 	do {
 		Call_Back();
 		Animate_Score_Objs();
 		Animate_Cursor(*PseudoSeenBuff, index, ypos);
+#ifndef ATARI_ST
 		BlitList.Update(*PseudoSeenBuff);
+
 		/*
 		** Extra font related stuff. ST - 7/29/96 2:22PM
 		*/
-#ifdef ATARI_ST
-		// On the Atari ST we can save some time by avoiding the double blit.
-		PseudoSeenBuff->Blit(SeenBuff);
-#else
 		Interpolate_2X_Scale (PseudoSeenBuff , &HidPage ,NULL);
-		Blit_Hid_Page_To_Seen_Buff();
 #endif
+		Blit_Hid_Page_To_Seen_Buff();
 
 		if (Check_Key()) {						//if (Keyboard::Check()) {
 			key = Get_Key();						//key = Keyboard::Get();
@@ -1619,8 +1640,8 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos, char const pal[])
 
 					int xposindex6 = xpos+(index*6);
 
-					PseudoSeenBuff->Fill_Rect(xposindex6,ypos,xposindex6+6,ypos+6,TBLACK);
 #ifndef ATARI_ST
+					PseudoSeenBuff->Fill_Rect(xposindex6,ypos,xposindex6+6,ypos+6,TBLACK);
 					SysMemPage.Fill_Rect(xposindex6,ypos,xposindex6+6,ypos+6,TBLACK);
 #endif
 					TextPrintBuffer->Fill_Rect(xposindex6, ypos, xposindex6 + 6, ypos + 6, BLACK);
@@ -1631,8 +1652,8 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos, char const pal[])
 				if (ascii >= 'a' && ascii <= 'z') ascii -= ('a' - 'A');
 //if (ascii >='A' && ascii<='Z' || ascii == ' ') {
 if ( (ascii >= '!' && ascii <= KA_TILDA) || ascii == ' ') {
-					PseudoSeenBuff->Fill_Rect(xpos + (index*6), ypos, xpos + (index*6)+6, ypos+5, TBLACK);
 #ifndef ATARI_ST
+					PseudoSeenBuff->Fill_Rect(xpos + (index*6), ypos, xpos + (index*6)+6, ypos+5, TBLACK);
 					 SysMemPage.Fill_Rect(xpos + (index*6), ypos, xpos + (index*6)+6, ypos+5, TBLACK);
 #endif
 					TextPrintBuffer->Fill_Rect(xpos + (index * 6), ypos, xpos + (index * 6) + 6, ypos + 6, BLACK);
@@ -1640,9 +1661,14 @@ if ( (ascii >= '!' && ascii <= KA_TILDA) || ascii == ' ') {
 					str[index+1] = 0;
 
 					Play_Sample(keystrok, 255, Options.Normalize_Sound(255));
+#ifdef ATARI_ST
+					Set_Font_Palette(pal);
+					TextPrintBuffer->Print((char *)(str + index), xpos + (index * 6), ypos, TBLACK, TBLACK);
+#else
 					int objindex;
 					objindex = Alloc_Object(new ScoreScaleClass(str+index,xpos+(index*6), ypos, pal));
 					while (ScoreObjs[objindex]) Call_Back_Delay(1);
+#endif
 					if (index < (MAX_FAMENAME_LENGTH-2) ) index++;
 				}
 			}
@@ -1892,13 +1918,6 @@ void Call_Back_Delay(int time)
 
 	cd.Set(time);
 	StreamLowImpact = true;
-#ifdef ATARI_ST
-	/*
-	 * Must persist across Call_Back_Delay() calls: a single-iteration delay (e.g. time==1)
-	 * would otherwise always use start_line_y==0 and never refresh odd lines.
-	 */
-	static int s_c2p_score_field_phase = 0;
-#endif
 	do {
 		Call_Back();
 		//Animate_Score_Objs();
@@ -1909,24 +1928,13 @@ void Call_Back_Delay(int time)
 			//BlitList.Update();
 		//}else{
 			Animate_Score_Objs();
+#ifndef ATARI_ST
 			BlitList.Update(*PseudoSeenBuff);
-#ifdef ATARI_ST
-			// On the Atari ST we can save some time by avoiding the double blit.
-			//PseudoSeenBuff->Blit(SeenBuff);
-			/* Alternate even/odd scanline fields per loop iteration to halve C2P work per tick. */
-			C2P_Render_Logical_To_ST_Screen(
-				(uint8_t *)PseudoSeenBuff->Get_Buffer(),
-				PseudoSeenBuff->Get_Width(),
-				(uint8_t *)SeenBuff.Get_Graphic_Buffer()->Get_Buffer(),
-				s_c2p_score_field_phase & 1,
-				2);
-			s_c2p_score_field_phase++;
-#else
 			Interpolate_2X_Scale(PseudoSeenBuff , &HidPage ,NULL);
+#endif
 			WWMouse->Draw_Mouse(&HidPage);
 			Blit_Hid_Page_To_Seen_Buff();
 			WWMouse->Erase_Mouse(&HidPage, TRUE);
-#endif
 		//}
 	} while(cd.Time());
 	StreamLowImpact = false;
@@ -1995,14 +2003,17 @@ void Multi_Score_Presentation(void)
 	Map.Override_Mouse_Shape(MOUSE_NORMAL);
 	Theme.Queue_Song(THEME_WIN1);
 
-	bool owns_pseudo_seen = true;
 #ifdef ATARI_ST
 	PseudoSeenBuff = HidPage.Get_Graphic_Buffer();
-	owns_pseudo_seen = false;
 #else
 	PseudoSeenBuff = new GraphicBufferClass(320,200,(void*)NULL);
 #endif
-	TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height() ,(void*)NULL);
+#ifdef ATARI_ST
+	TextPrintBuffer = HidPage.Get_Graphic_Buffer();
+	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 32, 32);
+#else
+	TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height(), (void*)NULL);
+#endif
 	BlitList.Clear();
 
    	SysMemPage.Clear();
@@ -2025,9 +2036,8 @@ void Multi_Score_Presentation(void)
 	InterpolationPaletteChanged = TRUE;
 	InterpolationPalette = Palette;
 	Interpolate_2X_Scale( PseudoSeenBuff , &SeenBuff , "MULTSCOR.PAL");
-#else
-	Blit_Hid_Page_To_Seen_Buff();
 #endif
+	Blit_Hid_Page_To_Seen_Buff();
 	Fade_Palette_To(Palette, FADE_PALETTE_FAST, Call_Back);
 
 	int frame = 1;
@@ -2094,16 +2104,19 @@ void Multi_Score_Presentation(void)
 	Fade_Palette_To(BlackPalette, FADE_PALETTE_FAST, NULL);
 	VisiblePage.Clear();
 	#ifdef ATARI_ST
+	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
 	C2P_Clear_CustomWeights();
 	#endif
 	Set_Palette(GamePalette);
 
 	Set_Logic_Page (SeenBuff);
 
-	if (owns_pseudo_seen) {
-		delete PseudoSeenBuff;
-	}
+#ifndef ATARI_ST
+	delete PseudoSeenBuff;
 	delete TextPrintBuffer;
+#endif
+	PseudoSeenBuff = NULL;
+	TextPrintBuffer = NULL;
 	BlitList.Clear();
 
 	Set_Font(oldfont);

@@ -161,7 +161,7 @@ public:
     virtual ~ScoreScaleClass(void){};
 };
 
-#define MAXSCOREOBJS 8
+#define MAXSCOREOBJS 32
 extern ScoreAnimClass* ScoreObjs[MAXSCOREOBJS];
 
 void Multi_Score_Presentation(void);

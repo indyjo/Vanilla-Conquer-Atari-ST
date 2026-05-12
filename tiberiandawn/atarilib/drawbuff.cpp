@@ -1462,6 +1462,24 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 			&& ay >= 0
 			&& ax + rect_width <= planar_width
 			&& ay + rect_height <= planar_height) {
+			/*
+			 * Flat ST color: weight row has a single non-zero entry, so dither is constant.
+			 * ST_Planar_Fill_Rect_Fast shares the hline span logic but computes masks/fills once.
+			 */
+			uint8_t flat_color4 = 0;
+			if (C2P_Is_Palette_Index_Clean4(palidx, &flat_color4)) {
+				uint16_t *planar_root = (uint16_t *)root;
+				const short planar_row_words = (short)(planar_row_bytes >> 1);
+				ST_Planar_Fill_Rect_Fast(
+					planar_root,
+					planar_row_words,
+					(short)ay,
+					(short)(ay + rect_height - 1),
+					(short)ax,
+					(short)(ax + rect_width - 1),
+					(uint16_t)flat_color4);
+				return;
+			}
 			const int lead = (ax & 7) ? MIN(8 - (ax & 7), rect_width) : 0;
 			const int middle_width = ((rect_width - lead) / 8) * 8;
 			const int middle_sx = sx + lead;

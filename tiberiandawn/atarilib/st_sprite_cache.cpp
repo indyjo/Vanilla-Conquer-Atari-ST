@@ -5,7 +5,6 @@
 #include "st_sprite_cache.h"
 
 #include "c2p.h"
-#include "keyboard.h"
 #include "st_blitter_blit.h"
 
 #include "lrucache.h"
@@ -15,9 +14,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
-#include <stdio.h>
-
-int IKBD_Key_Is_Down(int vk);
 
 #ifndef ST_SPRITE_CACHE_CAPACITY_16
 #define ST_SPRITE_CACHE_CAPACITY_16 160
@@ -30,6 +26,10 @@ int IKBD_Key_Is_Down(int vk);
 #endif
 #ifndef ST_SPRITE_CACHE_CAPACITY_96
 #define ST_SPRITE_CACHE_CAPACITY_96 6
+#endif
+/* Hard clamp for per-tier slot count (LRU uses uint16_t slot indices). */
+#ifndef ST_SPRITE_CACHE_TIER_CAP_MAX
+#define ST_SPRITE_CACHE_TIER_CAP_MAX 4096
 #endif
 enum { SPRITE_CACHE_D16 = 16, SPRITE_CACHE_D32 = 32, SPRITE_CACHE_D64 = 64, SPRITE_CACHE_D96 = 96 };
 
@@ -90,8 +90,9 @@ struct SpriteCacheSlotMeta {
 	uint8_t occupied;
 };
 
-/* One configured tier pool (geometry, memory slices, and LRU map). */
+/* One configured tier pool (memory slices, and LRU map). */
 struct SpriteCacheTier {
+	/* Nominal template side (16/32/64/96): slot planar+mask sizes match a square that size; picks are by bytes. */
 	int dim = 0;
 	int capacity = 0;
 	uint8_t *planar_base = nullptr;
@@ -108,15 +109,18 @@ struct SpriteCacheTier {
 struct SpriteCacheTierStats {
 	unsigned long hits;
 	unsigned long misses;
-	unsigned long fills;
+	unsigned long evictions;
+	unsigned long fills_fast;
+	unsigned long fills_slow;
 	unsigned long filled_pixels_sum;
 };
 
 static SpriteCacheTier g_sprite_cache_tiers[4];
 static uint8_t *g_sprite_cache_slab = nullptr;
 static bool g_sprite_cache_inited = false;
+static int g_sprite_cache_cap[4] = { ST_SPRITE_CACHE_CAPACITY_16, ST_SPRITE_CACHE_CAPACITY_32,
+	ST_SPRITE_CACHE_CAPACITY_64, ST_SPRITE_CACHE_CAPACITY_96 };
 static SpriteCacheTierStats g_sprite_cache_stats[4];
-static bool g_sprite_cache_stats_key_prev = false;
 
 /* 32-bit rotate-left helper used by lightweight hash mixers. */
 static inline uint32_t sprite_cache_rotl32(uint32_t x, unsigned r)
@@ -187,7 +191,7 @@ static uint32_t sprite_cache_lru_identity_hash(long identity_key)
 }
 
 /*
- * Write one 16-color ST low-res planar pixel into a BFTP scratch atlas slot (same word/bit layout
+ * Write one 16-color ST low-res planar pixel into a BFTP scratch slot (same word/bit layout
  * as the screen buffer the blitter reads). Used on LRU fill when trans/fade/ghost prevent bulk C2P;
  * caller passes the final display nibble (typically C2P_Map8ToPlanar4 on sprite-local coords).
  * Clamps by returning if (x,y) is outside width_px × height_px.
@@ -217,70 +221,44 @@ static inline void sprite_cache_mask_mark_writes(uint8_t *maskbm, int rowb, int 
 	*b = (uint8_t)(*b & (uint8_t)~(0x80u >> (x & 7)));
 }
 
-/* Returns planar+mask byte demand for a cropped sprite rectangle. */
-static size_t sprite_cache_rect_need_bytes(int w, int h)
-{
-	if (w <= 0 || h <= 0)
-		return 0;
-	const int w_round = ((w + 15) >> 4) << 4;
-	const int words = w_round >> 4;
-	const size_t planar_bpl = (size_t)words * 8u;
-	const size_t mask_bpl = (size_t)words * 2u;
-	return (planar_bpl + mask_bpl) * (size_t)h;
-}
-
-/* Returns total planar+mask bytes available in one tier slot. */
-static size_t sprite_cache_tier_slot_bytes(int tier_dim)
-{
-	if (tier_dim <= 0)
-		return 0;
-	const int words = ((tier_dim + 15) >> 4);
-	const size_t planar_bpl = (size_t)words * 8u;
-	const size_t mask_bpl = (size_t)words * 2u;
-	return (planar_bpl + mask_bpl) * (size_t)tier_dim;
-}
-
 /*
- * Pick by storage bytes (planar + mask), while still requiring geometry to fit inside the tier.
+ * ST interleaved planar + 1bpp mask layout for a tight crop: width rounded up to 16 px, height = crop_h.
+ * Row strides match the blitter / C2P helpers (8 bytes per 16 horizontal pixels in planar, 2 in mask).
  */
-static int sprite_cache_pick_tier_dim_for_rect(int crop_w, int crop_h)
+static void sprite_cache_layout_for_crop(int crop_w, int crop_h, int *out_planar_w, int *out_planar_h,
+	int *out_planar_rowb, int *out_mask_rowb, size_t *out_planar_bytes, size_t *out_mask_bytes)
 {
-	if (crop_w < 0 || crop_h < 0)
-		return 0;
-	if (crop_w == 0 || crop_h == 0)
-		return SPRITE_CACHE_D16;
-
-	const int dims[4] = { SPRITE_CACHE_D16, SPRITE_CACHE_D32, SPRITE_CACHE_D64, SPRITE_CACHE_D96 };
-	const size_t need_bytes = sprite_cache_rect_need_bytes(crop_w, crop_h);
-	int best_dim = 0;
-	size_t best_slot = 0;
-
-	for (int i = 0; i < 4; ++i) {
-		const int d = dims[i];
-		if (crop_w > d || crop_h > d)
-			continue;
-		const size_t slot_bytes = sprite_cache_tier_slot_bytes(d);
-		if (slot_bytes < need_bytes)
-			continue;
-		if (best_dim == 0 || slot_bytes < best_slot) {
-			best_dim = d;
-			best_slot = slot_bytes;
-		}
+	const int planar_w = ((crop_w + 15) >> 4) << 4;
+	const int planar_h = crop_h > 0 ? crop_h : 0;
+	if (out_planar_w)
+		*out_planar_w = planar_w;
+	if (out_planar_h)
+		*out_planar_h = planar_h;
+	if (planar_w <= 0 || planar_h <= 0) {
+		if (out_planar_rowb)
+			*out_planar_rowb = 0;
+		if (out_mask_rowb)
+			*out_mask_rowb = 0;
+		if (out_planar_bytes)
+			*out_planar_bytes = 0;
+		if (out_mask_bytes)
+			*out_mask_bytes = 0;
+		return;
 	}
-	return best_dim;
+	const int words = planar_w >> 4;
+	const int planar_rowb = words * 8;
+	const int mask_rowb = words * 2;
+	if (out_planar_rowb)
+		*out_planar_rowb = planar_rowb;
+	if (out_mask_rowb)
+		*out_mask_rowb = mask_rowb;
+	if (out_planar_bytes)
+		*out_planar_bytes = (size_t)planar_rowb * (size_t)planar_h;
+	if (out_mask_bytes)
+		*out_mask_bytes = (size_t)mask_rowb * (size_t)planar_h;
 }
 
-/* Returns tier object by configured square dimension. */
-static SpriteCacheTier *sprite_cache_tier_from_dim(int tier_dim)
-{
-	for (int t = 0; t < 4; ++t) {
-		if (g_sprite_cache_tiers[t].dim == tier_dim && g_sprite_cache_tiers[t].lru)
-			return &g_sprite_cache_tiers[t];
-	}
-	return nullptr;
-}
-
-/* Returns tier object by fixed tier index (0..2). */
+/* Returns tier object by fixed tier index (0..3). */
 static SpriteCacheTier *sprite_cache_tier_from_index(int idx)
 {
 	if (idx < 0 || idx >= 4)
@@ -290,56 +268,53 @@ static SpriteCacheTier *sprite_cache_tier_from_index(int idx)
 	return &g_sprite_cache_tiers[idx];
 }
 
+/* Pick smallest slab (by allocated planar+mask slot bytes) whose per-slot buffers fit the crop layout. */
+static int sprite_cache_pick_tier_index_for_crop(int crop_w, int crop_h)
+{
+	if (crop_w < 0 || crop_h < 0)
+		return -1;
+	if (crop_w == 0 || crop_h == 0) {
+		/* Fully transparent: use smallest enabled pool so retarget still has a slot. */
+		int best_i = -1;
+		size_t best_total = 0;
+		for (int i = 0; i < 4; ++i) {
+			SpriteCacheTier *tr = sprite_cache_tier_from_index(i);
+			if (!tr || tr->capacity <= 0)
+				continue;
+			const size_t tot = (size_t)tr->planar_slot_sz + (size_t)tr->mask_slot_sz;
+			if (best_i < 0 || tot < best_total) {
+				best_i = (int)i;
+				best_total = tot;
+			}
+		}
+		return best_i;
+	}
+
+	size_t need_p = 0;
+	size_t need_m = 0;
+	sprite_cache_layout_for_crop(crop_w, crop_h, nullptr, nullptr, nullptr, nullptr, &need_p, &need_m);
+
+	int best_i = -1;
+	size_t best_total = 0;
+	for (int i = 0; i < 4; ++i) {
+		SpriteCacheTier *tr = sprite_cache_tier_from_index(i);
+		if (!tr || tr->capacity <= 0)
+			continue;
+		if (need_p > (size_t)tr->planar_slot_sz || need_m > (size_t)tr->mask_slot_sz)
+			continue;
+		const size_t tot = (size_t)tr->planar_slot_sz + (size_t)tr->mask_slot_sz;
+		if (best_i < 0 || tot < best_total) {
+			best_i = (int)i;
+			best_total = tot;
+		}
+	}
+	return best_i;
+}
+
 /* Resets runtime stats counters without touching cache contents. */
 static void sprite_cache_reset_stats(void)
 {
 	std::memset(g_sprite_cache_stats, 0, sizeof(g_sprite_cache_stats));
-}
-
-/* Dumps stats on hotkey edge and then clears counters. */
-static void sprite_cache_dump_stats_and_reset_maybe(void)
-{
-#if defined(__MINT__)
-	const bool down = (IKBD_Key_Is_Down(VK_MENU) && IKBD_Key_Is_Down(VK_D)) ? true : false;
-	if (down && !g_sprite_cache_stats_key_prev) {
-		static const int dims[4] = { SPRITE_CACHE_D16, SPRITE_CACHE_D32, SPRITE_CACHE_D64, SPRITE_CACHE_D96 };
-		char line[160];
-		for (int ti = 0; ti < 4; ++ti) {
-			const SpriteCacheTierStats &st = g_sprite_cache_stats[ti];
-			unsigned long fill_ratio_100 = 0;
-			unsigned long cached_slots = 0;
-			unsigned long cached_pixels_sum = 0;
-			SpriteCacheTier *const tr = sprite_cache_tier_from_index(ti);
-			if (tr && tr->slot_meta) {
-				for (int si = 0; si < tr->capacity; ++si) {
-					SpriteCacheSlotMeta const &sm = tr->slot_meta[si];
-					if (!sm.occupied)
-						continue;
-					cached_slots++;
-					cached_pixels_sum += (unsigned long)sm.crop_w * (unsigned long)sm.crop_h;
-				}
-			}
-			if (cached_slots != 0UL) {
-				const unsigned long slot_pixels = (unsigned long)dims[ti] * (unsigned long)dims[ti];
-				const unsigned long denom = cached_slots * slot_pixels;
-				if (denom != 0UL) {
-					fill_ratio_100 = (cached_pixels_sum * 100UL + (denom / 2UL)) / denom;
-				}
-			}
-			snprintf(line,
-			    sizeof(line),
-			    "SpriteCache tier %d: hits=%lu misses=%lu fills=%lu avg_fill=%lu%%",
-			    dims[ti],
-			    st.hits,
-			    st.misses,
-			    st.fills,
-			    fill_ratio_100);
-			GlyphX_Debug_Print(line);
-		}
-		sprite_cache_reset_stats();
-	}
-	g_sprite_cache_stats_key_prev = down;
-#endif
 }
 
 /* Finds tight non-transparent bounds in decoded chunky sprite data. */
@@ -400,11 +375,44 @@ static void sprite_cache_scan_crop_bounds(const uint8_t *src,
 }
 
 /* Lazy one-time cache slab and per-tier allocator init. */
+static void sprite_cache_apply_default_caps(void);
+static void sprite_cache_shutdown(void);
 static void sprite_cache_maybe_init(void);
 
 void ST_SPRITE_CACHE_Init(void)
 {
 	sprite_cache_maybe_init();
+}
+
+static void sprite_cache_apply_default_caps(void)
+{
+	g_sprite_cache_cap[0] = ST_SPRITE_CACHE_CAPACITY_16;
+	g_sprite_cache_cap[1] = ST_SPRITE_CACHE_CAPACITY_32;
+	g_sprite_cache_cap[2] = ST_SPRITE_CACHE_CAPACITY_64;
+	g_sprite_cache_cap[3] = ST_SPRITE_CACHE_CAPACITY_96;
+}
+
+static void sprite_cache_shutdown(void)
+{
+	for (int t = 0; t < 4; ++t) {
+		SpriteCacheTier &tr = g_sprite_cache_tiers[t];
+		delete tr.lru;
+		tr.lru = nullptr;
+		delete[] tr.slot_meta;
+		tr.slot_meta = nullptr;
+		tr.planar_base = nullptr;
+		tr.mask_base = nullptr;
+		tr.capacity = 0;
+		tr.dim = 0;
+		tr.planar_bpl = 0;
+		tr.mask_bpl = 0;
+		tr.planar_slot_sz = 0;
+		tr.mask_slot_sz = 0;
+	}
+	std::free(g_sprite_cache_slab);
+	g_sprite_cache_slab = nullptr;
+	g_sprite_cache_inited = false;
+	sprite_cache_reset_stats();
 }
 
 static void sprite_cache_maybe_init(void)
@@ -413,70 +421,109 @@ static void sprite_cache_maybe_init(void)
 		return;
 
 	const int dims[4] = { SPRITE_CACHE_D16, SPRITE_CACHE_D32, SPRITE_CACHE_D64, SPRITE_CACHE_D96 };
-	const int caps[4] = { ST_SPRITE_CACHE_CAPACITY_16, ST_SPRITE_CACHE_CAPACITY_32,
-		              ST_SPRITE_CACHE_CAPACITY_64, ST_SPRITE_CACHE_CAPACITY_96 };
-
-	size_t total = 0;
 	int planar_bp[4], mask_bp[4], ps_sz[4], ms_sz[4];
+	size_t total = 0;
+
 	for (int t = 0; t < 4; ++t) {
 		const int d = dims[t];
 		planar_bp[t] = ((d + 15) >> 4) * 8;
 		mask_bp[t] = ((d + 15) >> 4) * 2;
 		ps_sz[t] = planar_bp[t] * d;
 		ms_sz[t] = mask_bp[t] * d;
-		total += (size_t)caps[t] * (size_t)ps_sz[t];
-		total += (size_t)caps[t] * (size_t)ms_sz[t];
+		const int cap = g_sprite_cache_cap[t];
+		if (cap > 0) {
+			total += (size_t)cap * (size_t)ps_sz[t];
+			total += (size_t)cap * (size_t)ms_sz[t];
+		}
 	}
 
-	g_sprite_cache_slab = (uint8_t *)malloc(total);
-	if (!g_sprite_cache_slab) {
-		g_sprite_cache_inited = true;
+	if (total == 0)
 		return;
-	}
+
+	g_sprite_cache_slab = (uint8_t *)std::malloc(total);
+	if (!g_sprite_cache_slab)
+		return;
 
 	uint8_t *walk = g_sprite_cache_slab;
 	for (int t = 0; t < 4; ++t) {
 		SpriteCacheTier &tr = g_sprite_cache_tiers[t];
 		tr.dim = dims[t];
-		tr.capacity = caps[t];
+		tr.capacity = g_sprite_cache_cap[t];
 		tr.planar_bpl = planar_bp[t];
 		tr.mask_bpl = mask_bp[t];
 		tr.planar_slot_sz = ps_sz[t];
 		tr.mask_slot_sz = ms_sz[t];
+		tr.lru = nullptr;
+		tr.slot_meta = nullptr;
+
+		if (tr.capacity <= 0) {
+			tr.planar_base = nullptr;
+			tr.mask_base = nullptr;
+			continue;
+		}
+
 		tr.planar_base = walk;
 		walk += (size_t)tr.capacity * (size_t)tr.planar_slot_sz;
 		tr.mask_base = walk;
 		walk += (size_t)tr.capacity * (size_t)tr.mask_slot_sz;
 
-		tr.lru = nullptr;
-		tr.slot_meta = nullptr;
-		if (tr.capacity > 0) {
-			tr.lru =
-			    new (std::nothrow) LruCache<SpriteCacheKey, uint16_t, SpriteCacheKeyHash>((size_t)tr.capacity);
-			if (!tr.lru)
-				break;
-			tr.slot_meta = new (std::nothrow) SpriteCacheSlotMeta[(size_t)tr.capacity];
-			if (!tr.slot_meta)
-				break;
-			for (uint16_t i = 0; i < (uint16_t)tr.capacity; ++i) {
-				SpriteCacheKey dk;
-				std::memset(&dk, 0, sizeof(dk));
-				dk.src_key = UINT32_MAX ^ ((((uint32_t)t) << 20) ^ (uint32_t)i);
-				dk.mode_pack = 0xFF;
-				dk.fade_token = (uint32_t)t + 1u;
-				dk.ghost_token = 0x1000u + (uint32_t)i;
-				dk.trans_flag = false;
-				tr.lru->put(dk, i);
-				tr.slot_meta[i].crop_x = 0;
-				tr.slot_meta[i].crop_y = 0;
-				tr.slot_meta[i].crop_w = 0;
-				tr.slot_meta[i].crop_h = 0;
-				tr.slot_meta[i].occupied = 0;
-			}
+		tr.lru =
+		    new (std::nothrow) LruCache<SpriteCacheKey, uint16_t, SpriteCacheKeyHash>((size_t)tr.capacity);
+		if (!tr.lru)
+			goto fail;
+		tr.slot_meta = new (std::nothrow) SpriteCacheSlotMeta[(size_t)tr.capacity];
+		if (!tr.slot_meta)
+			goto fail;
+		for (uint16_t i = 0; i < (uint16_t)tr.capacity; ++i) {
+			SpriteCacheKey dk;
+			std::memset(&dk, 0, sizeof(dk));
+			dk.src_key = UINT32_MAX ^ ((((uint32_t)t) << 20) ^ (uint32_t)i);
+			dk.mode_pack = 0xFF;
+			dk.fade_token = (uint32_t)t + 1u;
+			dk.ghost_token = 0x1000u + (uint32_t)i;
+			dk.trans_flag = false;
+			tr.lru->put(dk, i);
+			tr.slot_meta[i].crop_x = 0;
+			tr.slot_meta[i].crop_y = 0;
+			tr.slot_meta[i].crop_w = 0;
+			tr.slot_meta[i].crop_h = 0;
+			tr.slot_meta[i].occupied = 0;
 		}
 	}
 
 	g_sprite_cache_inited = true;
+	return;
+fail:
+	sprite_cache_shutdown();
+}
+
+extern "C" int ST_SPRITE_CACHE_Reconfigure_TierCapacities(int c16, int c32, int c64, int c96)
+{
+	int caps[4] = { c16, c32, c64, c96 };
+	for (int i = 0; i < 4; ++i) {
+		if (caps[i] < 0)
+			return -1;
+		if (caps[i] > ST_SPRITE_CACHE_TIER_CAP_MAX)
+			caps[i] = ST_SPRITE_CACHE_TIER_CAP_MAX;
+	}
+	int sum = 0;
+	for (int i = 0; i < 4; ++i)
+		sum += caps[i];
+	if (sum <= 0)
+		return -1;
+
+	sprite_cache_shutdown();
+	for (int i = 0; i < 4; ++i)
+		g_sprite_cache_cap[i] = caps[i];
+	sprite_cache_maybe_init();
+	return g_sprite_cache_inited ? 0 : -1;
+}
+
+extern "C" void ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults(void)
+{
+	sprite_cache_apply_default_caps();
+	sprite_cache_shutdown();
+	sprite_cache_maybe_init();
 }
 
 /* Executes either opaque or mask+OR blitter sequence. */
@@ -492,7 +539,8 @@ static BOOL sprite_cache_do_blitter(
 	int planar_rowb,
 	const uint8_t *maskbm,
 	int mask_rowb,
-	int tier_dim,
+	int src_w,
+	int src_h,
 	int sx_abs,
 	int sy_abs,
 	int blit_w,
@@ -502,8 +550,8 @@ static BOOL sprite_cache_do_blitter(
 		if (!ST_Blitter_Mask_And_Planar_Rect(
 			maskbm,
 			mask_rowb,
-			tier_dim,
-			tier_dim,
+			src_w,
+			src_h,
 			sx_abs,
 			sy_abs,
 			dst_root_fb,
@@ -517,8 +565,8 @@ static BOOL sprite_cache_do_blitter(
 			return FALSE;
 		if (!ST_Blitter_Planar_Rect_Blit_Or(planar,
 				planar_rowb,
-				tier_dim,
-				tier_dim,
+				src_w,
+				src_h,
 				sx_abs,
 				sy_abs,
 				dst_root_fb,
@@ -534,8 +582,8 @@ static BOOL sprite_cache_do_blitter(
 	}
 	return ST_Blitter_Planar_Rect_Blit(planar,
 		   planar_rowb,
-		   tier_dim,
-		   tier_dim,
+		   src_w,
+		   src_h,
 		   sx_abs,
 		   sy_abs,
 		   dst_root_fb,
@@ -550,8 +598,9 @@ static BOOL sprite_cache_do_blitter(
 		       : FALSE;
 }
 
-/* Fills one cache slot from cropped source pixels and optional remaps. */
-static BOOL sprite_cache_fill_slot_pixels(
+/* Fills one cache slot from cropped source pixels and optional remaps.
+ * Returns 1 = fast path (bulk C2P), 2 = slow path (per-pixel scratch), 0 = failure. */
+static int sprite_cache_fill_slot_pixels(
 	SpriteCacheTier *tr,
 	uint16_t slot,
 	uint8_t *dst_root_fb,
@@ -569,10 +618,6 @@ static BOOL sprite_cache_fill_slot_pixels(
 	int crop_w,
 	int crop_h)
 {
-	const int dim = tr->dim;
-	const int planar_rowb = tr->planar_bpl;
-	const int mask_rowb = tr->mask_bpl;
-
 	uint8_t *planar = tr->planar_base + (size_t)slot * (size_t)tr->planar_slot_sz;
 	uint8_t *maskbm = tr->mask_base + (size_t)slot * (size_t)tr->mask_slot_sz;
 
@@ -580,9 +625,22 @@ static BOOL sprite_cache_fill_slot_pixels(
 	std::memset(maskbm, 0xFF, (size_t)tr->mask_slot_sz);
 
 	if (crop_w <= 0 || crop_h <= 0)
-		return TRUE;
+		return 1;
 	if (crop_x < 0 || crop_y < 0 || crop_x + crop_w > bw || crop_y + crop_h > bh)
-		return FALSE;
+		return 0;
+
+	int scratch_w = 0;
+	int scratch_h = 0;
+	int planar_rowb = 0;
+	int mask_rowb = 0;
+	size_t need_p = 0;
+	size_t need_m = 0;
+	sprite_cache_layout_for_crop(
+	    crop_w, crop_h, &scratch_w, &scratch_h, &planar_rowb, &mask_rowb, &need_p, &need_m);
+	if (scratch_w <= 0 || scratch_h <= 0)
+		return 1;
+	if (need_p > (size_t)tr->planar_slot_sz || need_m > (size_t)tr->mask_slot_sz)
+		return 0;
 
 	/* Fully opaque chunky → scratch planar fast path */
 	if (!ghost_tab && !fade_tab && !trans) {
@@ -594,13 +652,13 @@ static BOOL sprite_cache_fill_slot_pixels(
 			stride,
 			planar,
 			planar_rowb,
-			dim,
-			dim,
+			scratch_w,
+			scratch_h,
 			0,
 			0,
 			0,
 			0);
-		return TRUE;
+		return 1;
 	}
 
 	(void)dst_root_fb;
@@ -625,7 +683,7 @@ static BOOL sprite_cache_fill_slot_pixels(
 				if (cls != 0xFFu) {
 					/*
 					 * Sprite-local checkerboard mask dither (~50%); must not use screen coords
-					 * so cached textures are valid at any placement.
+					 * so cached fills are valid at any placement.
 					 */
 					if (((col ^ row) & 1) != 0)
 						continue;
@@ -640,12 +698,12 @@ static BOOL sprite_cache_fill_slot_pixels(
 			const int sx = col - crop_x;
 			const int sy = row - crop_y;
 			const unsigned char c4 = C2P_Map8ToPlanar4(sx, sy, pal8);
-			sprite_cache_scratch_put_px(planar, planar_rowb, dim, dim, sx, sy, c4);
+			sprite_cache_scratch_put_px(planar, planar_rowb, scratch_w, scratch_h, sx, sy, c4);
 			if (masked_merge)
 				sprite_cache_mask_mark_writes(maskbm, mask_rowb, sx, sy);
 		}
 	}
-	return TRUE;
+	return 2;
 }
 
 /* Probes tiers, fills on miss, and blits cropped intersection. */
@@ -706,10 +764,12 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 	if (!cache_hit) {
 		if (lazy_gate != nullptr && lazy_gate->fill != nullptr && lazy_gate->decoded == 0) {
 			unsigned long const built = lazy_gate->fill(lazy_gate->ctx);
-			if (built == 0UL)
+			if (built == 0UL) {
 				return 0;
-			if ((const uint8_t *)(uintptr_t)built != raster_base)
+			}
+			if ((const uint8_t *)(uintptr_t)built != raster_base) {
 				return 0;
+			}
 			lazy_gate->decoded = 1;
 		}
 
@@ -720,17 +780,26 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		sprite_cache_scan_crop_bounds(
 		    raster_base, full_w, full_h, src_stride, trans, &crop_x, &crop_y, &crop_w, &crop_h);
 
-		const int tier_dim = sprite_cache_pick_tier_dim_for_rect(crop_w, crop_h);
-		if (!tier_dim)
+		const int tier_ix = sprite_cache_pick_tier_index_for_crop(crop_w, crop_h);
+		if (tier_ix < 0) {
 			return 0;
+		}
 
-		tr = sprite_cache_tier_from_dim(tier_dim);
-		if (!tr || !tr->lru || !tr->slot_meta)
+		tr = sprite_cache_tier_from_index(tier_ix);
+		if (!tr || !tr->lru || !tr->slot_meta) {
 			return 0;
-		if (!tr->lru->retarget_oldest_slot(want, slot))
+		}
+		if (!tr->lru->retarget_oldest_slot(want, slot)) {
 			return 0;
+		}
 
-		if (!sprite_cache_fill_slot_pixels(
+		if (tr->slot_meta[slot].occupied) {
+			const int ti_stat = (int)(tr - g_sprite_cache_tiers);
+			if (ti_stat >= 0 && ti_stat < 4)
+				g_sprite_cache_stats[ti_stat].evictions++;
+		}
+
+		const int fill_route = sprite_cache_fill_slot_pixels(
 			    tr,
 			    slot,
 			    dst_root_fb,
@@ -746,8 +815,10 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 			    crop_x,
 			    crop_y,
 			    crop_w,
-			    crop_h))
+			    crop_h);
+		if (fill_route == 0) {
 			return 0;
+		}
 
 		meta.crop_x = (uint16_t)crop_x;
 		meta.crop_y = (uint16_t)crop_y;
@@ -757,7 +828,10 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		tr->slot_meta[slot] = meta;
 		for (int ti = 0; ti < 4; ++ti) {
 			if (&g_sprite_cache_tiers[ti] == tr) {
-				g_sprite_cache_stats[ti].fills++;
+				if (fill_route == 1)
+					g_sprite_cache_stats[ti].fills_fast++;
+				else
+					g_sprite_cache_stats[ti].fills_slow++;
 				g_sprite_cache_stats[ti].filled_pixels_sum += (unsigned long)crop_w * (unsigned long)crop_h;
 				break;
 			}
@@ -777,8 +851,9 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 	int iy0 = req_y0 > crop_y0 ? req_y0 : crop_y0;
 	int ix1 = req_x1 < crop_x1 ? req_x1 : crop_x1;
 	int iy1 = req_y1 < crop_y1 ? req_y1 : crop_y1;
-	if (ix1 <= ix0 || iy1 <= iy0)
+	if (ix1 <= ix0 || iy1 <= iy0) {
 		return 0;
+	}
 
 	const int draw_w = ix1 - ix0;
 	const int draw_h = iy1 - iy0;
@@ -790,6 +865,13 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 	const uint8_t *planar = tr->planar_base + (size_t)slot * (size_t)tr->planar_slot_sz;
 	const uint8_t *maskbm = tr->mask_base + (size_t)slot * (size_t)tr->mask_slot_sz;
 
+	int scratch_w = 0;
+	int scratch_h = 0;
+	int planar_rowb = 0;
+	int mask_rowb = 0;
+	sprite_cache_layout_for_crop(
+	    (int)meta.crop_w, (int)meta.crop_h, &scratch_w, &scratch_h, &planar_rowb, &mask_rowb, nullptr, nullptr);
+
 	const BOOL use_merge = (trans != 0 || ghost_tab != nullptr) ? TRUE : FALSE;
 
 	if (!sprite_cache_do_blitter(use_merge ? TRUE : FALSE,
@@ -800,29 +882,31 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		    dst_x,
 		    dst_y,
 		    planar,
-		    tr->planar_bpl,
+		    planar_rowb,
 		    maskbm,
-		    tr->mask_bpl,
-		    tr->dim,
+		    mask_rowb,
+		    scratch_w,
+		    scratch_h,
 		    src_x,
 		    src_y,
 		    draw_w,
-		    draw_h))
+		    draw_h)) {
 		return 0;
+	}
 
 	return (long)((size_t)draw_w * (size_t)draw_h);
 }
 
 /*
  * Take one rectangle of chunky (8-bit indexed) pixels and try to show it on the ST low-res planar
- * framebuffer using the BFTP path: “find or build a small hardware-friendly scratch texture, then
+ * framebuffer using the BFTP path: “find or build a small hardware-friendly planar scratch, then
  * let the blitter copy it to the screen.” This function is the front door for that work for a
  * single rectangle (no tiling of oversized draws here).
  *
  * What it actually does:
  *   1) Look up by logical sprite identity (+ render variant tokens) across all tiers.
- *   2) On miss, decode once (optional lazy hook), scan minimal non-transparent crop, pick tier from
- *      cropped dimensions, fill slot from cropped source rectangle, and store crop insets in slot meta.
+ *   2) On miss, decode once (optional lazy hook), scan minimal non-transparent crop, pick smallest
+ *      tier pool whose per-slot planar+mask byte caps fit the crop's ST layout, fill slot, store meta.
  *   3) Blit only the intersection of current clip rectangle and cached crop rectangle.
  *
  * Return: blit_w*blit_h if the blitter path reports success, else 0 (skip, bad blit, etc.).
@@ -896,20 +980,29 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	void *lazy_decode_ctx)
 {
 	sprite_cache_maybe_init();
-	sprite_cache_dump_stats_and_reset_maybe();
 	if (!dst_root_fb || dst_row_bytes <= 0 || dst_width_pixels <= 0 || dst_height_pixels <= 0
-		|| blit_w <= 0 || blit_h <= 0 || src_stride <= 0 || !raster_base)
+		|| blit_w <= 0 || blit_h <= 0 || src_stride <= 0 || !raster_base) {
 		return 0;
-	if (full_w <= 0 || full_h <= 0 || full_w > src_stride)
+	}
+	if (full_w <= 0 || full_h <= 0 || full_w > src_stride) {
 		return 0;
-	if (raster_ox < 0 || raster_oy < 0)
+	}
+	if (raster_ox < 0 || raster_oy < 0) {
 		return 0;
-	if (raster_ox + blit_w > full_w || raster_oy + blit_h > full_h)
+	}
+	if (raster_ox + blit_w > full_w || raster_oy + blit_h > full_h) {
 		return 0;
-	if (!g_sprite_cache_slab)
+	}
+	if (!g_sprite_cache_slab) {
 		return 0;
-	if (src != raster_base + (size_t)raster_oy * (size_t)src_stride + (size_t)raster_ox)
-		return 0;
+	}
+	{
+		const uint8_t *const expect =
+		    raster_base + (size_t)raster_oy * (size_t)src_stride + (size_t)raster_ox;
+		if (src != expect) {
+			return 0;
+		}
+	}
 
 	SpriteCacheLazyGate gate_stack;
 	SpriteCacheLazyGate *gate_ptr = NULL;

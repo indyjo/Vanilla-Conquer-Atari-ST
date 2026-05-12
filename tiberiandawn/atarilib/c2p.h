@@ -22,9 +22,9 @@ enum {
 /* Select which palette-opt weight table drives 8-bit->4-bit mapping and rebuild dither tables. */
 void C2P_Select_WeightSet(int weight_set);
 int C2P_Get_WeightSet(void);
-/* Install caller-provided weights (256*16 bytes). Returns 1 on success, 0 on invalid input. */
+/* Register a custom 256×16 weight table: LUTs are rebuilt from it during this call only (buffer may be freed after return). */
 int C2P_Install_CustomWeights(const uint8_t *weights_256x16);
-/* Revert from custom weights back to the currently selected built-in set. */
+/* Rebuild LUTs from the built-in table for the current weight set (TEMPERAT / HTITLE). */
 void C2P_Clear_CustomWeights(void);
 
 /* Map 8-bit palette index to one ST 4-bit color using current dither tables (absolute pixel coords). */
@@ -35,6 +35,20 @@ extern uint8_t C2P_MapNearestLUT[256];
 static inline unsigned char C2P_Map8ToNearest4(unsigned char pal_idx)
 {
 	return C2P_MapNearestLUT[pal_idx];
+}
+/*
+ * True if active 256->16 weight row has exactly one non-zero entry; optionally returns that color.
+ * Bit 7 in C2P_PaletteIndexClean4LUT[] set => clean; low nibble is ST color (0x80 means clean @ 0).
+ */
+extern uint8_t C2P_PaletteIndexClean4LUT[256];
+static inline int C2P_Is_Palette_Index_Clean4(uint8_t pal_idx, uint8_t *out_color4)
+{
+	const uint8_t e = C2P_PaletteIndexClean4LUT[pal_idx];
+	if ((e & 0x80u) == 0)
+		return 0;
+	if (out_color4)
+		*out_color4 = e & 0x0Fu;
+	return 1;
 }
 
 /*

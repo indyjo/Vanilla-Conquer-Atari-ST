@@ -18,7 +18,13 @@ void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)());
 /* Current palette buffer - copy of current DAC register values */
 extern unsigned char CurrentPalette[768];
 
-#ifdef ATARI_ST
+/*
+ * STE hardware palette ($FF8240..): one-time snapshot of TOS pens before the game
+ * overwrites them with Set_Palette; restore at exit before/around returning the shifter to TOS.
+ */
+void Palette_ST_Capture_Hardware_State_Once(void);
+void Palette_ST_Restore_Hardware_State_And_Clear(void);
+
 /*
  * Fill a row-major 8bpp buffer with a 16×16 grid of palette indices 0..255
  * (8x8 px per cell, centered horizontally and vertically). Same layout as tests/st_suite/st_interactive.cpp.
@@ -40,7 +46,6 @@ void Palette_Debug_Draw_Index_Grid_To_Planar320(
 	unsigned char *planar_base,
 	int planar_row_bytes,
 	const unsigned char *rgb768_preview);
-#endif
 
 #ifdef __cplusplus
 }

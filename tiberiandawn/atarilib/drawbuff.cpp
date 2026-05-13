@@ -16,10 +16,9 @@
 #include <string.h>  // For memset
 #include <stdint.h>
 #include <stdio.h>
-
-#if defined(__MINT__)
 #include <mint/osbind.h>
-#endif
+
+#include "st_screen.h"
 
 /* Kept local to avoid including CONQUER.CPP private define. */
 static const int ST_SHAPE_TRANS_FLAG = 0x40;
@@ -63,37 +62,31 @@ enum { ST_HZ200_ADDR = 0x4BA };
 
 static inline unsigned long ST_Read_Hz200(void)
 {
-#if defined(ATARI_ST)
 	return *(volatile unsigned long *)ST_HZ200_ADDR;
-#else
-	return 0UL;
-#endif
 }
 
 static void ST_Tile_Cache_Debug_Toggle_Maybe(void)
 {
-#if defined(__MINT__)
-	BOOL down = IKBD_Key_Is_Down(VK_F10) ? TRUE : FALSE;
+	/* F10 alone: avoid clash with Ctrl+F10 (TOS console toggle in st_screen.cpp). */
+	int ctrl = IKBD_Key_Is_Down(VK_LCONTROL) || IKBD_Key_Is_Down(VK_RCONTROL);
+	BOOL down = (IKBD_Key_Is_Down(VK_F10) && !ctrl) ? TRUE : FALSE;
 	if (down && !g_tile_cache_debug_key_prev) {
 		g_tile_cache_debug_show = (g_tile_cache_debug_show == FALSE) ? TRUE : FALSE;
 		if (g_tile_cache_debug_show && g_tile_planar_cache_aligned) {
-			Setscreen(-1L, (long)g_tile_planar_cache_aligned, -1);
+			ST_Screen_Hardware_Set_Phys_Base(g_tile_planar_cache_aligned);
 			printf("TileCache debug view: ON (phys=tile atlas)\n");
 		} else if (VisiblePage.Get_Buffer()) {
-			Setscreen(-1L, (long)VisiblePage.Get_Buffer(), -1);
+			ST_Screen_Hardware_Set_Phys_Base(VisiblePage.Get_Buffer());
 		}
 	}
 	g_tile_cache_debug_key_prev = down;
-#endif
 }
 
 static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
 {
-#if defined(__MINT__)
 	long p = Mxalloc((long)bytes, MX_STRAM | MX_PRIVATE);
 	if (p > 0L)
 		return (uint8_t *)p;
-#endif
 	return NULL;
 }
 

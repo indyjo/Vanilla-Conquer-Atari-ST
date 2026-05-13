@@ -8,9 +8,7 @@
 
 #include <string.h>
 
-#ifdef ATARI_ST
 #include "c2p.h"
-#endif
 
 extern unsigned char *GamePalette;
 
@@ -100,8 +98,6 @@ extern "C" void Set_Palette(void *palette)
     Apply_Palette_State((unsigned char *)palette);
 }
 
-#ifdef ATARI_ST
-
 void Palette_Debug_Fill_Index_Grid_Chunky(
 	unsigned char *chunky,
 	int width_pixels,
@@ -180,8 +176,6 @@ void Palette_Debug_Draw_Index_Grid_To_Planar320(
 	Wait_Vert_Blank();
 }
 
-#endif /* ATARI_ST */
-
 void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)())
 {
     if (!palette1) return;
@@ -222,3 +216,33 @@ void Fade_Palette_To(void *palette1, unsigned int delay, void (*callback)())
         callback();
     }
 }
+
+enum { ST_HW_PALETTE_SNAPSHOT_COUNT = 16 };
+
+static unsigned short s_st_hw_palette_snapshot[ST_HW_PALETTE_SNAPSHOT_COUNT];
+static int s_st_hw_palette_snapshot_valid = 0;
+
+extern "C" void Palette_ST_Capture_Hardware_State_Once(void)
+{
+	if (s_st_hw_palette_snapshot_valid) {
+		return;
+	}
+	volatile unsigned short *const regs = ST_HW_PALETTE_REGS;
+	for (int i = 0; i < ST_HW_PALETTE_SNAPSHOT_COUNT; i++) {
+		s_st_hw_palette_snapshot[i] = regs[i];
+	}
+	s_st_hw_palette_snapshot_valid = 1;
+}
+
+extern "C" void Palette_ST_Restore_Hardware_State_And_Clear(void)
+{
+	if (!s_st_hw_palette_snapshot_valid) {
+		return;
+	}
+	volatile unsigned short *const regs = ST_HW_PALETTE_REGS;
+	for (int i = 0; i < ST_HW_PALETTE_SNAPSHOT_COUNT; i++) {
+		regs[i] = s_st_hw_palette_snapshot[i];
+	}
+	s_st_hw_palette_snapshot_valid = 0;
+}
+

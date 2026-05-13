@@ -72,6 +72,7 @@
 #include "atarilib/st_frame_meter.h"
 
 #ifdef ATARI_ST
+#include "atarilib/st_screen.h"
 #include "st_sprite_cache.h"
 #include <limits.h>
 #endif
@@ -1228,6 +1229,7 @@ void Call_Back(void)
     if (WWMouse) {
         WWMouse->Process_Mouse();
     }
+    ST_Debug_Screen_Service();
 #endif
 
     /*

@@ -43,15 +43,10 @@
 #include	<mint/osbind.h>  // For XBIOS functions: Getrez, Cursconf
 #include	<mint/ostruct.h> // CURS_HIDE, CURS_SHOW
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
-#include	"st_temperat_palette.h"
 #include	"gbuffer.h"  // GBC_ST_PLANAR_LORES, Uses_ST_LoRes_Planar_Layout
-#include	"misc.h"     // Wait_Vert_Blank
 #include	"ikbd.h"
-
-// Atari ST palette hardware register addresses
-// Palette registers are at $FF8240-$FF825E (16 registers, 16-bit each, 2 bytes apart)
-#define PALETTE_BASE_ADDR 0xFF8240
-#define PALETTE_REG_COUNT 16
+#include	"st_screen.h"
+#include	"palette.h"
 
 static BOOL Require_ST_Blitter(void)
 {
@@ -64,18 +59,6 @@ static BOOL Require_ST_Blitter(void)
 	return TRUE;
 }
 
-// Pointer to palette hardware registers (volatile because hardware can change them)
-static volatile unsigned short *PaletteRegs = (volatile unsigned short *)PALETTE_BASE_ADDR;
-
-// Global variable to store original palette for restoration
-// Atari ST palette is 16 words (16-bit each)
-static unsigned short SavedOriginalPalette[16];
-static bool OriginalPaletteSaved = false;
-
-// Global variable to store original resolution for restoration
-static int OriginalResolution = -1;
-static bool ResolutionChanged = false;
-
 // Local function declarations (not in headers)
 bool Read_Private_Config_Struct(char *profile, NewConfigType *config);
 void Delete_Swap_Files(void);
@@ -86,15 +69,6 @@ void Move_Point(short &x, short &y, register DirType dir, unsigned short distanc
 void Prog_End(const char *why, bool fatal);
 void Read_Setup_Options(RawFileClass *config_file);
 BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel);
-
-// Atari ST palette helper functions
-static void Save_Original_Palette(void);
-static void Restore_Original_Palette(void);
-static void Init_Temperat_HW_Palette(void);
-
-// Atari ST resolution helper functions
-static void Switch_To_LoRes(void);
-static void Restore_Original_Resolution(void);
 
 bool VideoBackBufferAllowed = true;
 bool SpawnedFromWChat = false;
@@ -126,7 +100,6 @@ int main(int argc, char *argv[])
 {
 	printf("C&C - Starting up.\n");
 
-#if defined(ATARI_ST)
 	{
 		char st_ram_boot_msg[192];
 		long const st_largest = Ram_Free(MEM_NORMAL);
@@ -139,7 +112,6 @@ int main(int argc, char *argv[])
 		printf("%s", st_ram_boot_msg);
 		fflush(stdout);
 	}
-#endif
 
 	/*
 	** Enable supervisor mode early for Atari ST
@@ -270,28 +242,37 @@ int main(int argc, char *argv[])
 
 			/*
 			** Initialize video buffers
-			** ST LoRes: recycle TOS logical screen for VisiblePage and allocate one extra
-			** 32KiB aligned planar page for HiddenPage (320x200 only).
+			** ST LoRes: allocate separate visible + hidden planar pages (320x200 only).
 			** Other resolutions keep linear 8bpp + per-frame C2P fallback.
 			*/
 			if (ScreenWidth == 320 && ScreenHeight == 200) {
 				/*
-				 * ST shifter uses a 256-byte-aligned video base (low 8 bits ignored). We reuse
-				 * current TOS screen as visible and allocate one aligned hidden page for drawing.
+				 * ST shifter uses 256-byte-aligned video base. Allocate separate visible + hidden
+				 * planar pages in ST-RAM. TOS keeps Logbase/Physbase on its original screen for
+				 * console output; the game points the shifter at its buffer via $FF8201/$FF8203/
+				 * $FF820D and $FF8260 (st_screen.cpp), not Setscreen, so TOS keeps rendering glyphs
+				 * into the shell buffer.
 				 */
-				static unsigned char *st_plane_alloc = NULL;
+				static unsigned char *st_visible_alloc = NULL;
+				static unsigned char *st_hidden_alloc = NULL;
+				static unsigned char *st_visible_plane = NULL;
 				static unsigned char *st_hidden_plane = NULL;
-				if (!st_plane_alloc) {
-					st_plane_alloc = new unsigned char[32768 + 256];
-					uintptr_t raw = (uintptr_t)st_plane_alloc;
-					st_hidden_plane = (unsigned char *)((raw + 255u) & ~(uintptr_t)255u);
+				if (!st_visible_alloc) {
+					st_visible_alloc = new unsigned char[32768 + 256];
+					uintptr_t raw_v = (uintptr_t)st_visible_alloc;
+					st_visible_plane = (unsigned char *)((raw_v + 255u) & ~(uintptr_t)255u);
 				}
-				unsigned char *tos_visible = (unsigned char *)Logbase();
-				VisiblePage.Init(320, 200, tos_visible, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+				if (!st_hidden_alloc) {
+					st_hidden_alloc = new unsigned char[32768 + 256];
+					uintptr_t raw_h = (uintptr_t)st_hidden_alloc;
+					st_hidden_plane = (unsigned char *)((raw_h + 255u) & ~(uintptr_t)255u);
+				}
+				VisiblePage.Init(320, 200, st_visible_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
 				HiddenPage.Init(320, 200, st_hidden_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
 				VisiblePage.Clear(0);
 				HiddenPage.Clear(0);
-				Setscreen((long)VisiblePage.Get_Buffer(), (long)VisiblePage.Get_Buffer(), -1);
+				ST_Screen_Register_Game_Visible(VisiblePage.Get_Buffer(), 320, 200);
+				ST_Screen_Apply_Game_Video_Hardware();
 			} else {
 				VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
 				HiddenPage.Init (ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
@@ -445,11 +426,8 @@ void Prog_End(const char *why, bool fatal)
 		WWMouse = NULL;
 	}
 
-	// Restore original palette before cleanup
-	Restore_Original_Palette();
-	
-	// Restore original resolution before cleanup
-	Restore_Original_Resolution();
+	Palette_ST_Restore_Hardware_State_And_Clear();
+	ST_Screen_Shutdown_Restore_Tos();
 
 	Cursconf(CURS_SHOW, 0);
 
@@ -587,147 +565,6 @@ void Read_Setup_Options( RawFileClass *config_file )
 }
 
 /***********************************************************************************************
- * Save_Original_Palette -- Save the current palette for later restoration                     *
- *                                                                                             *
- * Reads directly from hardware palette registers at $FF8240-$FF825E                          *
- *=============================================================================================*/
-static void Save_Original_Palette(void)
-{
-	if (!OriginalPaletteSaved) {
-		// Read directly from hardware palette registers
-		for (int i = 0; i < PALETTE_REG_COUNT; i++) {
-			SavedOriginalPalette[i] = PaletteRegs[i];
-		}
-		OriginalPaletteSaved = true;
-	}
-}
-
-/***********************************************************************************************
- * Restore_Original_Palette -- Restore the original palette                                   *
- *                                                                                             *
- * Writes directly to hardware palette registers at $FF8240-$FF825E                           *
- *=============================================================================================*/
-static void Restore_Original_Palette(void)
-{
-	if (OriginalPaletteSaved) {
-		// Write directly to hardware palette registers
-		for (int i = 0; i < PALETTE_REG_COUNT; i++) {
-			PaletteRegs[i] = SavedOriginalPalette[i];
-		}
-		OriginalPaletteSaved = false;
-	}
-}
-
-/***********************************************************************************************
- * Init_Temperat_HW_Palette -- Load first 16 colors of TEMPERAT.PAL into ST hardware palette *
- *                                                                                             *
- * C&C .PAL uses 6-bit RGB (0-63) per channel; STE registers use the same packing as the       *
- * previous greyscale init (nibble split per gun, then R in bits 11-8, G in 7-4, B in 3-0).   *
- *=============================================================================================*/
-static void Init_Temperat_HW_Palette(void)
-{
-	St_HW_Palette_Write_Temperat_First16(PaletteRegs);
-	
-	// Draw an 8-pixel high bar containing all 16 colors in the vertical middle of the screen
-	// The bar fills the screen horizontally
-	unsigned char *screen = (unsigned char *)Physbase();
-	if (screen) {
-		// LoRes mode: 320x200, 16 colors (4 bitplanes)
-		// Memory layout: word-interleaved bitplanes
-		// For each group of 16 pixels: 4 words (one per bitplane), each word is 2 bytes
-		// So 16 pixels = 8 bytes (4 words × 2 bytes)
-		// Each scan line: 320 pixels / 16 = 20 groups × 8 bytes = 160 bytes per line
-		const int screen_width = 320;
-		const int screen_height = 200;
-		const int bytes_per_line = 160;  // 20 groups × 8 bytes per group
-		const int pixels_per_group = 16;  // 16 pixels per group
-		const int bytes_per_group = 8;   // 4 words × 2 bytes per word
-		const int bar_height = 8;
-		const int bar_y = (screen_height - bar_height) / 2;  // Vertical middle
-		const int pixels_per_color = screen_width / PALETTE_REG_COUNT;  // 20 pixels per color
-		
-		// Draw the bar: 8 lines high, each color taking pixels_per_color pixels horizontally
-		for (int y = 0; y < bar_height; y++) {
-			int line_y = bar_y + y;
-			unsigned char *line_base = screen + (line_y * bytes_per_line);
-			
-			for (int color = 0; color < PALETTE_REG_COUNT; color++) {
-				// Each color occupies pixels_per_color pixels
-				for (int px = 0; px < pixels_per_color; px++) {
-					int x = color * pixels_per_color + px;
-					int group_index = x / pixels_per_group;  // Which group of 16 pixels (0-19)
-					int bit_in_group = x % pixels_per_group;  // Which bit within the group (0-15)
-					int bit_in_word = 15 - bit_in_group;  // Bit position in word (MSB = leftmost pixel)
-					
-					// Calculate base address for this group
-					unsigned char *group_base = line_base + (group_index * bytes_per_group);
-					
-					// Each bitplane is a word (2 bytes) at offset: plane * 2
-					unsigned short *bp0_word = (unsigned short *)(group_base + 0 * 2);  // Bitplane 0 (LSB)
-					unsigned short *bp1_word = (unsigned short *)(group_base + 1 * 2);  // Bitplane 1
-					unsigned short *bp2_word = (unsigned short *)(group_base + 2 * 2);  // Bitplane 2
-					unsigned short *bp3_word = (unsigned short *)(group_base + 3 * 2);  // Bitplane 3 (MSB)
-					
-					// Set the bit in each bitplane based on the color value
-					unsigned short bit_mask = 1 << bit_in_word;
-					if (color & 0x01) *bp0_word |= bit_mask; else *bp0_word &= ~bit_mask;  // Bitplane 0
-					if (color & 0x02) *bp1_word |= bit_mask; else *bp1_word &= ~bit_mask;  // Bitplane 1
-					if (color & 0x04) *bp2_word |= bit_mask; else *bp2_word &= ~bit_mask;  // Bitplane 2
-					if (color & 0x08) *bp3_word |= bit_mask; else *bp3_word &= ~bit_mask;  // Bitplane 3
-				}
-			}
-		}
-	}
-}
-
-/***********************************************************************************************
- * Switch_To_LoRes -- Switch to low resolution mode if possible                              *
- *                                                                                             *
- * Attempts to switch to LoRes (320x200) mode. Saves original resolution for restoration.    *
- *=============================================================================================*/
-static void Switch_To_LoRes(void)
-{
-	// Get current resolution
-	int current_rez = Getrez();
-	
-	// Save original resolution if not already saved
-	if (OriginalResolution == -1) {
-		OriginalResolution = current_rez;
-	}
-	
-	// If already in LoRes, nothing to do
-	if (current_rez == 0) {
-		return;
-	}
-	
-	// Try to switch to LoRes (resolution 0)
-	// Setscreen parameters: lscrn=-1 (keep current logical), pscrn=-1 (keep current physical), rez=0 (LoRes)
-	Setscreen(-1L, -1L, 0);
-	
-	// Verify the switch was successful
-	int new_rez = Getrez();
-	if (new_rez == 0) {
-		ResolutionChanged = true;
-		printf("C&C - Switched to LoRes mode (320x200).\n");
-	} else {
-		printf("C&C - Warning: Could not switch to LoRes mode. Current mode: %d\n", new_rez);
-	}
-}
-
-/***********************************************************************************************
- * Restore_Original_Resolution -- Restore the original screen resolution                      *
- *=============================================================================================*/
-static void Restore_Original_Resolution(void)
-{
-	if (ResolutionChanged && OriginalResolution != -1) {
-		// Restore original resolution
-		Setscreen(-1L, -1L, OriginalResolution);
-		ResolutionChanged = false;
-		printf("C&C - Restored original resolution mode: %d\n", OriginalResolution);
-	}
-}
-
-/***********************************************************************************************
  * Set_Video_Mode -- Sets the video mode for Atari ST                                          *
  *                                                                                             *
  * INPUT:   hwnd            -- Window handle (unused on Atari ST)                             *
@@ -744,28 +581,16 @@ static void Restore_Original_Resolution(void)
  *=============================================================================================*/
 BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel)
 {
-	(void)hwnd; (void)w; (void)h; (void)bits_per_pixel;
-	
-	// Try to switch to LoRes mode if not already in it
-	Switch_To_LoRes();
-	
-	// Check that we're in Lorez (low resolution) mode
-	int rez = Getrez();
-	if (rez != 0) {
-		printf("C&C - Error: Not in Lorez (low resolution) mode. Current mode: %d\n", rez);
-		printf("C&C - Please switch to low resolution (320x200) mode.\n");
+	(void)hwnd;
+	(void)w;
+	(void)h;
+	(void)bits_per_pixel;
+
+	ST_Screen_Capture_Tos_Video_State();
+	if (!ST_Screen_Enter_LoRes_Game_Video()) {
 		return FALSE;
 	}
-	
-	// Save original palette before we modify it
-	Save_Original_Palette();
-	
-	/* First 16 entries of temperate theater palette -> ST hardware (replaces grey ramp). */
-	Init_Temperat_HW_Palette();
-
-	/* Hide GEM/VDI hardware mouse; game uses WWMouseClass software cursor on SeenBuff. */
-	Cursconf(CURS_HIDE, 0);
-	
+	Palette_ST_Capture_Hardware_State_Once();
 	return TRUE;
 }
 

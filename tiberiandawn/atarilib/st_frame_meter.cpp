@@ -4,7 +4,7 @@
 #include "function.h"
 #include "ATARILIB/st_frame_meter.h"
 
-#if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
+#ifdef ST_FRAME_BAR_PROFILE
 
 #include "gbuffer.h"
 #include "wwstd.h"
@@ -338,4 +338,4 @@ void StFrameMeter_Draw(GraphicViewPortClass *page, int width_factor)
 	}
 }
 
-#endif /* ATARI_ST && ST_FRAME_BAR_PROFILE */
+#endif /* ST_FRAME_BAR_PROFILE */

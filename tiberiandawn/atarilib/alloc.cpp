@@ -8,10 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(ATARI_ST)
 #include <mint/osbind.h>
 #include <mint/ostruct.h>
-#endif
 
 /*=========================================================================*/
 /* Mem_Copy -- Copies memory from source to destination                   */
@@ -122,16 +120,12 @@ void *Resize_Alloc(void const *original_ptr, unsigned long new_size_in_bytes)
 long Ram_Free(MemoryFlagType flag)
 {
 	(void)flag;
-#if defined(ATARI_ST)
 	/*
-	 * MiNT: size argument -1 returns the largest free block for this RAM type.
+	 * MiNT C library: size argument -1 returns the largest free block for this RAM type.
 	 * Game allocations expect ST-RAM (chip/blitter-visible); TT-RAM is separate.
 	 */
 	long const n = Mxalloc(-1L, MX_STRAM | MX_PRIVATE);
 	return (n > 0L) ? n : 0L;
-#else
-	return 16 * 1024 * 1024;
-#endif
 }
 
 /*=========================================================================*/
@@ -150,9 +144,8 @@ long Heap_Size(MemoryFlagType flag)
 long Total_Ram_Free(MemoryFlagType flag)
 {
 	(void)flag;
-#if defined(ATARI_ST)
 	/*
-	 * No single MiNT call sums all fragments; report largest ST block plus largest TT block
+	 * No single Mxalloc call sums all fragments; report largest ST block plus largest TT block
 	 * (two pools — not one contiguous region).
 	 */
 	long st = Mxalloc(-1L, MX_STRAM | MX_PRIVATE);
@@ -162,8 +155,5 @@ long Total_Ram_Free(MemoryFlagType flag)
 	if (tt < 0L)
 		tt = 0L;
 	return st + tt;
-#else
-	return 16 * 1024 * 1024;
-#endif
 }
 

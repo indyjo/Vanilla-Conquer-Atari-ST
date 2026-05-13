@@ -1,5 +1,5 @@
 /*
- * ST frame profiler: ATARI_ST + ST_FRAME_BAR_PROFILE only.
+ * ST frame profiler: enabled when ST_FRAME_BAR_PROFILE is defined.
  * Timings in _hz200 ticks (200 Hz, longword at OS address 0x4BA).
  */
 #ifndef ST_FRAME_METER_H
@@ -7,7 +7,7 @@
 
 class GraphicViewPortClass;
 
-#if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
+#ifdef ST_FRAME_BAR_PROFILE
 
 void StFrameMeter_FrameBegin(void);
 void StFrameMeter_FrameEnd(void);
@@ -91,6 +91,6 @@ static inline void StFrameMeter_Draw(GraphicViewPortClass *, int)
 {
 }
 
-#endif /* ATARI_ST && ST_FRAME_BAR_PROFILE */
+#endif /* ST_FRAME_BAR_PROFILE */
 
 #endif /* ST_FRAME_METER_H */

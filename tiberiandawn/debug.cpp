@@ -123,7 +123,9 @@ void Debug_Key(unsigned input)
             Keyboard->Clear();
             while (!Keyboard->Check()) {
                 Self_Regulate();
+#ifndef ATARI_ST
                 Sound_Callback();
+#endif
             }
             Keyboard->Clear();
             break;

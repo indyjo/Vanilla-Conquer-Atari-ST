@@ -94,6 +94,11 @@ PROFILE_FRAME_BAR ?= 1
 ifeq ($(PROFILE_FRAME_BAR),1)
 DEFINES += ST_FRAME_BAR_PROFILE
 endif
+# PROFILE_BORDER: audio subsystem pen-0 border timing (ST_BORDER_PROFILE; not the frame bar)
+PROFILE_BORDER ?= 1
+ifeq ($(PROFILE_BORDER),1)
+DEFINES += ST_BORDER_PROFILE
+endif
 else
 DEFINES += WIN32 _WINDOWS _USRDLL TIBERIANDAWN_EXPORTS
 endif
@@ -142,10 +147,18 @@ LIBS = $(PLATFORM_LIBS)
 else
 # Release configuration
 DEFINES += NDEBUG
-CXXFLAGS = $(CXXFLAGS_COMMON) -O2 -DNDEBUG
-# Note: -ffunction-sections and -fdata-sections may not be supported for m68k
-# CXXFLAGS += -ffunction-sections -fdata-sections
+# e.g. make CXX_OPT_REL=-O3 CONFIG=release ...
+CXX_OPT_REL ?= -O2
+CXXFLAGS = $(CXXFLAGS_COMMON) $(CXX_OPT_REL) -DNDEBUG
 LDFLAGS = -s
+# Optional: keep debug info and do not strip (nm / addr2line / gdb on host tooling).
+# Frame-bar profiler: PROFILE_FRAME_BAR defaults to 1 for ATARILIB (-DST_FRAME_BAR_PROFILE).
+#   make USE_ATARILIB=1 CONFIG=release WITH_SYMBOLS=1 PROFILE_FRAME_BAR=1 OUTDIR=...
+# (Pass PROFILE_FRAME_BAR=1 if your environment exported PROFILE_FRAME_BAR=0.)
+ifeq ($(WITH_SYMBOLS),1)
+CXXFLAGS += -g
+override LDFLAGS :=
+endif
 # Note: --gc-sections may not be supported for m68k
 # LDFLAGS += -Wl,--gc-sections -Wl,--strip-all
 LIBS = $(PLATFORM_LIBS)
@@ -247,7 +260,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_screen.cpp,) \
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_screen.cpp,) \
 	$(PLATFORM_LIB)/_diptabl.cpp
 
 # Assembly sources (platform-specific)
@@ -512,8 +525,11 @@ endif
 	@echo ""
 	@echo "Configuration Variables:"
 	@echo "  CONFIG=Debug   - Build debug version (default: Release)"
-	@echo "  CONFIG=Release - Build release version"
+	@echo "  CONFIG=Release - Build release version (CXX_OPT_REL default -O2; pass CXX_OPT_REL=-O3)"
 	@echo "  PROFILE_FRAME_BAR=0 - Atari-only: disable Hz200 profiler (default: 1, -DST_FRAME_BAR_PROFILE)"
+	@echo "  PROFILE_BORDER=0    - Atari-only: disable audio pen-0 border timing (default: 1)"
+	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); pair with PROFILE_FRAME_BAR=1 for Hz200 bars"
+	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O2)"
 	@echo "  PLATFORM=Win32 - Target platform (default: Win32)"
 	@echo "  CROSS_PREFIX   - Cross-compiler path (default: \$$HOME/opt/cross-mint/bin)"
 	@echo "  USE_ATARILIB   - Force use of ATARILIB (default: auto-detect)"
@@ -531,7 +547,9 @@ endif
 	@echo "  make cleanall            - Clean everything"
 ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  make st-tests            - Build tstcnc(.d).tos (ST on-machine suite)"
+	@echo "  make USE_ATARILIB=1 CONFIG=release CXX_OPT_REL=-O3 WITH_SYMBOLS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/ -j4"
 	@echo "  make PROFILE_FRAME_BAR=0 - Atari build without tab-strip profiler (on by default)"
+	@echo "  make PROFILE_BORDER=0    - Audio VBL/IMA decode border timing (on by default)"
 endif
 	@echo ""
 	@echo "Cross-Compiler:"
@@ -572,7 +590,7 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTD
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \
 	$(INTDIR)/CDFILE.o $(INTDIR)/misc.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
-	$(INTDIR)/keyboard.o $(INTDIR)/ikbd.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/wsa_atari_weights.o $(INTDIR)/audio_ste.o $(INTDIR)/ws_adpcm_68k.o \
+	$(INTDIR)/keyboard.o $(INTDIR)/ikbd.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/wsa_atari_weights.o $(INTDIR)/audio_ste.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
 	$(INTDIR)/st_load_uncompress.o
 
 st-tests: $(ST_TEST_EXE)

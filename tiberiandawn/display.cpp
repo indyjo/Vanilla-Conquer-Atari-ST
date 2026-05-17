@@ -237,7 +237,7 @@ namespace {
 			return false;
 		}
 
-		long const cache = Mxalloc((long)ST_SHADOW_CACHE_BYTES, MX_STRAM | MX_PRIVATE);
+		long const cache = Mxalloc((long)ST_SHADOW_CACHE_BYTES, MX_STRAM);
 		if (cache <= 0L) {
 			sprintf(STShadowPlanarCacheError,
 				"Failed to build ST shadow mask cache: Mxalloc(%u) returned %ld",

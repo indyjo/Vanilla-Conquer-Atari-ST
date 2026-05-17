@@ -139,7 +139,7 @@ static void* ste_stram_alloc(unsigned long nbytes)
 	if (nbytes == 0UL) {
 		return 0;
 	}
-	long const a = Mxalloc((long)nbytes, MX_STRAM | MX_PRIVATE);
+	long const a = Mxalloc((long)nbytes, MX_STRAM);
 	return a > 0L ? (void*)a : (void*)0;
 }
 

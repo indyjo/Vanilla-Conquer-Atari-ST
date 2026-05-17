@@ -84,7 +84,7 @@ static void ST_Tile_Cache_Debug_Toggle_Maybe(void)
 
 static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
 {
-	long p = Mxalloc((long)bytes, MX_STRAM | MX_PRIVATE);
+	long p = Mxalloc((long)bytes, MX_STRAM);
 	if (p > 0L)
 		return (uint8_t *)p;
 	return NULL;

@@ -124,7 +124,7 @@ long Ram_Free(MemoryFlagType flag)
 	 * MiNT C library: size argument -1 returns the largest free block for this RAM type.
 	 * Game allocations expect ST-RAM (chip/blitter-visible); TT-RAM is separate.
 	 */
-	long const n = Mxalloc(-1L, MX_STRAM | MX_PRIVATE);
+	long const n = Mxalloc(-1L, MX_STRAM);
 	return (n > 0L) ? n : 0L;
 }
 
@@ -148,8 +148,8 @@ long Total_Ram_Free(MemoryFlagType flag)
 	 * No single Mxalloc call sums all fragments; report largest ST block plus largest TT block
 	 * (two pools — not one contiguous region).
 	 */
-	long st = Mxalloc(-1L, MX_STRAM | MX_PRIVATE);
-	long tt = Mxalloc(-1L, MX_TTRAM | MX_PRIVATE);
+	long st = Mxalloc(-1L, MX_STRAM);
+	long tt = Mxalloc(-1L, MX_TTRAM);
 	if (st < 0L)
 		st = 0L;
 	if (tt < 0L)

@@ -51,11 +51,13 @@ static inline int C2P_Is_Palette_Index_Clean4(uint8_t pal_idx, uint8_t *out_colo
 	return 1;
 }
 
+#define C2P_ST_SCREEN_HEIGHT 200
+
 /*
  * Convert 8-bit chunky rows to ST 320×200 interleaved planar (e.g. Physbase).
  * Uses the STDOOM atari_c2p lorez inner loop (movem + fragment LUT + movep) on m68k.
- * Renders scanlines y = start_line_y, start_line_y + line_y_step, ... while y < 200.
- * Full frame: start_line_y = 0, line_y_step = 1.
+ * Renders scanlines y = start_line_y, start_line_y + line_y_step, ... while y < end_line_y.
+ * Full frame: start_line_y = 0, end_line_y = C2P_ST_SCREEN_HEIGHT, line_y_step = 1.
  * Interlaced fields (half the lines per call): line_y_step = 2 with start_line_y 0 or 1 on
  * alternating calls (even / odd raster lines).
  */
@@ -64,6 +66,7 @@ void C2P_Render_Logical_To_ST_Screen(
 	int logical_stride,
 	uint8_t *st_screen,
 	int start_line_y,
+	int end_line_y,
 	int line_y_step);
 
 /*

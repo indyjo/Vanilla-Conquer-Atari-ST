@@ -60,6 +60,7 @@ void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned ch
 				lin_stride,
 				(uint8_t *)dst_gb->Get_Buffer(),
 				0,
+				C2P_ST_SCREEN_HEIGHT,
 				1);
 			title_drawn = true;
 		}

@@ -16,8 +16,9 @@
  * read the DMA frame counter ($FF8909/B/D), then cyclically decode/mix into the ring from
  * `g_ring_write_pos` up to the current DMA read offset. Pull counts are always even. VBL does not
  * call malloc/free/delete; DMA-off teardown is deferred via `g_pending_voice_shutdown`.
- * `Sound_Callback` forwards to the same core (e.g. host tests); **ATARI_ST** game code omits
- * polling (`THEME.CPP`, `DEBUG.CPP`) so servicing is VBL-only. The VBL hook never raises IPL
+ * `Sound_Callback` polls the same core on the main thread (legacy / Win32); **ATARI_ST** game
+ * code omits that polling (`THEME.CPP`) so servicing is VBL-only. ST tests wait on VBL and call
+ * `Sound_Maintenance` for deferred teardown. The VBL hook never raises IPL
  * (MFP/IKBD at level 6 must stay serviceable during IMA decode). `Play_Sample` uses brief IPL-5
  * sections only on the main thread (blocks VBL at 4, not IKBD).
  *
@@ -593,9 +594,14 @@ extern "C" void ste_audio_vbl_proc(void)
 	BORDER_RESTORE();
 }
 
-void Sound_Callback(void)
+void Sound_Maintenance(void)
 {
 	ste_process_pending_voice_shutdown();
+}
+
+void Sound_Callback(void)
+{
+	Sound_Maintenance();
 	ste_audio_service_core();
 }
 

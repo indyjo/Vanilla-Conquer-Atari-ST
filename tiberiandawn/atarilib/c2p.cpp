@@ -430,6 +430,7 @@ extern "C" void C2P_Render_Logical_To_ST_Screen(
 	int logical_stride,
 	uint8_t *st_screen,
 	int start_line_y,
+	int end_line_y,
 	int line_y_step)
 {
 	if (!logical || !st_screen || logical_stride <= 0)
@@ -440,13 +441,17 @@ extern "C" void C2P_Render_Logical_To_ST_Screen(
 	ST_FRAME_BAR_C2P_BEGIN();
 	/* LoRes mode */
 	const int screen_width = 320;
-	const int screen_height = 200;
+	const int screen_height = C2P_ST_SCREEN_HEIGHT;
 	const int bytes_per_line = 160; /* 20 groups * 8 bytes */
 
 	if (start_line_y < 0 || start_line_y >= screen_height)
 		return;
+	if (end_line_y > screen_height)
+		end_line_y = screen_height;
+	if (end_line_y <= start_line_y)
+		return;
 
-	for (int y = start_line_y; y < screen_height; y += line_y_step) {
+	for (int y = start_line_y; y < end_line_y; y += line_y_step) {
 		const uint8_t *src = logical + (size_t)y * (size_t)logical_stride;
 		uint8_t *dst_line = st_screen + y * bytes_per_line;
 

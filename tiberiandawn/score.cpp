@@ -761,6 +761,7 @@ void ScoreClass::Presentation(void)
 			SysMemPage.Get_Width(),
 			(uint8_t *)SeenBuff.Get_Graphic_Buffer()->Get_Buffer(),
 			frame & 1,
+			C2P_ST_SCREEN_HEIGHT,
 			2);
 #else
 		Call_Back_Delay(2);

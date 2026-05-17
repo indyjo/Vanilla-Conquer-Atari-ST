@@ -1,6 +1,7 @@
 /*
- * Automated: load a real .AUD from game MIX archives, decode/play via audio_ste Play_Sample,
- * drive completion with Sound_Callback (same path as in-game SFX).
+ * Automated: load a real .AUD from game MIX archives, decode/play via audio_ste Play_Sample.
+ * Servicing matches in-game ATARI_ST: VBL hook installed by Audio_Init; wait on Wait_Vert_Blank
+ * and Sound_Maintenance (deferred teardown only, no main-thread ring refill).
  *
  * Key-click muting uses TOS conterm ($484) bit 0; st_tests_main runs submenu / bundle
  * under Super(0L) before calling push/pop (MiNT user-mode access to $484 bus-errors).
@@ -10,6 +11,7 @@
 
 #include "function.h"
 #include "audio.h"
+#include "misc.h"
 #include "st_mix_minimal.h"
 
 #include <stdio.h>
@@ -18,6 +20,7 @@
 typedef struct {
 	char const *mix;
 	char const *aud;
+	int volume; /* <0 = 0xFF; else Play_Sample volume (Choose_Side static = 64) */
 } StAudioAssetTry;
 
 enum {
@@ -27,13 +30,15 @@ enum {
 };
 
 static StAudioAssetTry const k_audio_tries[] = {
-	{ "SCOUNDS.MIX", "CLOCK1.AUD" },
-	{ "SCOUNDS.MIX", "BEEPY6.AUD" },
-	{ "SCOUNDS.MIX", "TEXT2.AUD" },
-	{ "SOUNDS.MIX", "CLOCK1.AUD" },
-	{ "SOUNDS.MIX", "BEEPY6.AUD" },
-	{ "SOUNDS.MIX", "TEXT2.AUD" },
-	{ "SCORES.MIX", "IND2.AUD" },
+	{ "SCOUNDS.MIX", "CLOCK1.AUD", -1 },
+	{ "SCOUNDS.MIX", "BEEPY6.AUD", -1 },
+	{ "SCOUNDS.MIX", "TEXT2.AUD", -1 },
+	{ "SOUNDS.MIX", "CLOCK1.AUD", -1 },
+	{ "SOUNDS.MIX", "BEEPY6.AUD", -1 },
+	{ "SOUNDS.MIX", "TEXT2.AUD", -1 },
+	{ "SCORES.MIX", "IND2.AUD", -1 },
+	{ "TRANSIT.MIX", "STRUGGLE.AUD", 64 }, /* Choose_Side intro static hiss */
+	{ "TRANSIT.MIX", "WIN1.AUD", -1 },     /* THEME_WIN1 / Great Shot! */
 };
 
 int st_asset_audio_try_count(void)
@@ -85,15 +90,19 @@ static BOOL st_audio_init_game_rate(void)
 	return Audio_Init(NULL, 8, FALSE, 11025 * 2, 0);
 }
 
-static void st_audio_spin_until_done_or_timeout(void const* sample, int max_iterations)
+/* Wall-clock cap for long score tracks (WIN1, etc.); ~15 min at 50 Hz VBL. */
+enum { ST_AUDIO_MAX_VBL_WAIT = 45000 };
+
+static void st_audio_wait_vbl_until_done(void const* sample)
 {
-	for (int i = 0; i < max_iterations && Is_Sample_Playing(sample); i++) {
-		Sound_Callback();
+	for (int i = 0; i < ST_AUDIO_MAX_VBL_WAIT && Is_Sample_Playing(sample); i++) {
+		Wait_Vert_Blank();
+		Sound_Maintenance();
 	}
 }
 
 /* Returns ST_AUDIO_RESULT_*; always frees raw. */
-static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char const *hit_aud)
+static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char const *hit_aud, int volume)
 {
 	if (!st_audio_init_game_rate()) {
 		printf("SKIP audio (no STE DMA / Audio_Init)\n");
@@ -101,14 +110,15 @@ static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char co
 		return ST_AUDIO_RESULT_SKIP;
 	}
 
-	if (Play_Sample(raw, 255, 0xFF, 0) < 0) {
+	int const play_vol = (volume < 0) ? 0xFF : volume;
+	if (Play_Sample(raw, 255, play_vol, 0) < 0) {
 		printf("FAIL audio Play_Sample %s:%s\n", hit_mix, hit_aud);
 		Sound_End();
 		free(raw);
 		return ST_AUDIO_RESULT_FAIL;
 	}
 
-	st_audio_spin_until_done_or_timeout(raw, 20000000);
+	st_audio_wait_vbl_until_done(raw);
 	if (Is_Sample_Playing(raw)) {
 		printf("FAIL audio playback timeout %s:%s\n", hit_mix, hit_aud);
 		Stop_Sample_Playing(raw);
@@ -147,7 +157,8 @@ int st_run_asset_audio_try_index(int idx)
 		return ST_AUDIO_RESULT_SKIP;
 	}
 
-	return st_audio_play_loaded(raw, k_audio_tries[idx].mix, k_audio_tries[idx].aud);
+	return st_audio_play_loaded(raw, k_audio_tries[idx].mix, k_audio_tries[idx].aud,
+			k_audio_tries[idx].volume);
 }
 
 int st_run_asset_audio_autotest(void)
@@ -159,12 +170,14 @@ int st_run_asset_audio_autotest(void)
 	size_t raw_len = 0;
 	char const *hit_mix = NULL;
 	char const *hit_aud = NULL;
+	int hit_volume = -1;
 
 	for (size_t ti = 0; ti < sizeof(k_audio_tries) / sizeof(k_audio_tries[0]); ti++) {
 		int const mx = st_mix_extract_file(k_audio_tries[ti].mix, k_audio_tries[ti].aud, &raw, &raw_len);
 		if (mx == 0 && raw && raw_len >= 12u) {
 			hit_mix = k_audio_tries[ti].mix;
 			hit_aud = k_audio_tries[ti].aud;
+			hit_volume = k_audio_tries[ti].volume;
 			break;
 		}
 		if (raw) {
@@ -179,5 +192,5 @@ int st_run_asset_audio_autotest(void)
 		return ST_AUDIO_RESULT_SKIP;
 	}
 
-	return st_audio_play_loaded(raw, hit_mix, hit_aud);
+	return st_audio_play_loaded(raw, hit_mix, hit_aud, hit_volume);
 }

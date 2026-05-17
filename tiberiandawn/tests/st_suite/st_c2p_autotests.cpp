@@ -54,7 +54,7 @@ int st_run_c2p_autotests(void)
 			chunky[y * 320 + x] = (unsigned char)((x + y * 3) & 255);
 	}
 
-	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar, 0, 1);
+	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar, 0, C2P_ST_SCREEN_HEIGHT, 1);
 
 	/* Corners should not collapse to identical nibbles for this pattern */
 	unsigned char c00 = ST_Planar_GetPixel(planar, 160, 320, 200, 0, 0);

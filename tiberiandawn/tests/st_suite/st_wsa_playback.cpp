@@ -256,7 +256,7 @@ extern "C" int st_run_interactive_wsa_playback(void)
 	 * active palette for this WSA path.
 	 */
 	st_draw_palette_grid_16x16(logical);
-	C2P_Render_Logical_To_ST_Screen(logical, 320, tos_screen, 0, 1);
+	C2P_Render_Logical_To_ST_Screen(logical, 320, tos_screen, 0, C2P_ST_SCREEN_HEIGHT, 1);
 	st_wait_vblanks(20);
 	memset(logical, 0, 320 * 200);
 
@@ -283,7 +283,7 @@ extern "C" int st_run_interactive_wsa_playback(void)
 				int nz = st_count_nonzero(logical, 320 * 200);
 				printf("WSA: ERROR frame %d ok=%d nonzero=%d\n", f, okf, nz);
 			}
-			C2P_Render_Logical_To_ST_Screen(logical, 320, tos_screen, 0, 1);
+			C2P_Render_Logical_To_ST_Screen(logical, 320, tos_screen, 0, C2P_ST_SCREEN_HEIGHT, 1);
 			st_wait_vblanks(4);
 		}
 	}

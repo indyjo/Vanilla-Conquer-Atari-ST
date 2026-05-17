@@ -851,7 +851,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 		return 1;
 	}
 	St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
-	C2P_Render_Logical_To_ST_Screen(chunky, ST_SCR_W, planar, 0, 1);
+	C2P_Render_Logical_To_ST_Screen(chunky, ST_SCR_W, planar, 0, C2P_ST_SCREEN_HEIGHT, 1);
 	Setscreen((long)planar, (long)planar, -1L);
 	Vsync();
 	Vsync();
@@ -869,7 +869,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 		int page_count = (tc + frames_per_page - 1) / frames_per_page;
 		st_fill_checkerboard_4x4(chunky, ST_SCR_W, ST_SCR_H, ST_SCR_W);
 		st_blit_frame_page_on_checker(chunky, raw, raw_len, tw, th, page_start, page_end, remap);
-		C2P_Render_Logical_To_ST_Screen(chunky, ST_SCR_W, planar, 0, 1);
+		C2P_Render_Logical_To_ST_Screen(chunky, ST_SCR_W, planar, 0, C2P_ST_SCREEN_HEIGHT, 1);
 		Setscreen((long)planar, (long)planar, -1L);
 		Vsync();
 		Vsync();

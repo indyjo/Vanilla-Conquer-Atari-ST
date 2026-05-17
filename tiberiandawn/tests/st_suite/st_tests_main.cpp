@@ -63,7 +63,11 @@ static void audio_tests_submenu(void)
 			st_asset_audio_try_label(i, line, sizeof(line));
 			printf("%d %s\n", i + 1, line);
 		}
-		printf("%d First hit in list order\n", n + 1);
+		if (n < 9) {
+			printf("%d First hit in list order\n", n + 1);
+		} else {
+			printf("f First hit in list order\n");
+		}
 		printf("0 Back to main menu\n");
 		printf("Choice: ");
 		fflush(stdout);
@@ -89,7 +93,7 @@ static void audio_tests_submenu(void)
 				} else {
 					printf("Audio: PASS\n");
 				}
-			} else if (pick == n + 1) {
+			} else if (n < 9 && pick == n + 1) {
 				printf("\n-- Audio first hit --\n");
 				int r = st_run_asset_audio_autotest();
 				if (r == 1) {
@@ -101,6 +105,18 @@ static void audio_tests_submenu(void)
 				}
 			} else {
 				printf("Unknown option.\n");
+			}
+			continue;
+		}
+		if ((ch == 'f' || ch == 'F') && n >= 9) {
+			printf("\n-- Audio first hit --\n");
+			int r = st_run_asset_audio_autotest();
+			if (r == 1) {
+				printf("Audio: FAIL\n");
+			} else if (r == 2) {
+				printf("Audio: SKIP\n");
+			} else {
+				printf("Audio: PASS\n");
 			}
 			continue;
 		}

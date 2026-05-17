@@ -92,6 +92,8 @@ extern "C" {
 int File_Stream_Sample(char const *filename, BOOL real_time_start);
 int File_Stream_Sample_Vol(char const *filename, int volume, BOOL real_time_start);
 void Sound_Callback(void);
+/* Main-thread deferred voice teardown only (VBL services the DMA ring). */
+void Sound_Maintenance(void);
 void *Load_Sample(char const *filename);
 long Load_Sample_Into_Buffer(char const *filename, void *buffer, long size);
 long Sample_Read(int fh, void *buffer, long size);

@@ -1068,6 +1068,7 @@ void* UnitClass::operator new(size_t) noexcept
     void* ptr = (UnitClass*)Units.Allocate();
     if (ptr) {
         ((UnitClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

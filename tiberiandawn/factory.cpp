@@ -175,6 +175,7 @@ void* FactoryClass::operator new(size_t) noexcept
     void* ptr = Factories.Allocate();
     if (ptr) {
         ((FactoryClass*)ptr)->IsActive = true;
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

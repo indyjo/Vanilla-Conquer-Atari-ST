@@ -98,6 +98,7 @@ void* SmudgeClass::operator new(size_t) noexcept
     void* ptr = Smudges.Allocate();
     if (ptr) {
         ((SmudgeClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

@@ -163,6 +163,7 @@ void* AircraftClass::operator new(size_t) noexcept
     void* ptr = Aircraft.Allocate();
     if (ptr) {
         ((AircraftClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

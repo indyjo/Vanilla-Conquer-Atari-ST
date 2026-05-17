@@ -1259,6 +1259,7 @@ void* TriggerClass::operator new(size_t) noexcept
     void* ptr = Triggers.Allocate();
     if (ptr) {
         ((TriggerClass*)ptr)->IsActive = true;
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

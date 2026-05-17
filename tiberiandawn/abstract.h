@@ -171,4 +171,13 @@ public:
     }
 };
 
+/*
+** Pool types set IsActive (via Set_Active or direct assignment) in operator new before
+** the constructor runs. At -O3, GCC may inline FixedIHeapClass::Allocate() into the
+** caller and drop that store as dead. Use immediately after the pre-ctor active-flag
+** write in every such operator new. Atari ST port.
+*/
+#define OBJECT_INITIALIZATION_HACK __asm__ volatile("" ::: "memory")
+
+
 #endif

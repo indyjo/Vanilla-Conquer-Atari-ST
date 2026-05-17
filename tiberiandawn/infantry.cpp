@@ -327,6 +327,7 @@ void* InfantryClass::operator new(size_t) noexcept
     void* ptr = Infantry.Allocate();
     if (ptr) {
         ((InfantryClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

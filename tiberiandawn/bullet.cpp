@@ -129,6 +129,7 @@ void* BulletClass::operator new(size_t) noexcept
     void* ptr = Bullets.Allocate();
     if (ptr) {
         ((BulletClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

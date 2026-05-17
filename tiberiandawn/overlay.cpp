@@ -127,6 +127,7 @@ void* OverlayClass::operator new(size_t) noexcept
     void* ptr = Overlays.Allocate();
     if (ptr) {
         ((OverlayClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

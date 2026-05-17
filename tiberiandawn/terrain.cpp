@@ -223,6 +223,7 @@ void* TerrainClass::operator new(size_t) noexcept
     void* ptr = Terrains.Allocate();
     if (ptr) {
         ((TerrainClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

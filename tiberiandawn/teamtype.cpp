@@ -782,6 +782,7 @@ void* TeamTypeClass::operator new(size_t) noexcept
     void* ptr = TeamTypes.Allocate();
     if (ptr) {
         ((TeamTypeClass*)ptr)->IsActive = true;
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

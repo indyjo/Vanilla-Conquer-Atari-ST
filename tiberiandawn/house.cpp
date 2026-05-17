@@ -309,6 +309,7 @@ void* HouseClass::operator new(size_t) noexcept
     void* ptr = Houses.Allocate();
     if (ptr) {
         ((HouseClass*)ptr)->IsActive = true;
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

@@ -1793,6 +1793,7 @@ void* BuildingClass::operator new(size_t) noexcept
     void* ptr = Buildings.Allocate();
     if (ptr) {
         ((BuildingClass*)ptr)->Set_Active();
+        OBJECT_INITIALIZATION_HACK;
     }
     return (ptr);
 }

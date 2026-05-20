@@ -4,7 +4,7 @@
 CC ?= cc
 CFLAGS ?= -O2 -Wall -Wextra -std=c99
 
-palette-opt: main.o playpal.o
+palette-opt: main.o playpal.o palette_color.o subset_spread.o ply_dump.o
 	$(CC) $(LDFLAGS) -o $@ $+ -lm
 
 clean:

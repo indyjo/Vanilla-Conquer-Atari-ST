@@ -19,11 +19,29 @@ enum {
 	C2P_WEIGHTSET_HTITLE = 1
 };
 
+#define C2P_WEIGHTSET_MAGIC "W16"
+
+/*
+ * On-disk *.W16 bundle (4116 bytes): magic, hardware-pen subset, then dither weights.
+ * subset[pen]: VGA palette index (0..255) for STE hardware pen pen (0..15).
+ * weights[src][pen]: mix weight 0..16 for VGA index src into hardware pen pen (row sums to 16).
+ */
+typedef struct C2P_WeightSet {
+	char magic[4];
+	uint8_t subset[16];
+	uint8_t weights[256][16];
+} C2P_WeightSet;
+
+enum { C2P_WEIGHTSET_FILE_BYTES = (int)sizeof(C2P_WeightSet) };
+
+/* Returns non-zero if magic, row sums, and subset indices are valid. */
+int C2P_WeightSet_Validate(const C2P_WeightSet *weight_set);
+
 /* Select which palette-opt weight table drives 8-bit->4-bit mapping and rebuild dither tables. */
 void C2P_Select_WeightSet(int weight_set);
 int C2P_Get_WeightSet(void);
-/* Register a custom 256×16 weight table: LUTs are rebuilt from it during this call only (buffer may be freed after return). */
-int C2P_Install_CustomWeights(const uint8_t *weights_256x16);
+/* Install custom weights + subset; LUTs are rebuilt during this call only (buffer may be freed after return). */
+int C2P_Install_CustomWeights(const C2P_WeightSet *weight_set);
 /* Rebuild LUTs from the built-in table for the current weight set (TEMPERAT / HTITLE). */
 void C2P_Clear_CustomWeights(void);
 

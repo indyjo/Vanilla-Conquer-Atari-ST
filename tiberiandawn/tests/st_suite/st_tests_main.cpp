@@ -9,6 +9,7 @@
 #include "st_mix_register.h"
 #include "st_planar_line_bench.h"
 #include "st_wsa_playback.h"
+#include "st_cps_browser.h"
 
 #include <mint/osbind.h>
 
@@ -41,6 +42,7 @@ static void print_banner(void)
 	printf("b Auto: 24x24 tile skew matrix\n");
 	printf("f Interactive: font browser (.FNT)\n");
 	printf("w Interactive: WSA playback\n");
+	printf("c Interactive: CPS / W16 browser\n");
 	printf("l Auto: planar line benchmark\n");
 	printf("a Audio tests (submenu)\n");
 	printf("0 Exit\n");
@@ -192,6 +194,10 @@ int main(void)
 		case 'w':
 		case 'W':
 			st_run_interactive_wsa_playback();
+			break;
+		case 'c':
+		case 'C':
+			st_run_interactive_cps_browser();
 			break;
 		case 'l':
 		case 'L':

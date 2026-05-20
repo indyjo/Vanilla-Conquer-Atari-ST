@@ -11,6 +11,7 @@
 #include "c2p.h"
 
 extern unsigned char *GamePalette;
+extern "C" uint8_t C2P_HW_Palette_Subset[16];
 
 /* Current palette buffer - copy of current DAC register values */
 /* Initialized to 255 (white) to match WIN32LIB behavior */
@@ -19,7 +20,8 @@ extern "C" unsigned char CurrentPalette[768] = {255};
 static void Install_ST_Hardware_Palette_First16(const unsigned char *pal768)
 {
     if (!pal768) return;
-    St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal768);
+    St_HW_Palette_Write_16_From_Logical_Pal6_Subset(
+        ST_HW_PALETTE_REGS, pal768, C2P_HW_Palette_Subset);
 }
 
 static void Apply_Palette_State(const unsigned char *pal768)

@@ -1129,6 +1129,14 @@ static void Message_Input(KeyNumType& input)
  *=============================================================================================*/
 bool Color_Cycle(void)
 {
+#ifdef ATARI_ST
+    /*
+    **	ST: no runtime palette cycling (water rotation, index-255 pulse). VGA relied on
+    **	live DAC updates; STE uses a fixed 16-pen subset. Fade_Palette_To still runs for
+    **	fade-in/out transitions.
+    */
+    return (false);
+#else
     static CountDownTimerClass _timer(BT_SYSTEM, 0);
     static CountDownTimerClass _ftimer(BT_SYSTEM, 0);
     static bool _up = false;
@@ -1197,6 +1205,7 @@ bool Color_Cycle(void)
         return (true);
     }
     return (false);
+#endif /* ATARI_ST */
 }
 
 /***********************************************************************************************

@@ -12,7 +12,7 @@
 extern "C" void WSA_Atari_TryInstallC2PWeights(const char *wsa_filename)
 {
 	char w16_name[32];
-	uint8_t weights[256 * 16];
+	C2P_WeightSet weight_set;
 	size_t i;
 	CCFileClass file("");
 	long got;
@@ -46,14 +46,14 @@ extern "C" void WSA_Atari_TryInstallC2PWeights(const char *wsa_filename)
 		fprintf(stderr, "WSA: warning: failed opening custom C2P weights (%s)\n", w16_name);
 		return;
 	}
-	got = file.Read(weights, (long)sizeof(weights));
+	got = file.Read(&weight_set, (long)sizeof(weight_set));
 	file.Close();
-	if (got != (long)sizeof(weights)) {
-		fprintf(stderr, "WSA: warning: invalid custom C2P weights size in %s (got %ld, expected %u)\n",
-		        w16_name, got, (unsigned)sizeof(weights));
+	if (got != (long)sizeof(weight_set)) {
+		fprintf(stderr, "WSA: warning: invalid custom C2P weights size in %s (got %ld, expected %d)\n",
+		        w16_name, got, C2P_WEIGHTSET_FILE_BYTES);
 		return;
 	}
-	if (!C2P_Install_CustomWeights(weights)) {
+	if (!C2P_Install_CustomWeights(&weight_set)) {
 		fprintf(stderr, "WSA: warning: rejected custom C2P weights (%s)\n", w16_name);
 	}
 }

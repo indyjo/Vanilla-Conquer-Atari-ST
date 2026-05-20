@@ -81,6 +81,7 @@ static int st_pick_wsa_name(char *out_name, size_t out_cap)
 		"CHOOSE.WSA",
 		"MLTIPLYR.WSA",
 		"GREYERTH.WSA",
+		"E-BWTOCL.WSA",
 		"EARTH_E.WSA",
 		"EARTH_A.WSA",
 		"EUROPE.WSA",

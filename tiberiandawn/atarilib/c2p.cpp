@@ -5,6 +5,8 @@
 #include "c2p.h"
 #include "st_frame_meter.h"
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 
 /* 4x4 Bayer threshold matrix, values 0..15 */
 static const uint8_t Bayer4x4[16] = {
@@ -14,28 +16,48 @@ static const uint8_t Bayer4x4[16] = {
 	15, 7, 13, 5
 };
 
+#include "c2p_palette_opt_subset.inc"
 #include "c2p_palette_opt_weights.inc"
 #define kC2PPaletteOptWeight kC2PPaletteOptWeightHTitle
 #include "c2p_palette_opt_weights_htitle.inc"
 #undef kC2PPaletteOptWeight
 
+static const uint8_t kC2PPaletteOptSubsetHTitle[16] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+};
+
+
 /*
-** Palette+dither dependent map:
-**   index = ((y&3)<<2) | (x&3)  in [0..15]
-**   src   = 8-bit palette index
-**   value = 4-bit ST color (0..15)
-**
-** Filled from palette-opt (TEMPERAT.PAL, subset 0..15); see kC2PPaletteOptWeight.
-*/
+ * Dithered color mapping table for chunky (8-bit) to planar (4-bit) conversion, using a 4x4 Bayer matrix.
+ * 
+ * C2P_MapDither[phase][palette_index]:
+ *   - phase: 0..15, corresponds to ((y&3)<<2) | (x&3), representing a 4x4 dither coordinate within the Bayer matrix.
+ *   - palette_index: original 8-bit VGA palette index (0..255).
+ * 
+ * Value is the mapped 4-bit Atari ST color index (0..15) after applying the dither and palette-opt weight set.
+ */
 static uint8_t C2P_MapDither[16][256];
+/**
+ * C2P_MapNearestLUT[256]:
+ *   For each 8-bit palette index (0..255), holds the nearest-matching 4-bit (0..15) Atari ST color index.
+ *   "Nearest" is determined by the current palette-opt weights, representing the most dominant ST color by weight.
+ *   Used for direct/fast mappings in situations where dithering is unnecessary.
+ */
 uint8_t C2P_MapNearestLUT[256];
-/* Bit 7: exactly one non-zero weight in row; bits 0..3: that ST color when set. */
 uint8_t C2P_PaletteIndexClean4LUT[256];
+/* HW pen i -> 256-color palette index (derived from active weights; palette.cpp only). */
+/**
+ * C2P_HW_Palette_Subset[16]:
+ *   How the 16 Atari ST hardware pens are mapped to colors of the 256-color palette.
+ *   Initialized with an identity mapping (ST hardware pen i maps to palette index i).
+ *   Updated when C2P weights are set and tables are rebuilt.
+ */
+uint8_t C2P_HW_Palette_Subset[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
 
 /* Pair LUTs: 4 pair positions (pixels 0-1,2-3,4-5,6-7) and two-nibble index. */
 static uint32_t C2P_PairLUT[4][256];
 static int C2P_LUT_InitDone = 0;
-static int C2P_WeightSet = C2P_WEIGHTSET_TEMPERAT;
+static int C2P_BuiltinWeightSet = C2P_WEIGHTSET_TEMPERAT;
 
 /*
  * STDOOM-style full-width C2P (see STDOOM atari_c2p.c: bayer4_* + c2p_1x_lorez).
@@ -254,9 +276,13 @@ extern "C" unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char p
 ** MapNearestLUT + PaletteIndexClean4LUT: one pass over each 16-entry weight row.
 ** STDOOM_FragLUT: movep-ready longword fragments for C2P_1x_Lorez_STDOOM (phase × pal × slot).
 */
-static void C2P_Rebuild_Tables_From_WeightRows(const uint8_t (*weights)[16])
+static void C2P_Rebuild_Tables_From_WeightRows(const uint8_t subset[16], const uint8_t (*weights)[16])
 {
 	C2P_InitPairLUT_Once();
+
+	for (int k = 0; k < 16; k++) {
+		C2P_HW_Palette_Subset[k] = subset[k];
+	}
 
 	/* Per (x%4,y%4) Bayer cell: 8-bit VGA index -> dithered ST nibble (C2P_Map8ToPlanar4). */
 	for (int b = 0; b < 16; b++) {
@@ -267,10 +293,7 @@ static void C2P_Rebuild_Tables_From_WeightRows(const uint8_t (*weights)[16])
 		}
 	}
 
-	/*
-	 * One pass per palette index: dominant ST color (C2P_MapNearestLUT) and "clean row"
-	 * flag+color for C2P_Is_Palette_Index_Clean4 (C2P_PaletteIndexClean4LUT: bit7 + nibble).
-	 */
+	/* Dominant ST color (nearest) and clean-row flag per VGA index. */
 	for (int src = 0; src < 256; src++) {
 		const uint8_t *w = weights[src];
 		int best_k = 0;
@@ -300,29 +323,52 @@ static void C2P_Rebuild_Tables_From_WeightRows(const uint8_t (*weights)[16])
 /* Rebuild LUTs from the built-in matrix selected by C2P_WeightSet. */
 static void C2P_Rebuild_Tables_From_SelectedWeights(void)
 {
-	const uint8_t (*builtin)[16] =
-		(C2P_WeightSet == C2P_WEIGHTSET_HTITLE) ? kC2PPaletteOptWeightHTitle : kC2PPaletteOptWeight;
-	C2P_Rebuild_Tables_From_WeightRows(builtin);
+	if (C2P_BuiltinWeightSet == C2P_WEIGHTSET_HTITLE) {
+		C2P_Rebuild_Tables_From_WeightRows(kC2PPaletteOptSubsetHTitle, kC2PPaletteOptWeightHTitle);
+	} else {
+		C2P_Rebuild_Tables_From_WeightRows(kC2PPaletteOptSubset, kC2PPaletteOptWeight);
+	}
+}
+
+extern "C" int C2P_WeightSet_Validate(const C2P_WeightSet *weight_set)
+{
+	if (!weight_set) {
+		return 0;
+	}
+	if (memcmp(weight_set->magic, C2P_WEIGHTSET_MAGIC, 4) != 0) {
+		return 0;
+	}
+	for (int src = 0; src < 256; src++) {
+		int sum = 0;
+		for (int k = 0; k < 16; k++) {
+			sum += (int)weight_set->weights[src][k];
+		}
+		if (sum != 16) {
+			return 0;
+		}
+	}
+	return 1;
 }
 
 extern "C" int C2P_Get_WeightSet(void)
 {
-	return C2P_WeightSet;
+	return C2P_BuiltinWeightSet;
 }
 
 extern "C" void C2P_Select_WeightSet(int weight_set)
 {
 	const int normalized = (weight_set == C2P_WEIGHTSET_HTITLE) ? C2P_WEIGHTSET_HTITLE : C2P_WEIGHTSET_TEMPERAT;
-	C2P_WeightSet = normalized;
+	C2P_BuiltinWeightSet = normalized;
 	C2P_Rebuild_Tables_From_SelectedWeights();
 }
 
-extern "C" int C2P_Install_CustomWeights(const uint8_t *weights_256x16)
+extern "C" int C2P_Install_CustomWeights(const C2P_WeightSet *weight_set)
 {
-	if (!weights_256x16)
+	if (!C2P_WeightSet_Validate(weight_set)) {
 		return 0;
+	}
 
-	C2P_Rebuild_Tables_From_WeightRows((const uint8_t (*)[16])(const void *)weights_256x16);
+	C2P_Rebuild_Tables_From_WeightRows(weight_set->subset, weight_set->weights);
 	return 1;
 }
 

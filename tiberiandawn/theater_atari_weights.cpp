@@ -2,7 +2,7 @@
  * theater_atari_weights.cpp — load per-theater C2P weight tables (<theater>.W16)
  * after DisplayClass::Init_Theater has copied the theater .PAL into GamePalette.
  *
- * Sibling of wsa_atari_weights.cpp: both load a 4096-byte (256x16) weight matrix
+ * Sibling of wsa_atari_weights.cpp: both load an 4116-byte C2P_WeightSet (.W16)
  * via CCFileClass and hand it to C2P_Install_CustomWeights() so chunky-to-planar
  * dithering uses the right source palette. Theaters without a shipped .W16 (e.g.
  * JUNGLE on stock TD) silently fall back to the compiled-in TEMPERAT weight set
@@ -18,7 +18,7 @@
 extern "C" void Theater_Atari_TryInstallC2PWeights(const char *theater_root)
 {
 	char w16_name[16];
-	uint8_t weights[256 * 16];
+	C2P_WeightSet weight_set;
 	size_t i;
 	CCFileClass file("");
 	long got;
@@ -57,14 +57,14 @@ extern "C" void Theater_Atari_TryInstallC2PWeights(const char *theater_root)
 		fprintf(stderr, "Theater: warning: failed opening C2P weights (%s)\n", w16_name);
 		return;
 	}
-	got = file.Read(weights, (long)sizeof(weights));
+	got = file.Read(&weight_set, (long)sizeof(weight_set));
 	file.Close();
-	if (got != (long)sizeof(weights)) {
-		fprintf(stderr, "Theater: warning: invalid C2P weights size in %s (got %ld, expected %u)\n",
-		        w16_name, got, (unsigned)sizeof(weights));
+	if (got != (long)sizeof(weight_set)) {
+		fprintf(stderr, "Theater: warning: invalid C2P weights size in %s (got %ld, expected %d)\n",
+		        w16_name, got, C2P_WEIGHTSET_FILE_BYTES);
 		return;
 	}
-	if (!C2P_Install_CustomWeights(weights)) {
+	if (!C2P_Install_CustomWeights(&weight_set)) {
 		fprintf(stderr, "Theater: warning: rejected C2P weights (%s)\n", w16_name);
 	}
 }

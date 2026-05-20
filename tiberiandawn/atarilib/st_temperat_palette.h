@@ -51,6 +51,19 @@ static inline void St_HW_Palette_Write_First16_From_Logical_Pal6(volatile unsign
 	}
 }
 
+/* Load pens 0..15 from subset16[pen] indices into a 768-byte logical palette. */
+static inline void St_HW_Palette_Write_16_From_Logical_Pal6_Subset(volatile unsigned short *regs,
+		const unsigned char *pal768, const unsigned char *subset16)
+{
+	for (int i = 0; i < 16; i++) {
+		const int idx = (int)subset16[i] & 255;
+		unsigned char r = pal768[idx * 3 + 0];
+		unsigned char g = pal768[idx * 3 + 1];
+		unsigned char b = pal768[idx * 3 + 2];
+		regs[i] = St_Pack_ST_HW_From_Rgb6(r, g, b);
+	}
+}
+
 static inline void St_HW_Palette_Write_Temperat_First16(volatile unsigned short *regs)
 {
 	St_HW_Palette_Write_First16_From_Logical_Pal6(regs, kStTemperatPal768);

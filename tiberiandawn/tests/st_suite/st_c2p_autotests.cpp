@@ -2,6 +2,8 @@
  * Automated tests: C2P planar pack / readback (no display hardware required).
  */
 
+#include "st_c2p_autotest.h"
+
 #include "c2p.h"
 #include "palette.h"
 #include "st_temperat_palette.h"
@@ -13,11 +15,11 @@
 
 /*
  * Golden planar checksum (diagonal index pattern + TEMPERAT + current
- * c2p_palette_opt_weights). Recompute with host g++ if weights/pattern change.
+ * c2p_palette_opt_weights). Recompute on host with ATARILIB/c2p.cpp if weights change.
  */
-static const unsigned ST_C2P_AUTOTEST_PLANAR_CHECKSUM = 1475674531u;
+static const unsigned ST_C2P_AUTOTEST_PLANAR_CHECKSUM = 778880640u;
 
-int st_run_c2p_autotests(void)
+int st_run_c2p_autotests_ex(int verbose, unsigned *out_checksum)
 {
 	int failures = 0;
 	unsigned char pal[768];
@@ -31,9 +33,9 @@ int st_run_c2p_autotests(void)
 		return 1;
 	}
 
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 
 	/* Clean representability API checks against current TEMPERAT weight set. */
 	{
@@ -73,8 +75,14 @@ int st_run_c2p_autotests(void)
 	for (int i = 0; i < 32000; i++)
 		sum = sum * 65599u + planar[i];
 
+	if (out_checksum) {
+		*out_checksum = sum;
+	}
+
 	if (sum == ST_C2P_AUTOTEST_PLANAR_CHECKSUM) {
-		printf("planar checksum: %u OK\n", sum);
+		if (verbose) {
+			printf("planar checksum: %u OK\n", sum);
+		}
 	} else {
 		printf("planar checksum: %u FAIL (expect %u)\n", sum, ST_C2P_AUTOTEST_PLANAR_CHECKSUM);
 		failures++;
@@ -83,4 +91,10 @@ int st_run_c2p_autotests(void)
 	free(chunky);
 	free(planar);
 	return failures;
+}
+
+int st_run_c2p_autotests(void)
+{
+	unsigned sum = 0;
+	return st_run_c2p_autotests_ex(1, &sum);
 }

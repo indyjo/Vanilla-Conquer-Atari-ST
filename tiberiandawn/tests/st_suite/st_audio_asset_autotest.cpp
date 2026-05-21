@@ -102,10 +102,12 @@ static void st_audio_wait_vbl_until_done(void const* sample)
 }
 
 /* Returns ST_AUDIO_RESULT_*; always frees raw. */
-static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char const *hit_aud, int volume)
+static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char const *hit_aud, int volume, int verbose)
 {
 	if (!st_audio_init_game_rate()) {
-		printf("SKIP audio (no STE DMA / Audio_Init)\n");
+		if (verbose) {
+			printf("SKIP audio (no STE DMA / Audio_Init)\n");
+		}
 		free(raw);
 		return ST_AUDIO_RESULT_SKIP;
 	}
@@ -129,7 +131,9 @@ static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char co
 
 	Sound_End();
 	free(raw);
-	printf("PASS audio %s from %s\n", hit_aud, hit_mix);
+	if (verbose) {
+		printf("PASS audio %s from %s\n", hit_aud, hit_mix);
+	}
 	return ST_AUDIO_RESULT_PASS;
 }
 
@@ -158,10 +162,10 @@ int st_run_asset_audio_try_index(int idx)
 	}
 
 	return st_audio_play_loaded(raw, k_audio_tries[idx].mix, k_audio_tries[idx].aud,
-			k_audio_tries[idx].volume);
+			k_audio_tries[idx].volume, 1);
 }
 
-int st_run_asset_audio_autotest(void)
+int st_run_asset_audio_autotest_ex(int verbose)
 {
 	StKeyclickMuteRAII mute;
 	(void)mute;
@@ -188,9 +192,16 @@ int st_run_asset_audio_autotest(void)
 	}
 
 	if (!raw || !hit_mix || !hit_aud) {
-		printf("SKIP audio (no .AUD in tried MIXes - need e.g. SCOUNDS.MIX/SOUNDS.MIX or SCORES.MIX)\n");
+		if (verbose) {
+			printf("SKIP audio (no .AUD in tried MIXes - need e.g. SCOUNDS.MIX/SOUNDS.MIX or SCORES.MIX)\n");
+		}
 		return ST_AUDIO_RESULT_SKIP;
 	}
 
-	return st_audio_play_loaded(raw, hit_mix, hit_aud, hit_volume);
+	return st_audio_play_loaded(raw, hit_mix, hit_aud, hit_volume, verbose);
+}
+
+int st_run_asset_audio_autotest(void)
+{
+	return st_run_asset_audio_autotest_ex(1);
 }

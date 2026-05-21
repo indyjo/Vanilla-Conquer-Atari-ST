@@ -4,6 +4,7 @@
  */
 
 #include "st_audio_asset_autotest.h"
+#include "st_autotests.h"
 #include "st_build_frame_assets.h"
 #include "st_font_browser.h"
 #include "st_mix_register.h"
@@ -16,7 +17,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern int st_run_c2p_autotests(void);
+static int st_run_automated_bundle(void)
+{
+	long old_ssp = Super(0L);
+	st_conterm_keyclick_mute_push();
+	StAutotestReport report;
+	int const rc = st_run_all_autotests(&report);
+	st_conterm_keyclick_mute_pop();
+	SuperToUser(old_ssp);
+	return rc;
+}
 extern int st_run_interactive_gradient(void);
 extern int st_run_interactive_title_production_path(void);
 extern int st_run_interactive_title_menu_overlay(void);
@@ -31,13 +41,13 @@ static void print_banner(void)
 	printf("========================================\n");
 	printf("  C&C ST test suite (on-machine)\n");
 	printf("========================================\n");
-	printf("1 Auto: C2P planar checksum\n");
+	printf("1 Auto: C2P + SHP + .AUD\n");
 	printf("2 Interactive: 16x16 color grid (8x8)\n");
 	printf("4 Interactive: TITLE prod path\n");
 	printf("5 Interactive: TITLE + menu overlay\n");
 	printf("6 Interactive: TITLE + mouse cursor\n");
 	printf("7 Interactive: SHP grid (CONQUER.MIX)\n");
-	printf("8 Automated: C2P + SHP + .AUD (MIX)\n");
+	printf("8 Auto: same as 1\n");
 	printf("9 Auto: TITLE 8-way blitter scroll\n");
 	printf("b Auto: 24x24 tile skew matrix\n");
 	printf("f Interactive: font browser (.FNT)\n");
@@ -140,12 +150,7 @@ int main(void)
 
 		switch (ch) {
 		case '1':
-			printf("\n-- Automated C2P --\n");
-			{
-				long old_ssp = Super(0L);
-				st_run_c2p_autotests();
-				SuperToUser(old_ssp);
-			}
+			(void)st_run_automated_bundle();
 			break;
 		case '2':
 			st_run_interactive_gradient();
@@ -162,20 +167,9 @@ int main(void)
 		case '7':
 			st_run_interactive_build_frame_xor_grid();
 			break;
-		case '8': {
-			long old_ssp = Super(0L);
-			st_conterm_keyclick_mute_push();
-			int r = st_run_c2p_autotests();
-			int bf = st_run_build_frame_asset_autocheck();
-			int au = st_run_asset_audio_autotest();
-			st_conterm_keyclick_mute_pop();
-			SuperToUser(old_ssp);
-			printf("Auto C2P: %s\n", r ? "FAIL" : "PASS");
-			printf("Auto Build_Frame assets: %s (fail count=%d)\n",
-					bf ? "FAIL" : "PASS", bf);
-			printf("Auto asset audio: %s\n", (au == 1) ? "FAIL" : ((au == 2) ? "SKIP" : "PASS"));
+		case '8':
+			(void)st_run_automated_bundle();
 			break;
-		}
 		case 'a':
 		case 'A':
 			audio_tests_submenu();

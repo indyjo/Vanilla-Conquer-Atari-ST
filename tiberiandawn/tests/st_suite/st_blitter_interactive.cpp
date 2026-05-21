@@ -537,13 +537,12 @@ int st_run_blitter_tile_skew_matrix(void)
 	}
 
 	/* Use same TEMPERAT palette path as other ST tests. */
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	{
 		unsigned char pal[768];
 		memcpy(pal, kStTemperatPal768, sizeof(pal));
 		Set_Palette(pal);
-		St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
 	}
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 
 	if (!st_try_load_temperate_template_tile(tile_linear)) {
 		free(screen_ref);

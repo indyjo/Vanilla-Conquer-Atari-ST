@@ -719,21 +719,86 @@ static void st_blit_frame_page_on_checker(unsigned char *chunky, void *raw, size
 	free(buf);
 }
 
+static int st_bf_autocheck_eligible(const StBfAsset *a)
+{
+	if (!a || !a->shp) {
+		return 0;
+	}
+	if (!st_has_shp_ext(a->shp)) {
+		return 0;
+	}
+	/* Edge-case menu entry; not a real MIX filename. */
+	if (strcmp(a->shp, ".SHP") == 0) {
+		return 0;
+	}
+	return 1;
+}
+
+static int st_bf_conquer_mix_reachable(void)
+{
+	unsigned char *raw = NULL;
+	size_t raw_len = 0;
+	int const mx = st_extract_asset_preferring_dos_conquer("CONQUER.MIX", "E1.SHP", &raw, &raw_len);
+	int const ok = (mx == 0 && raw != NULL && raw_len > 0);
+	if (raw) {
+		free(raw);
+	}
+	return ok;
+}
+
 /*
  * Returns number of failed Build_Frame calls (0 = all decodes returned non-NULL).
  */
-int st_run_build_frame_asset_autocheck(void)
+int st_run_build_frame_asset_autocheck_ex(
+	int verbose,
+	int *out_ok,
+	int *out_skip,
+	int *out_fail,
+	StAutotestStatus *out_status)
 {
 	int fails = 0;
+	int ok = 0;
+	int skip = 0;
+
+	if (out_ok) {
+		*out_ok = 0;
+	}
+	if (out_skip) {
+		*out_skip = 0;
+	}
+	if (out_fail) {
+		*out_fail = 0;
+	}
+	if (out_status) {
+		*out_status = ST_AUTO_PASS;
+	}
+
+	if (!st_bf_conquer_mix_reachable()) {
+		if (verbose) {
+			printf("SKIP Build_Frame (CONQUER.MIX / E1.SHP not available)\n");
+		}
+		if (out_status) {
+			*out_status = ST_AUTO_SKIP;
+		}
+		return 0;
+	}
+
 	for (size_t ai = 0; ai < sizeof(k_assets) / sizeof(k_assets[0]); ai++) {
 		const StBfAsset *a = &k_assets[ai];
+		if (!st_bf_autocheck_eligible(a)) {
+			continue;
+		}
 		unsigned char *raw = NULL;
 		size_t raw_len = 0;
 		int mx = st_extract_asset_preferring_dos_conquer(a->mix, a->shp, &raw, &raw_len);
 		if (mx != 0 || !raw) {
-			printf("SKIP %s:%s err=%d\n", a->mix, a->shp, mx);
+			skip++;
+			if (verbose) {
+				printf("SKIP %s:%s err=%d\n", a->mix, a->shp, mx);
+			}
 			continue;
 		}
+		ok++;
 		unsigned short tw = Get_Build_Frame_Width(raw);
 		unsigned short th = Get_Build_Frame_Height(raw);
 		unsigned short tc = Get_Build_Frame_Count(raw);
@@ -768,7 +833,32 @@ int st_run_build_frame_asset_autocheck(void)
 		free(buf);
 		free(raw);
 	}
+
+	if (out_ok) {
+		*out_ok = ok;
+	}
+	if (out_skip) {
+		*out_skip = skip;
+	}
+	if (out_fail) {
+		*out_fail = fails;
+	}
+	if (out_status) {
+		if (fails > 0) {
+			*out_status = ST_AUTO_FAIL;
+		} else if (ok == 0) {
+			*out_status = ST_AUTO_FAIL;
+		} else {
+			*out_status = ST_AUTO_PASS;
+		}
+	}
 	return fails;
+}
+
+int st_run_build_frame_asset_autocheck(void)
+{
+	StAutotestStatus st = ST_AUTO_PASS;
+	return st_run_build_frame_asset_autocheck_ex(1, NULL, NULL, NULL, &st);
 }
 
 int st_run_interactive_build_frame_xor_grid(void)
@@ -833,13 +923,12 @@ int st_run_interactive_build_frame_xor_grid(void)
 	    (unsigned)tc,
 	    (unsigned long)buf_need);
 
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	{
 		unsigned char pal[768];
 		memcpy(pal, kStTemperatPal768, 768);
 		Set_Palette(pal);
 	}
-	/* C2P LUTs are not filled by Set_Palette; must match TEMPERAT weights before any C2P. */
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 
 	Setscreen(-1L, -1L, 0);
 	unsigned char *planar = (unsigned char *)Logbase();
@@ -850,7 +939,6 @@ int st_run_interactive_build_frame_xor_grid(void)
 		SuperToUser(old_ssp);
 		return 1;
 	}
-	St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
 	C2P_Render_Logical_To_ST_Screen(chunky, ST_SCR_W, planar, 0, C2P_ST_SCREEN_HEIGHT, 1);
 	Setscreen((long)planar, (long)planar, -1L);
 	Vsync();

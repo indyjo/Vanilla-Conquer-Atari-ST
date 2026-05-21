@@ -65,24 +65,11 @@ int st_run_interactive_gradient(void)
 	}
 
 	memcpy(pal, kStTemperatPal768, 768);
-	Set_Palette(pal);
-	St_HW_Palette_Write_Temperat_First16(ST_HW_PALETTE_REGS);
+	/* Weight LUTs (and C2P_HW_Palette_Subset) before Set_Palette so STE pens match C2P mapping. */
 	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
+	Set_Palette(pal);
 
-	/* 16x16 cells, 8x8 px each: logical colors 0..255; 128x128 grid centered on screen. */
-	memset(chunky, 0, (size_t)(320 * 200));
-	const int grid_px = 16 * 8;
-	const int x0 = (320 - grid_px) / 2;
-	const int y0 = (200 - grid_px) / 2;
-	for (int gy = 0; gy < 16; gy++) {
-		for (int gx = 0; gx < 16; gx++) {
-			unsigned char c = (unsigned char)(gy * 16 + gx);
-			for (int dy = 0; dy < 8; dy++) {
-				for (int dx = 0; dx < 8; dx++)
-					chunky[(y0 + gy * 8 + dy) * 320 + (x0 + gx * 8 + dx)] = c;
-			}
-		}
-	}
+	Palette_Debug_Fill_Index_Grid_Chunky(chunky, 320, 200, 320);
 
 	C2P_Render_Logical_To_ST_Screen(chunky, 320, planar, 0, C2P_ST_SCREEN_HEIGHT, 1);
 	Setscreen((long)planar, (long)planar, -1L);

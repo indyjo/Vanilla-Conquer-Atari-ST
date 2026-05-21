@@ -50,25 +50,6 @@ static int st_count_nonzero(const unsigned char *buf, int len)
 	return n;
 }
 
-static void st_draw_palette_grid_16x16(unsigned char *chunky320x200)
-{
-	const int grid_px = 16 * 8;
-	const int x0 = (320 - grid_px) / 2;
-	const int y0 = (200 - grid_px) / 2;
-
-	memset(chunky320x200, 0, 320 * 200);
-	for (int gy = 0; gy < 16; gy++) {
-		for (int gx = 0; gx < 16; gx++) {
-			unsigned char c = (unsigned char)(gy * 16 + gx);
-			for (int dy = 0; dy < 8; dy++) {
-				for (int dx = 0; dx < 8; dx++) {
-					chunky320x200[(y0 + gy * 8 + dy) * 320 + (x0 + gx * 8 + dx)] = c;
-				}
-			}
-		}
-	}
-}
-
 static int st_wsa_is_available(const char *name)
 {
 	CCFileClass file(name);
@@ -245,18 +226,24 @@ extern "C" int st_run_interactive_wsa_playback(void)
 		return 1;
 	}
 
+	/*
+	 * Open_Animation already called WSA_Atari_TryInstallC2PWeights (per-WSA .W16).
+	 * Do not C2P_Select_WeightSet(TEMPERAT) here — that would overwrite custom weights.
+	 */
 	has_anim_palette = Get_Animation_Palette(anim);
 	if (has_anim_palette) {
 		Set_Palette(pal);
-		printf("WSA: palette present (ST pens 0..15 installed from WSA palette)\n");
+		printf("WSA: palette present (ST pens from WSA + .W16 subset)\n");
 	} else {
-		printf("WSA: no embedded palette (ST pens 0..15 installed from CurrentPalette)\n");
+		memcpy(pal, kStTemperatPal768, 768);
+		Set_Palette(pal);
+		printf("WSA: no embedded palette (TEMPERAT.PAL + current C2P subset)\n");
 	}
 	/*
 	 * Palette sanity view (same 16x16 swatch concept as test 2), but using the
 	 * active palette for this WSA path.
 	 */
-	st_draw_palette_grid_16x16(logical);
+	Palette_Debug_Fill_Index_Grid_Chunky(logical, 320, 200, 320);
 	C2P_Render_Logical_To_ST_Screen(logical, 320, tos_screen, 0, C2P_ST_SCREEN_HEIGHT, 1);
 	st_wait_vblanks(20);
 	memset(logical, 0, 320 * 200);

@@ -6,6 +6,9 @@
 /* First asset found in built-in try order (for automated bundle / menu item 8). Requires supervisor on MiNT ($484 mute). */
 int st_run_asset_audio_autotest(void);
 
+/* verbose: print PASS line on success. Returns ST_AUDIO_RESULT_* (0 pass, 1 fail, 2 skip). */
+int st_run_asset_audio_autotest_ex(int verbose);
+
 /* Number of selectable rows in the audio submenu (fixed list in .cpp). */
 int st_asset_audio_try_count(void);
 

@@ -9,6 +9,7 @@
  */
 
 #include "function.h"
+#include "c2p.h"
 #include "palette.h"
 #include "st_font_browser.h"
 #include "st_mix_minimal.h"
@@ -321,10 +322,10 @@ int st_run_interactive_font_browser(void)
 	GraphicViewPortClass vp(&screen, 0, 0, ST_FB_SCR_W, ST_FB_SCR_H);
 	Setscreen((long)screen.Get_Buffer(), (long)screen.Get_Buffer(), -1L);
 
+	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
 	unsigned char pal[768];
 	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);
-	St_HW_Palette_Write_Temperat_First16((volatile unsigned short *)0xFF8240L);
 
 	int index = 0;
 	int const nfonts = (int)(sizeof(k_fb_fonts) / sizeof(k_fb_fonts[0]));

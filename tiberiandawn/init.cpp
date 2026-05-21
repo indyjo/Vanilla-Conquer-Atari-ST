@@ -515,10 +515,12 @@ bool Init_Game(int, char*[])
         MFCD::Cache("CONQUER.MIX");
         if (SampleType != 0 && !Debug_Quiet) {
             MFCD::Cache("SOUNDS.MIX");
+#ifdef ATARI_ST
+            MFCD::Cache("SPEECH.MIX"); // ST EVA uses MFCD::Retrieve (RAM).
+#endif
         }
     }
     Call_Back();
-
 #if defined(ATARI_ST)
     /*
      * MiNT free-memory snapshot after mandatory MIX payloads are cached (theater MIX loads later).

@@ -39,6 +39,10 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "function.h"
+#ifdef ATARI_ST
+#include "mixfile.h"
+#include <stdio.h>
+#endif
 
 /***************************************************************************
 **	Controls what special effects may occur on the sound effect.
@@ -445,6 +449,30 @@ char const* Speech[VOX_COUNT] = {
 };
 static VoxType CurrentVoice = VOX_NONE;
 
+#ifdef ATARI_ST
+static void const* SpeechPlayingPtr = NULL;
+
+void On_Speech(int speech_index, HouseClass* house)
+{
+    (void)house;
+    if (SampleType == 0 || !Options.Volume) {
+        return;
+    }
+    if (speech_index < (int)VOX_FIRST || speech_index >= (int)VOX_COUNT) {
+        return;
+    }
+    VoxType const voice = (VoxType)speech_index;
+    if (voice == VOX_NONE) {
+        return;
+    }
+    if (voice != SpeakQueue && voice != CurrentVoice && SpeakQueue == VOX_NONE) {
+        if (!SpeechPlayingPtr || !Is_Sample_Playing(SpeechPlayingPtr)) {
+            SpeakQueue = voice;
+        }
+    }
+}
+#endif
+
 /***********************************************************************************************
  * Speak -- Computer speaks to the player.                                                     *
  *                                                                                             *
@@ -502,6 +530,38 @@ void Speak(VoxType voice, HouseClass* house, COORDINATE coord)
  *=============================================================================================*/
 void Speak_AI(void)
 {
+#ifdef ATARI_ST
+    if (SampleType == 0 || !Options.Volume) {
+        return;
+    }
+    if (SpeechPlayingPtr && !Is_Sample_Playing(SpeechPlayingPtr)) {
+        SpeechPlayingPtr = NULL;
+        CurrentVoice = VOX_NONE;
+    }
+    if (!SpeechPlayingPtr && SpeakQueue != VOX_NONE) {
+        VoxType const voice = SpeakQueue;
+        char fname[20];
+        void const* aud = NULL;
+
+        SpeakQueue = VOX_NONE;
+        snprintf(fname, sizeof(fname), "%s.AUD", Speech[voice]);
+        aud = MFCD::Retrieve(fname);
+        if (!aud && SpeechBuffer) {
+            CCFileClass file(fname);
+            if (file.Is_Available() && file.Open(READ)) {
+                long const got = file.Read(SpeechBuffer, SPEECH_BUFFER_SIZE);
+                file.Close();
+                if (got > 0L) {
+                    aud = SpeechBuffer;
+                }
+            }
+        }
+        if (aud && Play_Sample(aud, 254, Options.Volume) >= 0) {
+            SpeechPlayingPtr = aud;
+            CurrentVoice = voice;
+        }
+    }
+#else
 // MBL 06.17.2019 KO
 #ifndef REMASTER_BUILD
     static VoxType _last = VOX_NONE;
@@ -526,6 +586,7 @@ void Speak_AI(void)
         }
     }
 #endif
+#endif
 }
 
 /***********************************************************************************************
@@ -546,8 +607,16 @@ void Speak_AI(void)
 void Stop_Speaking(void)
 {
     SpeakQueue = VOX_NONE;
+    CurrentVoice = VOX_NONE;
     if (SampleType != 0) {
+#ifdef ATARI_ST
+        if (SpeechPlayingPtr) {
+            Stop_Sample_Playing(SpeechPlayingPtr);
+            SpeechPlayingPtr = NULL;
+        }
+#else
         Stop_Sample_Playing(SpeechBuffer);
+#endif
     }
 }
 
@@ -570,8 +639,17 @@ void Stop_Speaking(void)
 bool Is_Speaking(void)
 {
     Speak_AI();
-    if (SampleType != 0 && (SpeakQueue != VOX_NONE || Is_Sample_Playing(SpeechBuffer))) {
-        return (true);
+    if (SampleType != 0) {
+#ifdef ATARI_ST
+        if (SpeakQueue != VOX_NONE
+            || (SpeechPlayingPtr && Is_Sample_Playing(SpeechPlayingPtr))) {
+            return (true);
+        }
+#else
+        if (SpeakQueue != VOX_NONE || Is_Sample_Playing(SpeechBuffer)) {
+            return (true);
+        }
+#endif
     }
     return (false);
 }

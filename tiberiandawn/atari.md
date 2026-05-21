@@ -57,3 +57,20 @@ tools/palette-opt/palette-opt -p pal_extract_tmp/DESERT.PAL --subset-spread \
 ```
 
 Ship regenerated `.W16` files from `atari-assets/` next to `cnc.tos` (see `atari-assets/README.md`).
+
+## Required MIX files
+Put these mix files next to the CNC.TOS executable:
+The following MIX files must be present in the same directory as `CNC.TOS`. These are loaded by the game at runtime:
+
+- `CONQUER.MIX`    — base game assets (maps, graphics, palette)
+- `GENERAL.MIX`    — support assets (sidebar icons, overlays, etc)
+- `SCORES.MIX`     — music tracks (in .AUD format)
+- `SOUNDS.MIX`     — sound effects (.AUD and .V00)
+- `SPEECH.MIX`     — EVA speech lines
+- Theater asset MIX files:  
+  - `TEMPERAT.MIX` — temperate theater graphics
+  - `SNOW.MIX`     — snow theater graphics
+  - `WINTER.MIX`   — winter theater graphics
+  - `DESERT.MIX`   — desert theater graphics
+
+Additional .MIX files may be loaded based on mission or expansion content, but the ones above are the minimum required for the core campaign.

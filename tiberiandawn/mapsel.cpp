@@ -389,9 +389,6 @@ void Map_Selection(void)
 	Read_Interpolation_Palette("MAP_GRY2.PAL");
 	Wait_Vert_Blank();
 	Set_Palette(grey2palette);
-#ifdef ATARI_ST
-	Install_Animation_C2P_WeightSet(greyearth2);
-#endif
 	SysMemPage.Blit(*PseudoSeenBuff);
 	Call_Back_Delay(4);
 	for (i = 1; i < Get_Animation_Frame_Count(greyearth2); i++) {
@@ -414,8 +411,8 @@ void Map_Selection(void)
 	Animate_Frame(anim,SysMemPage,1);
 #ifdef ATARI_ST
 	/*
-	** Keep E-BWTOCL C2P weights + grey2 STE pens through EARTH_A / EARTH_E.
-	** Globe blits over leftover e-bwtocl on SeenBuff; per-clip weight/palette
+	** Keep GREYERTH C2P weights + grey2 STE pens through EARTH_A / EARTH_E.
+	** Globe blits over leftover E-BWTOCL on SeenBuff; per-clip weight/palette
 	** switches would mis-map mixed pixels. Palettes are close enough.
 	 */
 #endif

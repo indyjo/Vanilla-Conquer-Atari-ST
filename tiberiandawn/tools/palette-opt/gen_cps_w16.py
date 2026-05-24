@@ -6,9 +6,9 @@ Run from TIBERIANDAWN (requires built palette-opt):
   python3 tools/palette-opt/gen_cps_w16.py [--mix PATH] [--out DIR]
 
 Embedded-palette CPS (TITLE, ATTRACT2): extract 768-byte PAL from skip header, then
-palette-opt -p tmp.pal --dump NAME.W16 (default VGA subset 0..15, same as HTITLE).
+palette-opt -p tmp.pal -o NAME.W16 --sa-iter=0 (spread init, no SA).
 
-External palette (SATSEL.PAL): --subset-spread.
+External palette (SATSEL.PAL): same with spread init only (--sa-iter=0).
 
 Map CLICK_* overlays use WSA context weights (EUROPE.W16, …); this script also
 refreshes those from loose .WSA next to the mix when present.
@@ -77,20 +77,13 @@ def cps_embedded_palette(cps: bytes) -> bytes | None:
     return cps[10 : 10 + 768]
 
 
-def run_palette_opt(po: Path, palette: Path, out_w16: Path, subset_spread: bool) -> None:
-    cmd = [str(po)]
-    if subset_spread:
-        cmd.append("--subset-spread")
-    cmd.extend(["-p", str(palette), "--dump", str(out_w16)])
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+def run_palette_opt(po: Path, palette: Path, out_w16: Path, *, sa_iter: int = 0) -> None:
+    cmd = [str(po), "-p", str(palette), "-o", str(out_w16), f"--sa-iter={sa_iter}"]
+    subprocess.run(cmd, check=True)
 
 
 def wsa_to_w16(po: Path, wsa_path: Path, out_w16: Path) -> None:
-    subprocess.run(
-        [str(po), "-p", str(wsa_path), "--dump", str(out_w16)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
+    run_palette_opt(po, wsa_path, out_w16, sa_iter=0)
 
 
 def main() -> int:
@@ -136,7 +129,7 @@ def main() -> int:
         pal_path = tmp / f"{stem}.PAL"
         w16_path = args.out / f"{stem}.W16"
         pal_path.write_bytes(pal)
-        run_palette_opt(po, pal_path, w16_path, subset_spread=False)
+        run_palette_opt(po, pal_path, w16_path, sa_iter=0)
         print(f"wrote {w16_path.relative_to(td)}")
 
     pal_raw = mix_extract(args.mix, "SATSEL.PAL")
@@ -144,7 +137,7 @@ def main() -> int:
         pal_path = tmp / "SATSEL.PAL"
         w16_path = args.out / "SATSEL.W16"
         pal_path.write_bytes(pal_raw)
-        run_palette_opt(po, pal_path, w16_path, subset_spread=True)
+        run_palette_opt(po, pal_path, w16_path, sa_iter=0)
         print(f"wrote {w16_path.relative_to(td)}")
     else:
         print("skip SATSEL.PAL: missing or wrong size", file=sys.stderr)

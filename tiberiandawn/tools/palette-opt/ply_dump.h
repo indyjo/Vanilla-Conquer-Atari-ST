@@ -15,7 +15,7 @@ int ply_write_points(const char *path, int count, const float *metric_xyz,
 /* PREFIX.palette.ply — all 256 source colors in metric space. */
 int ply_dump_palette(const char *prefix, const float *colors, const unsigned char *pal768);
 
-/* PREFIX.subset.ply — ST subset pens (subset[] indices). */
+/* PREFIX.subset.ply — subset pens (subset[] indices). */
 int ply_dump_subset(const char *prefix, const float *colors, const unsigned char *pal768,
 	const unsigned char *subset, int subset_count);
 

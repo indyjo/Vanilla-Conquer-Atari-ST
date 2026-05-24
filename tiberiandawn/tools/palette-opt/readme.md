@@ -1,10 +1,10 @@
 # palette-opt
 
-Imported from **STDOOM** (`HD/STDOOM/palette-opt/`): a small host utility that, given a fixed 256-color palette (`PLAYPAL` in `playpal.c`) and a hard-coded subset of palette indices, exhaustively searches mixing weights for each target color (STDOOM-style dither / distance metric).
+Host utility that, given a fixed 256-color palette (`PLAYPAL` in `playpal.c`) and a 16-pen subset, searches mixing weights for each target color (STDOOM-style dither / distance metric) and writes a C2P `.W16` bundle.
 
-`playpal.c` embeds **Command & Conquer `TEMPERAT.PAL`** (768 bytes, VGA 6-bit RGB per channel), extracted from `bin/AtariST/CCLOCAL.MIX` / `TRANSIT.MIX` via `list_mix/list_mix.py -x TEMPERAT.PAL` (same CRC as the retail data file).
+`playpal.c` embeds **Command & Conquer `TEMPERAT.PAL`** (768 bytes, VGA 6-bit RGB per channel).
 
-Gamma in `main.c` uses **`PLAYPAL[i] / 63.0f`** so 6-bit DAC values are normalized correctly.
+Gamma uses **`PLAYPAL[i] / 63.0f`** so 6-bit DAC values are normalized correctly.
 
 ### Regenerate Atari c2p weight table
 
@@ -17,9 +17,7 @@ python3 tools/palette-opt/gen_cps_w16.py   # TITLE/ATTRACT2/SATSEL + CLICK conte
 ```
 
 That rebuilds `ATARILIB/c2p_palette_opt_weights.inc` and `c2p_palette_opt_subset.inc`
-(spread subset + 256×16 weights, each row sums to 16) used by `c2p.cpp` for chunky→planar dithering.
-
-This tree does not use it in the build yet; it is kept for experimentation (e.g. Atari ST chunky-to-planar or palette reduction work).
+(spread subset + 256×16 weights) used by `c2p.cpp` for chunky→planar dithering.
 
 ## Build
 
@@ -33,56 +31,99 @@ Requires a normal C99 compiler and `math` (`-lm`).
 ## Run
 
 ```bash
-./palette-opt           # all 256 entries
-./palette-opt 0 16      # entries 0..15 only
-./palette-opt -p SOME.PAL --dump some.w16
-./palette-opt -p SCRSCN1.WSA --dump SCRSCN1.W16
+./palette-opt -o TITLE.W16 -p TITLE.PAL
+./palette-opt -o SCRSCN1.W16 -p SCRSCN1.WSA
+./palette-opt -p TEMPERAT.PAL --sa-iter=0          # stdout: C-style weight rows
 ```
 
 `-p/--palette` accepts either:
 - raw 768-byte `.PAL` (6-bit RGB channels), or
-- `.WSA` with embedded palette (uses the first 16 palette indices as the ST subset).
+- `.WSA` with embedded palette.
 
-`--dump out.w16` writes an **4116-byte** `C2P_WeightSet` bundle: magic `W16\0`, 16-byte
-`subset[]` (VGA index per hardware pen), then `weights[256][16]`. Use `--subset-spread`
-to pick the subset via farthest-point sampling; without it, indices 0..15 are used.
+**`-o FILE`** writes an **4116-byte** `C2P_WeightSet` bundle: magic `W16\0`, 16-byte
+`subset[]` (palette index per pen `k`), then `weights[256][16]`. If `FILE` already
+exists, the run fails unless **`-c` / `--continue`** (reload subset from `FILE`, then overwrite).
 
-### Subset selection (16 ST pens)
+Without **`-o`**, weight rows are printed to stdout in C form; stderr carries logs only.
 
-`--subset-spread` picks 16 indices with **farthest-point sampling** in the same scaled
-YUV space as the weight optimizer (`subset_spread.c`). Each new pen maximizes the minimum
-distance to pens already chosen.
+**Subset (default):** farthest-point spread init, then simulated annealing. Use
+**`--sa-iter=0`** to keep the spread (or `--subset-from` / `--subset-init`) subset unchanged.
+
+**Fixed pens:** `--fix PEN,IDX` pins pen `PEN` to palette index `IDX` (repeatable).
+
+### Subset init and continue
+
+| Init | Flag |
+|------|------|
+| Spread (default) | (none) |
+| Comma list, pen order | `--subset-init=…` |
+| Another `.W16` | `--subset-from FILE` |
+| Existing `-o` file | `-c` / `--continue` |
+
+`-c` cannot be combined with `--subset-from` or `--subset-init`.
+
+### Simulated annealing
+
+Per index \(i\): \(c_i = (1-\lambda)\,e_1 + \lambda\,e_2\) (Bayer \(e_1\), centroid \(e_2\)).
+Global cost \(\sum_i \alpha_i c_i\); without `--hist`, \(\alpha_i = 1/256\).
+
+**Bayer tile / weight granularity:** rows always sum to **16**. Default granularity **1** (full 4×4). **`--bayer=2`** sets granularity **4** (2×2 tile: weights are multiples of 4). Override with **`--weight-granularity=N`** (`N` divides 16). Runtime C2P still uses 4×4 Bayer unless the port is updated separately.
 
 ```bash
-./palette-opt --subset-spread --dump-ply temperat_spread
+./palette-opt -o temperat.w16 --lambda=0.3
+./palette-opt -o screen.w16 -p SCREEN.PAL --bayer=2
+./palette-opt -o temperat.w16 --hist counts.txt --sa-iter=12000
+./palette-opt -o temperat.w16 --subset-from baseline.w16 --sa-iter=200
+./palette-opt -o temperat.w16 -c --sa-iter=500
+./palette-opt -o SATSEL.W16 -p SATSEL.PAL --sa-iter=0
 ```
 
-### PLY point clouds (CloudCompare / MeshLab)
+| Flag | Default |
+|------|---------|
+| `--lambda` | `0.3` |
+| `--sa-iter` | `100` (`0` = no SA steps) |
+| `--sa-log-every` | `10` |
+| `--sa-cool` | `0.9995` |
+| `--sa-t0` | auto |
+| `--sa-seed` | time-based |
+| `--bayer` | `4` (granularity 1) |
+| `--weight-granularity` | `1` |
 
-`--dump-ply PREFIX` writes ASCII Stanford PLY files in palette-opt metric space
-`(x,y,z) = (2*y, u, v)` with VGA RGB and a `palette_index` property:
+Build with OpenMP on Linux (`make OPENMP=1`).
 
-| File | Contents |
-|------|----------|
-| `PREFIX.palette.ply` | All 256 source palette colors |
-| `PREFIX.subset.ply` | Current ST subset pens (`subset[]`) |
-| `PREFIX.mix.ply` | Per-index dither mix centroids (after weight pass) |
+### PLY point clouds
+
+`--dump-ply PREFIX` writes `PREFIX.{palette,subset,mix}.ply` in palette-opt metric space.
 
 ```bash
-./palette-opt --dump-ply /tmp/temperat -p TEMPERAT.PAL
-./palette-opt --subset-spread --dump-ply /tmp/temperat -p TEMPERAT.PAL
+./palette-opt -p TEMPERAT.PAL --dump-ply /tmp/temperat -o temperat.w16
 ```
 
-`--subset-spread-only` with `--dump-ply` writes palette + subset only (no mix).
 
-Console output remains C-style `{ ... }, // index: residual` lines.
+## Histograms (histtool)
+
+Build a sparse histogram from indexed BMPs and/or existing histogram files, then
+pass it to simulated annealing:
+
+```bash
+make -C tools/histtool
+./tools/histtool/histtool -o ui.hist assets/ui/*.bmp
+./tools/palette-opt/palette-opt -o SCREEN.W16 -p SCREEN.PAL --hist ui.hist --sa-iter=12000
+```
+
+See [tools/histtool/README.MD](../histtool/README.MD).
+
+## w16fix (subset pen reorder)
+
+After generating a `.W16`, run `tools/w16fix` to pin palette indices `0..15` to
+matching hardware pens and pack the rest (`>= 16`) in ascending palette-index order
+(weight columns are permuted with the subset):
+
+```bash
+make -C tools/w16fix
+./tools/w16fix/w16fix -o TITLE.W16 TITLE.W16
+```
 
 ## Upstream
 
-To refresh from your STDOOM checkout:
-
-```bash
-cp "$STDOOM/palette-opt/main.c" "$STDOOM/palette-opt/playpal.c" tools/palette-opt/
-```
-
-Then adjust `subset[]` or `PLAYPAL` in those files as needed.
+To refresh from STDOOM: copy `main.c` / `playpal.c` from `HD/STDOOM/palette-opt/`.

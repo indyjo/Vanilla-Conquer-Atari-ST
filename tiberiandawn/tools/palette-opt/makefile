@@ -15,7 +15,7 @@ ifeq ($(OPENMP),1)
   LDFLAGS += -fopenmp
 endif
 
-palette-opt: main.o playpal.o palette_color.o subset_fix.o subset_spread.o subset_opt.o weight_opt.o ply_dump.o
+palette-opt: main.o palette_color.o subset_fix.o subset_spread.o subset_opt.o weight_opt.o ply_dump.o
 	$(CC) $(LDFLAGS) -o $@ $+ -lm
 
 clean:

@@ -1,5 +1,5 @@
 /*
- * palette_color.h - Gamma + scaled YUV used by palette-opt error metric.
+ * palette_color.h - Palette color transform for palette-opt metric space.
  */
 
 #ifndef PALETTE_OPT_COLOR_H
@@ -8,11 +8,22 @@
 #define PALETTE_OPT_PALETTE_SIZE 256
 #define PALETTE_OPT_DIST_SQ_COUNT (PALETTE_OPT_PALETTE_SIZE * PALETTE_OPT_PALETTE_SIZE)
 
+typedef struct PaletteOptColorParams {
+	float gamma;
+	float y_scale;
+	int use_yuv;
+} PaletteOptColorParams;
+
+void palette_opt_color_params_default(PaletteOptColorParams *params);
+
 /*
  * pal768: 256 × RGB, channels 0..63 (VGA 6-bit).
- * colors: 768 floats written as (2*y, u, v) per index — same as find_best_dist().
+ * colors: 768 floats written as either gamma-corrected RGB or transformed YUV.
+ * With default params this matches the historical (2*y, u, v) metric.
  */
 void palette_build_opt_colors(const unsigned char *pal768, float colors[768]);
+void palette_build_opt_colors_params(const unsigned char *pal768, float colors[768],
+	const PaletteOptColorParams *params);
 
 /*
  * dist_sq: PALETTE_OPT_DIST_SQ_COUNT floats, row-major [i][j].

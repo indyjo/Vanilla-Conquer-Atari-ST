@@ -1,19 +1,21 @@
 # palette-opt
 
-Host utility that, given a fixed 256-color palette (`PLAYPAL` in `playpal.c`) and a 16-pen subset, searches mixing weights for each target color (STDOOM-style dither / distance metric) and writes a C2P `.W16` bundle.
+Host utility that, given a 256-color palette and a 16-pen subset, searches mixing
+weights for each target color (STDOOM-style dither / distance metric) and writes a
+C2P `.W16` bundle.
 
-`playpal.c` embeds **Command & Conquer `TEMPERAT.PAL`** (768 bytes, VGA 6-bit RGB per channel).
-
-Gamma uses **`PLAYPAL[i] / 63.0f`** so 6-bit DAC values are normalized correctly.
+Colors are normalized as **`pal[i] / 63.0f`** before gamma. The default metric is
+gamma-corrected **YUV** with **`gamma=1.6`** and **`Y *= 2`**; use `--gamma`,
+`--y-scale`, or `--rgb` to change that transform.
 
 ### Regenerate Atari c2p weight table
 
-After changing `playpal.c`:
+After changing the source palette:
 
 ```bash
 make -C tools/palette-opt
-python3 tools/palette-opt/gen_c2p_palette_opt_weights_inc.py
-python3 tools/palette-opt/gen_cps_w16.py   # TITLE/ATTRACT2/SATSEL + CLICK context WSA weights
+python3 tools/palette-opt/gen_c2p_palette_opt_weights_inc.py --palette path/to/TEMPERAT.PAL
+python3 tools/palette-opt/gen_cps_w16.py   # TITLE/ATTRACT2/SATSEL + CLICK context WSA weights via paltool
 ```
 
 That rebuilds `ATARILIB/c2p_palette_opt_weights.inc` and `c2p_palette_opt_subset.inc`
@@ -32,13 +34,22 @@ Requires a normal C99 compiler and `math` (`-lm`).
 
 ```bash
 ./palette-opt -o TITLE.W16 -p TITLE.PAL
-./palette-opt -o SCRSCN1.W16 -p SCRSCN1.WSA
 ./palette-opt -p TEMPERAT.PAL --sa-iter=0          # stdout: C-style weight rows
+./palette-opt -p TITLE.PAL -o TITLE.W16 --gamma=1.8 --y-scale=1.5
+./palette-opt -p TITLE.PAL -o TITLE.W16 --rgb
 ```
 
-`-p/--palette` accepts either:
-- raw 768-byte `.PAL` (6-bit RGB channels), or
-- `.WSA` with embedded palette.
+`-p/--palette` is mandatory and must point to a raw 768-byte `.PAL`
+(6-bit RGB channels).
+
+If your source palette lives inside `.WSA` or `.CPS`, extract it first with
+`tools/paltool`:
+
+```bash
+make -C tools/paltool
+./tools/paltool/paltool -i SCRSCN1.WSA -o SCRSCN1.PAL
+./tools/palette-opt/palette-opt -p SCRSCN1.PAL -o SCRSCN1.W16
+```
 
 **`-o FILE`** writes an **4116-byte** `C2P_WeightSet` bundle: magic `W16\0`, 16-byte
 `subset[]` (palette index per pen `k`), then `weights[256][16]`. If `FILE` already
@@ -50,6 +61,10 @@ Without **`-o`**, weight rows are printed to stdout in C form; stderr carries lo
 **`--sa-iter=0`** to keep the spread (or `--subset-from` / `--subset-init`) subset unchanged.
 
 **Fixed pens:** `--fix PEN,IDX` pins pen `PEN` to palette index `IDX` (repeatable).
+
+**Metric transform:** `--gamma F` sets the gamma exponent, `--y-scale F` scales Y in
+YUV space, and `--rgb` switches the optimizer to gamma-corrected RGB space instead of
+YUV.
 
 ### Subset init and continue
 
@@ -70,17 +85,20 @@ Global cost \(\sum_i \alpha_i c_i\); without `--hist`, \(\alpha_i = 1/256\).
 **Bayer tile / weight granularity:** rows always sum to **16**. Default granularity **1** (full 4×4). **`--bayer=2`** sets granularity **4** (2×2 tile: weights are multiples of 4). Override with **`--weight-granularity=N`** (`N` divides 16). Runtime C2P still uses 4×4 Bayer unless the port is updated separately.
 
 ```bash
-./palette-opt -o temperat.w16 --lambda=0.3
+./palette-opt -p TEMPERAT.PAL -o temperat.w16 --lambda=0.3
 ./palette-opt -o screen.w16 -p SCREEN.PAL --bayer=2
-./palette-opt -o temperat.w16 --hist counts.txt --sa-iter=12000
-./palette-opt -o temperat.w16 --subset-from baseline.w16 --sa-iter=200
-./palette-opt -o temperat.w16 -c --sa-iter=500
+./palette-opt -p TEMPERAT.PAL -o temperat.w16 --hist counts.txt --sa-iter=12000
+./palette-opt -p TEMPERAT.PAL -o temperat.w16 --subset-from baseline.w16 --sa-iter=200
+./palette-opt -p TEMPERAT.PAL -o temperat.w16 -c --sa-iter=500
 ./palette-opt -o SATSEL.W16 -p SATSEL.PAL --sa-iter=0
 ```
 
 | Flag | Default |
 |------|---------|
 | `--lambda` | `0.3` |
+| `--gamma` | `1.6` |
+| `--y-scale` | `2.0` |
+| metric | `YUV` (`--rgb` switches to RGB) |
 | `--sa-iter` | `100` (`0` = no SA steps) |
 | `--sa-log-every` | `10` |
 | `--sa-cool` | `0.9995` |
@@ -116,8 +134,9 @@ See [tools/histtool/README.MD](../histtool/README.MD).
 ## w16fix (subset pen reorder)
 
 After generating a `.W16`, run `tools/w16fix` to pin palette indices `0..15` to
-matching hardware pens and pack the rest (`>= 16`) in ascending palette-index order
-(weight columns are permuted with the subset):
+matching hardware pens, then greedily assign the remaining colors using W16
+weight-row distance so the strongest remaining low-slot/candidate match is chosen
+at each step (weight columns are permuted with the subset):
 
 ```bash
 make -C tools/w16fix
@@ -126,4 +145,5 @@ make -C tools/w16fix
 
 ## Upstream
 
-To refresh from STDOOM: copy `main.c` / `playpal.c` from `HD/STDOOM/palette-opt/`.
+To refresh from STDOOM: copy `main.c` as needed from `HD/STDOOM/palette-opt/`,
+but keep this tree's explicit `-p/--palette` workflow (no built-in palette).

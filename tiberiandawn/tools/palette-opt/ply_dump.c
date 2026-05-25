@@ -29,7 +29,7 @@ int ply_write_points(const char *path, int count, const float *metric_xyz,
 
 	fprintf(f, "ply\n");
 	fprintf(f, "format ascii 1.0\n");
-	fprintf(f, "comment palette-opt metric space (x,y,z) = (2*y, u, v)\n");
+	fprintf(f, "comment palette-opt metric space\n");
 	fprintf(f, "element vertex %d\n", count);
 	fprintf(f, "property float x\n");
 	fprintf(f, "property float y\n");

@@ -8,10 +8,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
-
-extern unsigned char PLAYPAL[];
 
 float colors[768];
 static float dist_sq[PALETTE_OPT_DIST_SQ_COUNT];
@@ -22,11 +19,6 @@ static int subset_count = 16;
 
 #define W16_MAGIC "W16"
 #define W16_FILE_BYTES (4 + 16 + 256 * 16)
-
-static uint16_t read_le16(const unsigned char *p)
-{
-	return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
-}
 
 static int file_exists(const char *path)
 {
@@ -41,10 +33,6 @@ static int load_palette_file(const char *path, unsigned char *dst768)
 {
 	FILE *f;
 	long size;
-	unsigned char hdr[14];
-	uint16_t total_frames;
-	uint16_t flags;
-	long pal_off;
 
 	f = fopen(path, "rb");
 	if (!f) {
@@ -69,47 +57,14 @@ static int load_palette_file(const char *path, unsigned char *dst768)
 		return 0;
 	}
 
-	if (size == 768) {
-		if (fread(dst768, 1, 768, f) != 768) {
-			fclose(f);
-			fprintf(stderr, "error: short read for PAL file %s\n", path);
-			return 0;
-		}
+	if (size != 768) {
 		fclose(f);
-		return 1;
-	}
-
-	if (size < 14 + 768) {
-		fclose(f);
-		fprintf(stderr, "error: unsupported palette source size for %s\n", path);
-		return 0;
-	}
-	if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr)) {
-		fclose(f);
-		fprintf(stderr, "error: failed reading WSA header from %s\n", path);
-		return 0;
-	}
-	total_frames = read_le16(hdr + 0);
-	flags = read_le16(hdr + 12);
-	if ((flags & 1u) == 0u) {
-		fclose(f);
-		fprintf(stderr, "error: WSA has no embedded palette: %s\n", path);
-		return 0;
-	}
-	pal_off = 14L + (long)(total_frames + 2) * 4L;
-	if (pal_off < 0 || pal_off + 768L > size) {
-		fclose(f);
-		fprintf(stderr, "error: invalid palette offset in WSA: %s\n", path);
-		return 0;
-	}
-	if (fseek(f, pal_off, SEEK_SET) != 0) {
-		fclose(f);
-		fprintf(stderr, "error: failed to seek WSA palette in %s\n", path);
+		fprintf(stderr, "error: palette file must be exactly 768 bytes: %s\n", path);
 		return 0;
 	}
 	if (fread(dst768, 1, 768, f) != 768) {
 		fclose(f);
-		fprintf(stderr, "error: short read for WSA palette in %s\n", path);
+		fprintf(stderr, "error: short read for PAL file %s\n", path);
 		return 0;
 	}
 	fclose(f);
@@ -133,10 +88,13 @@ static void print_help(FILE *out, const char *prog)
 		"                With -o: load subset from existing FILE, then overwrite.\n"
 		"                Incompatible with --subset-from and --subset-init.\n"
 		"  -p, --palette FILE\n"
-		"                768-byte .PAL or .WSA with embedded palette.\n"
-		"                Default: built-in TEMPERAT.PAL (playpal.c).\n"
+		"                Required 768-byte raw .PAL file (256 x RGB, channels 0..63).\n"
 		"  --dump-ply PREFIX\n"
 		"                Write PREFIX.{palette,subset,mix}.ply point clouds.\n"
+		"  --gamma=F      Gamma exponent for normalized RGB channels (default 1.6).\n"
+		"  --y-scale=F    Multiply Y by F in YUV metric space (default 2.0).\n"
+		"                Ignored with --rgb.\n"
+		"  --rgb          Use gamma-corrected RGB metric instead of YUV.\n"
 		"\n"
 		"Subset (default: farthest-point spread init, then simulated annealing):\n"
 		"  --subset-init LIST\n"
@@ -164,11 +122,11 @@ static void print_help(FILE *out, const char *prog)
 		"Without -o, prints C-style weight rows for all 256 indices to stdout.\n"
 		"\n"
 		"Examples:\n"
-		"  %s -o out.w16 --lambda=0.3\n"
-		"  %s -o out.w16 -c --sa-iter=500\n"
+		"  %s -p TEMPERAT.PAL -o out.w16 --lambda=0.3\n"
+		"  %s -p TEMPERAT.PAL -o out.w16 -c --sa-iter=500\n"
 		"  %s -o SATSEL.W16 -p SATSEL.PAL --sa-iter=0\n"
 		"  %s -p TEMPERAT.PAL --sa-iter=0\n"
-		"  %s --dump-ply /tmp/temperat -o temperat.w16\n",
+		"  %s -p TEMPERAT.PAL --dump-ply /tmp/temperat -o temperat.w16\n",
 		prog, prog, prog, prog, prog, prog);
 }
 
@@ -207,6 +165,31 @@ static int parse_weight_granularity_option(const char *value)
 	if (!value || !*value || (end && *end != '\0') || gran <= 0 || gran > PALETTE_OPT_WEIGHT_SUM)
 		return 0;
 	return set_weight_granularity((int)gran);
+}
+
+static int parse_float_option(const char *opt_name, const char *value, float min_value,
+	int allow_equal, float *out_value)
+{
+	char *end = NULL;
+	float parsed;
+
+	if (!value || !*value) {
+		fprintf(stderr, "error: %s requires a value\n", opt_name);
+		return 0;
+	}
+
+	parsed = strtof(value, &end);
+
+	if ((end && *end != '\0') || !isfinite(parsed)
+		|| (!allow_equal && parsed <= min_value)
+		|| (allow_equal && parsed < min_value)) {
+		fprintf(stderr, "error: %s must be %s %.6g (got %s)\n",
+			opt_name, allow_equal ? ">=" : ">", (double)min_value, value ? value : "(null)");
+		return 0;
+	}
+
+	*out_value = parsed;
+	return 1;
 }
 
 static void print_subset_comment(FILE *out, const char *label)
@@ -397,12 +380,14 @@ int main(int argc, const char **argv)
 	float lambda = 0.3f;
 	PaletteSubsetOptParams sa_params;
 	PaletteSubsetFix subset_fix;
+	PaletteOptColorParams color_params;
 	FILE *outf = NULL;
 	int print_weights;
 	int target;
 
 	palette_subset_fix_clear(&subset_fix);
 	palette_subset_opt_params_default(&sa_params);
+	palette_opt_color_params_default(&color_params);
 	palette_hist_uniform(alpha);
 
 	while (argi < argc) {
@@ -427,12 +412,38 @@ int main(int argc, const char **argv)
 				return 1;
 			}
 			palette_path = argv[++argi];
+		} else if (!strncmp(argv[argi], "--palette=", 10)) {
+			palette_path = argv[argi] + 10;
 		} else if (!strcmp(argv[argi], "--dump-ply")) {
 			if (argi + 1 >= argc) {
 				print_usage(argv[0]);
 				return 1;
 			}
 			ply_prefix = argv[++argi];
+		} else if (!strncmp(argv[argi], "--gamma=", 8)) {
+			if (!parse_float_option("--gamma", argv[argi] + 8, 0.0f, 0, &color_params.gamma))
+				return 1;
+		} else if (!strcmp(argv[argi], "--gamma")) {
+			if (argi + 1 >= argc) {
+				print_usage(argv[0]);
+				return 1;
+			}
+			if (!parse_float_option("--gamma", argv[++argi], 0.0f, 0, &color_params.gamma))
+				return 1;
+		} else if (!strncmp(argv[argi], "--y-scale=", 10)) {
+			if (!parse_float_option("--y-scale", argv[argi] + 10, 0.0f, 1,
+					&color_params.y_scale))
+				return 1;
+		} else if (!strcmp(argv[argi], "--y-scale")) {
+			if (argi + 1 >= argc) {
+				print_usage(argv[0]);
+				return 1;
+			}
+			if (!parse_float_option("--y-scale", argv[++argi], 0.0f, 1,
+					&color_params.y_scale))
+				return 1;
+		} else if (!strcmp(argv[argi], "--rgb")) {
+			color_params.use_yuv = 0;
 		} else if (!strncmp(argv[argi], "--lambda=", 9)) {
 			lambda = (float)atof(argv[argi] + 9);
 		} else if (!strcmp(argv[argi], "--hist")) {
@@ -521,6 +532,10 @@ int main(int argc, const char **argv)
 		fprintf(stderr, "error: -c/--continue requires -o/--output\n");
 		return 1;
 	}
+	if (!palette_path) {
+		fprintf(stderr, "error: -p/--palette is required\n");
+		return 1;
+	}
 	if (continue_mode && (subset_from_path || subset_init_csv)) {
 		fprintf(stderr,
 			"error: -c/--continue cannot be combined with --subset-from or --subset-init\n");
@@ -552,18 +567,25 @@ int main(int argc, const char **argv)
 		palette_subset_fix_log(&subset_fix, stderr);
 	}
 
-	if (palette_path && !load_palette_file(palette_path, loaded_pal))
+	if (!load_palette_file(palette_path, loaded_pal))
 		return 1;
 
 	{
 		int i;
 		for (i = 0; i < 768; i++)
-			raw_pal[i] = palette_path ? loaded_pal[i] : PLAYPAL[i];
+			raw_pal[i] = loaded_pal[i];
 	}
 
-	palette_build_opt_colors(raw_pal, colors);
+	palette_build_opt_colors_params(raw_pal, colors, &color_params);
 	palette_build_dist_sq_matrix(colors, dist_sq);
 	sa_params.lambda = lambda;
+
+	if (color_params.use_yuv) {
+		fprintf(stderr, "metric: YUV, gamma %.4g, Y scale %.4g\n",
+			(double)color_params.gamma, (double)color_params.y_scale);
+	} else {
+		fprintf(stderr, "metric: RGB, gamma %.4g\n", (double)color_params.gamma);
+	}
 
 	if (hist_path) {
 		if (palette_hist_load(hist_path, alpha) != 0) {

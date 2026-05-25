@@ -84,11 +84,13 @@ static unsigned long lcw_uncompress(const unsigned char *source, unsigned char *
 
 		if (code == 0xFF) {
 			unsigned long count = (unsigned long)read_lcw_u16(src);
-			unsigned short posw = read_lcw_u16(src);
+			unsigned short posw;
 			unsigned char *from;
 			unsigned long k;
 
-			src += 4;
+			src += 2;
+			posw = read_lcw_u16(src);
+			src += 2;
 			from = relative_mode ? (dst - (long)posw) : (dst0 + (long)posw);
 			if (from < dst0)
 				break;
@@ -121,7 +123,8 @@ static unsigned long lcw_uncompress(const unsigned char *source, unsigned char *
 
 /* Viewport-style XOR-delta decode (matches wsa.cpp Apply_XOR_Delta_To_Page_Or_Viewport). */
 static int apply_xor_delta_viewport(unsigned char *target, int width, int height, const unsigned char *delta,
-	const unsigned char *delta_end, int copy_mode)
+	const unsigned char *delta_end, int copy_mode, const char **err_reason, unsigned long *err_src_off,
+	unsigned long *err_dst_off, unsigned int *err_word_code)
 {
 	unsigned char *dst = target;
 	const unsigned char *src = delta;
@@ -129,19 +132,42 @@ static int apply_xor_delta_viewport(unsigned char *target, int width, int height
 	unsigned long frame_bytes = (unsigned long)width * (unsigned long)height;
 	unsigned char *frame_end = target + frame_bytes;
 
+	if (err_reason)
+		*err_reason = "unknown";
+	if (err_src_off)
+		*err_src_off = 0;
+	if (err_dst_off)
+		*err_dst_off = 0;
+	if (err_word_code)
+		*err_word_code = 0;
+
 	while (1) {
 		unsigned int code;
 
-		if (src >= delta_end)
+		if (src >= delta_end) {
+			if (err_reason)
+				*err_reason = "delta stream exhausted before stop";
+			if (err_src_off)
+				*err_src_off = (unsigned long)(src - delta);
+			if (err_dst_off)
+				*err_dst_off = (unsigned long)(dst - target);
 			return -1;
+		}
 		code = (unsigned int)*src++;
 
 		if (code > 0 && code < 128) {
 			unsigned int count = code;
 			while (count--) {
 				unsigned char v;
-				if (src >= delta_end || dst >= frame_end)
+				if (src >= delta_end || dst >= frame_end) {
+					if (err_reason)
+						*err_reason = (src >= delta_end) ? "shortdump ran out of delta bytes" : "shortdump wrote past frame";
+					if (err_src_off)
+						*err_src_off = (unsigned long)(src - delta);
+					if (err_dst_off)
+						*err_dst_off = (unsigned long)(dst - target);
 					return -1;
+				}
 				v = *src++;
 				if (copy_mode)
 					*dst = v;
@@ -161,13 +187,27 @@ static int apply_xor_delta_viewport(unsigned char *target, int width, int height
 		if (code == 0) {
 			unsigned int count;
 			unsigned char v;
-			if (src + 1 >= delta_end)
+			if (src + 1 >= delta_end) {
+				if (err_reason)
+					*err_reason = "shortrun header truncated";
+				if (err_src_off)
+					*err_src_off = (unsigned long)(src - delta);
+				if (err_dst_off)
+					*err_dst_off = (unsigned long)(dst - target);
 				return -1;
+			}
 			count = (unsigned int)*src++;
 			v = (unsigned char)*src++;
 			while (count--) {
-				if (dst >= frame_end)
+				if (dst >= frame_end) {
+					if (err_reason)
+						*err_reason = "shortrun wrote past frame";
+					if (err_src_off)
+						*err_src_off = (unsigned long)(src - delta);
+					if (err_dst_off)
+						*err_dst_off = (unsigned long)(dst - target);
 					return -1;
+				}
 				if (copy_mode)
 					*dst = v;
 				else
@@ -192,15 +232,20 @@ static int apply_xor_delta_viewport(unsigned char *target, int width, int height
 				dst += width;
 			}
 			dst += col;
-			if (dst > frame_end)
-				return -1;
 			continue;
 		}
 
 		{
 			unsigned int word_code;
-			if (src + 1 >= delta_end)
+			if (src + 1 >= delta_end) {
+				if (err_reason)
+					*err_reason = "long opcode truncated";
+				if (err_src_off)
+					*err_src_off = (unsigned long)(src - delta);
+				if (err_dst_off)
+					*err_dst_off = (unsigned long)(dst - target);
 				return -1;
+			}
 			word_code = (unsigned int)read_le16(src);
 			src += 2;
 
@@ -216,8 +261,6 @@ static int apply_xor_delta_viewport(unsigned char *target, int width, int height
 					dst += width;
 				}
 				dst += col;
-				if (dst > frame_end)
-					return -1;
 				continue;
 			}
 
@@ -227,8 +270,17 @@ static int apply_xor_delta_viewport(unsigned char *target, int width, int height
 					unsigned int count = x;
 					while (count--) {
 						unsigned char v;
-						if (src >= delta_end || dst >= frame_end)
+						if (src >= delta_end || dst >= frame_end) {
+							if (err_reason)
+								*err_reason = (src >= delta_end) ? "longdump ran out of delta bytes" : "longdump wrote past frame";
+							if (err_src_off)
+								*err_src_off = (unsigned long)(src - delta);
+							if (err_dst_off)
+								*err_dst_off = (unsigned long)(dst - target);
+							if (err_word_code)
+								*err_word_code = word_code;
 							return -1;
+						}
 						v = *src++;
 						if (copy_mode)
 							*dst = v;
@@ -245,12 +297,30 @@ static int apply_xor_delta_viewport(unsigned char *target, int width, int height
 				} else {
 					unsigned int count = x - 0x4000u;
 					unsigned char v;
-					if (src >= delta_end)
+					if (src >= delta_end) {
+						if (err_reason)
+							*err_reason = "longrun value missing";
+						if (err_src_off)
+							*err_src_off = (unsigned long)(src - delta);
+						if (err_dst_off)
+							*err_dst_off = (unsigned long)(dst - target);
+						if (err_word_code)
+							*err_word_code = word_code;
 						return -1;
+					}
 					v = (unsigned char)*src++;
 					while (count--) {
-						if (dst >= frame_end)
+						if (dst >= frame_end) {
+							if (err_reason)
+								*err_reason = "longrun wrote past frame";
+							if (err_src_off)
+								*err_src_off = (unsigned long)(src - delta);
+							if (err_dst_off)
+								*err_dst_off = (unsigned long)(dst - target);
+							if (err_word_code)
+								*err_word_code = word_code;
 							return -1;
+						}
 						if (copy_mode)
 							*dst = v;
 						else
@@ -272,14 +342,19 @@ static int apply_xor_delta_viewport(unsigned char *target, int width, int height
 }
 
 static int wsa_apply_xor_delta(unsigned char *frame_buf, unsigned short width, unsigned short height,
-	unsigned char *delta_buf, unsigned long lcw_cap, const unsigned char *compressed, int copy_mode)
+	unsigned char *delta_buf, unsigned long lcw_cap, const unsigned char *compressed, int copy_mode,
+	const char **err_reason, unsigned long *err_delta_len, unsigned long *err_src_off,
+	unsigned long *err_dst_off, unsigned int *err_word_code)
 {
 	unsigned long delta_len;
 	const unsigned char *delta_end;
 
 	delta_len = lcw_uncompress(compressed, delta_buf, lcw_cap);
 	delta_end = delta_buf + delta_len;
-	return apply_xor_delta_viewport(frame_buf, (int)width, (int)height, delta_buf, delta_end, copy_mode);
+	if (err_delta_len)
+		*err_delta_len = delta_len;
+	return apply_xor_delta_viewport(frame_buf, (int)width, (int)height, delta_buf, delta_end, copy_mode,
+		err_reason, err_src_off, err_dst_off, err_word_code);
 }
 
 static void hist_accumulate_frame(const unsigned char *frame, unsigned long frame_bytes, HistCounts *counts)
@@ -290,8 +365,8 @@ static void hist_accumulate_frame(const unsigned char *frame, unsigned long fram
 }
 
 static int wsa_decode_frame(const unsigned char *raw, long file_size, const char *path, unsigned short total_frames,
-	unsigned short width, unsigned short height, unsigned short largest_frame_size, unsigned short flags,
-	int frame_index, unsigned char *frame_buf, unsigned char *delta_buf)
+	unsigned short width, unsigned short height, unsigned short flags,
+	unsigned long delta_cap, int frame_index, unsigned char *frame_buf, unsigned char *delta_buf)
 {
 	const unsigned char *offsets;
 	unsigned long table_bytes;
@@ -301,6 +376,11 @@ static int wsa_decode_frame(const unsigned char *raw, long file_size, const char
 	unsigned long f;
 	unsigned long off;
 	unsigned long size;
+	const char *err_reason = NULL;
+	unsigned long err_delta_len = 0;
+	unsigned long err_src_off = 0;
+	unsigned long err_dst_off = 0;
+	unsigned int err_word_code = 0;
 
 	if (frame_index < 0 || frame_index >= (int)total_frames) {
 		fprintf(stderr, "error: internal WSA frame index out of range\n");
@@ -328,8 +408,11 @@ static int wsa_decode_frame(const unsigned char *raw, long file_size, const char
 			return -1;
 		}
 		if (flags & 2u) {
-			if (wsa_apply_xor_delta(frame_buf, width, height, delta_buf, largest_frame_size, raw + off, 0) != 0) {
-				fprintf(stderr, "error: %s: failed to decode WSA frame 0\n", path);
+			if (wsa_apply_xor_delta(frame_buf, width, height, delta_buf, delta_cap, raw + off, 0,
+					&err_reason, &err_delta_len, &err_src_off, &err_dst_off, &err_word_code) != 0) {
+				fprintf(stderr,
+					"error: %s: failed to decode WSA frame 0 (%s, delta_len=%lu, src=%lu, dst=%lu, op=0x%04X)\n",
+					path, err_reason ? err_reason : "unknown", err_delta_len, err_src_off, err_dst_off, err_word_code);
 				return -1;
 			}
 		} else {
@@ -344,8 +427,11 @@ static int wsa_decode_frame(const unsigned char *raw, long file_size, const char
 			fprintf(stderr, "error: %s: WSA frame %lu data invalid\n", path, f);
 			return -1;
 		}
-		if (wsa_apply_xor_delta(frame_buf, width, height, delta_buf, largest_frame_size, raw + off, 0) != 0) {
-			fprintf(stderr, "error: %s: failed to decode WSA frame %lu\n", path, f);
+		if (wsa_apply_xor_delta(frame_buf, width, height, delta_buf, delta_cap, raw + off, 0,
+				&err_reason, &err_delta_len, &err_src_off, &err_dst_off, &err_word_code) != 0) {
+			fprintf(stderr,
+				"error: %s: failed to decode WSA frame %lu (%s, delta_len=%lu, src=%lu, dst=%lu, op=0x%04X)\n",
+				path, f, err_reason ? err_reason : "unknown", err_delta_len, err_src_off, err_dst_off, err_word_code);
 			return -1;
 		}
 	}
@@ -448,7 +534,7 @@ long long wsa_hist_accumulate(const char *path, HistCounts *counts)
 
 	for (frame = 0; frame < (int)total_frames; frame++) {
 		unsigned long frame_bytes = (unsigned long)width * (unsigned long)height;
-		if (wsa_decode_frame(raw, file_size, path, total_frames, width, height, largest_frame_size, flags, frame,
+		if (wsa_decode_frame(raw, file_size, path, total_frames, width, height, flags, delta_cap, frame,
 				frame_buf, delta_buf) != 0) {
 			free(raw);
 			free(frame_buf);

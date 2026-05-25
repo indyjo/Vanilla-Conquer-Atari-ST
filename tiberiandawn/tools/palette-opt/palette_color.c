@@ -5,6 +5,7 @@
 #include "palette_color.h"
 
 #include <math.h>
+#include <stddef.h>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -18,12 +19,35 @@ static float dist_sq3(const float *a, const float *b)
 	return dx * dx + dy * dy + dz * dz;
 }
 
+void palette_opt_color_params_default(PaletteOptColorParams *params)
+{
+	if (!params)
+		return;
+	params->gamma = 1.6f;
+	params->y_scale = 2.0f;
+	params->use_yuv = 1;
+}
+
 void palette_build_opt_colors(const unsigned char *pal768, float colors[768])
 {
+	palette_build_opt_colors_params(pal768, colors, NULL);
+}
+
+void palette_build_opt_colors_params(const unsigned char *pal768, float colors[768],
+	const PaletteOptColorParams *params)
+{
 	int i;
+	PaletteOptColorParams cfg;
+
+	palette_opt_color_params_default(&cfg);
+	if (params)
+		cfg = *params;
 
 	for (i = 0; i < 768; i++)
-		colors[i] = powf((float)pal768[i] / 63.0f, 1.6f);
+		colors[i] = powf((float)pal768[i] / 63.0f, cfg.gamma);
+
+	if (!cfg.use_yuv)
+		return;
 
 	for (i = 0; i < 256; i++) {
 		const float r = colors[3 * i + 0];
@@ -32,7 +56,7 @@ void palette_build_opt_colors(const unsigned char *pal768, float colors[768])
 		const float y = 0.299f * r + 0.587f * g + 0.114f * b;
 		const float u = 0.492f * (b - y);
 		const float v = 0.877f * (r - y);
-		colors[3 * i + 0] = 2.0f * y;
+		colors[3 * i + 0] = cfg.y_scale * y;
 		colors[3 * i + 1] = u;
 		colors[3 * i + 2] = v;
 	}

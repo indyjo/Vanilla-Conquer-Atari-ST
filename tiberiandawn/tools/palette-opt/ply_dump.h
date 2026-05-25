@@ -6,8 +6,8 @@
 #define PALETTE_OPT_PLY_DUMP_H
 
 /*
- * Write palette-opt metric-space points (x,y,z) = (2*y, u, v) with uchar RGB
- * from pal768 (VGA 6-bit expanded to 0..255). palette_index[i] labels each vertex.
+ * Write palette-opt metric-space points (x,y,z) with uchar RGB from pal768
+ * (VGA 6-bit expanded to 0..255). palette_index[i] labels each vertex.
  */
 int ply_write_points(const char *path, int count, const float *metric_xyz,
 	const unsigned char *pal768, const int *palette_index);

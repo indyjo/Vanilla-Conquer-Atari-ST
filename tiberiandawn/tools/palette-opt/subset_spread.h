@@ -16,7 +16,8 @@
  * out_subset[pen] = palette index for pen slot `pen` (0..n-1).
  * fix may pin individual pens; remaining pens are filled in ascending pen order.
  *
- * colors: 768 floats from palette_build_opt_colors() (2*y, u, v per entry).
+ * colors: 768 floats from palette_build_opt_colors(); interpretation depends on
+ * the active metric transform.
  */
 int palette_subset_spread_colors_fix(const float *colors, int n, const PaletteSubsetFix *fix,
 	unsigned char *out_subset);

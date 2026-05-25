@@ -10,8 +10,8 @@ palette-opt -p tmp.pal -o NAME.W16 --sa-iter=0 (spread init, no SA).
 
 External palette (SATSEL.PAL): same with spread init only (--sa-iter=0).
 
-Map CLICK_* overlays use WSA context weights (EUROPE.W16, …); this script also
-refreshes those from loose .WSA next to the mix when present.
+Map CLICK_* overlays use WSA context weights (EUROPE.W16, …). Those palettes are
+extracted with tools/paltool first, then passed to palette-opt as raw .PAL files.
 """
 from __future__ import annotations
 
@@ -82,8 +82,9 @@ def run_palette_opt(po: Path, palette: Path, out_w16: Path, *, sa_iter: int = 0)
     subprocess.run(cmd, check=True)
 
 
-def wsa_to_w16(po: Path, wsa_path: Path, out_w16: Path) -> None:
-    run_palette_opt(po, wsa_path, out_w16, sa_iter=0)
+def extract_palette_with_paltool(pt: Path, in_path: Path, out_pal: Path) -> None:
+    cmd = [str(pt), "-i", str(in_path), "-o", str(out_pal)]
+    subprocess.run(cmd, check=True)
 
 
 def main() -> int:
@@ -104,6 +105,7 @@ def main() -> int:
     args = ap.parse_args()
 
     po = td / "tools" / "palette-opt" / "palette-opt"
+    pt = td / "tools" / "paltool" / "paltool"
     if not po.is_file():
         print("error: build palette-opt first: make -C tools/palette-opt", file=sys.stderr)
         return 1
@@ -154,9 +156,15 @@ def main() -> int:
         if not wsa_path.is_file():
             print(f"skip {wsa_name}: loose file not beside MIX", file=sys.stderr)
             continue
+        if not pt.is_file():
+            print("error: build paltool first for WSA palette extraction: make -C tools/paltool",
+                  file=sys.stderr)
+            return 1
         stem = wsa_name.rsplit(".", 1)[0]
+        pal_path = tmp / f"{stem}.PAL"
         w16_path = args.out / f"{stem}.W16"
-        wsa_to_w16(po, wsa_path, w16_path)
+        extract_palette_with_paltool(pt, wsa_path, pal_path)
+        run_palette_opt(po, pal_path, w16_path, sa_iter=0)
         print(f"wrote {w16_path.relative_to(td)} (CLICK_* context)")
 
     return 0

@@ -2,8 +2,10 @@
  * w16fix.c - Reorder C2P .W16 subset pens and remap weight columns.
  *
  * For each palette index N in the subset with 0 <= N < 16, assign pen N := N.
- * Remaining subset colors (palette index >= 16) fill unused pens sorted by
- * ascending VGA palette index.
+ * Remaining colors are then assigned greedily by repeatedly choosing the
+ * strongest remaining low-slot/candidate match from the current 16-weight rows,
+ * so the permutation tries to preserve the original low-16 visual roles
+ * without consulting palette RGB values.
  */
 
 #include <stdio.h>
@@ -122,9 +124,43 @@ static int old_pen_for_palette(const unsigned char *subset, int pal)
 	return -1;
 }
 
-static int pal_asc_cmp(const void *a, const void *b)
+static int weight_row_l1_distance(const unsigned char *a, const unsigned char *b)
 {
-	return (int)*(const unsigned char *)a - (int)*(const unsigned char *)b;
+	int d = 0;
+	for (int k = 0; k < 16; k++) {
+		int const delta = (int)a[k] - (int)b[k];
+		d += (delta < 0) ? -delta : delta;
+	}
+	return d;
+}
+
+static int find_best_preserve_candidate(const W16Data *data, int low_pal,
+	const unsigned char *remain, int remain_count, int *out_dist, int *out_hint)
+{
+	int best_i = -1;
+	int best_dist = 0;
+	int best_hint = -1;
+
+	for (int i = 0; i < remain_count; i++) {
+		int const pal = (int)remain[i];
+		int const old_pen = old_pen_for_palette(data->subset, pal);
+		int const dist = weight_row_l1_distance(data->weights[low_pal], data->weights[pal]);
+		int const hint = (old_pen >= 0) ? (int)data->weights[low_pal][old_pen] : -1;
+
+		if (best_i < 0 || dist < best_dist
+			|| (dist == best_dist && hint > best_hint)
+			|| (dist == best_dist && hint == best_hint && pal < (int)remain[best_i])) {
+			best_i = i;
+			best_dist = dist;
+			best_hint = hint;
+		}
+	}
+
+	if (out_dist)
+		*out_dist = best_dist;
+	if (out_hint)
+		*out_hint = best_hint;
+	return best_i;
 }
 
 static void log_subset(FILE *log, const char *label, const unsigned char *subset)
@@ -136,6 +172,64 @@ static void log_subset(FILE *log, const char *label, const unsigned char *subset
 	fputc('\n', log);
 }
 
+static int fill_remaining_preserve_low16(const W16Data *io, unsigned char *new_subset,
+	int *pen_used, unsigned char *remain, int remain_count)
+{
+	while (remain_count > 0) {
+		int chosen_low = -1;
+		int chosen_i = -1;
+		int chosen_dist = 0;
+		int chosen_hint = -1;
+
+		for (int low = 0; low < 16; low++) {
+			int best_i;
+			int best_dist;
+			int best_hint;
+
+			if (pen_used[low])
+				continue;
+
+			best_i = find_best_preserve_candidate(io, low, remain, remain_count, &best_dist,
+				&best_hint);
+			if (best_i < 0)
+				continue;
+
+			if (chosen_low < 0 || best_dist < chosen_dist
+				|| (best_dist == chosen_dist && best_hint > chosen_hint)
+				|| (best_dist == chosen_dist && best_hint == chosen_hint && low < chosen_low)
+				|| (best_dist == chosen_dist && best_hint == chosen_hint && low == chosen_low
+					&& (int)remain[best_i] < (int)remain[chosen_i])) {
+				chosen_low = low;
+				chosen_i = best_i;
+				chosen_dist = best_dist;
+				chosen_hint = best_hint;
+			}
+		}
+
+		if (chosen_low < 0 || chosen_i < 0) {
+			fprintf(stderr, "error: could not find preserve-low-16 assignment\n");
+			return 0;
+		}
+
+		new_subset[chosen_low] = remain[chosen_i];
+		pen_used[chosen_low] = 1;
+		fprintf(stderr,
+			"  pen %2d <- palette %3u (preserve-low-16: dist=%d, hint=%d)\n",
+			chosen_low, (unsigned)remain[chosen_i], chosen_dist, chosen_hint);
+
+		memmove(&remain[chosen_i], &remain[chosen_i + 1],
+			(size_t)(remain_count - chosen_i - 1) * sizeof(remain[0]));
+		remain_count--;
+	}
+
+	if (remain_count != 0) {
+		fprintf(stderr, "error: preserve-low-16 left %d unassigned colors\n", remain_count);
+		return 0;
+	}
+
+	return 1;
+}
+
 static int fix_w16(W16Data *io)
 {
 	unsigned char new_subset[16];
@@ -143,7 +237,6 @@ static int fix_w16(W16Data *io)
 	int pen_used[16];
 	unsigned char remain[16];
 	int remain_count = 0;
-	int next_pen;
 
 	memset(pen_used, 0, sizeof(pen_used));
 
@@ -161,21 +254,8 @@ static int fix_w16(W16Data *io)
 		remain[remain_count++] = (unsigned char)pal;
 	}
 
-	qsort(remain, (size_t)remain_count, sizeof(remain[0]), pal_asc_cmp);
-
-	next_pen = 0;
-	for (int i = 0; i < remain_count; i++) {
-		while (next_pen < 16 && pen_used[next_pen])
-			next_pen++;
-		if (next_pen >= 16) {
-			fprintf(stderr, "error: not enough free pens for remaining subset colors\n");
-			return 0;
-		}
-		new_subset[next_pen] = remain[i];
-		pen_used[next_pen] = 1;
-		fprintf(stderr, "  pen %2d <- palette %3u\n", next_pen, (unsigned)remain[i]);
-		next_pen++;
-	}
+	if (!fill_remaining_preserve_low16(io, new_subset, pen_used, remain, remain_count))
+		return 0;
 
 	for (int src = 0; src < 256; src++) {
 		for (int new_pen = 0; new_pen < 16; new_pen++) {
@@ -202,8 +282,9 @@ static void usage(const char *prog)
 		"Usage: %s [-o OUT] FILE.W16\n"
 		"\n"
 		"Reorder subset pens so palette indices 0..15 that appear in the subset\n"
-		"occupy matching pen slots. Remaining colors (index >= 16) fill other pens\n"
-		"in ascending palette-index order. Weight rows are permuted to match.\n"
+		"occupy matching pen slots. Remaining colors are then assigned greedily\n"
+		"using W16 weight-row distance so the best remaining low-slot/candidate\n"
+		"match is chosen at each step. Weight rows are permuted to match.\n"
 		"\n"
 		"Without -o, FILE.W16 is updated in place.\n",
 		prog);

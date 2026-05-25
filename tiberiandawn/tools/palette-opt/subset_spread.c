@@ -1,5 +1,5 @@
 /*
- * subset_spread.c - Farthest-point (max-min) subset selection in metric YUV space.
+ * subset_spread.c - Farthest-point (max-min) subset selection in metric space.
  */
 
 #include "subset_spread.h"

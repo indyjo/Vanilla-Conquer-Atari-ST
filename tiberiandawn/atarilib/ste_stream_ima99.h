@@ -18,7 +18,11 @@ public:
 	{
 		return total_output_samples_;
 	}
-	unsigned long pull(signed char* dst, unsigned long sample_count) override;
+	SteStreamSampleDomain sample_domain() const override
+	{
+		return STE_STREAM_DOMAIN_S8;
+	}
+	unsigned long pull(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256]) override;
 	unsigned long skip(unsigned long sample_count) override;
 
 private:

@@ -10,11 +10,14 @@
 #define BORDER_COLOR(c) \
 	unsigned short old_color = ST_BORDER_PALETTE_REGS[0]; \
 	ST_BORDER_PALETTE_REGS[0] = (unsigned short)(c)
+#define BORDER_COLOR_SET(c) \
+	ST_BORDER_PALETTE_REGS[0] = (unsigned short)(c)
 #define BORDER_RESTORE() (ST_BORDER_PALETTE_REGS[0] = old_color)
 
 #else
 
 #define BORDER_COLOR(c) ((void)(c))
+#define BORDER_COLOR_SET(c) ((void)(c))
 #define BORDER_RESTORE() ((void)0)
 
 #endif

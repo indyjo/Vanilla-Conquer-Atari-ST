@@ -16,7 +16,11 @@ public:
 	{
 		return total_output_samples_;
 	}
-	unsigned long pull(signed char* dst, unsigned long sample_count) override;
+	SteStreamSampleDomain sample_domain() const override
+	{
+		return sample_domain_;
+	}
+	unsigned long pull(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256]) override;
 	unsigned long skip(unsigned long sample_count) override;
 
 private:
@@ -25,6 +29,13 @@ private:
 	unsigned long total_output_samples_;
 	int pcm_layout_flags_;
 	unsigned in_stride_;
+	SteStreamSampleDomain sample_domain_;
+	int duplicate_2x_;
+	int repeat_pending_;
+	unsigned char repeat_sample_;
+
+	unsigned long pull_dup2x_(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256]);
+	unsigned long skip_dup2x_(unsigned long sample_count);
 };
 
 #endif /* STE_STREAM_PCM_H */

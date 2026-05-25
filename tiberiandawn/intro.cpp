@@ -134,8 +134,11 @@ void Choose_Side(void)
 	CCFileClass gdifile("GDI_SLCT.AUD");
 	CCFileClass nodfile("NOD_SLCT.AUD");
 	staticaud = Load_Alloc_Data(staticfile);
+	Sample_Make_PCM((void *)staticaud);
 	speechg = Load_Alloc_Data(gdifile);
+	Sample_Make_PCM((void *)speechg);
 	speechn = Load_Alloc_Data(nodfile);
+	Sample_Make_PCM((void *)speechn);
 
 #ifdef WIN32
 	if (Special.IsFromInstall){
@@ -227,7 +230,6 @@ void Choose_Side(void)
 #else
 		if (!Is_Sample_Playing(staticaud) || !sample_timer.Time()) {
 #endif
-			Stop_Sample(statichandle);
 			statichandle = Play_Sample(staticaud,255,64);
 			sample_timer.Set(0x3f);
 		}

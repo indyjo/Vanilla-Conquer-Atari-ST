@@ -125,6 +125,7 @@ void *Load_Sample(char const *filename);
 long Load_Sample_Into_Buffer(char const *filename, void *buffer, long size);
 long Sample_Read(int fh, void *buffer, long size);
 void Free_Sample(void const *sample);
+void Sample_Make_PCM(void *sample);
 BOOL Audio_Init( HWND window , int bits_per_sample, BOOL stereo , int rate , int reverse_channels);
 void Sound_End(void);
 void Stop_Sample(int handle);

@@ -4,8 +4,8 @@
  * Requires supervisor (startup calls Super(0)). Uses cookie _MCH for STE-class hardware
  * (STE / Mega STE / TT / Falcon). DMA sound is programmed at a **fixed 25033 Hz mono 8-bit**
  * rate ($FF8921 = 0x82). All source material is assumed to already be at that rate, so no
- * resampling is done. Each refill pulls up to STE_AUDIO_PULL_BLOCK bytes of mono signed 8-bit from
- * `SteStreamFormat::pull` (linear PCM / IMA99 without volume), then applies per-voice volume here.
+ * resampling is done. Each refill pulls up to STE_AUDIO_PULL_BLOCK bytes via a caller-supplied LUT
+ * (`SteStreamFormat::pull`), so format conversion and per-voice volume can be fused in the driver.
  * Playback uses one `STE_DMA_RING_SAMPLES` byte ring in ST-RAM; DMA is armed once to loop it.
  *
  * **Lifetime**: `Audio_Init` allocates the DMA ring (ST-RAM), per-voice `SteStreamPcmFormat` /
@@ -29,7 +29,8 @@
  * Compression 0 = raw PCM, 99 = Westwood AUD (0xDEAF-framed IMA ADPCM). Stereo is not supported.
  *
  * With `ST_BORDER_PROFILE`, `ste_audio_vbl_proc` uses BORDER_COLOR/BORDER_RESTORE (pen 0 red) for
- * audio service timing; `ste_stream_ima99.cpp` marks IMA decode in yellow within that interval.
+ * audio service timing; `ste_fill_mixed_region` marks the two-voice saturating mix pass in
+ * magenta within that interval.
  */
 
 #include "function.h"
@@ -163,13 +164,13 @@ struct SteStreamState {
 static struct SteStreamState g_voice_ss[STE_MIX_VOICES];
 static SteStreamPcmFormat g_voice_pcm[STE_MIX_VOICES];
 static SteStreamIma99Format g_voice_ima[STE_MIX_VOICES];
-static signed char g_mix_pull[STE_MIX_VOICES][STE_AUDIO_PULL_BLOCK];
+static unsigned char g_mix_pull[STE_MIX_VOICES][STE_AUDIO_PULL_BLOCK];
 static unsigned char* g_dma_pool;
 static volatile int g_pending_voice_shutdown;
 /*
  * Ring streaming state (VBL / Sound_Callback after Play_Sample cold arm).
  *   g_ring_write_pos:        next byte offset to mix into (0 .. STE_DMA_RING_SAMPLES-1).
- *   g_stream_samples_written: total samples committed to the ring (EOF / hot-join timeline).
+ *   g_stream_samples_written: total samples committed to the ring (EOF tracking / diagnostics).
  */
 static unsigned g_ring_write_pos;
 static unsigned long g_stream_samples_written;
@@ -185,6 +186,20 @@ static unsigned long read_le32(unsigned char const* p)
 {
 	return (unsigned long)p[0] | ((unsigned long)p[1] << 8) | ((unsigned long)p[2] << 16)
 	       | ((unsigned long)p[3] << 24);
+}
+
+static void write_le16(unsigned char* p, unsigned short v)
+{
+	p[0] = (unsigned char)(v & 0xFFU);
+	p[1] = (unsigned char)((v >> 8) & 0xFFU);
+}
+
+static void write_le32(unsigned char* p, unsigned long v)
+{
+	p[0] = (unsigned char)(v & 0xFFUL);
+	p[1] = (unsigned char)((v >> 8) & 0xFFUL);
+	p[2] = (unsigned char)((v >> 16) & 0xFFUL);
+	p[3] = (unsigned char)((v >> 24) & 0xFFUL);
 }
 
 static int ste_class_machine(void)
@@ -242,12 +257,12 @@ static void ste_audio_alloc_shutdown(void)
 	g_dma_pool = 0;
 }
 
-/* Map signed linear s8 (index = (unsigned char)sample) to DMA byte after (s * vol) >> 8. */
-static void ste_volume_lut_build(unsigned char lut[256], int vol)
+/* Map a stream's logical 8-bit domain to scaled signed-DMA bytes. */
+static void ste_volume_lut_build(unsigned char lut[256], int vol, SteStreamSampleDomain domain)
 {
 	vol = Bound(vol, 0, 0xFF);
 	for (unsigned i = 0; i < 256U; ++i) {
-		int const s = (int)(signed char)(unsigned char)i;
+		int const s = domain == STE_STREAM_DOMAIN_U8 ? (int)i - 128 : (int)(signed char)(unsigned char)i;
 		int o = (s * vol) >> 8;
 		if (o > 127) {
 			o = 127;
@@ -258,23 +273,16 @@ static void ste_volume_lut_build(unsigned char lut[256], int vol)
 	}
 }
 
-static void ste_apply_volume_s8(unsigned char* dst, signed char const* src, unsigned n, unsigned char const lut[256])
-{
-	for (unsigned i = 0; i < n; ++i) {
-		dst[i] = lut[(unsigned char)src[i]];
-	}
-}
-
 static void ste_stream_shutdown_one(struct SteStreamState* ss);
 static void ste_voice_release_file_heap(int vi);
 
-static void ste_voice_pull_padded(struct SteStreamState* ss, signed char* dst, unsigned nsamp)
+static void ste_voice_pull_padded(struct SteStreamState* ss, unsigned char* dst, unsigned nsamp)
 {
 	if (!ss->format || nsamp == 0) {
 		memset(dst, 0, (size_t)nsamp);
 		return;
 	}
-	unsigned long const got = ss->format->pull(dst, (unsigned long)nsamp);
+	unsigned long const got = ss->format->pull(dst, (unsigned long)nsamp, ss->vol_lut);
 	if (got < (unsigned long)nsamp) {
 		memset(dst + got, 0, (size_t)(nsamp - (unsigned)got));
 	}
@@ -353,7 +361,7 @@ static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char cons
 	ss->kind = kind;
 	ss->format = f;
 	ss->volume = Bound(volume, 0, 0xFF);
-	ste_volume_lut_build(ss->vol_lut, ss->volume);
+	ste_volume_lut_build(ss->vol_lut, ss->volume, f->sample_domain());
 	return 1;
 }
 
@@ -430,22 +438,19 @@ static void ste_fill_mixed_region(unsigned char* dst, unsigned nsamp)
 	if (nactive == 1) {
 		int const vi = vidx[0];
 		unsigned n = nsamp <= (unsigned)STE_AUDIO_PULL_BLOCK ? nsamp : (unsigned)STE_AUDIO_PULL_BLOCK;
-		ste_voice_pull_padded(&g_voice_ss[vi], g_mix_pull[vi], n);
-		ste_apply_volume_s8(dst, g_mix_pull[vi], n, g_voice_ss[vi].vol_lut);
+		ste_voice_pull_padded(&g_voice_ss[vi], dst, n);
 		return;
 	}
 	unsigned n = nsamp <= (unsigned)STE_AUDIO_PULL_BLOCK ? nsamp : (unsigned)STE_AUDIO_PULL_BLOCK;
 	int const vi0 = vidx[0];
 	int const vi1 = vidx[1];
 	ste_voice_pull_padded(&g_voice_ss[vi0], g_mix_pull[vi0], n);
+	BORDER_COLOR(0x0704u);
 	ste_voice_pull_padded(&g_voice_ss[vi1], g_mix_pull[vi1], n);
-	signed char const* const t0 = g_mix_pull[vi0];
-	signed char const* const t1 = g_mix_pull[vi1];
-	unsigned char const* const lut0 = g_voice_ss[vidx[0]].vol_lut;
-	unsigned char const* const lut1 = g_voice_ss[vidx[1]].vol_lut;
+	BORDER_COLOR_SET(0x0707u);
 	for (unsigned i = 0; i < n; ++i) {
-		int const a = (int)(signed char)lut0[(unsigned char)t0[i]];
-		int const b = (int)(signed char)lut1[(unsigned char)t1[i]];
+		int const a = (int)(signed char)g_mix_pull[vi0][i];
+		int const b = (int)(signed char)g_mix_pull[vi1][i];
 		int s = a + b;
 		if (s > 127) {
 			s = 127;
@@ -454,6 +459,7 @@ static void ste_fill_mixed_region(unsigned char* dst, unsigned nsamp)
 		}
 		dst[i] = (unsigned char)(signed char)s;
 	}
+	BORDER_RESTORE();
 }
 
 /* Mix `nbytes` (even) into the ring at `ring_off`, wrapping at STE_DMA_RING_SAMPLES. */
@@ -480,18 +486,6 @@ static void ste_ring_write_mixed(unsigned ring_off, unsigned nbytes)
 		filled += batch;
 	}
 	g_stream_samples_written += (unsigned long)nbytes;
-}
-
-/*
- * Skip leading output samples on a freshly opened stream so a hot-joined voice lines up
- * with samples already committed to the ring (`g_stream_samples_written`).
- */
-static void ste_stream_discard_output_samples(struct SteStreamState* ss, unsigned long skip_samples)
-{
-	if (skip_samples == 0UL || !ss->format) {
-		return;
-	}
-	ss->format->skip(skip_samples);
 }
 
 static void (**ste_vbl_queue_table(void))(void)
@@ -686,6 +680,89 @@ long Load_Sample_Into_Buffer(char const*, void*, long) { return 0; }
 long Sample_Read(int, void*, long) { return 0; }
 void Free_Sample(void const*) {}
 
+void Sample_Make_PCM(void* sample)
+{
+	if (!sample) {
+		return;
+	}
+
+	unsigned char* const aud = (unsigned char*)sample;
+	if (aud[11] != STE_AUD_COMP_IMA99) {
+		return;
+	}
+
+	unsigned long const payload_bytes = read_le32(aud + 2);
+	unsigned long const uncomp = read_le32(aud + 6);
+	if (payload_bytes == 0UL || payload_bytes > STE_AUD99_MAX_COMPRESSED_PAYLOAD || uncomp == 0UL
+	    || (uncomp & 1UL) != 0UL || uncomp > STE_AUD99_MAX_DECODED_PCM_BYTES || (aud[10] & AUD_FLAG_STEREO) != 0) {
+		return;
+	}
+
+	unsigned long const aud_bytes = (unsigned long)STE_AUD_HDR_LEN + payload_bytes;
+	SteStreamIma99Format probe;
+	if (!probe.bind_from_aud(aud, aud_bytes)) {
+		return;
+	}
+
+	unsigned long const total_samples = probe.total_output_samples();
+	/*
+	 * Some Westwood 16-bit IMA assets decode to an odd sample count. The decode/skip path only
+	 * services even-sized pulls, so drop a single trailing sample when rewriting to packed PCM.
+	 */
+	unsigned long const convert_samples = total_samples & ~1UL;
+	if (convert_samples == 0UL || probe.skip(convert_samples) != convert_samples) {
+		return;
+	}
+
+	SteStreamIma99Format convert;
+	if (!convert.bind_from_aud(aud, aud_bytes)) {
+		return;
+	}
+
+	unsigned char identity_lut[256];
+	for (unsigned i = 0; i < 256U; ++i) {
+		identity_lut[i] = (unsigned char)i;
+	}
+
+	unsigned char scratch[STE_AUDIO_PULL_BLOCK];
+	unsigned char* const payload = aud + STE_AUD_HDR_LEN;
+	unsigned long left = convert_samples;
+	unsigned long phase = 0UL;
+	unsigned long written = 0UL;
+
+	while (left > 0UL) {
+		unsigned long batch = left > (unsigned long)STE_AUDIO_PULL_BLOCK ? (unsigned long)STE_AUDIO_PULL_BLOCK : left;
+		batch &= ~1UL;
+		if (batch == 0UL) {
+			return;
+		}
+
+		unsigned long const got = convert.pull(scratch, batch, identity_lut);
+		if (got != batch) {
+			return;
+		}
+
+		for (unsigned long i = 0; i < got; ++i) {
+			if ((phase & 1UL) == 0UL) {
+				payload[written++] = (unsigned char)((int)(signed char)scratch[i] + 128);
+			}
+			++phase;
+		}
+		left -= got;
+	}
+
+	unsigned short rate = read_le16(aud);
+	if (rate > 1U) {
+		rate = (unsigned short)(rate / 2U);
+	}
+
+	write_le16(aud, rate);
+	write_le32(aud + 2, written);
+	write_le32(aud + 6, written);
+	aud[10] = STE_AUD_FLAG_DUP2X;
+	aud[11] = STE_AUD_COMP_PCM;
+}
+
 BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 {
 	ste_process_pending_voice_shutdown();
@@ -859,10 +936,10 @@ int Play_Sample(void const* sample, int priority, int volume, signed short)
 	}
 
 	if (!cold_arm) {
-		unsigned short const s2 = ste_sr_lock_ipl5();
-		unsigned long const skip = g_stream_samples_written;
-		ste_stream_discard_output_samples(&g_voice_ss[vi], skip);
-		ste_sr_restore(s2);
+		/*
+		 * Overlay voices should start at their own sample start; they join the mix on the
+		 * next service pass rather than inheriting elapsed time from an older stream.
+		 */
 		return 1;
 	}
 
@@ -886,7 +963,11 @@ int Play_Sample_Handle(void const* sample, int priority, int volume, signed shor
 
 int Set_Sound_Vol(int) { return 0; }
 int Set_Score_Vol(int) { return 0; }
-void Fade_Sample(int, int) {}
+void Fade_Sample(int handle, int)
+{
+	/* TODO: replace this temporary Atari behavior with a real per-handle fade. */
+	Stop_Sample(handle);
+}
 int Get_Free_Sample_Handle(int) { return 1; }
 int Get_Digi_Handle(void) { return 1; }
 

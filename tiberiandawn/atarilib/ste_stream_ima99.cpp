@@ -1,5 +1,4 @@
 #include "ste_stream_ima99.h"
-#include "st_border_profile.h"
 
 #include <string.h>
 
@@ -128,10 +127,8 @@ unsigned SteStreamIma99Format::stream_pull_(signed char* dst, unsigned max_out)
 		unsigned const comp_left = ima_.frame_comp_len - ima_.frame_comp_off;
 		unsigned char const* const csrc = ima_.frame_comp_base + ima_.frame_comp_off;
 		unsigned src_used = 0;
-		BORDER_COLOR(0x07F0u);
 		unsigned const produced =
 		    ws_adpcm68k_decode_mono8(&ima_.ws_mono, csrc, comp_left, dst + written, n, &src_used);
-		BORDER_RESTORE();
 		ima_.frame_comp_off += src_used;
 		ima_.frame_samples_emitted += produced;
 		written += produced;
@@ -142,12 +139,16 @@ unsigned SteStreamIma99Format::stream_pull_(signed char* dst, unsigned max_out)
 	return written;
 }
 
-unsigned long SteStreamIma99Format::pull(signed char* dst, unsigned long sample_count)
+unsigned long SteStreamIma99Format::pull(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256])
 {
-	if (dst == nullptr || sample_count == 0UL || total_output_samples_ == 0UL) {
+	if (dst == nullptr || lut == nullptr || sample_count == 0UL || total_output_samples_ == 0UL) {
 		return 0UL;
 	}
-	return (unsigned long)stream_pull_(dst, (unsigned)sample_count);
+	unsigned long const got = (unsigned long)stream_pull_((signed char*)dst, (unsigned)sample_count);
+	for (unsigned long i = 0; i < got; ++i) {
+		dst[i] = lut[dst[i]];
+	}
+	return got;
 }
 
 unsigned long SteStreamIma99Format::skip(unsigned long sample_count)

@@ -1,6 +1,5 @@
 /*
  * Embedded TEMPERAT.PAL (temperate theater VGA 6-bit RGB).
- * Keep byte-for-byte identical to tools/palette-opt/playpal.c PLAYPAL[].
  */
 
 #include "st_temperat_palette.h"

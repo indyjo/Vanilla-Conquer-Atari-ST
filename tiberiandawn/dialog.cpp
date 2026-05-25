@@ -118,13 +118,8 @@ void Draw_Box(int x, int y, int w, int h, BoxStyleEnum up, bool filled)
         {DKGREY, WHITE, BLACK, DKGREY},  // 3 Button is disabled down.
         {DKGREY, BLACK, WHITE, LTGREY},  // 4 Button is disabled up.
         {LTGREY, DKGREY, WHITE, LTGREY}, // 5 Button is up w/arrows.
-#ifdef ATARI_ST
-        {DKGREY, 14, 12, 13},     // 6 Button is down.
-        {DKGREY, 12, 14, 13},     // 7 Button is up w/border.
-#else
-        {CC_GREEN_BKGD, 14, 12, 13},     // 6 Button is down.
-        {CC_GREEN_BKGD, 12, 14, 13},     // 7 Button is up w/border.
-#endif
+        {CC_GREEN_BKGD, 14, 12, 13},    // 6 Button is down.
+        {CC_GREEN_BKGD, 12, 14, 13},    // 7 Button is up w/border.
         {DKGREY, WHITE, BLACK, DKGREY},  // 8 Button is disabled down.
         {DKGREY, BLACK, LTGREY, DKGREY}, // 9 Button is disabled up.
         {BLACK, 14, 14, BLACK},          // 10 List box.

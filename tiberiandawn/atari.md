@@ -35,25 +35,24 @@ Build the host optimizer:
 make -C tools/palette-opt
 ```
 
-From a WSA with embedded palette (subset defaults to VGA indices 0..15 unless `--subset-spread` is used):
+From a WSA with embedded palette:
 
 ```bash
-tools/palette-opt/palette-opt -p path/to/FILE.WSA --dump path/to/FILE.W16
+tools/palette-opt/palette-opt -p path/to/FILE.WSA -o path/to/FILE.W16 --sa-iter=0
 ```
 
-From a raw 768-byte theater `.PAL` (recommended: spread subset for optimization):
+From a raw 768-byte theater `.PAL` (spread init, no SA; add `--sa-iter=N` to optimize):
 
 ```bash
-tools/palette-opt/palette-opt -p path/to/FILE.PAL --subset-spread \
-  --dump path/to/FILE.W16
+tools/palette-opt/palette-opt -p path/to/FILE.PAL -o path/to/FILE.W16 --sa-iter=0
 ```
 
 Example (desert theater):
 
 ```bash
 python3 list_mix/list_mix.py -x DESERT.PAL -o pal_extract_tmp bin/AtariST/DESERT.MIX
-tools/palette-opt/palette-opt -p pal_extract_tmp/DESERT.PAL --subset-spread \
-  --dump atari-assets/DESERT.W16
+tools/palette-opt/palette-opt -p pal_extract_tmp/DESERT.PAL \
+  -o atari-assets/DESERT.W16 --sa-iter=0
 ```
 
 Ship regenerated `.W16` files from `atari-assets/` next to `cnc.tos` (see `atari-assets/README.md`).

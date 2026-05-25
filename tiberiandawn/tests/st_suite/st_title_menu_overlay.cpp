@@ -95,7 +95,7 @@ static void st_draw_dialog_green_border(GraphicViewPortClass &vp)
 
 /*
  * TextButtonClass::Draw_Background for TPF_6PT_GRAD: BOXSTYLE_GREEN_RAISED via Draw_Box.
- * Game fills with BTEXTURE.SHP; we use solid CC_GREEN_BKGD + same bevel as DIALOG.CPP.
+ * Flat CC_GREEN_BKGD fill + same bevel as DIALOG.CPP (BTEXTURE.SHP is not in retail TD).
  */
 static void st_draw_green_raised_button_frame(GraphicViewPortClass &vp, int x, int y, int w, int h)
 {

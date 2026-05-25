@@ -42,7 +42,7 @@ static void print_banner(void)
 	printf("  C&C ST test suite (on-machine)\n");
 	printf("========================================\n");
 	printf("1 Auto: C2P + SHP + .AUD\n");
-	printf("2 Interactive: 16x16 color grid (8x8)\n");
+	printf("2 Interactive: 16x16 grid; pick .W16\n");
 	printf("4 Interactive: TITLE prod path\n");
 	printf("5 Interactive: TITLE + menu overlay\n");
 	printf("6 Interactive: TITLE + mouse cursor\n");

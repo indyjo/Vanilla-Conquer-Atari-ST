@@ -18,7 +18,7 @@ Output: `bin/AtariST/cnc_st_tests.tos`
 | Option | Type | Purpose |
 |--------|------|---------|
 | **1** | Automated | **All automated tests:** C2P planar checksum + **Build_Frame** SHP spot-checks (CONQUER.MIX) + one **`.AUD`** playback. Single summary block at the end (`Overall: PASS` / `FAIL`). |
-| **2** | Interactive | Switches to low rez, **TEMPERAT.PAL** logical + hardware first-16 pens (same as game startup), one horizontal luminance sweep via C2P; **Y/N** whether it looks correct (catches “half duplicated” style bugs). |
+| **2** | Interactive | **16×16 VGA index grid** (8×8 px/cell) plus a **16-pen ST strip** (2 px below the grid) through C2P. Menu lists every **`*.W16`** in the **current directory**; after choosing one, select a **`*.PAL`** file from the cwd as well. The chosen **`.PAL`** supplies RGB, and the chosen **`.W16`** supplies weights/subset. Exits if no **`.W16`** or **`.PAL`** files are present. |
 | **4** | Interactive | **Production title draw:** caches **`CONQUER.MIX`**, loads **`TITLE.CPS`** through **`Load_Title_Screen`** (same path as game), primes **`CurrentPalette`** with **TEMPERAT.PAL** before load (cold-start equivalent), then displays planar 320×200. This is the **title background only**, not the full main menu (buttons/text still need the real menu/dialog code). |
 | **5** | Interactive | `TITLE.CPS` production path plus **main menu overlay** (dialog + gradient labels). |
 | **6** | Interactive | `TITLE.CPS` plus **moving mouse cursor** using **`MOUSE.SHP`** from **`LOCAL.MIX`**. |
@@ -32,6 +32,7 @@ Input is read with **`Crawcin()`** (MiNT/TOS keyboard).
 ## Tips on real hardware
 
 - For options **4**–**6**, place required MIX archives in the **current working directory**. These title tests use **`CONQUER.MIX` / `TITLE.CPS`** via the production `Load_Title_Screen` path (and **5**/**6** also open other MIX files).
+- For **2**, copy any **`*.W16`** weight bundles and matching **`*.PAL`** files into the cwd. The test now asks for both: the **`.W16`** provides weights/subset, the **`.PAL`** provides RGB. (Host tools: `python3 tools/palette-opt/gen_cps_w16.py` or `palette-opt -o FILE.W16`, plus the source palette file.)
 - For **c**, copy **`CONQUER.MIX`** plus companion **`.W16`** files from **`atari-assets/`** (host: `python3 tools/palette-opt/gen_cps_w16.py`). **`TITLE.CPS`** uses compiled **HTITLE** weights if **`TITLE.W16`** is absent.
 - For **1** / **7** / **8**, add **`CONQUER.MIX`** next to the test `.TOS`. For **1** / **8** / **a** audio, copy the **MIX** files referenced by the built-in try list (e.g. **`SOUNDS.MIX`**, **`SCOUNDS.MIX`**, **`SCORES.MIX`** for **`IND2.AUD`**, **`TRANSIT.MIX`** for **`STRUGGLE.AUD`**, **`WIN1.AUD`**, side-select speech, etc.). With **9+** audio rows, use **`f`** for “first hit in list order” (single-digit **`9`** is the last clip). (Cursor **`MOUSE.SHP`** is not a KeyFrame blob; menu **6** loads it from **`LOCAL.MIX`** via **`Extract_Shape`**.) Audio tests need **STE-class** digitized hardware (same as the main game). API: `tests/st_suite/st_audio_asset_autotest.h`.
 - Interactive tests switch resolution and `Setscreen`. When they finish, they **restore the 16 ST hardware palette words** at `$FF8240` from before the test, then restore the previous `Getrez()` value.

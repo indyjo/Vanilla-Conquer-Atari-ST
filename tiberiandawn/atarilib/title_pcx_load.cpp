@@ -29,6 +29,23 @@ static inline short SwapLE16(short val)
 #endif
 }
 
+static void Title_TryInstallC2PWeights(void)
+{
+	C2P_WeightSet weight_set;
+	CCFileClass file("TITLE.W16");
+	long got;
+
+	C2P_Clear_CustomWeights();
+	if (file.Is_Available() && file.Open(READ)) {
+		got = file.Read(&weight_set, (long)sizeof(weight_set));
+		file.Close();
+		if (got == (long)sizeof(weight_set) && C2P_Install_CustomWeights(&weight_set)) {
+			return;
+		}
+	}
+	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
+}
+
 void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned char *palette)
 {
 	if (!name || !video_page || strcmp(name, "TITLE.CPS") != 0) {
@@ -39,7 +56,7 @@ void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned ch
 	if (!file_obj.Is_Available()) {
 		return;
 	}
-	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
+	Title_TryInstallC2PWeights();
 	Load_Uncompress(file_obj, SysMemPage, SysMemPage, palette);
 	if (palette) {
 		Set_Palette(palette);

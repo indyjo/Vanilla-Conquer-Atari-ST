@@ -100,6 +100,23 @@ extern "C" void Set_Palette(void *palette)
     Apply_Palette_State((unsigned char *)palette);
 }
 
+static void Palette_Debug_Fill_Chunky_Cell(
+	unsigned char *chunky,
+	int row_stride_bytes,
+	int x0,
+	int y0,
+	int cell_w,
+	int cell_h,
+	unsigned char pal_idx)
+{
+	for (int dy = 0; dy < cell_h; ++dy) {
+		unsigned char *row = chunky + (long)(y0 + dy) * row_stride_bytes;
+		for (int dx = 0; dx < cell_w; ++dx) {
+			row[x0 + dx] = pal_idx;
+		}
+	}
+}
+
 void Palette_Debug_Fill_Index_Grid_Chunky(
 	unsigned char *chunky,
 	int width_pixels,
@@ -111,12 +128,19 @@ void Palette_Debug_Fill_Index_Grid_Chunky(
 	if (row_stride_bytes < width_pixels)
 		return;
 
-	const int grid_px = 16 * 8;
-	if (width_pixels < grid_px || height_pixels < grid_px)
+	const int cell_px = 8;
+	const int grid_px = 16 * cell_px;
+	const int gap_px = 2;
+	const int strip_px = cell_px;
+	const int block_h = grid_px + gap_px + strip_px;
+
+	if (width_pixels < grid_px || height_pixels < block_h)
 		return;
 
 	const int x0 = (width_pixels - grid_px) / 2;
-	const int y0 = (height_pixels - grid_px) / 2;
+	const int y0 = (height_pixels - block_h) / 2;
+	const int strip_y0 = y0;
+	const int grid_y0 = y0 + strip_px + gap_px;
 
 	for (int y = 0; y < height_pixels; ++y) {
 		memset(chunky + (long)y * row_stride_bytes, 0, (size_t)width_pixels);
@@ -124,14 +148,28 @@ void Palette_Debug_Fill_Index_Grid_Chunky(
 
 	for (int gy = 0; gy < 16; ++gy) {
 		for (int gx = 0; gx < 16; ++gx) {
-			unsigned char c = (unsigned char)(gy * 16 + gx);
-			for (int dy = 0; dy < 8; ++dy) {
-				unsigned char *row = chunky + (long)(y0 + gy * 8 + dy) * row_stride_bytes;
-				for (int dx = 0; dx < 8; ++dx) {
-					row[x0 + gx * 8 + dx] = c;
-				}
-			}
+			unsigned char const c = (unsigned char)(gy * 16 + gx);
+			Palette_Debug_Fill_Chunky_Cell(
+				chunky,
+				row_stride_bytes,
+				x0 + gx * cell_px,
+				grid_y0 + gy * cell_px,
+				cell_px,
+				cell_px,
+				c);
 		}
+	}
+
+	for (int pen = 0; pen < 16; ++pen) {
+		unsigned char const c = C2P_HW_Palette_Subset[pen];
+		Palette_Debug_Fill_Chunky_Cell(
+			chunky,
+			row_stride_bytes,
+			x0 + pen * cell_px,
+			strip_y0,
+			cell_px,
+			strip_px,
+			c);
 	}
 }
 
@@ -154,9 +192,15 @@ void Palette_Debug_Draw_Index_Grid_To_Planar320(
 		memset(planar_base, 0, (size_t)plane_bytes);
 	}
 
-	const int grid_px = 16 * 8;
+	const int cell_px = 8;
+	const int grid_px = 16 * cell_px;
+	const int gap_px = 2;
+	const int strip_px = cell_px;
+	const int block_h = grid_px + gap_px + strip_px;
 	const int x0 = (ST_PLANAR_WIDTH - grid_px) / 2;
-	const int y0 = (ST_PLANAR_HEIGHT - grid_px) / 2;
+	const int y0 = (ST_PLANAR_HEIGHT - block_h) / 2;
+	const int strip_y0 = y0;
+	const int grid_y0 = y0 + strip_px + gap_px;
 
 	for (int gy = 0; gy < 16; ++gy) {
 		for (int gx = 0; gx < 16; ++gx) {
@@ -166,12 +210,26 @@ void Palette_Debug_Draw_Index_Grid_To_Planar320(
 				planar_row_bytes,
 				ST_PLANAR_WIDTH,
 				ST_PLANAR_HEIGHT,
-				x0 + gx * 8,
-				y0 + gy * 8,
-				8,
-				8,
+				x0 + gx * cell_px,
+				grid_y0 + gy * cell_px,
+				cell_px,
+				cell_px,
 				pal_idx);
 		}
+	}
+
+	for (int pen = 0; pen < 16; ++pen) {
+		unsigned char const pal_idx = C2P_HW_Palette_Subset[pen];
+		C2P_Fill_Aligned8_Rect(
+			(uint8_t *)planar_base,
+			planar_row_bytes,
+			ST_PLANAR_WIDTH,
+			ST_PLANAR_HEIGHT,
+			x0 + pen * cell_px,
+			strip_y0,
+			cell_px,
+			strip_px,
+			pal_idx);
 	}
 
 	Wait_Vert_Blank();

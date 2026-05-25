@@ -2,8 +2,7 @@
  * TEMPERAT.PAL (768 bytes, 6-bit RGB triplets) + helpers to pack the first 16
  * logical colors into Atari STE hardware palette words (same layout as startup).
  *
- * Binary data lives in st_temperat_palette_data.cpp. Keep in sync with
- * tools/palette-opt/playpal.c PLAYPAL[].
+ * Binary data lives in st_temperat_palette_data.cpp.
  */
 
 #ifndef ST_TEMPERAT_PALETTE_H

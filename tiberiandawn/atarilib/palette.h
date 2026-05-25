@@ -26,8 +26,9 @@ void Palette_ST_Capture_Hardware_State_Once(void);
 void Palette_ST_Restore_Hardware_State_And_Clear(void);
 
 /*
- * Fill a row-major 8bpp buffer with a 16×16 grid of palette indices 0..255
- * (8x8 px per cell, centered horizontally and vertically). Same layout as tests/st_suite/st_interactive.cpp.
+ * Fill a row-major 8bpp buffer with a row of 16 ST hardware pens (8×8 each,
+ * chunky indices from C2P_HW_Palette_Subset), then 2 px gap, then a 16×16 grid
+ * of palette indices 0..255 (8×8 px per cell). Block is centered on the buffer.
  * `row_stride_bytes` >= `width_pixels`; only the first `width_pixels` bytes of each row are cleared/filled.
  */
 void Palette_Debug_Fill_Index_Grid_Chunky(
@@ -37,8 +38,8 @@ void Palette_Debug_Fill_Index_Grid_Chunky(
 	int row_stride_bytes);
 
 /*
- * Draw a 16x16 grid of palette indices 0..255 (8x8 px per cell, centered on screen)
- * directly into ST interleaved planar 320x200 using C2P_Fill_Aligned8_Rect — no chunky scratch.
+ * Draw the same 16-pen ST strip + 2 px gap + 16×16 index grid as Palette_Debug_Fill_Index_Grid_Chunky,
+ * directly into ST interleaved planar 320×200 using C2P_Fill_Aligned8_Rect — no chunky scratch.
  * Clears the full planar buffer first (memset to 0). If `rgb768_preview` is non-NULL,
  * installs it with Set_Palette before drawing so swatches match that LUT.
  */

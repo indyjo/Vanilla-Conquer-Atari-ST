@@ -117,6 +117,7 @@ void TabClass::Draw_It(bool complete)
                 {
                     int width_factor = (width == 320) ? 1 : 2;
                     StFrameMeter_Draw(LogicPage, width_factor);
+                    StFrameMeterPendingRedraw = false;
                 }
 #endif
 
@@ -128,6 +129,17 @@ void TabClass::Draw_It(bool complete)
             LogicPage->Unlock();
         }
     }
+
+#if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
+    if (Tab_Height != 0 && StFrameMeterPendingRedraw && !complete && !IsToRedraw) {
+        if (LogicPage->Lock()) {
+            int width_factor = (width == 320) ? 1 : 2;
+            StFrameMeter_Draw(LogicPage, width_factor);
+            StFrameMeterPendingRedraw = false;
+        }
+        LogicPage->Unlock();
+    }
+#endif
 
     Credits.Graphic_Logic(complete || IsToRedraw);
 #endif

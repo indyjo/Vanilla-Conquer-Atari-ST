@@ -9,6 +9,8 @@ class GraphicViewPortClass;
 
 #ifdef ST_FRAME_BAR_PROFILE
 
+extern bool StFrameMeterPendingRedraw;
+
 void StFrameMeter_FrameBegin(void);
 void StFrameMeter_FrameEnd(void);
 

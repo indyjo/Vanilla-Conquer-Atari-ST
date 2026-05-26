@@ -37,12 +37,46 @@
 #include "function.h"
 #include <stdarg.h>
 #include "common/filepcx.h"
+#include <stdio.h>
 #ifndef POSIX
 #include <io.h>
 #endif
 #ifdef CHEAT_KEYS
 
 extern bool ScreenRecording;
+
+template <class T>
+static void Debug_Print_Heap_Line(char const * name, TFixedIHeapClass<T> & heap)
+{
+	long bytes = (long)sizeof(T) * heap.Length();
+	int errors = heap.Debug_Validate();
+	printf("%-12s %4d %4d/%-4d %8ld %4d\n", name, (int)sizeof(T), heap.Count(), heap.Length(), bytes, errors);
+}
+
+static void Debug_Print_Heap_Sizes(void)
+{
+	printf("\nHeap         Size Used/Cap    Bytes  Err\n");
+	printf("----------------------------------------\n");
+	Debug_Print_Heap_Line("Units",      Units);
+	Debug_Print_Heap_Line("Factories",  Factories);
+	Debug_Print_Heap_Line("Terrains",   Terrains);
+	Debug_Print_Heap_Line("Templates",  Templates);
+	Debug_Print_Heap_Line("Smudges",    Smudges);
+	Debug_Print_Heap_Line("Overlays",   Overlays);
+	Debug_Print_Heap_Line("Infantry",   Infantry);
+	Debug_Print_Heap_Line("Bullets",    Bullets);
+	Debug_Print_Heap_Line("Buildings",  Buildings);
+	Debug_Print_Heap_Line("Anims",      Anims);
+	Debug_Print_Heap_Line("Aircraft",   Aircraft);
+	Debug_Print_Heap_Line("Triggers",   Triggers);
+	Debug_Print_Heap_Line("TeamTypes",  TeamTypes);
+	Debug_Print_Heap_Line("Teams",      Teams);
+	Debug_Print_Heap_Line("Houses",     Houses);
+#ifdef USE_RA_AI
+	Debug_Print_Heap_Line("BuildChoice", HouseClass::BuildChoice);
+#endif
+	printf("\n");
+}
 
 /***********************************************************************************************
  * Debug_Key -- Debug mode keyboard processing.                                                *
@@ -232,6 +266,10 @@ void Debug_Key(unsigned input)
                     MonoClass::Enable();
                 }
             }
+            break;
+
+        case (int)KN_H | (int)KN_CTRL_BIT | (int)KN_ALT_BIT:
+            Debug_Print_Heap_Sizes();
             break;
 
         case (int)KN_W | (int)KN_ALT_BIT:

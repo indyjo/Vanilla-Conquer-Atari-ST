@@ -1,11 +1,10 @@
 /*
  * facing.cpp - Facing calculation functions for Atari ST/MiNT
- * 
- * Simplified implementations of Desired_Facing256 and Desired_Facing8
+ *
+ * Portable C implementation of the original Westwood facing logic.
  */
 
 #include "../facing.h"  // For FacingClass if needed, but mainly for consistency
-#include <math.h>
 
 // Function declarations (matching wwlib32.h)
 #ifdef __cplusplus
@@ -17,6 +16,13 @@ int Desired_Facing8(long x1, long y1, long x2, long y2);
 }
 #endif
 
+static const unsigned char NewFacing8[16] = {
+	1, 2, 1, 0,
+	7, 6, 7, 0,
+	3, 2, 3, 4,
+	5, 6, 5, 4
+};
+
 /*
  * Desired_Facing256 - Calculate facing direction (0-255 resolution)
  * 
@@ -25,29 +31,60 @@ int Desired_Facing8(long x1, long y1, long x2, long y2);
  */
 int Desired_Facing256(long srcx, long srcy, long dstx, long dsty)
 {
-	long dx = dstx - srcx;
-	long dy = dsty - srcy;
-	
-	if (dx == 0 && dy == 0) {
-		return 0; /* Same position */
+	unsigned long facing = 0;
+	unsigned long abs_x;
+	unsigned long abs_y;
+	unsigned long axis_adjust;
+
+	/*
+	 * Mirror the original Win32 assembly algorithm: derive the quadrant from
+	 * the signs, then compute a pseudo-angle from the minor/major axis ratio.
+	 */
+	long xdiff = dstx - srcx;
+	if (xdiff < 0) {
+		abs_x = (unsigned long)(-xdiff);
+		facing = 0xC0;
+	} else {
+		abs_x = (unsigned long)xdiff;
 	}
-	
-	/* Calculate angle using atan2, then convert to 0-255 range */
-	double angle = atan2((double)dy, (double)dx);
-	
-	/* Convert from radians to 0-255 range */
-	/* atan2 returns -PI to PI, we want 0 to 2*PI */
-	if (angle < 0) {
-		angle += 2.0 * 3.14159265358979323846;
+
+	long ydiff = srcy - dsty;
+	if (ydiff < 0) {
+		abs_y = (unsigned long)(-ydiff);
+		facing ^= 0x40;
+	} else {
+		abs_y = (unsigned long)ydiff;
 	}
-	
-	/* Convert to 0-255 range (256 directions) */
-	int facing = (int)((angle * 256.0) / (2.0 * 3.14159265358979323846));
-	
-	/* Adjust so North (up, negative Y) is 0 */
-	facing = (facing + 64) % 256;
-	
-	return facing;
+
+	axis_adjust = (facing & 0x40) ^ 0x40;
+
+	if (abs_y >= abs_x) {
+		unsigned long temp = abs_x;
+		abs_x = abs_y;
+		abs_y = temp;
+		axis_adjust ^= 0x40;
+	}
+
+	if ((abs_y & 0xFFFFFF00UL) == 0) {
+		while ((abs_x & 0xFFFFFF00UL) != 0) {
+			abs_x >>= 1;
+			abs_y >>= 1;
+		}
+	}
+
+	if (abs_x == 0) {
+		abs_y = 0xFFFFFFFFUL;
+	} else {
+		abs_y = (unsigned long)(((unsigned long long)abs_y << 8) / abs_x);
+	}
+
+	abs_y >>= 3;
+	if (axis_adjust != 0) {
+		axis_adjust--;
+		abs_y = (unsigned long)(-(long)abs_y);
+	}
+
+	return (int)((abs_y + axis_adjust + facing) & 0xFF);
 }
 
 /*
@@ -57,20 +94,45 @@ int Desired_Facing256(long srcx, long srcy, long dstx, long dsty)
  */
 int Desired_Facing8(long x1, long y1, long x2, long y2)
 {
-	long dx = x2 - x1;
-	long dy = y2 - y1;
-	
-	if (dx == 0 && dy == 0) {
+	unsigned int index = 0;
+	unsigned long abs_x;
+	unsigned long abs_y;
+	unsigned long greater;
+	unsigned long lesser;
+
+	if (x1 == x2 && y1 == y2) {
 		return -1; /* Same position */
 	}
-	
-	/* Calculate 256-direction facing first */
-	int facing256 = Desired_Facing256(x1, y1, x2, y2);
-	
-	/* Convert to 8 directions (0, 32, 64, 96, 128, 160, 192, 224) */
-	/* Round to nearest multiple of 32 */
-	int facing8 = ((facing256 + 16) / 32) * 32;
-	
-	return facing8 % 256;
+
+	long ydiff = y1 - y2;
+	if (ydiff < 0) {
+		index |= 0x8;
+		abs_y = (unsigned long)(-ydiff);
+	} else {
+		abs_y = (unsigned long)ydiff;
+	}
+
+	long xdiff = x2 - x1;
+	if (xdiff < 0) {
+		index |= 0x4;
+		abs_x = (unsigned long)(-xdiff);
+	} else {
+		abs_x = (unsigned long)xdiff;
+	}
+
+	if (abs_x < abs_y) {
+		index |= 0x2;
+		greater = abs_y;
+		lesser = abs_x;
+	} else {
+		greater = abs_x;
+		lesser = abs_y;
+	}
+
+	if (lesser < ((greater + 1) >> 1)) {
+		index |= 0x1;
+	}
+
+	return (int)(NewFacing8[index] << 5);
 }
 

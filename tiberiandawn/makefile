@@ -95,7 +95,7 @@ ifeq ($(PROFILE_FRAME_BAR),1)
 DEFINES += ST_FRAME_BAR_PROFILE
 endif
 # PROFILE_BORDER: audio subsystem pen-0 border timing (ST_BORDER_PROFILE; not the frame bar)
-PROFILE_BORDER ?= 1
+PROFILE_BORDER ?= 0
 ifeq ($(PROFILE_BORDER),1)
 DEFINES += ST_BORDER_PROFILE
 endif
@@ -148,7 +148,8 @@ else
 # Release configuration
 DEFINES += NDEBUG
 # e.g. make CXX_OPT_REL=-O3 CONFIG=release ...
-CXX_OPT_REL ?= -O2
+CXX_OPT_REL ?= -O3
+WITH_SYMBOLS ?= 1
 CXXFLAGS = $(CXXFLAGS_COMMON) $(CXX_OPT_REL) -DNDEBUG
 LDFLAGS = -s
 # Optional: keep debug info and do not strip (nm / addr2line / gdb on host tooling).
@@ -171,6 +172,9 @@ DEFINE_FLAGS = $(foreach def,$(DEFINES),-D$(def))
 # Note: Assembly files may be x86-specific and may need conversion
 ASMFLAGS = -m68000
 ifeq ($(CONFIG),Debug)
+ASMFLAGS += -g
+endif
+ifeq ($(WITH_SYMBOLS),1)
 ASMFLAGS += -g
 endif
 
@@ -525,11 +529,11 @@ endif
 	@echo ""
 	@echo "Configuration Variables:"
 	@echo "  CONFIG=Debug   - Build debug version (default: Release)"
-	@echo "  CONFIG=Release - Build release version (CXX_OPT_REL default -O2; pass CXX_OPT_REL=-O3)"
+	@echo "  CONFIG=Release - Build release version (defaults: CXX_OPT_REL=-O3, WITH_SYMBOLS=1)"
 	@echo "  PROFILE_FRAME_BAR=0 - Atari-only: disable Hz200 profiler (default: 1, -DST_FRAME_BAR_PROFILE)"
-	@echo "  PROFILE_BORDER=0    - Atari-only: disable audio pen-0 border timing (default: 1)"
-	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); pair with PROFILE_FRAME_BAR=1 for Hz200 bars"
-	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O2)"
+	@echo "  PROFILE_BORDER=0    - Atari-only: disable audio pen-0 border timing (default: 0)"
+	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"
+	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
 	@echo "  PLATFORM=Win32 - Target platform (default: Win32)"
 	@echo "  CROSS_PREFIX   - Cross-compiler path (default: \$$HOME/opt/cross-mint/bin)"
 	@echo "  USE_ATARILIB   - Force use of ATARILIB (default: auto-detect)"

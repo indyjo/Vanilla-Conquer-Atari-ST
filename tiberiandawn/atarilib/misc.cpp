@@ -266,69 +266,6 @@ void SurfaceMonitorClass::Release(void)
 SurfaceMonitorClass AllSurfaces;
 
 /***************************************************************************
- * Set_Bit -- Sets a bit in a bit array                                    *
- *                                                                         *
- * INPUT:		void *array - pointer to bit array                          *
- *					int bit - bit index to set                                *
- *					int value - value to set (0 or non-zero)                 *
- *                                                                         *
- * OUTPUT:     none                                                        *
- *                                                                         *
- * HISTORY:                                                                *
- *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
- *   Modified to work with byte arrays (for BooleanVectorClass)           *
- *=========================================================================*/
-extern "C" void Set_Bit(void * array, int bit, int value)
-{
-	if (!array) return;
-	if (bit < 0) return;  // Invalid bit index
-	
-	unsigned char *byte_array = (unsigned char *)array;
-	int byte_index = bit >> 3;  // Divide by 8 (bits per byte)
-	int bit_index = bit & 0x7;   // Modulo 8 (0-7)
-	
-	// Note: We can't check bounds here without knowing array size,
-	// but the caller (BooleanVectorClass) should ensure valid access
-	
-	// Clear the bit first
-	unsigned char mask = ~(1U << bit_index);
-	byte_array[byte_index] &= mask;
-	
-	// Set the bit if value is non-zero
-	if (value) {
-		mask = (1U << bit_index);
-		byte_array[byte_index] |= mask;
-	}
-}
-
-/***************************************************************************
- * Get_Bit -- Gets a bit from a bit array                                 *
- *                                                                         *
- * INPUT:		void const *array - pointer to bit array                    *
- *					int bit - bit index to get                                *
- *                                                                         *
- * OUTPUT:     int - bit value (0 or 1)                                    *
- *                                                                         *
- * HISTORY:                                                                *
- *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
- *   Modified to work with byte arrays (for BooleanVectorClass)           *
- *=========================================================================*/
-extern "C" int Get_Bit(void const * array, int bit)
-{
-	if (!array) return 0;
-	if (bit < 0) return 0;  // Invalid bit index
-	
-	unsigned char const *byte_array = (unsigned char const *)array;
-	int byte_index = bit >> 3;  // Divide by 8 (bits per byte)
-	int bit_index = bit & 0x7;   // Modulo 8 (0-7)
-	
-	// Note: We can't check bounds here without knowing array size,
-	// but the caller (BooleanVectorClass) should ensure valid access
-	
-	return (byte_array[byte_index] >> bit_index) & 1;
-}
-
-/***************************************************************************
  * First_True_Bit -- Finds the first set bit in a bit array               *
  *                                                                         *
  * INPUT:		void const *array - pointer to bit array                    *

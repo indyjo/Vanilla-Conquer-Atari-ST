@@ -1723,6 +1723,19 @@ typedef union
 } TARGET_COMPOSITE;
 #pragma pack(pop)
 
+/*
+** Coord_Cell -- Converts a coordinate to a cell number.
+**
+** Implement with shifts so behavior is independent of host endianness.
+*/
+inline CELL Coord_Cell(COORDINATE coord)
+{
+	unsigned int u = (unsigned int)coord;
+	unsigned int x_cell = (u >> 8) & 0xFFu;
+	unsigned int y_part = ((u >> 16) & 0xFF00u) >> 2;
+	return (CELL)(y_part | x_cell);
+}
+
 #define TARGET_NONE ((TARGET)0)
 
 /****************************************************************************

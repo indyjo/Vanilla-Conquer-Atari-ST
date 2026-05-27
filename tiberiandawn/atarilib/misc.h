@@ -93,13 +93,49 @@ extern	SurfaceMonitorClass	AllSurfaces;				//List of all direct draw surfaces
 #ifdef __cplusplus
 extern "C" {
 #endif
-void Set_Bit(void * array, int bit, int value);
-int Get_Bit(void const * array, int bit);
 int First_True_Bit(void const * array);
 int First_False_Bit(void const * array);
 int Bound(int original, int min, int max);
 #ifdef __cplusplus
 }
 #endif
+
+/*
+ * Small bit helpers are performance‑critical on 680x0; make them inline so
+ * callers like BooleanVectorClass can be optimized without function call
+ * overhead.
+ */
+static inline void Set_Bit(void * array, int bit, int value)
+{
+	if (!array) return;
+	if (bit < 0) return;  /* Invalid bit index */
+
+	unsigned char *byte_array = (unsigned char *)array;
+	int byte_index = bit >> 3;   /* Divide by 8 (bits per byte) */
+	int bit_index  = bit & 0x7;  /* Modulo 8 (0-7) */
+
+	/* Clear the bit first. Caller must ensure array is large enough. */
+	unsigned char mask = (unsigned char)~(1U << bit_index);
+	byte_array[byte_index] &= mask;
+
+	/* Set the bit if value is non-zero. */
+	if (value) {
+		mask = (unsigned char)(1U << bit_index);
+		byte_array[byte_index] |= mask;
+	}
+}
+
+static inline int Get_Bit(void const * array, int bit)
+{
+	if (!array) return 0;
+	if (bit < 0) return 0;  /* Invalid bit index */
+
+	unsigned char const *byte_array = (unsigned char const *)array;
+	int byte_index = bit >> 3;   /* Divide by 8 (bits per byte) */
+	int bit_index  = bit & 0x7;  /* Modulo 8 (0-7) */
+
+	/* Caller must ensure array is large enough. */
+	return (byte_array[byte_index] >> bit_index) & 1;
+}
 
 #endif /* MISC_H */

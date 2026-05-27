@@ -44,38 +44,6 @@
 #include "function.h"
 
 /***********************************************************************************************
- * Coord_Cell -- Convert a coordinate into a cell number.                                      *
- *                                                                                             *
- *    This routine will convert the specified coordinate value into a cell number. This is     *
- *    useful to determine the map index number into the cell array that corresponds to a       *
- *    particular coordinate.                                                                   *
- *                                                                                             *
- * INPUT:   coord -- The coordinate to convert into a cell number.                             *
- *                                                                                             *
- * OUTPUT:  Returns with the cell number that corresponds to the coordinate specified.         *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   06/17/1996 JLB : Created.                                                                 *
- *=============================================================================================*/
-CELL Coord_Cell(COORDINATE coord)
-{
-    /*
-     * Original x86 logic:
-     *   x_cell = byte1(coord)
-     *   y_part = (high_word(coord) & 0xFF00) >> 2
-     *   cell = y_part | x_cell
-     *
-     * Implement with shifts so behavior is independent of host endianness.
-     */
-    unsigned int u = (unsigned int)coord;
-    unsigned int x_cell = (u >> 8) & 0xFFu;
-    unsigned int y_part = ((u >> 16) & 0xFF00u) >> 2;
-    return (CELL)(y_part | x_cell);
-}
-
-/***********************************************************************************************
  * Distance -- Determines the lepton distance between two coordinates.                         *
  *                                                                                             *
  *    This routine is used to determine the distance between two coordinates. It uses the      *

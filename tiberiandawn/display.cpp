@@ -344,6 +344,27 @@ namespace {
 }
 #endif
 
+namespace {
+	/*
+	 * Snap an arbitrary lepton coordinate onto the exact lepton positions that
+	 * survive Lepton_To_Pixel followed by Pixel_To_Lepton, without the /24.
+	 */
+	static inline int Snap_Lepton_To_Pixel_Grid(int lepton)
+	{
+		static unsigned short const snap_table[25] = {
+			0, 11, 21, 32, 43, 53, 64, 75, 85, 96, 107, 117, 128,
+			139, 149, 160, 171, 181, 192, 203, 213, 224, 235, 245, 256
+		};
+
+		unsigned short const value = (unsigned short)lepton;
+		int const base = (short)(value & 0xFF00u);
+		unsigned const fraction = value & 0x00FFu;
+		unsigned const pixel = ((fraction * ICON_PIXEL_W) + (ICON_LEPTON_W / 2)) >> 8;
+
+		return base + (int)snap_table[pixel];
+	}
+}
+
 /*
 **	These layer control elements are used to group the displayable objects
 
@@ -1529,8 +1550,8 @@ CELL DisplayClass::Click_Cell_Calc(int x, int y)
     // if (x < TacLeptonWidth && y < TacLeptonHeight) {
     if (IgnoreViewConstraints || (x < TacLeptonWidth && y < TacLeptonHeight)) {
 
-        COORDINATE tcoord = XY_Coord(Pixel_To_Lepton(Lepton_To_Pixel(Coord_X(TacticalCoord))),
-                                     Pixel_To_Lepton(Lepton_To_Pixel(Coord_Y(TacticalCoord))));
+        COORDINATE tcoord = XY_Coord(Snap_Lepton_To_Pixel_Grid(Coord_X(TacticalCoord)),
+                                     Snap_Lepton_To_Pixel_Grid(Coord_Y(TacticalCoord)));
 
         return (Coord_Cell(Coord_Add(tcoord, XY_Coord(x, y))));
     }
@@ -2245,16 +2266,16 @@ bool DisplayClass::Map_Cell(CELL cell, HouseClass* house, bool and_for_allies)
 #ifdef REMASTER_BUILD
 bool DisplayClass::Coord_To_Pixel(COORDINATE coord, int& x, int& y)
 {
-    int xtac = Pixel_To_Lepton(Lepton_To_Pixel(Coord_X(TacticalCoord)));
-    int xoff = Pixel_To_Lepton(Lepton_To_Pixel(Coord_X(coord)));
+    int xtac = Snap_Lepton_To_Pixel_Grid(Coord_X(TacticalCoord));
+    int xoff = Snap_Lepton_To_Pixel_Grid(Coord_X(coord));
     xoff = (xoff + EDGE_ZONE) - xtac;
 
-    int ytac = Pixel_To_Lepton(Lepton_To_Pixel(Coord_Y(TacticalCoord)));
-    int yoff = Pixel_To_Lepton(Lepton_To_Pixel(Coord_Y(coord)));
+    int ytac = Snap_Lepton_To_Pixel_Grid(Coord_Y(TacticalCoord));
+    int yoff = Snap_Lepton_To_Pixel_Grid(Coord_Y(coord));
     yoff = (yoff + EDGE_ZONE) - ytac;
 
-    x = Lepton_To_Pixel(xoff) - CELL_PIXEL_W * 2;
-    y = Lepton_To_Pixel(yoff) - CELL_PIXEL_H * 2;
+    x = Lepton_To_Pixel(Coord_X(coord)) - Lepton_To_Pixel(Coord_X(TacticalCoord));
+    y = Lepton_To_Pixel(Coord_Y(coord)) - Lepton_To_Pixel(Coord_Y(TacticalCoord));
 
     // Possibly ignore the view constraints if we aren't using the internal renderer. ST - 4/17/2019 9:06AM
     return (coord
@@ -2266,18 +2287,18 @@ bool DisplayClass::Coord_To_Pixel(COORDINATE coord, int& x, int& y)
 bool DisplayClass::Coord_To_Pixel(COORDINATE coord, int& x, int& y)
 {
     if (coord) {
-        int xtac = Pixel_To_Lepton(Lepton_To_Pixel(Coord_X(TacticalCoord)));
-        int xoff = Pixel_To_Lepton(Lepton_To_Pixel(Coord_X(coord)));
+        int xtac = Snap_Lepton_To_Pixel_Grid(Coord_X(TacticalCoord));
+        int xoff = Snap_Lepton_To_Pixel_Grid(Coord_X(coord));
 
         xoff = (xoff + EDGE_ZONE) - xtac;
         if (xoff <= TacLeptonWidth + EDGE_ZONE * 2) {
-            int ytac = Pixel_To_Lepton(Lepton_To_Pixel(Coord_Y(TacticalCoord)));
-            int yoff = Pixel_To_Lepton(Lepton_To_Pixel(Coord_Y(coord)));
+            int ytac = Snap_Lepton_To_Pixel_Grid(Coord_Y(TacticalCoord));
+            int yoff = Snap_Lepton_To_Pixel_Grid(Coord_Y(coord));
 
             yoff = (yoff + EDGE_ZONE) - ytac;
             if (yoff <= TacLeptonHeight + EDGE_ZONE * 2) {
-                x = Lepton_To_Pixel(xoff) - CELL_PIXEL_W * 2;
-                y = Lepton_To_Pixel(yoff) - CELL_PIXEL_H * 2;
+                x = Lepton_To_Pixel(Coord_X(coord)) - Lepton_To_Pixel(Coord_X(TacticalCoord));
+                y = Lepton_To_Pixel(Coord_Y(coord)) - Lepton_To_Pixel(Coord_Y(TacticalCoord));
                 return (true);
             }
         }

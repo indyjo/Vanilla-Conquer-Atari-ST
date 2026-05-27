@@ -51,7 +51,10 @@ class FixedHeapClass
 		FixedHeapClass(int size);
 		virtual ~FixedHeapClass(void);
 
-		int ID(void const * pointer);
+		int ID(void const * pointer)
+		{
+			return((int)*((unsigned short const *)Slot_Base(pointer)));
+		};
 		int Debug_Validate(void) const;
 		int Count(void) {return ActiveCount;};
 		int Length(void) {return TotalCount;};
@@ -71,8 +74,6 @@ class FixedHeapClass
 
 		static inline char * Slot_Base(void * pointer) {return ((char *)pointer) - (int)sizeof(unsigned short);};
 		static inline char const * Slot_Base(void const * pointer) {return ((char const *)pointer) - (int)sizeof(unsigned short);};
-		static inline unsigned short * Header_Word(void * pointer) {return (unsigned short *)Slot_Base(pointer);};
-		static inline unsigned short const * Header_Word(void const * pointer) {return (unsigned short const *)Slot_Base(pointer);};
 
 		void * operator[](int index) {return ((char *)Buffer) + (index * Size);};
 

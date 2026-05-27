@@ -36,7 +36,6 @@
  *   FixedHeapClass::Set_Heap -- Assigns a memory block for this heap manager.                 * 
  *   FixedHeapClass::Allocate -- Allocate a sub-block from the heap.                           * 
  *   FixedHeapClass::Free -- Frees a sub-block in the heap.                                    * 
- *   FixedHeapClass::ID -- Converts a pointer to a sub-block index number.                     * 
  *   FixedHeapClass::Clear -- Clears (and frees) the heap manager memory.                      * 
  *   TFixedIHeapClass::Save -- Saves all active objects                                        *
  *   TFixedIHeapClass::Load -- Loads all active objects                                        *
@@ -150,18 +149,18 @@ int FixedHeapClass::Set_Heap(int count)
 	**	allocation objects.
 	*/
 	if (FreeFlag.Resize(count)) {
-		char * buffer = new char[count * Size + (int)sizeof(unsigned short)];
-		if (!buffer) {
+		char * allocation = new char[count * Size + (int)sizeof(unsigned short)];
+		if (!allocation) {
 			FreeFlag.Clear();
 			return(false);
 		}
 		IsAllocated = true;
-		Buffer = buffer + sizeof(unsigned short);
+		Buffer = allocation + sizeof(unsigned short);
 		TotalCount = count;
 
-		memset(buffer, 0x00, count * Size + (int)sizeof(unsigned short));  // Added. Needed to identify bad states in saved games. ST - 10/3/2019 11:49AM		
+		memset(Slot_Base(Buffer), 0x00, count * Size + (int)sizeof(unsigned short));  // Added. Needed to identify bad states in saved games. ST - 10/3/2019 11:49AM
 		for (int index = 0; index <= count; index++) {
-			*(unsigned short *)(buffer + (index * Size)) = (unsigned short)index;
+			*((unsigned short *)(Slot_Base(Buffer) + (index * Size))) = (unsigned short)index;
 		}
 
 		return(true);
@@ -219,6 +218,19 @@ void * FixedHeapClass::Allocate(void)
  *=============================================================================================*/
 int FixedHeapClass::Free(void * pointer)
 {
+#ifndef NDEBUG
+	if (pointer) {
+		char const * ptr = (char const *)pointer;
+		char const * start = (char const *)Buffer;
+
+		assert(Buffer != 0);
+		assert(ptr >= start);
+		int index = ID(pointer);
+		assert(index >= 0 && index < TotalCount);
+		assert(ptr == start + (index * Size));
+	}
+#endif
+
 	if (pointer && ActiveCount) {
 		int index = ID(pointer);
 
@@ -235,42 +247,6 @@ int FixedHeapClass::Free(void * pointer)
 }	
 
 
-/*********************************************************************************************** 
- * FixedHeapClass::ID -- Converts a pointer to a sub-block index number.                       * 
- *                                                                                             * 
- *    Use this routine to convert a pointer (returned by Allocate) into the sub-block          * 
- *    index number. This index number can be used as a form of identifier for the block.       * 
- *                                                                                             * 
- * INPUT:   pointer  -- A pointer to the sub-block to conver into an ID number.                * 
- *                                                                                             * 
- * OUTPUT:  Returns with the index (ID) number for the sub-block specified. This number will   * 
- *          range between 0 and the sub-block max -1. If -1 is returned, then the pointer      * 
- *          was invalid.                                                                       * 
- *                                                                                             * 
- * WARNINGS:   none                                                                            * 
- *                                                                                             * 
- * HISTORY:                                                                                    * 
- *   02/21/1995 JLB : Created.                                                                 * 
- *=============================================================================================*/
-int FixedHeapClass::ID(void const * pointer)
-{
-	if (pointer && Size && Buffer) {
-		unsigned short index = *Header_Word(pointer);
-#ifndef NDEBUG
-		char const * ptr = (char const *)pointer;
-		char const * start = (char const *)Buffer;
-		char const * end = start + (TotalCount * Size);
-
-		assert(ptr >= start && ptr < end);
-		assert((int)index < TotalCount);
-		assert(ptr == start + (((int)index) * Size));
-#endif
-		return((int)index);
-	}
-	return(-1);
-}	
-
-
 int FixedHeapClass::Debug_Validate(void) const
 {
 	if (!Buffer || !Size) {
@@ -281,7 +257,7 @@ int FixedHeapClass::Debug_Validate(void) const
 	char const * buffer = Slot_Base(Buffer);
 
 	for (int index = 0; index <= TotalCount; index++) {
-		unsigned short value = *(unsigned short const *)(buffer + (index * Size));
+		unsigned short value = *((unsigned short const *)(buffer + (index * Size)));
 		if (value != (unsigned short)index) {
 			errors++;
 		}
@@ -345,7 +321,7 @@ int FixedHeapClass::Free_All(void)
 		char * buffer = Slot_Base(Buffer);
 
 		for (int index = 0; index <= TotalCount; index++) {
-			*(unsigned short *)(buffer + (index * Size)) = (unsigned short)index;
+			*((unsigned short *)(buffer + (index * Size))) = (unsigned short)index;
 		}
 	}
 	return(true);
@@ -399,10 +375,10 @@ void * FixedIHeapClass::Allocate(void)
 {
 	void * ptr = FixedHeapClass::Allocate();
 	if (ptr)	{
-		unsigned short index = *Header_Word(ptr);
+		unsigned short index = *((unsigned short *)Slot_Base(ptr));
 
 		memset(Slot_Base(ptr), 0, Size);
-		*Header_Word(ptr) = index;
+		*((unsigned short *)Slot_Base(ptr)) = index;
 		ActivePointers.Add(ptr);
 	}
 	return(ptr);

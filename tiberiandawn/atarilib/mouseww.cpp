@@ -13,9 +13,8 @@ extern WWKeyboardClass* Keyboard;
 #include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
 #include "c2p.h"       // ST_PLANAR_BYTES_PER_LINE
 #include "shape.h"     // Get_Shape_Width, Get_Shape_Height, Decode_Shape_To_Buffer
+#include "st_blitter_blit.h"
 #include <mint/linea.h>  // GCURX, GCURY, MOUSE_BT (LINE-A)
-#include <mint/ostruct.h> // BLIT_HARD
-#include <mint/osbind.h>  // Blitmode
 #include <stdint.h>
 #include <string.h>     // memset
 
@@ -34,18 +33,6 @@ void* _Mouse = NULL;
 int DLLForceMouseX = -1;
 int DLLForceMouseY = -1;
 
-static inline volatile unsigned short *ST_BLT_REG(unsigned long addr)
-{
-	return (volatile unsigned short *)addr;
-}
-
-static void ST_Blit_Wait_Idle(void)
-{
-	volatile unsigned char *ctrl = (volatile unsigned char *)0xFFFF8A3CL;
-	while ((*ctrl & 0x80u) != 0) {
-	}
-}
-
 static void ST_Copy_Bytes_2D(const uint8_t *src, uint8_t *dst, int row_bytes, int lines, int src_stride, int dst_stride)
 {
 	if (!src || !dst || row_bytes <= 0 || lines <= 0)
@@ -57,65 +44,82 @@ static void ST_Copy_Bytes_2D(const uint8_t *src, uint8_t *dst, int row_bytes, in
 	}
 }
 
-/*
- * One ST low-res bitplane: horizontal skew from interleaved src to interleaved dst.
- * src_row_bytes / dst_row_bytes: full planar row strides (multiple of 8).
- * dst_words: destination 16-pixel columns (same as mouse "words" in Draw_Mouse).
- * plane_idx: 0..3 (word at +plane*2 within each 16-pixel group).
- * skew_bits: 0..15 pixel shift right of source into destination (ST $FF8A3D).
- */
-static void ST_Blit_Plane_Skew(
-	const uint8_t *src_base, uint8_t *dst_base,
-	int src_row_bytes, int dst_row_bytes,
-	int dst_words, int lines, int plane_idx, unsigned skew_bits, unsigned char op,
-	unsigned short endmask1, unsigned short endmask2, unsigned short endmask3)
+/* Same layout as st_sprite_cache scratch slots. */
+static inline void Mouse_Planar_Put_Px(
+	uint8_t *base, int row_bytes, int width_px, int height_px, int x, int y, unsigned char color4)
 {
-	if (!src_base || !dst_base || dst_words <= 0 || lines <= 0 || plane_idx < 0 || plane_idx > 3)
+	if (!base || x < 0 || y < 0 || x >= width_px || y >= height_px || row_bytes <= 0)
 		return;
-	const int sx = 8;
-	const int dx = 8;
-	const int src_y_inc = src_row_bytes - (dst_words - 1) * sx;
-	const int dst_y_inc = dst_row_bytes - (dst_words - 1) * dx;
-	ST_Blit_Wait_Idle();
-	*ST_BLT_REG(0xFFFF8A20UL) = (unsigned short)sx;
-	*ST_BLT_REG(0xFFFF8A22UL) = (unsigned short)src_y_inc;
-	{
-		size_t sa = (size_t)(src_base + plane_idx * 2);
-		*ST_BLT_REG(0xFFFF8A24UL) = (unsigned short)(sa >> 16);
-		*ST_BLT_REG(0xFFFF8A26UL) = (unsigned short)(sa & 0xFFFFu);
+	uint8_t *p = base + y * row_bytes + (x >> 4) * 8 + ((x >> 3) & 1);
+	const int bitnum = 7 - (x & 7);
+	const uint8_t maskbit = (uint8_t)(1u << (unsigned)bitnum);
+	const uint8_t c = (uint8_t)(color4 & 15);
+	for (int pl = 0; pl < 4; pl++) {
+		uint8_t *pb = p + pl * 2;
+		if (c & (uint8_t)(1u << pl))
+			*pb |= maskbit;
+		else
+			*pb &= (uint8_t)~maskbit;
 	}
-	*ST_BLT_REG(0xFFFF8A28UL) = endmask1;
-	*ST_BLT_REG(0xFFFF8A2AUL) = endmask2;
-	*ST_BLT_REG(0xFFFF8A2CUL) = endmask3;
-	*ST_BLT_REG(0xFFFF8A2EUL) = (unsigned short)dx;
-	*ST_BLT_REG(0xFFFF8A30UL) = (unsigned short)dst_y_inc;
-	{
-		size_t da = (size_t)(dst_base + plane_idx * 2);
-		*ST_BLT_REG(0xFFFF8A32UL) = (unsigned short)(da >> 16);
-		*ST_BLT_REG(0xFFFF8A34UL) = (unsigned short)(da & 0xFFFFu);
-	}
-	*ST_BLT_REG(0xFFFF8A36UL) = (unsigned short)dst_words;
-	*ST_BLT_REG(0xFFFF8A38UL) = (unsigned short)lines;
-	*(volatile unsigned char *)0xFFFF8A3AUL = 2;              /* HOP: source */
-	*(volatile unsigned char *)0xFFFF8A3BUL = op;             /* OP */
-	{
-		/* Keep to pure 4-bit skew value first; extra control bits are blitter-revision sensitive. */
-		unsigned char skewb = (unsigned char)(skew_bits & 15u);
-		*(volatile unsigned char *)0xFFFF8A3DUL = skewb;
-	}
-	*(volatile unsigned char *)0xFFFF8A3CUL = 0x80;           /* start */
-	ST_Blit_Wait_Idle();
 }
 
-static void ST_Blit_Interleaved_Block_Skew(
-	const uint8_t *src, uint8_t *dst,
-	int src_row_bytes, int dst_row_bytes,
-	int dst_words, int lines, unsigned skew_bits, unsigned char op,
-	unsigned short endmask1, unsigned short endmask2, unsigned short endmask3)
+/* Clear mask bit → blitter clears dest before OR-merge. Leave 1 to preserve backdrop. */
+static inline void Mouse_Mask_Mark_Writes(uint8_t *maskbm, int rowb, int x, int y)
 {
-	for (int pl = 0; pl < 4; pl++)
-		ST_Blit_Plane_Skew(src, dst, src_row_bytes, dst_row_bytes, dst_words, lines, pl, skew_bits, op,
-			endmask1, endmask2, endmask3);
+	uint8_t *b = maskbm + (size_t)y * (size_t)rowb + (size_t)(x >> 3);
+	*b = (uint8_t)(*b & (uint8_t)~(0x80u >> (x & 7)));
+}
+
+static BOOL Mouse_Blit_Masked_Cursor(
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
+	int dx_abs,
+	int dy_abs,
+	const uint8_t *planar,
+	int planar_rowb,
+	const uint8_t *maskbm,
+	int mask_rowb,
+	int src_w,
+	int src_h,
+	int sx_abs,
+	int sy_abs,
+	int blit_w,
+	int blit_h)
+{
+	if (!ST_Blitter_Mask_And_Planar_Rect(
+			maskbm,
+			mask_rowb,
+			src_w,
+			src_h,
+			sx_abs,
+			sy_abs,
+			dst_root,
+			dst_row_bytes,
+			dst_width_pixels,
+			dst_height_pixels,
+			dx_abs,
+			dy_abs,
+			blit_w,
+			blit_h))
+		return FALSE;
+	return ST_Blitter_Planar_Rect_Blit_Or(planar,
+		planar_rowb,
+		src_w,
+		src_h,
+		sx_abs,
+		sy_abs,
+		dst_root,
+		dst_row_bytes,
+		dst_width_pixels,
+		dst_height_pixels,
+		dx_abs,
+		dy_abs,
+		blit_w,
+		blit_h)
+		? TRUE
+		: FALSE;
 }
 
 /***********************************************************************************************
@@ -141,9 +145,13 @@ WWMouseClass::WWMouseClass(GraphicViewPortClass *scr, int mouse_max_width, int m
 	const int blit_max_width = mouse_max_width + 31; /* word-align headroom */
 	const int blit_max_words = (blit_max_width + 15) >> 4;
 	const int blit_max_bytes = blit_max_words * 8 * mouse_max_height;
+	const int blit_mask_bytes = blit_max_words * 2 * mouse_max_height;
+	MousePlanarWidthPixels = blit_max_words * 16;
 	MouseBlitRowBytes = blit_max_words * 8;
+	MouseMaskRowBytes = blit_max_words * 2;
 	MouseBuffer		= new char[blit_max_bytes];
 	MousePlanarColorPre = new unsigned char[blit_max_bytes];
+	MousePlanarMask = new unsigned char[blit_mask_bytes];
 	MouseBuffX		= -1;
 	MouseBuffY  	= -1;
 	MouseBuffLeft	= -1;
@@ -199,6 +207,7 @@ WWMouseClass::~WWMouseClass()
 	if (MouseCursor) delete[] MouseCursor;
 	if (MouseBuffer) delete[] MouseBuffer;
 	if (MousePlanarColorPre) delete[] MousePlanarColorPre;
+	if (MousePlanarMask) delete[] MousePlanarMask;
 	if (EraseBuffer) delete[] EraseBuffer;
 
 	/*
@@ -350,36 +359,74 @@ void WWMouseClass::Set_Cursor_From_Block(int hotx, int hoty, void *block, int fr
 }
 
 /***************************************************************************
- * WWMouseClass::Rebuild_Planar_Cursor_From_Decoded -- planar color         *
+ * WWMouseClass::Invalidate_Planar_Cache -- refresh planar blit cache        *
  *                                                                         *
- * Builds canonical (X shift 0) MousePlanarColorPre.
- * Draw_Mouse skew-copies it per pixel offset via the blitter and ORs it
- * directly into VRAM (transparent pixels are color 0).
+ * Decoded MouseCursor is unchanged; planar color + mask must be rebuilt   *
+ * when C2P dither/LUT tables change (theater, WSA, title weights, etc.).  *
+ *=========================================================================*/
+void WWMouseClass::Invalidate_Planar_Cache(void)
+{
+	if (CursorWidth <= 0 || CursorHeight <= 0 || !PrevCursor)
+		return;
+
+	const int was_visible = (State == 0 && Screen);
+	const int show_x = was_visible ? Get_Mouse_X() : 0;
+	const int show_y = was_visible ? Get_Mouse_Y() : 0;
+
+	MouseUpdate++;
+	if (was_visible && Screen->Lock()) {
+		Low_Hide_Mouse();
+		Screen->Unlock();
+	}
+
+	MouseBuffX = -1;
+	MouseBuffY = -1;
+	MouseBuffLeft = -1;
+	MouseBuffTop = -1;
+	MouseBuffWords = 0;
+	MouseBuffH = 0;
+	Rebuild_Planar_Cursor_From_Decoded();
+
+	if (was_visible && Screen->Lock()) {
+		Low_Show_Mouse(show_x, show_y);
+		Screen->Unlock();
+	}
+	MouseUpdate--;
+}
+
+/***************************************************************************
+ * WWMouseClass::Rebuild_Planar_Cursor_From_Decoded -- planar + mask       *
+ *                                                                         *
+ * Builds MousePlanarColorPre and MousePlanarMask (same layout as the     *
+ * sprite cache). Draw_Mouse uses mask AND + color OR blits.              *
+ *
+ * Decoded shape bytes are 8-bit VGA palette indices (0 = transparent).
+ * Bayer phase is anchored at sprite (0,0) via C2P_Map8ToPlanar4(col, row, …).
  *=========================================================================*/
 void WWMouseClass::Rebuild_Planar_Cursor_From_Decoded(void)
 {
-	if (CursorWidth <= 0 || CursorHeight <= 0 || !MousePlanarColorPre)
+	if (CursorWidth <= 0 || CursorHeight <= 0 || !MousePlanarColorPre || !MousePlanarMask)
 		return;
-	const int blit_bytes = MouseBlitRowBytes * MaxHeight;
-	memset(MousePlanarColorPre, 0, (size_t)blit_bytes);
+	const int planar_bytes = MouseBlitRowBytes * MaxHeight;
+	const int mask_bytes = MouseMaskRowBytes * MaxHeight;
+	memset(MousePlanarColorPre, 0, (size_t)planar_bytes);
+	memset(MousePlanarMask, 0xFF, (size_t)mask_bytes);
 	const unsigned char *cur = (const unsigned char *)MouseCursor;
 	for (int row = 0; row < CursorHeight; row++) {
-		unsigned char *color = MousePlanarColorPre + row * MouseBlitRowBytes;
 		for (int col = 0; col < CursorWidth; col++) {
 			const unsigned char px = cur[col];
 			if (px == 0)
 				continue;
-			const int ax = col;
-			const int group = ax >> 4;
-			const int half = (ax >> 3) & 1;
-			unsigned char *c = color + group * 8 + half;
-			const int bitnum = 7 - (ax & 7);
-			const unsigned char bit = (unsigned char)(1u << bitnum);
-			for (int pl = 0; pl < 4; pl++) {
-				unsigned char *cb = c + pl * 2;
-				if (px & (1u << pl))
-					*cb |= bit;
-			}
+			const unsigned char color4 = C2P_Map8ToPlanar4(col, row, px);
+			Mouse_Planar_Put_Px(
+				MousePlanarColorPre,
+				MouseBlitRowBytes,
+				MousePlanarWidthPixels,
+				CursorHeight,
+				col,
+				row,
+				color4);
+			Mouse_Mask_Mark_Writes(MousePlanarMask, MouseMaskRowBytes, col, row);
 		}
 		cur += CursorWidth;
 	}
@@ -861,6 +908,15 @@ void Set_Mouse_Cursor_From_Block(int hotx, int hoty, void *block, int frame_inde
 }
 
 /***************************************************************************
+ * Invalidate_Mouse_Planar_Cache -- Global hook for C2P weight-set installs  *
+ *=========================================================================*/
+extern "C" void Invalidate_Mouse_Planar_Cache(void)
+{
+	if (_Mouse)
+		((WWMouseClass *)_Mouse)->Invalidate_Planar_Cache();
+}
+
+/***************************************************************************
  * WWMouseClass::Draw_Mouse -- Draws the mouse cursor on a viewport       *
  *                                                                         *
  * INPUT:		GraphicViewPortClass *scr - viewport to draw on            *
@@ -961,28 +1017,30 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 			MouseBuffWords = words;
 			MouseBuffH = vis_h;
 		}
-		const unsigned char *src = (const unsigned char *)MouseCursor + src_y * CursorWidth + src_x;
-		for (int row = 0; row < vis_h; row++) {
-			const unsigned char *s = src + row * CursorWidth;
-			for (int col = 0; col < vis_w; col++) {
-				const unsigned char px = s[col];
-				if (px != 0) {
-					Buffer_Put_Pixel(scr, clip_left + col, clip_top + row, px);
-				}
-			}
-		}
+		Mouse_Blit_Masked_Cursor(
+			(uint8_t *)gb->Get_Buffer(),
+			scr_bpl,
+			gb->Get_Width(),
+			gb->Get_Height(),
+			clip_left,
+			clip_top,
+			(const uint8_t *)MousePlanarColorPre,
+			MouseBlitRowBytes,
+			(const uint8_t *)MousePlanarMask,
+			MouseMaskRowBytes,
+			MousePlanarWidthPixels,
+			CursorHeight,
+			src_x,
+			src_y,
+			vis_w,
+			vis_h);
 		return;
 	}
 
-	/*
-	 * Word-aligned cursor block (all planar):
-	 * - OR skewed canonical cursor color (shift=0 source) directly into VRAM
-	 *   (transparent pixels are encoded as color 0)
-	 */
+	/* Word-aligned save-under; mask+OR blit (same path as sprite cache). */
 	const int word_left = left & ~15;
 	const int shift = left - word_left;
 	const int words = (shift + CursorWidth + 15) >> 4;
-	const unsigned skew_bits = (unsigned)(shift & 15);
 	const int row_bytes = words * 8;
 	uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
 		+ top * scr_bpl
@@ -1002,30 +1060,23 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		MouseBuffWords = words;
 		MouseBuffH = CursorHeight;
 	}
-	const int end = (left + CursorWidth - 1) & 15;
-	unsigned short endmask1 = (unsigned short)(0xFFFFu >> shift);
-	unsigned short endmask3 = (unsigned short)(0xFFFFu << (15 - end));
-	unsigned short endmask2 = 0xFFFFu;
-	if (words == 1) {
-		endmask1 = (unsigned short)(endmask1 & endmask3);
-		endmask2 = endmask1;
-		endmask3 = endmask1;
-	}
-	uint8_t *dst = (uint8_t *)gb->Get_Buffer()
-		+ top * scr_bpl
-		+ ((word_left >> 4) * 8);
-	ST_Blit_Interleaved_Block_Skew(
-		(const uint8_t *)MousePlanarColorPre,
-		dst,
-		MouseBlitRowBytes,
+	Mouse_Blit_Masked_Cursor(
+		(uint8_t *)gb->Get_Buffer(),
 		scr_bpl,
-		words,
+		gb->Get_Width(),
+		gb->Get_Height(),
+		left,
+		top,
+		(const uint8_t *)MousePlanarColorPre,
+		MouseBlitRowBytes,
+		(const uint8_t *)MousePlanarMask,
+		MouseMaskRowBytes,
+		MousePlanarWidthPixels,
 		CursorHeight,
-		skew_bits,
-		7 /* OP: D = D OR S */,
-		endmask1,
-		endmask2,
-		endmask3);
+		0,
+		0,
+		CursorWidth,
+		CursorHeight);
 }
 
 /***************************************************************************

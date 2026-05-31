@@ -55,6 +55,8 @@ class WWMouseClass {
 		void Draw_Mouse(GraphicViewPortClass *scr);
 		void Erase_Mouse(GraphicViewPortClass *scr, int forced = FALSE);
 		void Set_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index);
+		/** Rebuild planar color + mask after C2P LUT / weight-set change (logical shape unchanged). */
+		void Invalidate_Planar_Cache(void);
 
 		void Block_Mouse(GraphicBufferClass *buffer);
 		void Unblock_Mouse(GraphicBufferClass *buffer);
@@ -68,7 +70,7 @@ class WWMouseClass {
 		};
 		void Low_Hide_Mouse(void);
 		void Low_Show_Mouse(int x, int y);
-		/** After MouseCursor is filled: build canonical (shift=0) planar color bits. */
+		/** After MouseCursor is filled: build planar color + 1bpp mask (sprite-cache layout). */
 		void Rebuild_Planar_Cursor_From_Decoded(void);
 
 		char						*MouseCursor;	// pointer to the mouse cursor in memory
@@ -88,10 +90,16 @@ class WWMouseClass {
 		int						MousePosY;		// last sampled cursor y
 		int						MaxWidth;		// maximum width of mouse background buffer
 		int						MaxHeight;		// maximum height of mouse background buffer
-		/** Canonical (X shift 0) planar color; same row stride as MouseBlitRowBytes. */
+		/** Planar color scratch (word-aligned width); blitted with mask+OR like sprites. */
 		unsigned char		*MousePlanarColorPre;
-		/** ST low-res bytes per cursor row in scratch buffers (aligned max width). */
+		/** 1bpp mask: bit 1 preserves backdrop, bit 0 clears before color OR. */
+		unsigned char		*MousePlanarMask;
+		/** Aligned cursor bitmap width in pixels (multiple of 16). */
+		int						MousePlanarWidthPixels;
+		/** ST low-res bytes per cursor row in planar scratch (aligned max width). */
 		int						MouseBlitRowBytes;
+		/** Bytes per row in MousePlanarMask (2 per 16 pixels). */
+		int						MouseMaskRowBytes;
 
 		int						MouseCXLeft;	// left x pos if conditional hide mouse in effect
 		int						MouseCYUpper;	// upper y pos if conditional hide mouse in effect
@@ -134,6 +142,14 @@ int Get_Mouse_State(void);
 void *Set_Mouse_Cursor(int hotx, int hoty, void *cursor);
 /* Set cursor from Tiberian Dawn SHP block (e.g. MOUSE.SHP) by frame index */
 void Set_Mouse_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index);
+/* Called from C2P when weight tables are rebuilt (forward-declared in c2p.cpp). */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void Invalidate_Mouse_Planar_Cache(void);
+#ifdef __cplusplus
+}
+#endif
 int Get_Mouse_X(void);
 int Get_Mouse_Y(void);
 

@@ -8,6 +8,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Avoid including mouse.h; implemented in mouseww.cpp. */
+extern "C" void Invalidate_Mouse_Planar_Cache(void);
+
+static void C2P_Notify_Weights_Changed(void)
+{
+	Invalidate_Mouse_Planar_Cache();
+}
+
 /* 4x4 Bayer threshold matrix, values 0..15 */
 static const uint8_t Bayer4x4[16] = {
 	0,  8,  2, 10,
@@ -360,6 +368,7 @@ extern "C" void C2P_Select_WeightSet(int weight_set)
 	const int normalized = (weight_set == C2P_WEIGHTSET_HTITLE) ? C2P_WEIGHTSET_HTITLE : C2P_WEIGHTSET_TEMPERAT;
 	C2P_BuiltinWeightSet = normalized;
 	C2P_Rebuild_Tables_From_SelectedWeights();
+	C2P_Notify_Weights_Changed();
 }
 
 extern "C" int C2P_Install_CustomWeights(const C2P_WeightSet *weight_set)
@@ -369,12 +378,14 @@ extern "C" int C2P_Install_CustomWeights(const C2P_WeightSet *weight_set)
 	}
 
 	C2P_Rebuild_Tables_From_WeightRows(weight_set->subset, weight_set->weights);
+	C2P_Notify_Weights_Changed();
 	return 1;
 }
 
 extern "C" void C2P_Clear_CustomWeights(void)
 {
 	C2P_Rebuild_Tables_From_SelectedWeights();
+	C2P_Notify_Weights_Changed();
 }
 
 static inline void Planar_Put_Pixel_RowBytes(

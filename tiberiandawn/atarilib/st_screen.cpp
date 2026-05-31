@@ -183,7 +183,7 @@ void ST_Debug_Screen_Service(void)
 		return;
 	}
 
-	int down = (IKBD_Key_Is_Down(VK_LCONTROL) && IKBD_Key_Is_Down(VK_F10)) ? 1 : 0;
+	int down = (IKBD_Key_Is_Down(VK_CONTROL) && IKBD_Key_Is_Down(VK_F10)) ? 1 : 0;
 	if (down && !Console_Hotkey_Prev) {
 		if (Tos_Console_Visible) {
 			Apply_Game_Video_Hardware();

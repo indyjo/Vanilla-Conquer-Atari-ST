@@ -1095,7 +1095,7 @@ void TechnoClass::Draw_It(int x, int y, WindowNumberType window)
             if (ratio < 0x3F) {
                 color = RED;
             }
-            draw_window.Fill_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
+            draw_window.Draw_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
         }
 
         /*

@@ -637,6 +637,29 @@ long Buffer_Frame_To_Page(int x, int y, int w, int h, void* Buffer, GraphicViewP
 }
 #endif
 
+bool DLL_Export_Get_Input_Key_State(KeyNumType key)
+{
+#ifdef ATARI_ST
+    switch (key & 0xFF) {
+    case VK_LSHIFT:
+    case VK_RSHIFT:
+        return IKBD_Key_Is_Down(VK_SHIFT) != 0;
+    case VK_LCONTROL:
+    case VK_RCONTROL:
+        return IKBD_Key_Is_Down(VK_CONTROL) != 0;
+    case VK_LMENU:
+    case VK_RMENU:
+        return IKBD_Key_Is_Down(VK_MENU) != 0;
+    default:
+        break;
+    }
+    return false;
+#else
+    (void)key;
+    return false;
+#endif
+}
+
 /***********************************************************************************************
  * Memory_Error_Handler -- Handle a possibly fatal failure to allocate memory                  *
  *                                                                                             *

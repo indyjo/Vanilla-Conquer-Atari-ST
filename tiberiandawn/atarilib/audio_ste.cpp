@@ -25,13 +25,13 @@
  * sections only on the main thread (blocks VBL at 4, not IKBD).
  *
  * **Mixing**: Up to **two** simultaneous streams are decoded to signed-linear temps, attenuated by
- * each voice's volume, then summed with signed saturation into the ring; a single active voice
- * skips the second pull and add pass.
+ * each voice's volume, then summed into the ring (32-bit lanes, no per-sample saturation); a single
+ * active voice skips the second pull and add pass.
  *
  * Compression 0 = raw PCM, 99 = Westwood AUD (0xDEAF-framed IMA ADPCM). Stereo is not supported.
  *
  * With `ST_BORDER_PROFILE`, `ste_audio_vbl_proc` uses BORDER_COLOR/BORDER_RESTORE (pen 0 red) for
- * audio service timing; `ste_fill_mixed_region` marks the two-voice saturating mix pass in
+ * audio service timing; `ste_fill_mixed_region` marks the two-voice mix pass in
  * magenta within that interval.
  */
 
@@ -446,6 +446,37 @@ static void ste_voice_release_file_heap(int vi)
 	}
 }
 
+/*
+ * Sum two signed-mono voice scratch buffers into `dst` (`nsamp` bytes, even). The bulk path adds
+ * 32-bit lanes with plain integer addition (carry may spill between adjacent bytes). Odd ring write
+ * offsets mix the leading/trailing byte scalar; a 2-byte tail uses one 16-bit add.
+ */
+static void ste_mix_two_add(unsigned char* dst, unsigned char const* a, unsigned char const* b, unsigned nsamp)
+{
+	unsigned i = 0;
+
+	if (((unsigned long)dst & 1UL) != 0UL) {
+		int const s = (int)(signed char)a[0] + (int)(signed char)b[0];
+		dst[0] = (unsigned char)(signed char)s;
+		i = 1U;
+	}
+
+	while (i + 4U <= nsamp) {
+		*(unsigned long*)(dst + i) = *(unsigned long const*)(a + i) + *(unsigned long const*)(b + i);
+		i += 4U;
+	}
+
+	if (i + 2U <= nsamp) {
+		*(unsigned short*)(dst + i) = *(unsigned short const*)(a + i) + *(unsigned short const*)(b + i);
+		i += 2U;
+	}
+
+	if (i < nsamp) {
+		int const s = (int)(signed char)a[i] + (int)(signed char)b[i];
+		dst[i] = (unsigned char)(signed char)s;
+	}
+}
+
 static void ste_fill_mixed_region(unsigned char* dst, unsigned nsamp)
 {
 	if (nsamp == 0 || (nsamp & 1U) != 0U) {
@@ -478,17 +509,7 @@ static void ste_fill_mixed_region(unsigned char* dst, unsigned nsamp)
 	BORDER_COLOR(0x0704u);
 	ste_voice_pull_padded(&g_voice_ss[vi1], g_mix_pull[vi1], n);
 	BORDER_COLOR_SET(0x0707u);
-	for (unsigned i = 0; i < n; ++i) {
-		int const a = (int)(signed char)g_mix_pull[vi0][i];
-		int const b = (int)(signed char)g_mix_pull[vi1][i];
-		int s = a + b;
-		if (s > 127) {
-			s = 127;
-		} else if (s < -128) {
-			s = -128;
-		}
-		dst[i] = (unsigned char)(signed char)s;
-	}
+	ste_mix_two_add(dst, g_mix_pull[vi0], g_mix_pull[vi1], n);
 	BORDER_RESTORE();
 }
 

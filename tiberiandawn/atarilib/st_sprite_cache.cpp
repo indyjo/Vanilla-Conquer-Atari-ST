@@ -317,6 +317,94 @@ static void sprite_cache_reset_stats(void)
 	std::memset(g_sprite_cache_stats, 0, sizeof(g_sprite_cache_stats));
 }
 
+/*
+ * Tight bounds for index-0 transparency via edge scan: top/bottom rows, then left/right
+ * columns between those rows (one bound updated per pass). Sets *out_w/*out_h to 0 when empty.
+ */
+static void sprite_cache_scan_transparent_crop_edges(const uint8_t *src,
+	int full_w,
+	int full_h,
+	int stride,
+	int *out_x,
+	int *out_y,
+	int *out_w,
+	int *out_h)
+{
+	int min_y = full_h;
+	for (int y = 0; y < full_h; ++y) {
+		const uint8_t *row = src + (size_t)y * (size_t)stride;
+		int x = 0;
+		for (; x < full_w; ++x) {
+			if (row[x] != 0)
+				break;
+		}
+		if (x < full_w) {
+			min_y = y;
+			break;
+		}
+	}
+	if (min_y >= full_h) {
+		*out_x = 0;
+		*out_y = 0;
+		*out_w = 0;
+		*out_h = 0;
+		return;
+	}
+
+	int max_y = -1;
+	for (int y = full_h - 1; y >= min_y; --y) {
+		const uint8_t *row = src + (size_t)y * (size_t)stride;
+		int x = 0;
+		for (; x < full_w; ++x) {
+			if (row[x] != 0)
+				break;
+		}
+		if (x < full_w) {
+			max_y = y;
+			break;
+		}
+	}
+
+	int min_x = full_w;
+	for (int x = 0; x < full_w; ++x) {
+		int y = min_y;
+		for (; y <= max_y; ++y) {
+			if (src[(size_t)y * (size_t)stride + (size_t)x] != 0)
+				break;
+		}
+		if (y <= max_y) {
+			min_x = x;
+			break;
+		}
+	}
+
+	int max_x = -1;
+	for (int x = full_w - 1; x >= min_x; --x) {
+		int y = min_y;
+		for (; y <= max_y; ++y) {
+			if (src[(size_t)y * (size_t)stride + (size_t)x] != 0)
+				break;
+		}
+		if (y <= max_y) {
+			max_x = x;
+			break;
+		}
+	}
+
+	if (max_x < min_x || max_y < min_y) {
+		*out_x = 0;
+		*out_y = 0;
+		*out_w = 0;
+		*out_h = 0;
+		return;
+	}
+
+	*out_x = min_x;
+	*out_y = min_y;
+	*out_w = max_x - min_x + 1;
+	*out_h = max_y - min_y + 1;
+}
+
 /* Finds tight non-transparent bounds in decoded chunky sprite data. */
 static void sprite_cache_scan_crop_bounds(const uint8_t *src,
 	int full_w,
@@ -340,38 +428,7 @@ static void sprite_cache_scan_crop_bounds(const uint8_t *src,
 		return;
 	}
 
-	int min_x = full_w;
-	int min_y = full_h;
-	int max_x = -1;
-	int max_y = -1;
-	for (int y = 0; y < full_h; ++y) {
-		const uint8_t *row = src + (size_t)y * (size_t)stride;
-		for (int x = 0; x < full_w; ++x) {
-			if (row[x] == 0)
-				continue;
-			if (x < min_x)
-				min_x = x;
-			if (y < min_y)
-				min_y = y;
-			if (x > max_x)
-				max_x = x;
-			if (y > max_y)
-				max_y = y;
-		}
-	}
-
-	if (max_x < min_x || max_y < min_y) {
-		*out_x = 0;
-		*out_y = 0;
-		*out_w = 0;
-		*out_h = 0;
-		return;
-	}
-
-	*out_x = min_x;
-	*out_y = min_y;
-	*out_w = max_x - min_x + 1;
-	*out_h = max_y - min_y + 1;
+	sprite_cache_scan_transparent_crop_edges(src, full_w, full_h, stride, out_x, out_y, out_w, out_h);
 }
 
 /* Lazy one-time cache slab and per-tier allocator init. */

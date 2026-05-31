@@ -47,6 +47,7 @@
 #include	"ikbd.h"
 #include	"st_screen.h"
 #include	"palette.h"
+#include	"../../common/timer_st_vbl.h"
 
 static BOOL Require_ST_Blitter(void)
 {
@@ -120,6 +121,7 @@ int main(int argc, char *argv[])
 	** on plain TOS/EmuTOS (stack vs USP bookkeeping); see mint/osbind.h SuperToUser commentary.
 	*/
 	Super(0L);
+	St_Vbl_Timer_Init();
 
 	/*
 	** Initialize LINE-A system immediately after supervisor mode

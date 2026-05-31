@@ -40,9 +40,13 @@
 
 #include "timer.h"
 
+#ifdef ATARI_ST
+#include "timer_st_vbl.h"
+#else
 #include <chrono>
 
 using namespace std::chrono;
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////// Global Data /////////////////////////////////////
@@ -217,17 +221,33 @@ int TimerClass::Set(int value, bool start)
  *=========================================================================*/
 WinTimerClass::WinTimerClass()
     : Frequency(60)
+#ifdef ATARI_ST
+    , Start(0)
+#else
     , Start(Now())
+#endif
 {
+#ifdef ATARI_ST
+    /* Static init runs before Super(0); do not read _frclock yet. St_Vbl_Timer_Init in main. */
+#else
     WinTickCount.Start();
+#endif
     TimerSystemOn = true;
 }
 
 WinTimerClass::WinTimerClass(unsigned int freq)
     : Frequency(freq)
+#ifdef ATARI_ST
+    , Start(0)
+#else
     , Start(Now())
+#endif
 {
+#ifdef ATARI_ST
+    (void)freq;
+#else
     WinTickCount.Start();
+#endif
     TimerSystemOn = true;
 }
 
@@ -251,6 +271,9 @@ WinTimerClass::~WinTimerClass()
 void WinTimerClass::Init(unsigned int freq)
 {
     WindowsTimer = WinTimerClass(freq);
+#ifdef ATARI_ST
+    St_Vbl_Timer_Init();
+#endif
 }
 
 /***********************************************************************************************
@@ -268,11 +291,17 @@ void WinTimerClass::Init(unsigned int freq)
 
 unsigned int WinTimerClass::Get_System_Tick_Count()
 {
+#ifdef ATARI_ST
+    (void)Frequency;
+    (void)Start;
+    return (unsigned int)St_Vbl_Timer_Now();
+#else
     if (Frequency == 0) {
         return 0;
     }
     unsigned long long delta = Now() - Start;
     return (unsigned int)(delta / (1000 / Frequency));
+#endif
 }
 
 /***********************************************************************************************
@@ -290,17 +319,15 @@ unsigned int WinTimerClass::Get_System_Tick_Count()
 
 unsigned int WinTimerClass::Get_User_Tick_Count()
 {
-    if (Frequency == 0) {
-        return 0;
-    }
-    unsigned long long delta = Now() - Start;
-    return (unsigned int)(delta / (1000 / Frequency));
+    return Get_System_Tick_Count();
 }
 
+#ifndef ATARI_ST
 unsigned long long WinTimerClass::Now()
 {
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
+#endif
 
 int SystemTimerClass::operator()() const
 {

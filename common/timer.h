@@ -175,4 +175,9 @@ private:
 extern TimerClass WinTickCount;
 extern CountDownTimerClass CountDown;
 
+#ifdef ATARI_ST
+/* Legacy TD sources use TickCount; single instance is WinTickCount in timer.cpp. */
+#define TickCount WinTickCount
+#endif
+
 #endif // TIMER_H

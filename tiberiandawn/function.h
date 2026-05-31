@@ -122,7 +122,6 @@ inline int max(int a, int b)
 #ifdef ATARI_ST
 #include "wwlib32.h"
 #include "timer.h"
-#define WinTickCount TickCount
 #else
 #include "common/wwlib32.h"
 #endif

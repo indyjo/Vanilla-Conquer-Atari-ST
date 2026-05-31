@@ -215,6 +215,15 @@ void HelpClass::Help_Text(int text, int x, int y, int color, bool quick, int cos
         **	icons so that the text message is erased.
         */
         if (Text != TXT_NONE) {
+            /*
+            ** Sidebar help is drawn directly on the hidpage; cell refresh alone may not
+            ** cover the pixels. Force a sidebar repaint to erase the old tooltip box.
+            */
+            if (IsRight) {
+                IsToRedraw = true;
+                Column[0].IsToRedraw = true;
+                Column[1].IsToRedraw = true;
+            }
             Refresh_Cells(Coord_Cell(TacticalCoord), &OverlapList[0]);
         }
 
@@ -239,6 +248,14 @@ void HelpClass::Help_Text(int text, int x, int y, int color, bool quick, int cos
         Color = color;
         Text = text;
         Cost = cost;
+
+        /*
+        ** Sidebar passes quick=true (no hover delay). Compute draw coords immediately
+        ** so the first Draw_It() after Input does not use stale DrawX/DrawY.
+        */
+        if (quick && text != TXT_NONE) {
+            Set_Text(text);
+        }
     }
 }
 

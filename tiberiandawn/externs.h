@@ -63,8 +63,13 @@
 #define GBUFF_INIT_HEIGHT 1536
 #endif
 #else
+#ifdef ATARI_ST
+#define GBUFF_INIT_WIDTH  320
+#define GBUFF_INIT_HEIGHT 200
+#else
 #define GBUFF_INIT_WIDTH  640
 #define GBUFF_INIT_HEIGHT 400
+#endif
 #endif
 
 #ifdef JAPANESE

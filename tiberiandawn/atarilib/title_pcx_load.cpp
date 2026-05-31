@@ -46,18 +46,32 @@ static void Title_TryInstallC2PWeights(void)
 	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 }
 
-void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned char *palette)
+void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsigned char *palette)
 {
 	if (!name || !video_page || strcmp(name, "TITLE.CPS") != 0) {
+#ifdef ATARI_ST
+		if (name) {
+			printf("C&C ST - Load_Title_Screen skipped (name=%s).\n", name);
+		}
+#endif
 		return;
 	}
 
 	CCFileClass file_obj(name);
 	if (!file_obj.Is_Available()) {
+#ifdef ATARI_ST
+		printf("C&C ST - %s not available (need CONQUER.MIX in cwd).\n", name);
+#endif
 		return;
 	}
 	Title_TryInstallC2PWeights();
-	Load_Uncompress(file_obj, SysMemPage, SysMemPage, palette);
+	int uncomp_size = Load_Uncompress(file_obj, SysMemPage, SysMemPage, palette);
+#ifdef ATARI_ST
+	if (uncomp_size <= 0) {
+		printf("C&C ST - Load_Uncompress failed for %s.\n", name);
+		return;
+	}
+#endif
 	if (palette) {
 		Set_Palette(palette);
 	}

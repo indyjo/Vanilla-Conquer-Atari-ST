@@ -11,6 +11,8 @@
 // with this program. If not, see https://github.com/electronicarts/CnC_Remastered_Collection
 #include "face.h"
 
+extern "C" {
+
 int Desired_Facing256(int x1, int y1, int x2, int y2)
 {
     signed char unk1 = 0;
@@ -101,3 +103,5 @@ int Desired_Facing8(int x1, int y1, int x2, int y2)
 
     return dirtype + 32;
 }
+
+} /* extern "C" */

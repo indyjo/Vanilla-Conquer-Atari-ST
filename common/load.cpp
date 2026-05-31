@@ -43,6 +43,8 @@
 #include "wwstd.h"
 #include "wwmem.h"
 
+extern "C" void RLE_Uncompress(void* src, void* dst, unsigned long size);
+
 /*=========================================================================*/
 /* The following PRIVATE functions are in this file:                       */
 /*=========================================================================*/
@@ -294,6 +296,7 @@ unsigned int Load_Uncompress(char const* file, BufferClass& uncomp_buff, BufferC
  * HISTORY:                                                                *
  *   09/17/1993 JLB : Created.                                             *
  *=========================================================================*/
+#ifndef ATARI_ST
 unsigned int Uncompress_Data(void const* src, void* dst)
 {
     unsigned short skip;    // Number of leading data to skip.
@@ -304,14 +307,17 @@ unsigned int Uncompress_Data(void const* src, void* dst)
         return 0;
 
     /*
-    **	Interpret the data block header structure to determine
-    **	compression method, size, and skip data amount.
+    **	Comp header is always 8 bytes, little-endian in file/buffer. Parse by byte
+    **	to avoid struct padding and double-endian bugs on big-endian (m68k).
     */
-    uncomp_size = ((CompHeaderType*)src)->Size;
-    uncomp_size = le32toh(uncomp_size);
-    skip = ((CompHeaderType*)src)->Skip;
-    skip = le16toh(skip);
-    method = (CompressionType)((CompHeaderType*)src)->Method;
+    {
+        const unsigned char* h = (const unsigned char*)src;
+
+        method = (CompressionType)h[0];
+        uncomp_size = (unsigned int)((unsigned long)h[2] | ((unsigned long)h[3] << 8) | ((unsigned long)h[4] << 16)
+                                     | ((unsigned long)h[5] << 24));
+        skip = (unsigned short)(h[6] | (h[7] << 8));
+    }
     src = Add_Long_To_Pointer((void*)src, (int)sizeof(CompHeaderType) + (int)skip);
 
     switch (method) {
@@ -322,9 +328,7 @@ unsigned int Uncompress_Data(void const* src, void* dst)
         break;
 
     case HORIZONTAL:
-#if LIB_EXTERNS_RESOLVED
         RLE_Uncompress((void*)src, dst, uncomp_size);
-#endif
         break;
 
     case LCW:
@@ -334,3 +338,4 @@ unsigned int Uncompress_Data(void const* src, void* dst)
 
     return (uncomp_size);
 }
+#endif /* !ATARI_ST */

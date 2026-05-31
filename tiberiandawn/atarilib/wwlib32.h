@@ -22,7 +22,6 @@
 #include "../COMMONLIB/coorda.h"
 
 // Include keyboard and mouse headers for function declarations
-#include "keyboard.h"
 #include "mouse.h"
 
 // Stub headers for other library components
@@ -30,26 +29,14 @@
 #include "drawbuff.h"
 #include "buffer.h"
 #include "font.h"
-#include "iff.h"
-#include "misc.h"
+#include "common/iff.h"
 #include "mono.h"
 #include "tile.h"
 #include "wwmem.h"
 #include "file.h"
 #include "rawfile.h"
 #include "audio.h"
-#include "dipthong.h"
-// Include root facing.h for FacingClass definition
-#include "../facing.h"
-// Declare facing calculation functions (implemented in ATARILIB/facing.cpp)
-#ifdef __cplusplus
-extern "C" {
-#endif
-int Desired_Facing256(long srcx, long srcy, long dstx, long dsty);
-int Desired_Facing8(long x1, long y1, long x2, long y2);
-#ifdef __cplusplus
-}
-#endif
+#include "common/dipthong.h"
 #include "palette.h"
 #include "playcd.h"
 #include "shape.h"

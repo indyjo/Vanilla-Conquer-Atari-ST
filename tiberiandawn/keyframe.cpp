@@ -38,6 +38,9 @@
 
 
 #include "function.h"
+#ifdef ATARI_ST
+extern "C" unsigned long LCW_Uncompress(void *source, void *dest, unsigned long length);
+#endif
 #ifdef DEBUG
 #include <stdio.h>
 #endif
@@ -65,12 +68,10 @@ typedef struct {
 
 unsigned	BigShapeBufferLength = INITIAL_BIG_SHAPE_BUFFER_SIZE;
 unsigned	TheaterShapeBufferLength = THEATER_BIG_SHAPE_BUFFER_SIZE;
-extern "C"{
-	char		*BigShapeBufferStart = NULL;
-	char		*TheaterShapeBufferStart = NULL;
-	BOOL		UseBigShapeBuffer = FALSE;
-	bool		IsTheaterShape = false;
-}
+char *BigShapeBufferStart = NULL;
+char *TheaterShapeBufferStart = NULL;
+unsigned int UseBigShapeBuffer = 0;
+unsigned int IsTheaterShape = 0;
 char		*BigShapeBufferPtr = NULL;
 int			TotalBigShapes=0;
 BOOL		ReallocShapeBufferFlag = FALSE;

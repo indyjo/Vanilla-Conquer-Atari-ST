@@ -390,8 +390,8 @@ void Debug_Key(unsigned input)
                 coord = _coords[index++];
                 Mono_Printf("Spillage for %08lX = %d.\r", coord, Coord_Spillage_Number(coord));
             }
-            Keyboard::Clear();
-            Keyboard::Get();
+            Keyboard->Clear();
+            Keyboard->Get();
 
 #endif
 
@@ -423,7 +423,7 @@ void Debug_Key(unsigned input)
 
                 // Get facing #1.
                 LogicPage->Print("Facing #1 (0-7)?", 0, 0, WHITE, BLACK);
-                input = Keyboard::Get();
+                input = Keyboard->Get();
                 if (input == KA_ESC)
                     break;
                 input -= KA_0;
@@ -435,7 +435,7 @@ void Debug_Key(unsigned input)
 
                 // Get facing #2.
                 LogicPage->Print("Facing #2 (0-7)?", 0, 10, WHITE, BLACK);
-                input = Keyboard::Get();
+                input = Keyboard->Get();
                 if (input == KA_ESC)
                     break;
                 input -= KA_0;
@@ -463,7 +463,7 @@ void Debug_Key(unsigned input)
                         index++;
                     }
                 }
-                input = Keyboard::Get();
+                input = Keyboard->Get();
                 if (input == KA_ESC)
                     break;
             }

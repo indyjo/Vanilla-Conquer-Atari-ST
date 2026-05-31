@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned char *palette);
+#include "st_test_linkage.h"
 extern void *Load_Alloc_Data(FileClass &file);
 
 #define ST_HW_PAL_COUNT 16

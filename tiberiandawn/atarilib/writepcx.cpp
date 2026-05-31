@@ -7,7 +7,7 @@
 #include "gbuffer.h"    /* GraphicViewPortClass, GraphicBufferClass (before filepcx) */
 #include "filepcx.h"
 #include <stdio.h>      /* SEEK_CUR for RAWFILE/wwfile */
-#include "../RAWFILE.H"  /* root: full RawFileClass; ATARILIB/rawfile.h is a stub */
+#include "common/rawfile.h"
 #include "memflag.h"
 #include <string.h>
 

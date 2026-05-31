@@ -1,412 +1,77 @@
 /*
- * keyboard.cpp - Keyboard input stubs for Atari ST/MiNT
- * 
- * Provides stub implementations of keyboard functions needed by main source code.
- * These need to be replaced with actual Atari ST keyboard input handling.
+ * keyboard.cpp - Legacy keyboard helper wrappers for Atari ST/MiNT
  */
 
-#include "keyboard.h"
+#include "function.h"
 #include "ikbd.h"
-#include <ctype.h>
-
-static BOOL Force_VK_Bit(UINT vk_key)
-{
-	switch (vk_key) {
-		case VK_LBUTTON:
-		case VK_RBUTTON:
-		case VK_MBUTTON:
-		case VK_ESCAPE:
-		case VK_RETURN:
-		case VK_LEFT:
-		case VK_RIGHT:
-		case VK_UP:
-		case VK_DOWN:
-		case VK_HOME:
-		case VK_END:
-		case VK_PRIOR:
-		case VK_NEXT:
-		case VK_INSERT:
-		case VK_DELETE:
-		case VK_TAB:
-		case VK_BACK:
-		case VK_SHIFT:
-		case VK_LSHIFT:
-		case VK_RSHIFT:
-		case VK_CONTROL:
-		case VK_LCONTROL:
-		case VK_RCONTROL:
-		case VK_MENU:
-		case VK_LMENU:
-		case VK_RMENU:
-		case VK_CAPITAL:
-		case VK_NUMLOCK:
-		case VK_SCROLL:
-		case VK_PAUSE:
-		case VK_PRINT:
-		case VK_SELECT:
-		case VK_F1:
-		case VK_F2:
-		case VK_F3:
-		case VK_F4:
-		case VK_F5:
-		case VK_F6:
-		case VK_F7:
-		case VK_F8:
-		case VK_F9:
-		case VK_F10:
-		case VK_F11:
-		case VK_F12:
-			return TRUE;
-		default:
-			break;
-	}
-	return FALSE;
-}
-
-static void Pump_IKBD_To_Buffer(WWKeyboardClass *kbd)
-{
-	if (!kbd) {
-		return;
-	}
-
-	IKBD_Service();
-	IKBD_Get_Mouse_XY(&kbd->MouseQX, &kbd->MouseQY);
-
-	unsigned char event_byte = 0;
-	while (IKBD_Pop_Event(&event_byte)) {
-		int vk = (int)(event_byte & IKBD_EVENT_KEY_MASK);
-		BOOL release = (event_byte & IKBD_EVENT_RELEASE_BIT) != 0 ? TRUE : FALSE;
-		if (!kbd->Put_Key_Message((UINT)vk, release, FALSE)) {
-			break;
-		}
-		if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON) {
-			if (!kbd->Put(kbd->MouseQX) || !kbd->Put(kbd->MouseQY)) {
-				break;
-			}
-		}
-	}
-}
-
-/***********************************************************************************************
- * WWKeyboardClass::WWKeyboardClass -- Constructor for the Keyboard Class                    *
- *                                                                                             *
- * INPUT:		none                                                                            *
- *                                                                                             *
- * OUTPUT:     none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   10/16/1995 PWG : Created.                                                                 *
- *=============================================================================================*/
-WWKeyboardClass::WWKeyboardClass()
-{
-	Head = 0;
-	Tail = 0;
-	MState = 0;
-	Conditional = 0;
-	MouseQX = 0;
-	MouseQY = 0;
-	CurrentCursor = 0;  // NULL equivalent for Atari ST
-
-	for (int i = 0; i < 256; i++) {
-		VKRemap[i] = (unsigned char)i;
-		ToggleKeys[i] = 0;
-	}
-	for (int i = 0; i < 2048; i++) {
-		AsciiRemap[i] = 0;
-	}
-	for (int c = 'a'; c <= 'z'; c++) {
-		AsciiRemap[c] = (unsigned char)c;
-		AsciiRemap[c | WWKEY_SHIFT_BIT] = (unsigned char)toupper(c);
-		AsciiRemap[toupper(c)] = (unsigned char)toupper(c);
-		AsciiRemap[toupper(c) | WWKEY_SHIFT_BIT] = (unsigned char)toupper(c);
-		VKRemap[c] = (unsigned char)toupper(c);
-		VKRemap[toupper(c)] = (unsigned char)toupper(c);
-		ToggleKeys[toupper(c)] = 1;
-	}
-	for (int c = '0'; c <= '9'; c++) {
-		AsciiRemap[c] = (unsigned char)c;
-		AsciiRemap[c | WWKEY_SHIFT_BIT] = (unsigned char)c;
-		VKRemap[c] = (unsigned char)c;
-	}
-	AsciiRemap[VK_SPACE] = (unsigned char)' ';
-	AsciiRemap[VK_LBUTTON] = 0;
-	AsciiRemap[VK_RBUTTON] = 0;
-	AsciiRemap[VK_MBUTTON] = 0;
-	for (int i = 0; i < 256; i++) {
-		Buffer[i] = 0;
-	}
-
-	_Kbd = this;
-}
-
-/***********************************************************************************************
- * WWKeyboardClass::Check -- Checks to see if a key is in the buffer                         *
- *                                                                                             *
- * INPUT:		none                                                                            *
- *                                                                                             *
- * OUTPUT:     BOOL - true if key is available                                                 *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   10/16/1995 PWG : Created.                                                                 *
- *=============================================================================================*/
-BOOL WWKeyboardClass::Check(void)
-{
-	Pump_IKBD_To_Buffer(this);
-	if (Head == Tail) {
-		return FALSE;
-	}
-	return Buffer[Head];
-}
-
-/***********************************************************************************************
- * WWKeyboardClass::Buff_Get -- Lowlevel function to get a key from key buffer                *
- *                                                                                             *
- * INPUT:		none                                                                            *
- *                                                                                             *
- * OUTPUT:     int - the key value that was pulled from buffer                                *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   10/17/1995 PWG : Created.                                                                 *
- *=============================================================================================*/
-int WWKeyboardClass::Buff_Get(void)
-{
-	while (!Check()) {}										// wait for key in buffer
-	int 	temp		= Buffer[Head];						// get key out of the buffer
-	int   newhead	= Head;									// save off head for manipulation
-	if (Is_Mouse_Key(temp)) {								// if key is a mouse then
-		MouseQX	= Buffer[(Head + 1) & 255];			//		get the x and y pos
-		MouseQY	= Buffer[(Head + 2) & 255];			//		from the buffer
-		newhead += 3;		  									//		adjust head forward
-	} else {
-		newhead += 1;		  									//		adjust head forward
-	}
-	newhead	&= 255;
-	Head		 = newhead;
-	return(temp);
-}
-
-/***********************************************************************************************
- * WWKeyboardClass::Is_Mouse_Key -- Checks if a key is a mouse key                           *
- *                                                                                             *
- * INPUT:		int key - the key to check                                                      *
- *                                                                                             *
- * OUTPUT:     BOOL - true if key is a mouse key                                              *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   Stub implementation                                                                       *
- *=============================================================================================*/
-BOOL WWKeyboardClass::Is_Mouse_Key(int key)
-{
-	key &= 0xFF;
-	return (key == VK_LBUTTON || key == VK_MBUTTON || key == VK_RBUTTON);
-}
-
-/***********************************************************************************************
- * WWKeyboardClass::Put -- Insert a value into the ring buffer (key or mouse coordinate)        *
- *=============================================================================================*/
-BOOL WWKeyboardClass::Put(int key)
-{
-	int temp = (int)((Tail + 1) & 255);
-	if (temp != Head) {
-		Buffer[Tail] = (unsigned short)key;
-		Tail = temp;
-		return TRUE;
-	}
-	return FALSE;
-}
-
-/***********************************************************************************************
- * WWKeyboardClass::Put_Key_Message -- Build key bit flags and queue one word (Win32-compatible)*
- *=============================================================================================*/
-BOOL WWKeyboardClass::Put_Key_Message(UINT vk_key, BOOL release, BOOL dbl)
-{
-	int bits = 0;
-	/*
-	** Mirror Win32 behavior: apply live modifier state for non-mouse keys.
-	** IKBD key-down state is maintained from make/break scan codes.
-	*/
-	if (vk_key != VK_LBUTTON && vk_key != VK_MBUTTON && vk_key != VK_RBUTTON) {
-		int shift = IKBD_Key_Is_Down(VK_SHIFT) != 0;
-		int ctrl  = IKBD_Key_Is_Down(VK_CONTROL) != 0;
-		int alt   = IKBD_Key_Is_Down(VK_MENU) != 0;
-
-		if (shift) {
-			bits |= WWKEY_SHIFT_BIT;
-		}
-		if (ctrl) {
-			bits |= WWKEY_CTRL_BIT;
-		}
-		if (alt) {
-			bits |= WWKEY_ALT_BIT;
-		}
-	}
-	if (Force_VK_Bit(vk_key) || !AsciiRemap[vk_key | bits]) {
-		bits |= WWKEY_VK_BIT;
-	}
-	if (release) {
-		bits |= WWKEY_RLS_BIT;
-	}
-	if (dbl) {
-		bits |= WWKEY_DBL_BIT;
-	}
-	return Put((int)(vk_key | bits));
-}
-
-/***********************************************************************************************
- * WWKeyboardClass::Get -- Logic to get a metakey from the buffer                            *
- *                                                                                             *
- * INPUT:		none                                                                            *
- *                                                                                             *
- * OUTPUT:     int - the meta key taken from the buffer                                       *
- *                                                                                             *
- * WARNINGS:	This routine will not return until a keypress is received                      *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   10/16/1995 PWG : Created.                                                                 *
- *=============================================================================================*/
-int WWKeyboardClass::Get(void)
-{
-	int temp,bits;										// store temp holding spot for key
-
-	Pump_IKBD_To_Buffer(this);
-	while (!Check()) {}								// wait for key in buffer
-	temp = Buff_Get();								// get key from the buffer
-
-	bits = temp & 0xFF00;							// save of keyboard bits
-
-	if (!(bits & WWKEY_VK_BIT)) {					// if its not a virtual key
-		temp = AsciiRemap[temp&0x1FF] | bits;	//   convert to ascii equivalent
-	}
-	return(temp);							// return the key that we pulled out
-}
-
-// Global keyboard object pointer
-WWKeyboardClass *_Kbd = NULL;
 
 int Get_Key_Num(void)
 {
-	if (!_Kbd)
-		return KN_NONE;
-	int key = _Kbd->Get();
-	int flags = key & 0xFF00;
-	key = key & 0x00FF;
+    if (!Keyboard) {
+        return KN_NONE;
+    }
 
-	if (isupper(key)) {
-		key = tolower(key);
-		if (!(flags & WWKEY_VK_BIT)) {
-			flags |= WWKEY_SHIFT_BIT;
-		}
-	}
-	return key | flags;
+    KeyNumType key = Keyboard->Get();
+    return (int)(key & ~WWKEY_SHIFT_BIT);
 }
 
 int Check_Key(void)
 {
-	if (!_Kbd)
-		return KA_NONE;
-	Pump_IKBD_To_Buffer(_Kbd);
-	return _Kbd->Check() & ~WWKEY_SHIFT_BIT;
+    if (!Keyboard) {
+        return KN_NONE;
+    }
+
+    KeyNumType key = Keyboard->Check();
+    return (int)(key & ~WWKEY_SHIFT_BIT);
 }
 
 int Check_Key_Num(void)
 {
-	if (!_Kbd)
-		return KN_NONE;
-	Pump_IKBD_To_Buffer(_Kbd);
-	int key = _Kbd->Check();
-	int flags = key & 0xFF00;
-	key = key & 0x00FF;
+    if (!Keyboard) {
+        return KN_NONE;
+    }
 
-	if (isupper(key)) {
-		key = tolower(key);
-		if (!(flags & WWKEY_VK_BIT)) {
-			flags |= WWKEY_SHIFT_BIT;
-		}
-	}
-
-	return key | flags;
-}
-
-// Stub: Convert key number to ASCII
-int KN_To_KA(int key)
-{
-	// TODO: Implement proper key conversion
-	if (key & WWKEY_RLS_BIT) {
-		return KA_NONE;
-	}
-	// Simple conversion - just return the lower byte
-	return key & 0xFF;
+    KeyNumType key = Keyboard->Check();
+    if (key == KN_NONE) {
+        return KN_NONE;
+    }
+    return (int)(key & ~WWKEY_SHIFT_BIT);
 }
 
 void Clear_KeyBuffer(void)
 {
-	if (!_Kbd)
-		return;
-	_Kbd->Clear();
-}
-
-// Stub: Check if a key is currently down
-int Key_Down(int key)
-{
-	int vk = key & 0xFF;
-	return IKBD_Key_Is_Down(vk);
+    if (Keyboard) {
+        Keyboard->Clear();
+    }
 }
 
 void Stuff_Key_Num(int key)
 {
-	if (_Kbd)
-		_Kbd->Put(key);
+    if (Keyboard) {
+        Keyboard->Put((unsigned short)key);
+    }
 }
 
-// Stub: Get a key (compatibility function)
 int Get_Key(void)
 {
-	if (!_Kbd) return KN_NONE;
-	int retval = _Kbd->Get() & ~WWKEY_SHIFT_BIT;
-	if (retval & WWKEY_RLS_BIT) {
-		retval = KN_NONE;
-	}
-	return retval;
+    if (!Keyboard) {
+        return KN_NONE;
+    }
+
+    KeyNumType retval = Keyboard->Get();
+    if (retval & WWKEY_RLS_BIT) {
+        return KN_NONE;
+    }
+    return (int)(retval & ~WWKEY_SHIFT_BIT);
 }
 
-/***************************************************************************
- * WWKeyboardClass::Clear -- Clears the keyboard buffer                    *
- *                                                                         *
- * INPUT:		none                                                        *
- *                                                                         *
- * OUTPUT:     none                                                        *
- *                                                                         *
- * HISTORY:                                                                *
- *   Stub for Atari ST                                                    *
- *=========================================================================*/
-void WWKeyboardClass::Clear(void)
-{
-	Head = Tail;
-}
-
-/***************************************************************************
- * KN_To_VK -- Convert key number to virtual key code                     *
- *                                                                         *
- * INPUT:		int key - key number                                        *
- *                                                                         *
- * OUTPUT:     int - virtual key code                                      *
- *                                                                         *
- * HISTORY:                                                                *
- *   Stub for Atari ST                                                    *
- *=========================================================================*/
 int KN_To_VK(int key)
 {
-	if (!_Kbd)
-		return KN_NONE;
-	if (key & WWKEY_RLS_BIT) {
-		return VK_NONE;
-	}
+    if (!Keyboard) {
+        return key;
+    }
 
-	int flags = key & 0xFF00;
-	if (!(flags & WWKEY_VK_BIT)) {
-		key = _Kbd->VKRemap[key & 0x00FF] | flags;
-	}
-	key &= ~WWKEY_VK_BIT;
-	return key;
+    int flags = key & (WWKEY_SHIFT_BIT | WWKEY_CTRL_BIT | WWKEY_ALT_BIT);
+    key &= 0x00FF;
+    return key | flags;
 }
-

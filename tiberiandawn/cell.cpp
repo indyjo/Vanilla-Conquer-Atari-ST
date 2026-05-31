@@ -1897,7 +1897,7 @@ void CellClass::Adjust_Threat(HousesType house, int threat_value)
  * HISTORY:                                                                                    *
  *   05/16/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
-long CellClass::Tiberium_Adjust(bool pregame)
+int CellClass::Tiberium_Adjust(bool pregame)
 {
 	Validate();
 	if (Overlay != OVERLAY_NONE) {
@@ -2068,7 +2068,7 @@ bool CellClass::Goodie_Check(FootClass * object, bool check_steel)
 				}
 
 				while (what == -1) {
-					what = _what[Random_Pick((unsigned)0, sizeof(_what)/sizeof(_what[0])-1)];
+					what = _what[Random_Pick(0, (int)(sizeof(_what)/sizeof(_what[0])-1))];
 
 					if (what == REVEAL && object->House->IsVisionary) what = -1;
 					if (what == AIR_STRIKE && (!allow_super || object->House->AirStrike.Is_Present())) what = -1;
@@ -2082,7 +2082,7 @@ bool CellClass::Goodie_Check(FootClass * object, bool check_steel)
 			** Keep track of the number of each type of crate found
 			*/
 			if (GameToPlay == GAME_INTERNET){
-				object->House->TotalCrates->Increment_Unit_Total(what);
+				object->House->TotalCrates.Increment_Unit_Total(what);
 			}
 
 			/*
@@ -2234,7 +2234,7 @@ bool CellClass::Goodie_Check(FootClass * object, bool check_steel)
 							INFANTRY_E7,
 							INFANTRY_RAMBO
 						};
-						InfantryTypeClass::As_Reference(_inf[Random_Pick((unsigned)0, sizeof(_inf)/sizeof(_inf[0])-1)]).Create_And_Place(Cell_Number(), object->Owner());
+						InfantryTypeClass::As_Reference(_inf[Random_Pick(0, (int)(sizeof(_inf)/sizeof(_inf[0])-1))]).Create_And_Place(Cell_Number(), object->Owner());
 					}
 					return(false);
 

@@ -16,7 +16,7 @@
 #include "st_mix_minimal.h"
 #include "st_text.h"
 
-#include "misc.h" /* Build_Fading_Table */
+#include "fading.h"
 
 #include "c2p.h"
 #include "st_temperat_palette.h"

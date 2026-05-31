@@ -59,77 +59,6 @@ extern "C" long Calculate_CRC(void *buffer, long length)
 	return (long)crc;
 }
 
-/*=========================================================================*/
-/* Build_Fading_Table -- Builds a fading table for palette remapping      */
-/*                                                                         */
-/* C port of WIN32LIB/DrawMisc.cpp (from PAL.ASM): each entry i maps to   */
-/* the palette index whose RGB is closest to lerping color i toward        */
-/* palette[color] by frac/255. Index 0 is never remapped (transparent).   */
-/* Required for SHAPE_GHOST / UnitShadow on ST (misc stub used to be id). */
-/*=========================================================================*/
-
-extern "C" void *Build_Fading_Table(void const *palette, void const *dest, long int color, long int frac)
-{
-	if (!palette || !dest) {
-		return (void *)dest;
-	}
-
-	const unsigned char *const pal = (const unsigned char *)palette;
-	unsigned char *const out = (unsigned char *)dest;
-
-	if (color < 0 || color > 255) {
-		return (void *)dest;
-	}
-	if (frac < 0) {
-		frac = 0;
-	}
-	if (frac > 255) {
-		frac = 255;
-	}
-
-	const int tr = (int)pal[color * 3 + 0];
-	const int tg = (int)pal[color * 3 + 1];
-	const int tb = (int)pal[color * 3 + 2];
-
-	out[0] = 0;
-
-	for (int i = 1; i < 256; ++i) {
-		const int or_ = (int)pal[i * 3 + 0];
-		const int og = (int)pal[i * 3 + 1];
-		const int ob = (int)pal[i * 3 + 2];
-		const int ir = or_ - (or_ - tr) * (int)frac / 255;
-		const int ig = og - (og - tg) * (int)frac / 255;
-		const int ib = ob - (ob - tb) * (int)frac / 255;
-
-		int best_j = color;
-		unsigned long best_d = 0xFFFFFFFFUL;
-
-		for (int j = 1; j < 256; ++j) {
-			if (j == i) {
-				continue;
-			}
-			const int pr = (int)pal[j * 3 + 0];
-			const int pg = (int)pal[j * 3 + 1];
-			const int pb = (int)pal[j * 3 + 2];
-			const long dr = (long)pr - (long)ir;
-			const long dg = (long)pg - (long)ig;
-			const long db = (long)pb - (long)ib;
-			const unsigned long d2 =
-					(unsigned long)(dr * dr + dg * dg + db * db);
-			if (d2 < best_d) {
-				best_d = d2;
-				best_j = j;
-				if (d2 == 0) {
-					break;
-				}
-			}
-		}
-		out[i] = (unsigned char)best_j;
-	}
-
-	return (void *)dest;
-}
-
 // Icon cache stubs - not needed for ATARILIB
 void Restore_Cached_Icons(void)
 {
@@ -265,75 +194,8 @@ void SurfaceMonitorClass::Release(void)
 // Global instance of SurfaceMonitorClass
 SurfaceMonitorClass AllSurfaces;
 
-/***************************************************************************
- * First_True_Bit -- Finds the first set bit in a bit array               *
- *                                                                         *
- * INPUT:		void const *array - pointer to bit array                    *
- *                                                                         *
- * OUTPUT:     int - bit index of first set bit, or -1 if none found       *
- *                                                                         *
- * HISTORY:                                                                *
- *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
- *   Modified to work with byte arrays (for BooleanVectorClass)           *
- *   Note: This function searches up to 256 bytes (2048 bits)              *
- *=========================================================================*/
-extern "C" int First_True_Bit(void const * array)
+void Wait_Blit(void)
 {
-	if (!array) return -1;
-	
-	unsigned char const *byte_array = (unsigned char const *)array;
-	
-	// Search through bytes (up to 256 bytes = 2048 bits to prevent infinite loop)
-	for (int byte_idx = 0; byte_idx < 256; byte_idx++) {
-		unsigned char byte = byte_array[byte_idx];
-		
-		if (byte != 0) {
-			// Find the first set bit in this byte
-			for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
-				if (byte & (1U << bit_idx)) {
-					return (byte_idx * 8) + bit_idx;
-				}
-			}
-		}
-	}
-	
-	return -1;  // No set bit found
-}
-
-/***************************************************************************
- * First_False_Bit -- Finds the first clear bit in a bit array            *
- *                                                                         *
- * INPUT:		void const *array - pointer to bit array                    *
- *                                                                         *
- * OUTPUT:     int - bit index of first clear bit, or -1 if none found     *
- *                                                                         *
- * HISTORY:                                                                *
- *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
- *   Modified to work with byte arrays (for BooleanVectorClass)           *
- *   Note: This function searches up to 256 bytes (2048 bits)              *
- *=========================================================================*/
-extern "C" int First_False_Bit(void const * array)
-{
-	if (!array) return -1;
-	
-	unsigned char const *byte_array = (unsigned char const *)array;
-	
-	// Search through bytes (up to 256 bytes = 2048 bits to prevent infinite loop)
-	for (int byte_idx = 0; byte_idx < 256; byte_idx++) {
-		unsigned char byte = byte_array[byte_idx];
-		
-		// Check if this byte has any clear bits (not all bits are set)
-		if (byte != 0xFF) {
-			// Find the first clear bit in this byte
-			for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
-				if (!(byte & (1U << bit_idx))) {
-					return (byte_idx * 8) + bit_idx;
-				}
-			}
-		}
-	}
-	
-	return -1;  // No clear bit found
 }
 
 /***************************************************************************
@@ -348,7 +210,7 @@ extern "C" int First_False_Bit(void const * array)
  * HISTORY:                                                                *
  *   Ported from WIN32LIB/MiscAsm.cpp (x86 assembly to portable C)       *
  *=========================================================================*/
-extern "C" int Bound(int original, int min, int max)
+extern "C" int _Bound(int original, int min, int max)
 {
 	// Ensure min <= max
 	if (min > max) {
@@ -486,3 +348,7 @@ int Clip_Rect(int *x, int *y, int *dw, int *dh, int width, int height)
 	return (x0 != *x || y0 != *y || x1 != (*x + *dw) || y1 != (*y + *dh)) ? 1 : 0;
 }
 
+void Set_Video_Cursor_Clip(bool clipped)
+{
+	clipped;
+}

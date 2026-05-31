@@ -10,6 +10,7 @@
 #include "gbuffer.h"
 #include "audio.h"
 #include "st_frame_meter.h"
+#include "wwkeyboard.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -17,7 +18,8 @@
 #include <string.h>
 
 /* KEYFRAME.CPP references these; full game defines them in GLOBALS / WINSTUB. */
-long Frame = 0;
+int Frame = 0;
+WWKeyboardClass *Keyboard = CreateWWKeyboardClass();
 
 void Memory_Error_Handler(void)
 {
@@ -37,7 +39,7 @@ Sample_Type SampleType = SAMPLE_NONE;
 SFX_Type SoundType = SFX_NONE;
 GraphicBufferClass SysMemPage(320, 200, (void *)NULL);
 GraphicBufferClass VisiblePage(320, 200, (void *)NULL);
-int WindowList[][8] = {
+int WindowList[][9] = {
 	{0, 0, 320, 200, WHITE, BLACK, 0, 0},
 	{8, 75, 304, 100, WHITE, BLACK, 0, 0},
 	{0, 8, 320, 192, WHITE, LTGREY, 0, 0},
@@ -158,10 +160,12 @@ void Bftp_ExArgs_init_zero(Bftp_ExArgs *ex)
 	memset(ex, 0, sizeof(*ex));
 }
 
+#if defined(REMASTER_BUILD)
 void GlyphX_Debug_Print(char const *msg)
 {
 	(void)msg;
 }
+#endif
 
 #if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
 /*

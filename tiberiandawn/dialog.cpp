@@ -465,11 +465,7 @@ void Simple_Text_Print(char const* text, unsigned x, unsigned y, unsigned fore, 
 
     case TPF_6PT_GRAD:
         font = GradFont6Ptr;
-#ifdef ATARI_ST
-        xspace -= 2;
-#else
         xspace -= 1;
-#endif
         // yspace -= 1;
         break;
 
@@ -481,11 +477,7 @@ void Simple_Text_Print(char const* text, unsigned x, unsigned y, unsigned fore, 
 
     case TPF_6POINT:
         font = Font6Ptr;
-#ifdef ATARI_ST
-        xspace -= 2;
-#else
         xspace -= 1;
-#endif
         // yspace -= 1;
         break;
 

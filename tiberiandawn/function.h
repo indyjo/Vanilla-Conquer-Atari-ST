@@ -114,9 +114,18 @@ inline int max(int a, int b)
 
 #define WWMEM_H
 #include "compat.h"
+#include "common/noinit.h"
 #include "common/irandom.h"
 #include "common/rawfile.h"
+#include "common/file.h"
+#include "common/wwkeyboard.h"
+#ifdef ATARI_ST
+#include "wwlib32.h"
+#include "timer.h"
+#define WinTickCount TickCount
+#else
 #include "common/wwlib32.h"
+#endif
 #include "jshell.h"
 
 // Should be part of WWLIB.H. This is used in JSHELL.CPP.
@@ -174,8 +183,9 @@ inline CELL Coord_YCell(COORDINATE coord)
 }
 
 #include "miscasm.h"
+#include "common/miscasm.h"
 #include "rules.h"
-#include "utracker.h"
+#include "common/utracker.h"
 #include "facing.h"
 #include "ftimer.h"
 #include "theme.h"
@@ -243,7 +253,6 @@ inline CELL Coord_YCell(COORDINATE coord)
 #include "msglist.h"
 #include "loaddlg.h"
 #include "ipxaddr.h"
-#include "common/miscasm.h"
 #include "common/face.h"
 /****************************************************************************
 **	This is a "node", used for the lists of available games & players.  The
@@ -271,6 +280,11 @@ typedef struct NodeNameTag
         } Player;
     };
 } NodeNameType;
+
+#ifdef ATARI_ST
+#include "ATARILIB/misc.h"
+void Set_Video_Cursor_Clip(bool clipped);
+#endif
 
 #include "externs.h"
 
@@ -570,16 +584,7 @@ inline long Buffer_Frame_To_Page_Ex(int x,
 /*
 **	KEYFRAME.CPP
 */
-int Get_Last_Frame_Length(void);
-unsigned long Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr);
-unsigned long Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr, size_t blob_size);
-unsigned short Get_Build_Frame_Count(void const* dataptr);
-unsigned short Get_Build_Frame_X(void const* dataptr);
-unsigned short Get_Build_Frame_Y(void const* dataptr);
-unsigned short Get_Build_Frame_Width(void const* dataptr);
-unsigned short Get_Build_Frame_Height(void const* dataptr);
-unsigned long Get_Build_Frame_BufferBytes(void const* dataptr);
-bool Get_Build_Frame_Palette(void const* dataptr, void* palette);
+#include "common/keyframe.h"
 
 /*
 **	MAP.CPP
@@ -720,6 +725,17 @@ void Bit_It_In(int x,
 void Call_Back_Delay(int time);
 int Alloc_Object(ScoreAnimClass* obj);
 extern GraphicBufferClass* PseudoSeenBuff;
+
+/*
+**	PROFILE.CPP
+*/
+int WWGetPrivateProfileInt(char const* section, char const* entry, int def, char* profile);
+bool WWWritePrivateProfileInt(char const* section, char const* entry, int value, char* profile);
+bool WWWritePrivateProfileString(char const* section, char const* entry, char const* string, char* profile);
+char* WWGetPrivateProfileString(
+    char const* section, char const* entry, char const* def, char* retbuffer, int retlen, char* profile);
+unsigned WWGetPrivateProfileHex(char const* section, char const* entry, char* profile);
+bool Read_Private_Config_Struct(char* profile, NewConfigType* config);
 
 /*
 **	SPECIAL.CPP

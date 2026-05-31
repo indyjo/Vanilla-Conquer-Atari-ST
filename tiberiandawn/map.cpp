@@ -187,13 +187,8 @@ void MapClass::Alloc_Cells(void)
 	**	Assume that whatever the contents of the VectorClass are is garbage
 	**	(it may have been loaded from a save-game file), so zero it out first.
 	*/
-	Vector = 0;
-	VectorMax = 0;
-	IsAllocated = 0;
-	Resize(Size);
-
-	if (Vector != 0 && VectorMax > 0) {
-	}
+	new (&Array) VectorClass<CellClass>;
+	Array.Resize(Size);
 }
 
 
@@ -218,7 +213,7 @@ void MapClass::Alloc_Cells(void)
  *=============================================================================================*/
 void MapClass::Free_Cells(void)
 {
-	Clear();
+	Array.Clear();
 }
 
 
@@ -619,7 +614,7 @@ void MapClass::Overlap_Up(CELL cell, ObjectClass * object)
  *   02/13/1995 JLB : Returns total tiberium worth.                                            *
  *   02/15/1995 JLB : Optimal scan.                                                            *
  *=============================================================================================*/
-long MapClass::Overpass(void)
+int MapClass::Overpass(void)
 {
 	long value = 0;
 
@@ -654,9 +649,9 @@ long MapClass::Overpass(void)
  *   01/08/1995 JLB : Fixup any obsolete icons detected.                                       *
  *=============================================================================================*/
 #ifdef DEMO
-bool MapClass::Read_Binary(char const * root, unsigned long *)
+bool MapClass::Read_Binary(char const * root, uint32_t *)
 #else
-bool MapClass::Read_Binary(char const * root, unsigned long *crc)
+bool MapClass::Read_Binary(char const * root, uint32_t *crc)
 #endif
 {
 	CCFileClass file;
@@ -770,7 +765,7 @@ bool MapClass::Read_Binary(char const * root, unsigned long *crc)
  * HISTORY:                                                                                    *
  *   10/28/2019 JAS : Created.                                                                  *
  *=============================================================================================*/
-bool MapClass::Read_Binary_File(char const * fname, unsigned long *crc)
+bool MapClass::Read_Binary_File(char const * fname, uint32_t *crc)
 {
 	CCFileClass file;
 

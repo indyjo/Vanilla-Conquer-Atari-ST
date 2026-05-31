@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void Load_Title_Screen(char *name, GraphicViewPortClass *video_page, unsigned char *palette);
+#include "st_test_linkage.h"
 
 #define ST_HW_PAL_COUNT 16
 #define ST_TITLE_MIX_NAME "CONQUER.MIX"

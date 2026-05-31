@@ -68,7 +68,7 @@ static inline unsigned long ST_Read_Hz200(void)
 static void ST_Tile_Cache_Debug_Toggle_Maybe(void)
 {
 	/* F10 alone: avoid clash with Ctrl+F10 (TOS console toggle in st_screen.cpp). */
-	int ctrl = IKBD_Key_Is_Down(VK_LCONTROL) || IKBD_Key_Is_Down(VK_RCONTROL);
+	int ctrl = IKBD_Key_Is_Down(VK_CONTROL);
 	BOOL down = (IKBD_Key_Is_Down(VK_F10) && !ctrl) ? TRUE : FALSE;
 	if (down && !g_tile_cache_debug_key_prev) {
 		g_tile_cache_debug_show = (g_tile_cache_debug_show == FALSE) ? TRUE : FALSE;

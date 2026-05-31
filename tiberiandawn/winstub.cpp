@@ -687,14 +687,11 @@ bool DLL_Export_Get_Input_Key_State(KeyNumType key)
 {
 #ifdef ATARI_ST
     switch (key & 0xFF) {
-    case VK_LSHIFT:
-    case VK_RSHIFT:
+    case VK_SHIFT:
         return IKBD_Key_Is_Down(VK_SHIFT) != 0;
-    case VK_LCONTROL:
-    case VK_RCONTROL:
+    case VK_CONTROL:
         return IKBD_Key_Is_Down(VK_CONTROL) != 0;
-    case VK_LMENU:
-    case VK_RMENU:
+    case VK_MENU:
         return IKBD_Key_Is_Down(VK_MENU) != 0;
     default:
         break;

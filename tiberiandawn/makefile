@@ -105,7 +105,7 @@ endif
 
 # Include directories (platform-specific + common)
 # Put platform lib first so platform-specific headers take precedence over root headers
-INCLUDES = -I./$(PLATFORM_LIB) -I. -I./COMMONLIB
+INCLUDES = -I./$(PLATFORM_LIB) -I. -I./COMMONLIB -I.. -I../common
 
 # Some m68k-atari-mint installs omit libstdc++ from the primary sys-root; headers may live under sys-root-old.
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -209,9 +209,40 @@ endif
 COMMONLIB_CPP_SOURCES = \
 	COMMONLIB/coorda.cpp
 
+# Vanilla Conquer common/ sources (replacing removed tiberiandawn/*.cpp on ATARI_ST)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+VC_COMMON_CPP_SOURCES = \
+	../common/b64pipe.cpp ../common/b64straw.cpp ../common/base64.cpp \
+	../common/bfiofile.cpp ../common/blowfish.cpp ../common/blowpipe.cpp \
+	../common/blwstraw.cpp ../common/buff.cpp ../common/ccfile.cpp \
+	../common/cdfile.cpp ../common/combuf.cpp ../common/control.cpp \
+	../common/crc.cpp ../common/crew.cpp \
+	../common/fading.cpp ../common/field.cpp ../common/file.cpp \
+	../common/file_posix.cpp ../common/framelimit.cpp ../common/fixed.cpp \
+	../common/hsv.cpp ../common/ini.cpp ../common/int.cpp \
+	../common/lcw.cpp ../common/lcwpipe.cpp ../common/lcwstraw.cpp \
+	../common/link.cpp ../common/load.cpp ../common/misc.cpp \
+	../common/dipthong.cpp ../common/_diptabl.cpp ../common/face.cpp ../common/irandom.cpp ../common/newdel.cpp \
+	../common/mixfile.cpp ../common/mp.cpp ../common/palettec.cpp ../common/paths.cpp \
+	../common/paths_posix.cpp ../common/pipe.cpp ../common/pk.cpp \
+	../common/pkpipe.cpp ../common/pkstraw.cpp ../common/random.cpp \
+	../common/rawfile.cpp ../common/readline.cpp ../common/rgb.cpp \
+	../common/rndstraw.cpp ../common/settings.cpp ../common/sha.cpp \
+	../common/shapipe.cpp ../common/shastraw.cpp ../common/straw.cpp \
+	../common/toggle.cpp ../common/timer.cpp ../common/timerdwn.cpp ../common/vector.cpp \
+	../common/winasm.cpp ../common/wwkeyboard.cpp \
+	../common/xpipe.cpp ../common/xstraw.cpp ../common/gadget.cpp
+else
+VC_COMMON_CPP_SOURCES =
+endif
+
 # IPX sources - ipx95.cpp is used for all modern builds
 # ipx.cpp was removed as it only contained DOS/DPMI-specific code
+ifeq ($(PLATFORM_LIB),ATARILIB)
+IPX_SOURCES =
+else
 IPX_SOURCES = IPX95.CPP
+endif
 
 # Root directory C++ sources
 # Note: dde.cpp and ccdde.cpp are Windows-only (DDE is Windows-specific)
@@ -219,26 +250,26 @@ IPX_SOURCES = IPX95.CPP
 ROOT_CPP_SOURCES = \
 	AADATA.CPP ABSTRACT.CPP ADATA.CPP AIRCRAFT.CPP ALLOC.CPP ANIM.CPP \
 	AUDIO.CPP BASE.CPP BBDATA.CPP BDATA.CPP BUILDING.CPP BULLET.CPP \
-	CARGO.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),CCDDE.CPP,) CCFILE.CPP CDATA.CPP CDFILE.CPP CELL.CPP \
+	CARGO.CPP CCINI.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),CCDDE.CPP,) CCFILE.CPP CDATA.CPP CDFILE.CPP CELL.CPP \
 	CHECKBOX.CPP CHEKLIST.CPP COLRLIST.CPP COMBAT.CPP COMBUF.CPP \
 	COMQUEUE.CPP CONFDLG.CPP CONNECT.CPP CONQUER.CPP CONST.CPP \
 	CONTROL.CPP COORD.CPP CREDITS.CPP CREW.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),DDE.CPP,) DEBUG.CPP \
-	DESCDLG.CPP DIAL8.CPP DIALOG.CPP DISPLAY.CPP DOOR.CPP DPMI.CPP DRIVE.CPP EDIT.CPP \
-	ENDING.CPP EVENT.CPP EXPAND.CPP $(if $(filter WIN32LIB,$(PLATFORM_LIB)),FACING.CPP,) FACTORY.CPP FIELD.CPP \
+	DESCDLG.CPP DIAL8.CPP DIALOG.CPP DISPLAY.CPP DOOR.CPP DPMI.CPP DRIVE.CPP DROP.CPP EDIT.CPP \
+	ENDING.CPP EVENT.CPP EXPAND.CPP FACING.CPP FACTORY.CPP FIELD.CPP \
 	FINDPATH.CPP FLASHER.CPP FLY.CPP FOOT.CPP FUSE.CPP GADGET.CPP \
 	GAMEDLG.CPP GAUGE.CPP GLOBALS.CPP GOPTIONS.CPP GSCREEN.CPP \
 	HDATA.CPP HEAP.CPP HELP.CPP HOUSE.CPP IDATA.CPP INFANTRY.CPP \
 	INI.CPP INIT.CPP INTERNET.CPP INTERPAL.CPP INTRO.CPP IOMAP.CPP \
 	IOOBJ.CPP $(IPX_SOURCES) IPXADDR.CPP IPXCONN.CPP IPXGCONN.CPP \
-	IPXMGR.CPP JSHELL.CPP KEYFRAME.CPP LAYER.CPP LINK.CPP LIST.CPP \
+	IPXMGR.CPP JSHELL.CPP KEYFRAME.CPP LAYER.CPP LIB.CPP LINK.CPP LIST.CPP \
 	LOADDLG.CPP LOGIC.CPP MAP.CPP MAPEDDLG.CPP MAPEDIT.CPP MAPEDPLC.CPP \
 	MAPEDSEL.CPP MAPEDTM.CPP MAPSEL.CPP MENUS.CPP \
 	MISSION.CPP MIXFILE.CPP MONOC.CPP MOUSE.CPP MPLAYER.CPP \
 	MSGBOX.CPP MSGLIST.CPP NETDLG.CPP NOSEQCON.CPP NULLCONN.CPP \
 	NULLDLG.CPP NULLMGR.CPP OBJECT.CPP ODATA.CPP OPTIONS.CPP \
 	OVERLAY.CPP PACKET.CPP POWER.CPP PROFILE.CPP QUEUE.CPP RADAR.CPP \
-	RADIO.CPP RAND.CPP RAWFILE.CPP REINF.CPP RULES.CPP SAVELOAD.CPP \
-	SCENARIO.CPP SCORE.CPP SCROLL.CPP SDATA.CPP SEQCONN.CPP Shape.cpp \
+	RADIO.CPP REINF.CPP RULES.CPP SAVELOAD.CPP \
+	SCENARIO.CPP SCENARIOINI.CPP SCORE.CPP SCROLL.CPP SDATA.CPP SEQCONN.CPP Shape.cpp \
 	SHAPEBTN.CPP SIDEBAR.CPP SIDEBARGlyphx.CPP SLIDER.CPP SMUDGE.CPP \
 	SOUNDDLG.CPP SPECIAL.CPP STATS.CPP SUPER.CPP TAB.CPP \
 	TARCOM.CPP TARGET.CPP TDATA.CPP TEAM.CPP TEAMTYPE.CPP \
@@ -247,39 +278,47 @@ ROOT_CPP_SOURCES = \
 	UTRACKER.CPP VECTOR.CPP 	VISUDLG.CPP WINSTUB.CPP wsa.cpp \
 	$(if $(filter ATARILIB,$(PLATFORM_LIB)),wsa_atari_weights.cpp theater_atari_weights.cpp,)
 
+# Root sources removed during VC modernization (now in ../common/ or dropped on ATARI_ST)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+ATARI_ST_ROOT_EXCLUDES = \
+	ALLOC.CPP CCFILE.CPP CDFILE.CPP COMBUF.CPP COMQUEUE.CPP CONNECT.CPP \
+	CONTROL.CPP CREW.CPP DESCDLG.CPP DPMI.CPP FIELD.CPP GADGET.CPP INI.CPP \
+	INTERPAL.CPP INTERNET.CPP IPX95.CPP IPXCONN.CPP IPXGCONN.CPP IPXMGR.CPP \
+	IPXADDR.CPP LINK.CPP MIXFILE.CPP MPLAYER.CPP NETDLG.CPP NOSEQCON.CPP \
+	NULLCONN.CPP NULLMGR.CPP PACKET.CPP RAND.CPP RAWFILE.CPP \
+	SEQCONN.CPP TOGGLE.CPP UTRACKER.CPP VECTOR.CPP
+ROOT_CPP_SOURCES := $(filter-out $(ATARI_ST_ROOT_EXCLUDES),$(ROOT_CPP_SOURCES))
+endif
+
 # Platform library C++ sources (WIN32LIB or ATARILIB)
 # ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP
 PLATFORM_LIB_CPP_SOURCES = \
-	$(PLATFORM_LIB)/alloc.cpp $(PLATFORM_LIB)/buffer.cpp $(PLATFORM_LIB)/buffglbl.cpp \
-	$(PLATFORM_LIB)/ddraw.cpp $(PLATFORM_LIB)/dipthong.cpp $(PLATFORM_LIB)/DrawMisc.cpp \
-	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/drawrect.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/alloc.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp $(PLATFORM_LIB)/ikbd.cpp \
-	$(PLATFORM_LIB)/irandom.cpp $(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/load.cpp \
-	$(PLATFORM_LIB)/loadfont.cpp $(PLATFORM_LIB)/loadpal.cpp $(PLATFORM_LIB)/mem.cpp \
-	$(PLATFORM_LIB)/morphpal.cpp $(PLATFORM_LIB)/mouseww.cpp $(PLATFORM_LIB)/newdel.cpp \
-	$(PLATFORM_LIB)/palette.cpp $(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/c2p.cpp $(PLATFORM_LIB)/st_temperat_palette_data.cpp,) $(PLATFORM_LIB)/regionsz.cpp $(PLATFORM_LIB)/set_font.cpp \
-	$(PLATFORM_LIB)/timer.cpp $(PLATFORM_LIB)/timerdwn.cpp $(PLATFORM_LIB)/timerini.cpp \
-	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/WINDOWS.CPP,) $(PLATFORM_LIB)/winhide.cpp $(PLATFORM_LIB)/writepcx.cpp \
+	$(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/wwkeyboard_st.cpp \
+	$(PLATFORM_LIB)/mouseww.cpp \
+	$(PLATFORM_LIB)/palette.cpp $(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/c2p.cpp $(PLATFORM_LIB)/st_temperat_palette_data.cpp,) \
+	$(PLATFORM_LIB)/timerini.cpp \
+	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/WINDOWS.CPP,) $(PLATFORM_LIB)/writepcx.cpp \
 	$(PLATFORM_LIB)/startup.cpp \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/facing.cpp $(PLATFORM_LIB)/facingclass.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_screen.cpp,) \
-	$(PLATFORM_LIB)/_diptabl.cpp
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_screen.cpp,)
 
 # Assembly sources (platform-specific)
 # Root directory files use uppercase .ASM, ATARILIB files use lowercase .asm (as tracked in git)
 ASM_SOURCES = \
 	IPXPROT.ASM IPXREAL.ASM KEYFBUFF.ASM MMX.ASM PAGFAULT.ASM \
-	SUPPORT.ASM TXTPRNT.ASM WINASM.ASM \
-	$(PLATFORM_LIB)/facingff.asm $(PLATFORM_LIB)/tobuff.asm $(PLATFORM_LIB)/xordelta.asm
+	SUPPORT.ASM TXTPRNT.ASM WINASM.ASM
 
 # Resource files
 RC_SOURCES = \
 	RESOURCE/TiberianDawn.rc
 
 # All C++ sources
-ALL_CPP_SOURCES = $(COMMONLIB_CPP_SOURCES) $(ROOT_CPP_SOURCES) $(PLATFORM_LIB_CPP_SOURCES)
+ALL_CPP_SOURCES = $(COMMONLIB_CPP_SOURCES) $(VC_COMMON_CPP_SOURCES) $(ROOT_CPP_SOURCES) $(PLATFORM_LIB_CPP_SOURCES)
 
 # Generate object file lists (GCC uses .o extension)
 # All object files go to $(INTDIR) with just the basename
@@ -288,13 +327,17 @@ ALL_CPP_SOURCES = $(COMMONLIB_CPP_SOURCES) $(ROOT_CPP_SOURCES) $(PLATFORM_LIB_CP
 # All source files now use uppercase .CPP extension (case-insensitive filesystem handles this)
 # Handle both .cpp and .CPP extensions in object file generation
 COMMONLIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(COMMONLIB_CPP_SOURCES:.cpp=.o)))
+VC_COMMON_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(VC_COMMON_CPP_SOURCES:.cpp=.o)))
 ROOT_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.CPP,%.o,$(patsubst %.cpp,%.o,$(ROOT_CPP_SOURCES)))))
+# Git tracks root sources as lowercase .cpp; object basenames must match for GNU make.
+ROOT_CPP_OBJS := $(foreach obj,$(ROOT_CPP_OBJS),$(INTDIR)/$(shell echo $(notdir $(obj)) | tr '[:upper:]' '[:lower:]'))
 PLATFORM_LIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.CPP,%.o,$(patsubst %.cpp,%.o,$(PLATFORM_LIB_CPP_SOURCES)))))
 # Handle alloc.cpp conflict: root version becomes alloc.o, platform lib version becomes alloc_platformlib.o
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
-# Handle facing.cpp conflict: ATARILIB version becomes facing_ATARILIB.o to avoid conflict with root facing.cpp
-PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/facing.o,$(INTDIR)/facing_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
-CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
+# misc.cpp exists in ../common/ (VC_COMMON) and ATARILIB/ — keep both objects
+PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/misc.o,$(INTDIR)/misc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
+# gadget.cpp exists in ../common/ (VC_COMMON) and root GADGET.CPP — root excluded on ST
+CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(VC_COMMON_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
 ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.ASM,%.o,$(patsubst %.asm,%.o,$(ASM_SOURCES)))))
 # Filter out truncated x86 assembly object files for ATARILIB (they can't be assembled for m68k)
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -368,6 +411,14 @@ $(INTDIR)/%.o: COMMONLIB/%.CPP | $(INTDIR)
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
+# Vanilla Conquer common/ sources (explicit list only — do not steal ATARILIB basenames)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+$(VC_COMMON_CPP_OBJS): $(INTDIR)/%.o : ../common/%.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+endif
+
 # C++ compilation rules for root directory files
 # Handle both .cpp and .CPP extensions (case-insensitive filesystem)
 $(INTDIR)/%.o: %.cpp | $(INTDIR)
@@ -396,22 +447,19 @@ $(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/ALLOC.CPP | $(INTDIR)
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
-# Special rule for ATARILIB facing.cpp to avoid conflict with root facing.cpp
-$(INTDIR)/facing_ATARILIB.o: ATARILIB/facing.cpp | $(INTDIR)
+# ATARILIB misc.cpp (AllSurfaces, Wait_Vert_Blank, Calculate_CRC, …) vs common/misc.cpp
+$(INTDIR)/misc_ATARILIB.o: ATARILIB/misc.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 # Explicit rules for files to work around pattern matching issue with path separators in INTDIR
+ifneq ($(PLATFORM_LIB),ATARILIB)
 $(INTDIR)/mixfile.o: MIXFILE.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
-
-$(INTDIR)/ccfile.o: CCFILE.CPP | $(INTDIR)
-	@echo "Compiling $<..."
-	@mkdir -p $(INTDIR)
-	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+endif
 
 $(INTDIR)/init.o: INIT.CPP | $(INTDIR)
 	@echo "Compiling $<..."
@@ -589,13 +637,20 @@ ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
 endif
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
-	$(INTDIR)/gbuffer.o $(INTDIR)/buffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/drawrect.o \
+	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o \
 	$(INTDIR)/st_planar_draw.o \
-	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/mem.o $(INTDIR)/newdel.o \
-	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/RAWFILE.o $(INTDIR)/font.o \
-	$(INTDIR)/CDFILE.o $(INTDIR)/misc.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
-	$(INTDIR)/keyboard.o $(INTDIR)/ikbd.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/wsa_atari_weights.o $(INTDIR)/audio_ste.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
-	$(INTDIR)/st_load_uncompress.o
+	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/newdel.o \
+	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/rawfile.o $(INTDIR)/font.o \
+	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
+	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o $(INTDIR)/wsa_atari_weights.o \
+	$(INTDIR)/audio_ste.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
+	$(INTDIR)/st_load_uncompress.o \
+	$(INTDIR)/buff.o $(INTDIR)/bfiofile.o $(INTDIR)/blwstraw.o $(INTDIR)/blowfish.o \
+	$(INTDIR)/crc.o $(INTDIR)/fading.o $(INTDIR)/file.o $(INTDIR)/file_posix.o \
+	$(INTDIR)/paths.o $(INTDIR)/paths_posix.o \
+	$(INTDIR)/pk.o $(INTDIR)/pkstraw.o $(INTDIR)/rndstraw.o $(INTDIR)/sha.o $(INTDIR)/shastraw.o \
+	$(INTDIR)/straw.o $(INTDIR)/xstraw.o $(INTDIR)/wwkeyboard.o \
+	$(INTDIR)/misc.o $(INTDIR)/random.o $(INTDIR)/int.o $(INTDIR)/mp.o
 
 st-tests: $(ST_TEST_EXE)
 	@echo "ST test suite: $(ST_TEST_EXE)"

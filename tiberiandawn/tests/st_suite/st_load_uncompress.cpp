@@ -5,7 +5,7 @@
 
 #include "function.h"
 
-long Load_Uncompress(FileClass &file, BuffType &uncomp_buff, BuffType &dest_buff, void *reserved_data)
+int Load_Uncompress(FileClass &file, BufferClass &uncomp_buff, BufferClass &dest_buff, void *reserved_data)
 {
 	unsigned short size;
 	unsigned short file_size;
@@ -68,5 +68,5 @@ long Load_Uncompress(FileClass &file, BuffType &uncomp_buff, BuffType &dest_buff
 	if (opened) {
 		file.Close();
 	}
-	return (long)size;
+	return (int)size;
 }

@@ -10,6 +10,7 @@
 #include "st_blitter_blit.h"
 #include "st_mix_minimal.h"
 #include "st_temperat_palette.h"
+#include "st_test_linkage.h"
 
 #include <mint/osbind.h>
 

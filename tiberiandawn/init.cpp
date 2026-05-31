@@ -49,6 +49,9 @@
 #include "common/winasm.h"
 #include <time.h>
 
+#ifdef ATARI_ST
+#include "st_temperat_palette.h"
+#endif
 #ifdef POSIX
 #include "atarilib/c2p.h"
 #endif
@@ -492,6 +495,17 @@ bool Init_Game(int, char*[])
     memset(CurrentPalette, 0x01, 768);
 
     if (!Special.IsFromInstall) {
+#ifdef ATARI_ST
+        /*
+         * Match st_title_production: prime HW palette before title CPS load so C2P
+         * subset mapping starts from the same baseline as the test harness.
+         */
+        {
+            unsigned char warm[768];
+            memcpy(warm, kStTemperatPal768, 768);
+            Set_Palette(warm);
+        }
+#endif
         Load_Title_Screen(TitlePicture, &HidPage, Palette);
         Blit_Hid_Page_To_Seen_Buff();
     }
@@ -1509,6 +1523,10 @@ bool Select_Game(bool fade)
  *=============================================================================================*/
 static void Play_Intro(bool for_real)
 {
+#ifdef ATARI_ST
+    (void)for_real;
+    return;
+#endif
 #ifdef REMASTER_BUILD
     return; // No game intro movies. - LLL
 #else

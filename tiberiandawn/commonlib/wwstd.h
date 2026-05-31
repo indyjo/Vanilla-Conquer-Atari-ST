@@ -237,7 +237,17 @@ typedef enum {
 	COLOR_PADDING=0x1000
 } ColorType;
 
+#ifndef _WIN32
+#include <stdio.h>
+#include <string.h>
 
+inline static void _makepath(char* path, const char* drive, const char* dir, const char* fname, const char* ext)
+{
+	if (!path || !fname || !ext) {
+		return;
+	}
+	sprintf(path, "%s%s%s", fname, (ext[0] == '.' ? "" : "."), ext);
+}
+#endif
 
 #endif	//WWSTD_H
-

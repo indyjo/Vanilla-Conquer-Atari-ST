@@ -54,7 +54,7 @@ int Get_Bit(const void* array, int bit)
     return byte_array[bit / 8] & (1 << (bit % 8)) ? true : false;
 }
 
-int First_True_Bit(const void* array)
+extern "C" int First_True_Bit(const void* array)
 {
     const unsigned char* byte_array = (const unsigned char*)array;
 
@@ -76,7 +76,7 @@ int First_True_Bit(const void* array)
     return 8 * bytenum + bitnum;
 }
 
-int First_False_Bit(const void* array)
+extern "C" int First_False_Bit(const void* array)
 {
     const unsigned char* byte_array = (const unsigned char*)array;
 

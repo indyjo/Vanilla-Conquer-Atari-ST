@@ -1,18 +1,6 @@
-/*
- * dipthong.h - Text extraction functions for Atari ST/MiNT
- */
+#ifndef ATARILIB_DIPTHONG_H
+#define ATARILIB_DIPTHONG_H
 
-#ifndef DIPTHONG_H
-#define DIPTHONG_H
+#include "common/dipthong.h"
 
-#ifdef __cplusplus
-extern "C" {
 #endif
-
-char *Extract_String(void const *data, int string);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* DIPTHONG_H */

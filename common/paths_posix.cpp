@@ -110,6 +110,24 @@ namespace
 
         return User_Home() + "/" + relative_path;
     }
+
+#ifdef ATARI_ST
+    const std::string& Working_Directory()
+    {
+        static std::string _path;
+
+        if (_path.empty()) {
+            char buffer[PATH_MAX];
+            if (getcwd(buffer, sizeof(buffer)) != nullptr) {
+                _path = buffer;
+            } else {
+                _path = ".";
+            }
+        }
+
+        return _path;
+    }
+#endif
 } // namespace
 
 #if defined(__sun)
@@ -179,6 +197,9 @@ const char* PathsClass::Program_Path()
 const char* PathsClass::Data_Path()
 {
     if (DataPath.empty()) {
+#ifdef ATARI_ST
+        DataPath = Working_Directory();
+#else
         if (ProgramPath.empty()) {
             // Init the program path first if it hasn't been done already.
             Program_Path();
@@ -189,6 +210,7 @@ const char* PathsClass::Data_Path()
         if (!Suffix.empty()) {
             DataPath += SEP + Suffix;
         }
+#endif
     }
 
     return DataPath.c_str();
@@ -197,6 +219,9 @@ const char* PathsClass::Data_Path()
 const char* PathsClass::User_Path()
 {
     if (UserPath.empty()) {
+#ifdef ATARI_ST
+        UserPath = Working_Directory();
+#else
 #ifdef __APPLE__
         UserPath = User_Home() + "/Library/Application Support/Vanilla-Conquer";
 #else
@@ -208,6 +233,7 @@ const char* PathsClass::User_Path()
         }
 
         Create_Directory(UserPath.c_str());
+#endif
     }
 
     return UserPath.c_str();

@@ -247,11 +247,11 @@ void Choose_Side(void)
 		if (Keyboard->Check() && endframe == 255) {
 			if ((Keyboard->Get() & 0x10FF) == KN_LMOUSE) {
 #ifdef ATARI_ST
-				if ((_Kbd->MouseQY > 48) && (_Kbd->MouseQY < 150)) {
-					if ((_Kbd->MouseQX > 18) && (_Kbd->MouseQX < 148)) {
+				if ((Keyboard->MouseQY > 48) && (Keyboard->MouseQY < 150)) {
+					if ((Keyboard->MouseQX > 18) && (Keyboard->MouseQX < 148)) {
 #else
-				if ((_Kbd->MouseQY > 48*2) && (_Kbd->MouseQY < 150*2)) {
-					if ((_Kbd->MouseQX > 18*2) && (_Kbd->MouseQX < 148*2)) {
+				if ((Keyboard->MouseQY > 48*2) && (Keyboard->MouseQY < 150*2)) {
+					if ((Keyboard->MouseQX > 18*2) && (Keyboard->MouseQX < 148*2)) {
 #endif
 						Whom = HOUSE_GOOD;
 						ScenPlayer = SCEN_PLAYER_GDI;
@@ -261,9 +261,9 @@ void Choose_Side(void)
 						speech = speechg;
 
 #ifdef ATARI_ST
-					} else if ((_Kbd->MouseQX > 160) && (_Kbd->MouseQX < 300)) {
+					} else if ((Keyboard->MouseQX > 160) && (Keyboard->MouseQX < 300)) {
 #else
-					} else if ((_Kbd->MouseQX > 160*2) && (_Kbd->MouseQX < 300*2)) {
+					} else if ((Keyboard->MouseQX > 160*2) && (Keyboard->MouseQX < 300*2)) {
 #endif
 						selection = 1;
 						endframe = 14;

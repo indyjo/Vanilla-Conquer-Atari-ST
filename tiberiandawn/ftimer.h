@@ -36,7 +36,7 @@
 #define FTIMER_H
 
 // Forward declaration for Frame (defined in function.h)
-extern long Frame;
+extern int Frame;
 
 /*
 **	This timer class is based around an external tick system. As such, it is inherently 
@@ -50,6 +50,8 @@ class TCountDownTimerClass {
 		TCountDownTimerClass(long set=0) {
 			Set(set);
 		};
+
+		TCountDownTimerClass(NoInitClass const&) {}
 
 		// No destructor.
 		~TCountDownTimerClass(void) {}

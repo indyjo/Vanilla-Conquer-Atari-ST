@@ -7,8 +7,16 @@ unsigned int Cardinal_To_Fixed(unsigned base, unsigned cardinal);
 unsigned int Fixed_To_Cardinal(unsigned base, unsigned fixed);
 void Set_Bit(void* array, int bit, int value);
 int Get_Bit(void const* array, int bit);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 int First_True_Bit(void const* array);
 int First_False_Bit(void const* array);
+#ifdef __cplusplus
+}
+#endif
+
 int _Bound(int original, int min, int max);
 #define Bound _Bound
 int Reverse_Long(int number);

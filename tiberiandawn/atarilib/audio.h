@@ -105,7 +105,7 @@ void Stop_Sample(int handle);
 BOOL Sample_Status(int handle);
 BOOL Is_Sample_Playing(void const * sample);
 void Stop_Sample_Playing(void const * sample);
-int Play_Sample(void const *sample, int priority=0xFF, int volume=0xFF, signed short panloc=0x0);
+int Play_Sample(void const *sample, int priority, int volume, signed short panloc);
 int Play_Sample_Handle(void const *sample, int priority, int volume, signed short panloc, int id);
 int Set_Sound_Vol(int volume);
 int Set_Score_Vol(int volume);
@@ -127,6 +127,16 @@ extern SFX_Type SoundType;
 extern Sample_Type SampleType;
 
 #ifdef __cplusplus
+}
+
+inline int Play_Sample(void const *sample, int priority, int volume)
+{
+	return Play_Sample(sample, priority, volume, (signed short)0);
+}
+
+inline int Play_Sample(void const *sample)
+{
+	return Play_Sample(sample, 0xFF, 0xFF, (signed short)0);
 }
 #endif
 

@@ -5,8 +5,10 @@
  */
 
 #include "mouse.h"
-#include "keyboard.h"
 #include "ikbd.h"
+#include "common/wwkeyboard.h"
+
+extern WWKeyboardClass* Keyboard;
 #include "gbuffer.h"
 #include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
 #include "c2p.h"       // ST_PLANAR_BYTES_PER_LINE
@@ -681,8 +683,8 @@ void WWMouseClass::Process_Mouse(void)
 	MousePosY = mouse_y;
 
 	/* Queue-compatible mouse position comes from IKBD packet decoding. */
-	if (_Kbd) {
-		IKBD_Get_Mouse_XY(&_Kbd->MouseQX, &_Kbd->MouseQY);
+	if (Keyboard) {
+		IKBD_Get_Mouse_XY(&Keyboard->MouseQX, &Keyboard->MouseQY);
 	}
 
 	/*

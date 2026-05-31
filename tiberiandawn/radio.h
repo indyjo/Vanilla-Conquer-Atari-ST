@@ -36,7 +36,7 @@
 #define RADIO_H
 
 // Forward declaration for LParam (defined in function.h)
-extern long LParam;
+extern int LParam;
 
 //#include "object.h"
 #include "mission.h"

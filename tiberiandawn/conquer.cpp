@@ -4070,6 +4070,9 @@ int Get_Resolution_Factor(void)
 void Blit_Hid_Page_To_Seen_Buff(void)
 {
     HidPage.Blit(SeenBuff);
+#ifdef ATARI_ST
+    ST_Screen_Apply_Game_Video_Hardware();
+#endif
 }
 
 /***********************************************************************************************
@@ -4100,6 +4103,16 @@ void Shake_The_Screen(int shakes, HousesType house)
         }
     }
 #else
+#ifdef ATARI_ST
+    /*
+    ** Screen shake disabled on Atari ST for now. Offset HidPage->SeenBuff blits use the slow
+    ** planar GetPixel/PutPixel path in Linear_Blit_To_Linear; re-enable after cross-buffer
+    ** planar rect blit (BLiTTER or memcpy-style fast path). See atari-todo.md.
+    */
+    (void)shakes;
+    (void)house;
+    return;
+#endif
     shakes += shakes;
 
     Hide_Mouse();

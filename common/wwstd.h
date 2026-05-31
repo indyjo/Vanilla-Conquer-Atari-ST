@@ -130,7 +130,6 @@ template <class T> T MAX(T a, T b)
 #define PROC_PENTIUM 2
 
 // Inline Routines
-//様様様様様様様様
 //
 // These Template functions are generally used
 // by classes when they havce over loaded > and <.
@@ -260,6 +259,7 @@ inline static void _splitpath(const char* path, char* drive, char* dir, char* fn
     }
 }
 
+#if !defined(__MINT__) && !defined(ATARI_ST)
 inline static char* strupr(char* str)
 {
     char* ret = str;
@@ -269,7 +269,9 @@ inline static char* strupr(char* str)
     }
     return ret;
 }
+#endif
 
+#ifndef __MINT__
 inline static void strrev(char* str)
 {
     int len = strlen(str);
@@ -280,6 +282,7 @@ inline static void strrev(char* str)
         str[len - i - 1] = c;
     }
 }
+#endif // !__MINT__
 
 inline static void _strlwr(char* str)
 {

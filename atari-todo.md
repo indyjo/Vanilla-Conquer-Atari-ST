@@ -4,6 +4,12 @@ Tracked follow-ups for the Atari ST/MiNT port.
 
 ## Rendering / Present Path
 
+- [ ] Re-enable screen shake on Atari ST (`Shake_The_Screen` in `TIBERIANDAWN/CONQUER.CPP`).
+  - Current status: disabled via early return under `#ifdef ATARI_ST` (May 2026).
+  - Reason: shake offset blits (`HidPage` → `SeenBuff` with 2-pixel vertical shift) miss all planar fast paths in `Linear_Blit_To_Linear` and fall through to per-pixel `ST_Planar_GetPixel` / `ST_Planar_PutPixel` (~320×198 pixels per shake frame).
+  - Fix options: call `ST_Blitter_Planar_Rect_Blit` for cross-buffer planar rect copies (without requiring `src_gb == dest_gb`), or add a dedicated hidden→visible shake blit helper.
+  - Primary files: `TIBERIANDAWN/CONQUER.CPP`, `TIBERIANDAWN/ATARILIB/drawbuff.cpp`.
+
 - [ ] Restore a WIN32-compatible present contract so `GScreenClass::Render` does not need an explicit `Blit_Display()` call to make frames visible.
   - Context: currently documented inline in `TIBERIANDAWN/GSCREEN.CPP`.
   - Goal: backend guarantees `render -> present` behavior consistently (like original WIN32 assumptions), while preserving mouse/UI composition order.

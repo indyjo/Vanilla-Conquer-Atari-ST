@@ -85,7 +85,17 @@ inline void* operator new[](size_t size, MemoryFlagType flag)
 /* The following prototypes are for the file: MEM_COPY.ASM						*/
 /*=========================================================================*/
 
+#ifdef ATARI_ST
+#ifdef __cplusplus
+extern "C" {
+#endif
+void Mem_Copy(void const* source, void* dest, unsigned long bytes_to_copy);
+#ifdef __cplusplus
+}
+#endif
+#else
 void Mem_Copy(void const* source, void* dest, unsigned int bytes_to_copy);
+#endif
 
 inline void* Add_Long_To_Pointer(void const* ptr, int size)
 {

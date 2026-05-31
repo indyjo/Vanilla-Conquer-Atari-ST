@@ -72,8 +72,9 @@ void* Small_Icon(void const* iconptr, int iconnum)
     unsigned char* data;
 
     if (iconptr) {
-        iconnum = ((char*)((char*)iptr + iptr->Map))[iconnum];
-        data = &((unsigned char*)((unsigned char*)iptr + iptr->Icons))[iconnum * (24 * 24)];
+        unsigned char const* base = reinterpret_cast<unsigned char const*>(iptr);
+        iconnum = base[iptr->Map + iconnum];
+        data = const_cast<unsigned char*>(base + iptr->Icons + iconnum * (24 * 24));
         //		data = &iptr->Icons[iconnum*(24*24)];
 
         for (int index = 0; index < 9; index++) {
@@ -216,7 +217,7 @@ int Load_Uncompress(FileClass& file, BufferClass& uncomp_buff, BufferClass& dest
     **	Read in the size of the file (supposedly). The file format is little-endian.
     */
     file.Read(&size, sizeof(size));
-#ifdef __BIG_ENDIAN__
+#if defined(BIG_ENDIAN) || defined(__BIG_ENDIAN__)
     size = bswap16(size);
 #endif
 
@@ -225,7 +226,7 @@ int Load_Uncompress(FileClass& file, BufferClass& uncomp_buff, BufferClass& dest
     **	and skip data (among other things). Size and Skip are little-endian.
     */
     file.Read(&header, sizeof(header));
-#ifdef __BIG_ENDIAN__
+#if defined(BIG_ENDIAN) || defined(__BIG_ENDIAN__)
     header.Size = bswap32(header.Size);
     header.Skip = bswap16(header.Skip);
 #endif
@@ -256,13 +257,27 @@ int Load_Uncompress(FileClass& file, BufferClass& uncomp_buff, BufferClass& dest
     }
 
     /*
-    **	Read in the bulk of the data.
+    **	Write the 8-byte comp header in on-disk little-endian layout. Uncompress_Data
+    **	(atari iff.cpp and common/load.cpp) parses raw file bytes, not a native struct
+    **	after bswap on big-endian hosts.
     */
-    Mem_Copy(&header, sptr, sizeof(header));
+    {
+        unsigned char raw_header[sizeof(CompHeaderType)];
+
+        raw_header[0] = (unsigned char)header.Method;
+        raw_header[1] = (unsigned char)header.pad;
+        raw_header[2] = (unsigned char)((unsigned long)header.Size & 0xFF);
+        raw_header[3] = (unsigned char)(((unsigned long)header.Size >> 8) & 0xFF);
+        raw_header[4] = (unsigned char)(((unsigned long)header.Size >> 16) & 0xFF);
+        raw_header[5] = (unsigned char)(((unsigned long)header.Size >> 24) & 0xFF);
+        raw_header[6] = 0;
+        raw_header[7] = 0;
+        Mem_Copy(raw_header, sptr, sizeof(raw_header));
+    }
     file.Read(Add_Long_To_Pointer(sptr, sizeof(header)), size);
 
     /*
-    **	Decompress the data.
+    **	Decompress the data (iff.cpp byte parser; shared with ST test harness).
     */
     size = (unsigned int)Uncompress_Data(sptr, dptr);
 

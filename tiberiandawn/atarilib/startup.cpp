@@ -60,7 +60,6 @@ static BOOL Require_ST_Blitter(void)
 }
 
 // Local function declarations (not in headers)
-bool Read_Private_Config_Struct(char *profile, NewConfigType *config);
 void Delete_Swap_Files(void);
 void Print_Error_End_Exit(char *string);
 void Print_Error_Exit(char *string);
@@ -153,6 +152,11 @@ int main(int argc, char *argv[])
 	if (Parse_Command_Line(argc, argv)) {
 
 		/*
+		** Use the current working directory for config, saves, and file search.
+		*/
+		CDFileClass::Refresh_Search_Drives();
+
+		/*
 		** Initialize timer system (60 Hz)
 		** TODO: Implement TimerClass for Atari ST
 		*/
@@ -163,11 +167,6 @@ int main(int argc, char *argv[])
 #ifdef JAPANESE
 		//////////////////////////////////////if(!ForceEnglish) KBLanguage = 1;
 #endif
-
-		/*
-		** MMX support not applicable for m68k architecture
-		*/
-		MMXAvailable = false;
 
 		/*
 		** If there is loads of memory then use uncompressed shapes
@@ -207,6 +206,10 @@ int main(int argc, char *argv[])
 
 			BOOL video_success = FALSE;
 			printf("C&C - Setting video mode.\n");
+#ifdef ATARI_ST
+			ScreenWidth = 320;
+			ScreenHeight = 200;
+#endif
 			/*
 			** Set video mode for Atari ST
 			** TODO: Implement Set_Video_Mode for Atari ST (VDI/XBIOS)
@@ -303,6 +306,7 @@ int main(int argc, char *argv[])
 			WWMouse = new WWMouseClass(&SeenBuff, 32, 32);
 			MouseInstalled = TRUE;
 			IKBD_Install();
+			Keyboard = CreateWWKeyboardClass();
 
 			/*
 			** See if we should run the intro
@@ -372,7 +376,7 @@ int main(int argc, char *argv[])
 		} else {
 			puts("Run SETUP program first.");
 			puts("\n");
-			Kbd.Get();
+			getchar();
 		}
 
 		if (Palette){
@@ -467,7 +471,11 @@ void Delete_Swap_Files(void)
 void Print_Error_End_Exit(char *string)
 {
 	printf( "%s\n", string );
-	Get_Key();
+	if (Keyboard) {
+		Keyboard->Get();
+	} else {
+		getchar();
+	}
 	Prog_End(string, true);
 	printf( "%s\n", string );
 	if (!RunningAsDLL) {
@@ -508,58 +516,8 @@ void Read_Setup_Options( RawFileClass *config_file )
 		AllowHardwareBlitFills = WWGetPrivateProfileInt ("Options", "HardwareFills", 1, buffer);
 		//ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
 		IsV107 = WWGetPrivateProfileInt ("Options", "Compatibility", 0, buffer);
-
-		/*
-		** See if an alternative socket number has been specified
-		*/
-		int socket = WWGetPrivateProfileInt ("Options", "Socket", 0, buffer);
-		if (socket >0 ){
-			socket += 0x4000;
-			if (socket >= 0x4000 && socket < 0x8000) {
-				Ipx.Set_Socket (socket);
-			}
-		}
-
-		/*
-		** See if a destination network has been specified
-		*/
-		char netbuf [512];
-		memset (netbuf, 0, sizeof (netbuf) );
-		char *netptr = WWGetPrivateProfileString ("Options", "DestNet", NULL, netbuf, sizeof (netbuf), buffer);
-
-		if (netptr && strlen (netbuf)){
-			NetNumType net;
-			NetNodeType node;
-
-			/*
-			** Scan the string, pulling off each address piece
-			*/
-			int i = 0;
-			char * p = strtok(netbuf,".");
-			int x;
-			while (p) {
-				sscanf(p,"%x",&x);			// convert from hex string to int
-				if (i < 4) {
-					net[i] = (char)x;			// fill NetNum
-				} else {
-					node[i-4] = (char)x;		// fill NetNode
-				}
-				i++;
-				p = strtok(NULL,".");
-			}
-
-			/*
-			** If all the address components were successfully read, fill in the
-			** BridgeNet with a broadcast address to the network across the bridge.
-			*/
-			if (i >= 4) {
-				IsBridge = 1;
-				memset(node, 0xff, 6);
-				BridgeNet = IPXAddressClass(net, node);
-			}
-		}
-
 	}
+
 
 	delete [] buffer;
 }

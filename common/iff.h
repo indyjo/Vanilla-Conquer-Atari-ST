@@ -120,7 +120,13 @@ void* Load_Alloc_Data(const FileClass& file);
 void* Load_Alloc_Data(const FileClass* file);
 unsigned int
 Load_Uncompress(char const* file, BufferClass& uncomp_buff, BufferClass& dest_buff, void* reserved_data = NULL);
+#ifdef ATARI_ST
+extern "C" {
+#endif
 unsigned int Uncompress_Data(void const* src, void* dst);
+#ifdef ATARI_ST
+}
+#endif
 void Set_Uncomp_Buffer(int buffer_segment, int size_of_buffer);
 
 /*=========================================================================*/

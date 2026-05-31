@@ -7,7 +7,11 @@
 
 #include "wsa.h"
 #include "wwmem.h"
+#ifdef ATARI_ST
+#include "common/file.h"
+#else
 #include "WIN32LIB/FILE.H"
+#endif
 #include "misc.h"
 #include "iff.h"
 #include "drawbuff.h"
@@ -377,7 +381,7 @@ extern "C" void Close_Animation(void *handle)
 	}
 }
 
-extern "C" BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int frame_number, int x_pixel, int y_pixel, WSAType flags_and_prio, void *magic_cols, void *magic)
+BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int frame_number, int x_pixel, int y_pixel, WSAType flags_and_prio, void *magic_cols, void *magic)
 {
 	SysAnimHeaderType *sys_header;
 	int curr_frame;

@@ -39,7 +39,7 @@
  *   PaletteClass::operator == -- Equality operator for palette objects.                       *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-void Set_Palette(void* palette);
+extern "C" void Set_Palette(void *palette);
 
 #include "palette.h"
 #include "palettec.h"

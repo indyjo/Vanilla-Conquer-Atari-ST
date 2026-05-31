@@ -238,13 +238,23 @@ int TFixedIHeapClass<T>::Save(FileClass &file)
 		/*
 		** Save the object itself
 		*/
-		if (!Ptr(i)->Save(file)) {
+		if (file.Write(Ptr(i), sizeof(T)) != sizeof(T)) {
 			return(false);
 		}
 	}
 
 	return(true);
-}	
+}
+
+template<class T>
+auto Load_Object(T* ptr) -> decltype(ptr->Load())
+{
+	return ptr->Load();
+}
+
+inline void Load_Object(...)
+{
+}
 
 
 /*********************************************************************************************** 
@@ -303,13 +313,15 @@ int TFixedIHeapClass<T>::Load(FileClass &file)
 		/*
 		** Load the object
 		*/
-		if (!ptr->Load(file)) {
+		if (file.Read(ptr, sizeof(T)) != sizeof(T)) {
 			return(false);
 		}
+		new (ptr) T(NoInitClass());
+		Load_Object(ptr);
 	}
 
 	return(true);
-}	
+}
 
 
 /*********************************************************************************************** 

@@ -11,10 +11,10 @@
 int st_tests_register_mixes_once(void)
 {
 	static int s_initialized = 0;
-	static MixFileClass *s_conquer = NULL;
-	static MixFileClass *s_local = NULL;
-	static MixFileClass *s_temperat = NULL;
-	static MixFileClass *s_general = NULL;
+	static MFCD *s_conquer = NULL;
+	static MFCD *s_local = NULL;
+	static MFCD *s_temperat = NULL;
+	static MFCD *s_general = NULL;
 
 	if (s_initialized) {
 		return 0;
@@ -23,10 +23,10 @@ int st_tests_register_mixes_once(void)
 
 	int rc = 0;
 
-	s_conquer = new (std::nothrow) MixFileClass("CONQUER.MIX");
-	s_local = new (std::nothrow) MixFileClass("LOCAL.MIX");
-	s_temperat = new (std::nothrow) MixFileClass("TEMPERAT.MIX");
-	s_general = new (std::nothrow) MixFileClass("GENERAL.MIX");
+	s_conquer = new (std::nothrow) MFCD("CONQUER.MIX");
+	s_local = new (std::nothrow) MFCD("LOCAL.MIX");
+	s_temperat = new (std::nothrow) MFCD("TEMPERAT.MIX");
+	s_general = new (std::nothrow) MFCD("GENERAL.MIX");
 
 	if (!s_conquer || !s_conquer->Cache()) {
 		printf("StMixReg: WARN cannot cache CONQUER.MIX\n");

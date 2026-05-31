@@ -59,7 +59,12 @@
 
 #include	<stdlib.h>
 #include	<stddef.h>
+#include	"common/noinit.h"
+#ifdef ATARI_ST
+#include	"ATARILIB/bitintrin.h"
+#else
 #include	"misc.h"
+#endif
 
 /*
  * Placement new: libstdc++ provides these when <new> is included. TUs that only
@@ -87,6 +92,7 @@ template<class T>
 class VectorClass
 {
 	public:
+		VectorClass(NoInitClass const&) {}
 		VectorClass(unsigned size=0, T const * array=0);
 		VectorClass(VectorClass<T> const &);		// Copy constructor.
 		virtual ~VectorClass(void);

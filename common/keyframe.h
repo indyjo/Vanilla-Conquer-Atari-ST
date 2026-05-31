@@ -1,6 +1,7 @@
 #ifndef KEYFRAME_H
 #define KEYFRAME_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef enum
@@ -19,12 +20,14 @@ extern char* BigShapeBufferStart;
 extern char* TheaterShapeBufferStart;
 extern bool UseOldShapeDraw;
 
-uintptr_t Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr);
+unsigned long Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr);
+unsigned long Build_Frame(void const* dataptr, unsigned short framenumber, void* buffptr, size_t blob_size);
 unsigned short Get_Build_Frame_Count(void const* dataptr);
 unsigned short Get_Build_Frame_X(void const* dataptr);
 unsigned short Get_Build_Frame_Y(void const* dataptr);
 unsigned short Get_Build_Frame_Width(void const* dataptr);
 unsigned short Get_Build_Frame_Height(void const* dataptr);
+unsigned long Get_Build_Frame_BufferBytes(void const* dataptr);
 bool Get_Build_Frame_Palette(void const* dataptr, void* palette);
 int Get_Last_Frame_Length(void);
 

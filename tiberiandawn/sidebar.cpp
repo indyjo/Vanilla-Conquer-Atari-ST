@@ -2432,7 +2432,7 @@ int SidebarClass::StripClass::SelectClass::Action(unsigned flags, KeyNumType& ke
                                         **	power, queue this event and process through normal house
                                         **	production channels.
                                         */
-                                        OutList.Add(EventClass(EventClass::PLACE, otype, -1));
+                                        OutList.Add(EventClass(EventClass::PLACE, otype, (CELL)-1));
                                     }
                                 }
                             }

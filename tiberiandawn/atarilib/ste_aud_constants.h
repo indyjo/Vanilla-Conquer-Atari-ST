@@ -4,8 +4,14 @@
 #ifndef STE_AUD_CONSTANTS_H
 #define STE_AUD_CONSTANTS_H
 
-/* Single looping DMA buffer in ST-RAM (~41 ms @ 25033 Hz). */
+/* Single looping DMA buffer in ST-RAM (~82 ms @ 12517 Hz, ~41 ms @ 25033 Hz). */
 enum { STE_DMA_RING_SAMPLES = 1024 };
+
+/*
+ * Set in Audio_Init from DMA hardware rate: 0 at 12517 Hz (play DUP2X assets without
+ * doubling), 1 at 25033 Hz (honour STE_AUD_FLAG_DUP2X on pull).
+ */
+extern int g_ste_pcm_dup2x;
 /* Simultaneous digitized voices (mixer CPU budget). */
 enum { STE_MIX_VOICES = 2 };
 /* Per-voice decode scratch (also used for dual-voice mix); keep off stack in VBL. */

@@ -2,9 +2,11 @@
  * audio_ste.cpp - Atari STe DMA 8-bit mono PCM output for digitized SFX (.AUD in MIX).
  *
  * Requires supervisor (startup calls Super(0)). Uses cookie _MCH for STE-class hardware
- * (STE / Mega STE / TT / Falcon). DMA sound is programmed at a **fixed 25033 Hz mono 8-bit**
- * rate ($FF8921 = 0x82). All source material is assumed to already be at that rate, so no
- * resampling is done. Each refill pulls up to STE_AUDIO_PULL_BLOCK bytes via a caller-supplied LUT
+ * (STE / Mega STE / TT / Falcon). DMA sound is programmed at **12517 Hz mono 8-bit** when the
+ * _SND/_MCH cookies indicate STE-class DMA hardware ($FF8921 rr=01); otherwise 25033 Hz (rr=10).
+ * Assets converted for the 25 kHz path carry STE_AUD_FLAG_DUP2X (~11 kHz doubled); DUP2X is
+ * ignored at 12.5 kHz so the same buffers play at the correct pitch without resampling. Each refill
+ * pulls up to STE_AUDIO_PULL_BLOCK bytes via a caller-supplied LUT
  * (`SteStreamFormat::pull`), so format conversion and per-voice volume can be fused in the driver.
  * Playback uses one `STE_DMA_RING_SAMPLES` byte ring in ST-RAM; DMA is armed once to loop it.
  *
@@ -55,11 +57,15 @@ extern SFX_Type SoundType;
 void (*Audio_Focus_Loss_Function)(void) = 0;
 
 enum { COOKIE_JAR_PTR = 0x000005A0UL };
-/* Same as MiNT C__MCH: '_','M','C','H' as big-endian longword */
+/* Same as MiNT C__MCH / C__SND: tag as big-endian longword */
 enum { COOKIE_MCH = 0x5F4D4348UL };
+enum { COOKIE_SND = 0x5F534E44UL };
 
-/* Fixed DMA output rate. $FF8921 rate bits %10 = 25033 Hz. */
-enum { STE_HW_RATE_IDX = 2 };
+/* $FF8921 rate bits rr: 01 = 12517 Hz, 10 = 25033 Hz (mono bit 7 set separately). */
+enum {
+	STE_HW_RATE_12517_IDX = 1,
+	STE_HW_RATE_25033_IDX = 2
+};
 
 enum SteStreamKind {
 	STE_STREAM_NONE = 0,
@@ -119,6 +125,8 @@ static volatile unsigned char* const STE_DMA_END_L = (volatile unsigned char*)0x
 static volatile unsigned char* const STE_DMA_MIXER = (volatile unsigned char*)0xFFFF8922UL;
 
 static int g_ste_dma_ok;
+static unsigned char g_ste_dma_rate_idx;
+int g_ste_pcm_dup2x = 1;
 
 static void const* g_voice_src[STE_MIX_VOICES];
 /* Which voice index owns malloc'd g_stream_file_buf (-1 if none). */
@@ -202,19 +210,41 @@ static void write_le32(unsigned char* p, unsigned long v)
 	p[3] = (unsigned char)((v >> 24) & 0xFFUL);
 }
 
-static int ste_class_machine(void)
+static int ste_read_cookie(unsigned long tag, unsigned long* val_out)
 {
 	unsigned long* jar = *(unsigned long**)COOKIE_JAR_PTR;
-	if (!jar) {
+	if (!jar || !val_out) {
 		return 0;
 	}
 	for (; jar[0] != 0; jar += 2) {
-		if (jar[0] == COOKIE_MCH) {
-			unsigned long v = jar[1];
-			return (v >> 16) != 0;
+		if (jar[0] == tag) {
+			*val_out = jar[1];
+			return 1;
 		}
 	}
 	return 0;
+}
+
+static int ste_class_machine(void)
+{
+	unsigned long mch;
+	if (!ste_read_cookie(COOKIE_MCH, &mch)) {
+		return 0;
+	}
+	return (mch >> 16) != 0;
+}
+
+/*
+ * 12517 Hz (rr=01) works on all STE-class DMA hardware. Only 6258 Hz (rr=00) is unavailable
+ * on Falcon (that bit pattern means OFF there). When _SND is present, bit 1 must be set.
+ */
+static int ste_dma_12500_supported(void)
+{
+	unsigned long snd;
+	if (ste_read_cookie(COOKIE_SND, &snd) && (snd & 2u) == 0u) {
+		return 0;
+	}
+	return ste_class_machine();
 }
 
 static void ste_dma_mixer_connect(void)
@@ -370,7 +400,7 @@ static void ste_dma_arm_loop(unsigned char const* first, unsigned len)
 {
 	ste_dma_stop();
 	ste_dma_mixer_connect();
-	*STE_DMA_SOUND_MODE = (unsigned char)(STE_DMA_SND_MODE_MONO | STE_HW_RATE_IDX);
+	*STE_DMA_SOUND_MODE = (unsigned char)(STE_DMA_SND_MODE_MONO | g_ste_dma_rate_idx);
 	unsigned long const s = (unsigned long)first;
 	unsigned long const e = s + (unsigned long)len;
 	ste_dma_set_address(STE_DMA_START_H, s);
@@ -772,6 +802,13 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 	(void)bits_per_sample;
 	ste_audio_vbl_remove();
 	g_ste_dma_ok = ste_class_machine() ? 1 : 0;
+	if (g_ste_dma_ok && ste_dma_12500_supported()) {
+		g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_12517_IDX;
+		g_ste_pcm_dup2x = 0;
+	} else {
+		g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_25033_IDX;
+		g_ste_pcm_dup2x = 1;
+	}
 	g_pending_voice_shutdown = 0;
 	ste_shutdown_all_voices();
 	g_stream_file_voice = -1;
@@ -803,6 +840,10 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 	ste_dma_stop();
 	ste_dma_mixer_connect();
 	ste_audio_vbl_install();
+	printf("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d)\n",
+	    g_ste_dma_rate_idx == STE_HW_RATE_12517_IDX ? 12517u : 25033u,
+	    g_ste_pcm_dup2x);
+	fflush(stdout);
 	return TRUE;
 }
 

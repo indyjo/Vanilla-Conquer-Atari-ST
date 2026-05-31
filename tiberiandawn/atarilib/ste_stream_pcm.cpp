@@ -69,7 +69,7 @@ int SteStreamPcmFormat::bind_from_aud(unsigned char const* aud, unsigned long au
 	pcm_layout_flags_ = (int)flags;
 	in_stride_ = aud_stride;
 	sample_domain_ = (flags & AUD_FLAG_16BIT) != 0 ? STE_STREAM_DOMAIN_S8 : STE_STREAM_DOMAIN_U8;
-	duplicate_2x_ = (flags & STE_AUD_FLAG_DUP2X) != 0;
+	duplicate_2x_ = ((flags & STE_AUD_FLAG_DUP2X) != 0) && g_ste_pcm_dup2x;
 
 	unsigned long pcm_cap = uncomp;
 	if (pcm_cap == 0UL && aud_bytes > (unsigned long)STE_AUD_HDR_LEN) {

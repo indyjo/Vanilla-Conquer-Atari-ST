@@ -4,7 +4,7 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 
 ![In-game screenshot (Nod base, 320×200)](docs/atari-st/screenshot-ingame.png)
 
-**Status:** Game is rendered in 320x200x16 colors; playable in emulation; performance not great (usually single-digit FPS); saving gamestate works, loading has problems.
+**Status:** Game is rendered in 16 colors; playable in emulation; performance not great (usually single-digit FPS); saving gamestate works, loading has problems; some graphics glitches.
 
 - Upstream Vanilla Conquer (PC, other platforms): **[README-vanilla-conquer.md](README-vanilla-conquer.md)**
 - Open tasks & release prep: **[atari-todo.md](atari-todo.md)**
@@ -13,7 +13,6 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 ## Requirements
 
 Since this is a work in progress, system requirements are still a little too high for original Atari ST hardware.
-### Typical Atari ST/STE Configurations
 
 Minimum reliable emulation: **Mega STE, 16 MHz, 10 MB RAM, with BLiTTER _and_ DMA audio** (required). Higher CPU speeds improve framerate.  
 **We lack real hardware datapoints — feedback welcome!** This is a work-in-progress port (WIP).
@@ -21,7 +20,7 @@ Minimum reliable emulation: **Mega STE, 16 MHz, 10 MB RAM, with BLiTTER _and
 
 ## Run
 
-1. Get C&C Tiberian Dawn data ([C&C Communications Center — downloads](https://cnc-comm.com/command-and-conquer/downloads/the-game)). Use the DOS versions, not the Remastered Collection.
+1. Get C&C Tiberian Dawn data ([C&C Communications Center — downloads](https://cnc-comm.com/command-and-conquer/downloads/the-game)). Use the DOS ("C&C Classic") version, not the Windows 95 ("Gold") version.
 2. One folder: `cnc.tos`, C&C `.MIX` files, and [`tiberiandawn/atari-assets/`](tiberiandawn/atari-assets/readme.md) sidecars (`.W16`).
 3. Optional: repack MIXes with [`remix`](tiberiandawn/tools/remix/readme.md) (`./remix -d /path/to/gamedata`) if you want even-aligned payloads and AUD99 → PCM conversion.
 

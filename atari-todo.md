@@ -64,65 +64,50 @@ Existing pipeline (see also `tiberiandawn/atari.md`):
 
 ## Release documentation (player-facing)
 
-Ship a dedicated Atari ST landing doc (suggested: `README-ATARI-ST.md` in the repo root, linked prominently from the main `README.md` and from release notes). Keep the existing upstream `README.md` as the general Vanilla Conquer entry; the ST page should link to it for license, community, and non-ST builds.
+Upstream Vanilla Conquer readme: [`README-vanilla-conquer.md`](README-vanilla-conquer.md). Atari landing page: root [`README.md`](README.md).
 
-- [ ] **`README-ATARI-ST.md` landing page** (repo root; link from main [`README.md`](README.md) once written)
-  - Port intro (Tiberian Dawn, 320×200 planar, STE DMA audio, WIP status).
-  - Link to main [`README.md`](README.md) (license, community, non-ST builds).
-  - Link to **[`atari-todo.md`](atari-todo.md)** (this list) for open work and release prep.
-  - Link to [`tiberiandawn/atari.md`](tiberiandawn/atari.md) and [`tiberiandawn/atari-assets/readme.md`](tiberiandawn/atari-assets/readme.md).
-  - **Host tools section:** short description + link per tool readme:
-    - [`remix`](tiberiandawn/tools/remix/readme.md) — repack `.MIX` (alignment, AUD99 → PCM)
-    - [`paltool`](tiberiandawn/tools/paltool/paltool.c) — extract `.PAL` from BMP/CPS/WSA *(add readme when convenient)*
-    - [`palette-opt`](tiberiandawn/tools/palette-opt/readme.md) — build `.W16` C2P weight sets
-    - [`histtool`](tiberiandawn/tools/histtool/readme.md) — color histograms for `palette-opt --hist`
-    - [`w16fix`](tiberiandawn/tools/w16fix/w16fix.c) — reorder `.W16` subset pens *(document in palette-opt readme or own readme)*
-    - [`list_mix.py`](tiberiandawn/list_mix/readme.md) — list MIX contents
-    - [`gen_cps_w16.py`](tiberiandawn/tools/palette-opt/readme.md) — batch UI `.W16` generation
-    - [`st_suite`](tiberiandawn/tests/st_suite/readme.md) — on-target test binary
-  - Sections still to write on that page: screenshots, requirements/emulator, build, game-data prep, how to run (see checklist items below).
+- [x] **Root `README.md` (Atari port)** — landing page in place; links vanilla readme, this file, `atari.md`, tools, status line, screenshot.
+  - Still to expand: Hatari profile details, troubleshooting, itch.io link, `COPYING` link, 4 MB hardware goal vs current Mega STE note.
 
-- [ ] **Screenshot(s)**
-  - At least one in-game 320×200 capture (title or mission) for the readme and release assets.
-  - Optional: before/after or menu shot; store under something like `docs/atari-st/` (not committed until we have rights-cleared captures).
+- [x] **Screenshot(s)** — `docs/atari-st/screenshot-ingame.png` linked from root `README.md`.
+  - Optional: title/menu shot for itch.io cover.
 
-- [ ] **System requirements & emulator settings**
-  - **Hardware:** Atari ST with **BLiTTER** (build aborts without it); **STE-class** machine or emulator profile for digitized audio (same requirement as `st_suite` audio tests).
-  - **Video:** Low resolution 320×200; game switches shifter to its own planar buffer (see `st_screen.cpp` / startup).
-  - **OS:** TOS or MiNT; note any MiNT-specific paths (working directory, `CONQUER.INI`).
-  - **Emulator (Hatari / Steem / etc.):** document a known-good profile — e.g. STE, BLiTTER on, 4 MB+ RAM, TOS 2.06 or EmuTOS if tested; how to set the game folder as cwd; keyboard/mouse/joystick mapping for menus.
-  - **Not supported:** Remastered / Ultimate Collection data (align with main README policy).
+- [ ] **System requirements & emulator settings** *(partially in README: Mega STE / 10 MB / BLiTTER+DMA, WIP, 4 MB goal)*
+  - [x] WIP framing + “not yet original ST” honesty in README.
+  - [ ] **BLiTTER** called out explicitly (binary requirement at startup).
+  - [ ] **Emulator recipe:** Hatari/Steem — STE, BLiTTER on, cwd = game folder, RAM; keyboard/mouse.
+  - [ ] **OS:** TOS vs MiNT notes; working-directory behavior.
+  - [x] Remastered / UC data not supported (README Run §1).
 
-- [ ] **How to build**
-  - Toolchain: `m68k-atari-mint` cross GCC (default `$(HOME)/opt/cross-mint/bin` in `tiberiandawn/makefile`).
-  - Commands: `cd tiberiandawn && make` (Release → `bin/AtariST/cnc.tos`; Debug → `cncd.tos`).
-  - Optional: `make st-tests`, building host tools (`tools/remix`, `tools/palette-opt`) when preparing assets.
-  - Point to `make help` / makefile `CONFIG=` / `CROSS_PREFIX=` overrides.
+- [x] **How to build** *(basics in README)*
+  - [ ] Add `CROSS_PREFIX` / `make help` to README if desired.
 
-- [ ] **Game data: download & prepare**
-  - **Obtain retail/freeware data** from [C&C Communications Center — The Game](https://cnc-comm.com/command-and-conquer/downloads/the-game) (GDI/NOD CD images or installer); user must own/hold a legitimate copy per EA terms.
-  - **Install or extract** DOS/Gold layout so standard `.MIX` files exist (same set as PC TD; minimum list in `tiberiandawn/atari.md` § “Required MIX files”).
-  - **Repack for ST:** run [`remix`](tiberiandawn/tools/remix/readme.md) on the game directory (`./remix -d /path/to/gamedata`) — even byte offsets for embedded payloads, AUD99 → 11 kHz PCM where needed.
-  - **Ship conversion sidecars:** copy contents of [`tiberiandawn/atari-assets/`](tiberiandawn/atari-assets/readme.md) (`.W16` etc.) next to `cnc.tos`; document optional regeneration via `palette-opt` (see `atari.md`).
-  - **Config:** `CONQUER.INI` beside the binary; note first-run / paths / `Refresh_Search_Drives` behavior on MiNT.
+- [x] **Game data: download & prepare** *(basics in README Run)*
+  - [x] cnc-comm download link; DOS not Remastered.
+  - [x] Optional `remix` (not required).
+  - [x] `atari-assets` sidecars beside `cnc.tos`.
+  - [ ] Point readers to full MIX list in `atari.md` from README (one line).
 
-- [ ] **How to run**
-  - Layout: `cnc.tos`, all required `.MIX` (post-`remix`), `CONQUER.INI`, and `atari-assets` files in **one directory** (cwd = executable directory).
-  - Emulator: mount or copy that folder; launch `cnc.tos` from the desktop or shell.
-  - Real hardware: same layout on floppy/hard disk partition; STE recommended for audio.
-  - Troubleshooting appendix: no BLiTTER message, silent audio (non-STE), missing MIX, missing `.W16` warnings.
+- [ ] **How to run** *(partial: folder layout in README)*
+  - [x] One-folder layout (`cnc.tos`, MIXes, `atari-assets`).
+  - [ ] Emulator cwd / real-hardware notes; troubleshooting (BLiTTER, STE audio, missing `.W16`).
+
+- [ ] **Gameplay / stability** *(called out in README status; track fixes here)*
+  - [ ] Savegame **load** unreliable (save OK).
+  - [ ] Performance: single-digit FPS typical; target 4 MB Mega STE (README goal).
+  - [ ] Map select palette / progress animation (see **partitioned palettes** under Tooling).
 
 - [ ] **Release packaging checklist** (binary drop)
-  - Pre-built `cnc.tos` + license/`COPYING` + `README-ATARI-ST.md` (no copyrighted MIX in the repo).
+  - Pre-built `cnc.tos` + license/`COPYING` + root `README.md` (no copyrighted MIX in the repo).
   - Optional: sample `CONQUER.INI` snippet; link to remix + asset docs only.
 
 - [ ] **[itch.io](https://itch.io) store page** (public release landing)
   - Create project page (genre/tags: Atari ST, retro, strategy; platforms: Windows/macOS/Linux for emulator users, or “download + run in Hatari”).
-  - Reuse/adapt copy from `README-ATARI-ST.md`: port pitch, requirements, build-your-own-data flow, link to [C&C Communications Center — The Game](https://cnc-comm.com/command-and-conquer/downloads/the-game).
+  - Reuse/adapt copy from root `README.md`: port pitch, requirements, build-your-own-data flow, link to [C&C Communications Center — The Game](https://cnc-comm.com/command-and-conquer/downloads/the-game).
   - **Upload:** `cnc.tos` zip (engine + `atari-assets` + readme only — no EA MIX files); optional separate “tools” zip or link to repo for `remix` sources.
   - **Media:** cover image + 315×250 thumbnail + 1–3 screenshots/GIF (same assets as repo `docs/atari-st/`).
   - **Legal blurb:** fan port / not affiliated with EA; user must supply own game data; GPL engine + third-party asset terms.
-  - Link back to GitHub repo and `README-ATARI-ST.md`; cross-link itch URL from repo readme once live.
+  - Link back to GitHub repo and root `README.md`; cross-link itch URL from repo readme once live.
 
 ---
 

@@ -25,6 +25,16 @@ static void Resolve_File_Single(char* fname)
 void Resolve_File(char* fname)
 {
 #ifndef _WIN32
+#ifdef ATARI_ST
+    /*
+     * MiNT/FAT is case-insensitive for reads and Set_Name already lowercases the path.
+     * The POSIX readdir scan exists for Linux case-correction only; it is far too
+     * costly here. stat(2) does not return canonical spelling anyway.
+     */
+    (void)fname;
+    return;
+#endif
+
     // step through each sub-directory before going for the win
     char* next = fname;
     while (next = strchr(next, '/')) {

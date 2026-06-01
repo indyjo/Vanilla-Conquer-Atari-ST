@@ -467,7 +467,7 @@ void MapClass::Place_Down(CELL cell, ObjectClass * object)
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Occupy_Down(object);
 			(*this)[newcell].Recalc_Attributes();
-			(*this)[newcell].Redraw_Objects();
+			(*this)[newcell].Redraw_Objects(newcell);
 		}
 	}
 
@@ -476,7 +476,7 @@ void MapClass::Place_Down(CELL cell, ObjectClass * object)
 		CELL newcell = cell + *list++;
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Overlap_Down(object);
-			(*this)[newcell].Redraw_Objects();
+			(*this)[newcell].Redraw_Objects(newcell);
 		}
 	}
 }
@@ -510,7 +510,7 @@ void MapClass::Pick_Up(CELL cell, ObjectClass * object)
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Occupy_Up(object);
 			(*this)[newcell].Recalc_Attributes();
-			(*this)[newcell].Redraw_Objects();
+			(*this)[newcell].Redraw_Objects(newcell);
 		}
 	}
 
@@ -519,7 +519,7 @@ void MapClass::Pick_Up(CELL cell, ObjectClass * object)
 		CELL newcell = cell + *list++;
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Overlap_Up(object);
-			(*this)[newcell].Redraw_Objects();
+			(*this)[newcell].Redraw_Objects(newcell);
 		}
 	}
 }
@@ -555,7 +555,7 @@ void MapClass::Overlap_Down(CELL cell, ObjectClass * object)
 		CELL newcell = cell + *list++;
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Overlap_Down(object);
-			(*this)[newcell].Redraw_Objects();
+			(*this)[newcell].Redraw_Objects(newcell);
 		}
 	}
 }
@@ -591,7 +591,7 @@ void MapClass::Overlap_Up(CELL cell, ObjectClass * object)
 		CELL newcell = cell + *list++;
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Overlap_Up(object);
-			(*this)[newcell].Redraw_Objects();
+			(*this)[newcell].Redraw_Objects(newcell);
 		}
 	}
 }
@@ -1139,7 +1139,7 @@ bool MapClass::Place_Random_Crate(void)
 		if (ptr->Is_Generally_Clear() && ptr->Overlay == OVERLAY_NONE) {
 			ptr->Overlay = OVERLAY_WOOD_CRATE;
 			ptr->OverlayData = 0;
-			ptr->Redraw_Objects();
+			ptr->Redraw_Objects(cell);
 			ScenarioInit = old;
 			return(true);
 		}

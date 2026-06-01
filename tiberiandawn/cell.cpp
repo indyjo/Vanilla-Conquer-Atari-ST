@@ -369,10 +369,9 @@ ObjectClass * CellClass::Cell_Object(int x, int y) const
  *   06/20/1994 JLB : Simplified to use object pointers.                                       *
  *   12/24/1994 JLB : Only checks if cell is in view and not flagged already.                  *
  *=============================================================================================*/
-void CellClass::Redraw_Objects(bool forced)
+void CellClass::Redraw_Objects(CELL cell, bool forced)
 {
 	Validate();
-	CELL	const cell = Cell_Number();
 
 	if (Map.In_View(cell) && (forced || !Map.Is_Cell_Flagged(cell))) {
 
@@ -403,6 +402,12 @@ void CellClass::Redraw_Objects(bool forced)
 			}
 		}
 	}
+}
+
+
+void CellClass::Redraw_Objects(bool forced)
+{
+	Redraw_Objects(Cell_Number(), forced);
 }
 
 
@@ -2133,7 +2138,7 @@ bool CellClass::Goodie_Check(FootClass * object, bool check_steel)
 						for (CELL cell = 0; cell < MAP_CELL_TOTAL; cell++) {
 							CellClass * cellptr = &Map[cell];
 							if (cellptr->Is_Mapped(object->House) || cellptr->Is_Visible(object->House)) {
-								cellptr->Redraw_Objects();
+								cellptr->Redraw_Objects(cell);
 								cellptr->Set_Mapped(object->House, false);
 								cellptr->Set_Visible(object->House, false);
 							}

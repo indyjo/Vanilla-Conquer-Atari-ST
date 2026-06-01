@@ -1219,7 +1219,7 @@ void HouseClass::AI(void)
         } else {
             CELL cell = As_Cell(FlagLocation);
             Map[cell].Flag_Update();
-            Map[cell].Redraw_Objects();
+            Map[cell].Redraw_Objects(cell);
         }
     }
 
@@ -4766,7 +4766,7 @@ void HouseClass::Sell_Wall(CELL cell)
                     if (ecell)
                         ecell->Wall_Update();
                     Map[cell].Recalc_Attributes();
-                    Map[cell].Redraw_Objects();
+                    Map[cell].Redraw_Objects(cell);
                     ObjectClass::Detach_This_From_All(::As_Target(cell), true);
                 }
             }

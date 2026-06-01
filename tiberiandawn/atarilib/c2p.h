@@ -109,6 +109,24 @@ void C2P_Render_Logical_To_Planar_Rect(
 	int abs_x0,
 	int abs_y0);
 
+/*
+** Convert one 8bpp scanline into one row of an ST-style interleaved planar buffer.
+** Same fast PairLUT/movep path and slow tail as C2P_Render_Logical_To_Planar_Rect.
+** planar_row points at the destination scanline; dst_y0 is its y index within the buffer.
+** Used by sprite cache remap fills (row_buf → planar) and by the rect helper per row.
+*/
+void C2P_Render_Logical_Row_To_Planar(
+	const uint8_t *logical_row,
+	int logical_w,
+	uint8_t *planar_row,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0,
+	int abs_x0,
+	int abs_y0);
+
 /* ST LoRes planar: canonical 320×200 screen; interleaved layout needs width multiple of 16. */
 #define ST_PLANAR_WIDTH 320
 #define ST_PLANAR_HEIGHT 200
@@ -154,6 +172,22 @@ void C2P_Blit_Linear8_To_Planar(
 	int planar_row_bytes,
 	int planar_width_pixels,
 	int planar_height_pixels);
+
+/*
+** Remap palette indices in a planar ST rectangle (read nibbles, apply 256-entry LUT,
+** write back with the same dither mapping as Buffer_Put_Pixel / C2P).
+** dst_x/dst_y and pixel_width/pixel_height are absolute buffer coordinates.
+*/
+void C2P_Remap_Planar_Rect(
+	uint8_t *planar_base,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x,
+	int dst_y,
+	int pixel_width,
+	int pixel_height,
+	const uint8_t *remap);
 
 #ifdef __cplusplus
 }

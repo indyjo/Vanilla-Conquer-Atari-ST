@@ -7297,6 +7297,7 @@ void DLLExportClass::Debug_Heal_Unit(int x, int y)
 
 					for (int index = 0; index < cellcount; index++) {
 						CellClass *newcell = cells[index];
+						CELL redraw_cell = (index == 0) ? cell : Adjacent_Cell(cell, (FacingType)(index - 1));
 
 						if (newcell && newcell->Cell_Object() == NULL) {
 							if (newcell->Land_Type() == LAND_CLEAR && newcell->Overlay == OVERLAY_NONE) {
@@ -7317,7 +7318,7 @@ void DLLExportClass::Debug_Heal_Unit(int x, int y)
 							else if (newcell->Land_Type() == LAND_TIBERIUM) {
 								newcell->OverlayData = MIN(newcell->OverlayData + 1, 11);
 								newcell->Recalc_Attributes();
-								newcell->Redraw_Objects();
+								newcell->Redraw_Objects(redraw_cell);
 							}
 						}
 					}

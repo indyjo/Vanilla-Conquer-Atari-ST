@@ -1406,7 +1406,7 @@ void DisplayClass::Cursor_Mark(CELL pos, bool on)
         CELL cell = pos + *ptr++;
         if (In_Radar(cell)) {
             cellptr = &(*this)[cell];
-            cellptr->Redraw_Objects();
+            cellptr->Redraw_Objects(cell);
             if (on) {
                 cellptr->IsCursorHere = true;
             } else {
@@ -1425,7 +1425,7 @@ void DisplayClass::Cursor_Mark(CELL pos, bool on)
             CELL cell = pos + *ptr++;
             if (In_Radar(cell)) {
                 cellptr = &(*this)[cell];
-                cellptr->Redraw_Objects();
+                cellptr->Redraw_Objects(cell);
             }
         }
     }
@@ -1907,7 +1907,7 @@ void DisplayClass::Refresh_Cells(CELL cell, short const* list)
     while (*list != REFRESH_EOL) {
         CELL newcell = cell + *list++;
         if (In_Radar(newcell)) {
-            (*this)[newcell].Redraw_Objects();
+            (*this)[newcell].Redraw_Objects(newcell);
         }
     }
 }
@@ -2183,7 +2183,7 @@ bool DisplayClass::Map_Cell(CELL cell, HouseClass* house, bool and_for_allies)
     (*this)[cell].Set_Mapped(house);
     (*this)[cell].Set_Visible(house);
 
-    (*this)[cell].Redraw_Objects();
+    (*this)[cell].Redraw_Objects(cell);
 
     /*
     **	Check out all adjacent cells to see if they need
@@ -2224,7 +2224,7 @@ bool DisplayClass::Map_Cell(CELL cell, HouseClass* house, bool and_for_allies)
                 if (shadow != -2) {
                     //(*this)[c].IsVisible = true;
                     (*this)[c].Set_Visible(house); // Set by player. ST - 3/6/2019 11:07AM
-                    (*this)[c].Redraw_Objects();
+                    (*this)[c].Redraw_Objects(c);
                 }
             }
         }
@@ -2446,32 +2446,32 @@ void DisplayClass::Draw_It(bool forced)
             for (cell = Coord_Cell(TacticalCoord);
                  cell < Coord_Cell(TacticalCoord) + Lepton_To_Cell(TacLeptonWidth) + 1;
                  cell++) {
-                (*this)[cell].Redraw_Objects();
+                (*this)[cell].Redraw_Objects(cell);
             }
             for (cell = Coord_Cell(TacticalCoord) + MAP_CELL_W;
                  cell < Coord_Cell(TacticalCoord) + MAP_CELL_W + Lepton_To_Cell(TacLeptonWidth) + 1;
                  cell++) {
-                (*this)[cell].Redraw_Objects();
+                (*this)[cell].Redraw_Objects(cell);
             }
             if (num > 1) {
                 for (cell = Coord_Cell(TacticalCoord) + MAP_CELL_W * 2;
                      cell < Coord_Cell(TacticalCoord) + MAP_CELL_W * 2 + Lepton_To_Cell(TacLeptonWidth) + 1;
                      cell++) {
-                    (*this)[cell].Redraw_Objects();
+                    (*this)[cell].Redraw_Objects(cell);
                 }
             }
             if (num > 3) {
                 for (cell = Coord_Cell(TacticalCoord) + MAP_CELL_W * 3;
                      cell < Coord_Cell(TacticalCoord) + MAP_CELL_W * 3 + Lepton_To_Cell(TacLeptonWidth) + 1;
                      cell++) {
-                    (*this)[cell].Redraw_Objects();
+                    (*this)[cell].Redraw_Objects(cell);
                 }
             }
             if (num > 4) {
                 for (cell = Coord_Cell(TacticalCoord) + MAP_CELL_W * 4;
                      cell < Coord_Cell(TacticalCoord) + MAP_CELL_W * 4 + Lepton_To_Cell(TacLeptonWidth) + 1;
                      cell++) {
-                    (*this)[cell].Redraw_Objects();
+                    (*this)[cell].Redraw_Objects(cell);
                 }
             }
         }
@@ -2583,7 +2583,7 @@ void DisplayClass::Draw_It(bool forced)
                                                          Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
 
                                 if (c > 0)
-                                    (*this)[c].Redraw_Objects(true);
+                                    (*this)[c].Redraw_Objects(c, true);
                             }
                         }
                     }
@@ -2601,7 +2601,7 @@ void DisplayClass::Draw_It(bool forced)
                                                          Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
 
                                 if (c > 0)
-                                    (*this)[c].Redraw_Objects(true);
+                                    (*this)[c].Redraw_Objects(c, true);
                             }
                         }
                     }
@@ -2617,7 +2617,7 @@ void DisplayClass::Draw_It(bool forced)
                                                          Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
 
                                 if (c > 0)
-                                    (*this)[c].Redraw_Objects(true);
+                                    (*this)[c].Redraw_Objects(c, true);
                             }
                         }
                     }
@@ -2635,7 +2635,7 @@ void DisplayClass::Draw_It(bool forced)
                                                          Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
 
                                 if (c > 0)
-                                    (*this)[c].Redraw_Objects(true);
+                                    (*this)[c].Redraw_Objects(c, true);
                             }
                         }
                     }
@@ -2657,7 +2657,7 @@ void DisplayClass::Draw_It(bool forced)
                                                          Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
 
                                 if (c > 0) {
-                                    (*this)[c].Redraw_Objects(true);
+                                    (*this)[c].Redraw_Objects(c, true);
                                 }
                             }
                         }
@@ -3735,21 +3735,21 @@ void DisplayClass::Refresh_Band(void)
         for (int y = y1; y <= y2 + CELL_PIXEL_H; y += CELL_PIXEL_H) {
             cell = Click_Cell_Calc(x1, Bound(y, 0, TacPixelY + Lepton_To_Pixel(TacLeptonHeight)));
             if (cell != -1)
-                (*this)[cell].Redraw_Objects();
+                (*this)[cell].Redraw_Objects(cell);
 
             cell = Click_Cell_Calc(x2, Bound(y, 0, TacPixelY + Lepton_To_Pixel(TacLeptonHeight)));
             if (cell != -1)
-                (*this)[cell].Redraw_Objects();
+                (*this)[cell].Redraw_Objects(cell);
         }
 
         for (int x = x1; x <= x2 + CELL_PIXEL_W; x += CELL_PIXEL_W) {
             cell = Click_Cell_Calc(Bound(x, 0, TacPixelX + Lepton_To_Pixel(TacLeptonWidth)), y1);
             if (cell != -1)
-                (*this)[cell].Redraw_Objects();
+                (*this)[cell].Redraw_Objects(cell);
 
             cell = Click_Cell_Calc(Bound(x, 0, TacPixelX + Lepton_To_Pixel(TacLeptonWidth)), y2);
             if (cell != -1)
-                (*this)[cell].Redraw_Objects();
+                (*this)[cell].Redraw_Objects(cell);
         }
     }
 }

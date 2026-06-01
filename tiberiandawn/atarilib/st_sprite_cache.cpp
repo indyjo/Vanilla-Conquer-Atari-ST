@@ -6,6 +6,7 @@
 
 #include "c2p.h"
 #include "st_blitter_blit.h"
+#include "st_frame_meter.h"
 
 #include "lrucache.h"
 
@@ -32,6 +33,8 @@
 #define ST_SPRITE_CACHE_TIER_CAP_MAX 4096
 #endif
 enum { SPRITE_CACHE_D16 = 16, SPRITE_CACHE_D32 = 32, SPRITE_CACHE_D64 = 64, SPRITE_CACHE_D96 = 96 };
+/* Stack row buffer for remap-then-bulk-C2P; 320 covers max tier width with headroom. */
+enum { SPRITE_CACHE_ROW_BUF_MAX = 320 };
 
 /*
  * Run lazy_frame_fill (Build_Frame) at most once per planar composite; only LRU miss triggers fill.
@@ -191,34 +194,35 @@ static uint32_t sprite_cache_lru_identity_hash(long identity_key)
 }
 
 /*
- * Write one 16-color ST low-res planar pixel into a BFTP scratch slot (same word/bit layout
- * as the screen buffer the blitter reads). Used on LRU fill when trans/fade/ghost prevent bulk C2P;
- * caller passes the final display nibble (typically C2P_Map8ToPlanar4 on sprite-local coords).
- * Clamps by returning if (x,y) is outside width_px × height_px.
+ * Flush up to 16 MSB-first mask bits into one 16-pixel mask word (2 bytes).
+ * Unused low bits are filled with 1 (preserve backdrop). Matches blitter mask layout:
+ * one bit per pixel, MSB = leftmost pixel in the 16-column group.
  */
-static inline void sprite_cache_scratch_put_px(
-	uint8_t *base, int row_bytes, int width_px, int height_px, int x, int y, unsigned char color4)
+static inline void sprite_cache_mask_flush_run(uint8_t *mask_row, int word_ix, int cols, uint16_t accum)
 {
-	if (!base || x < 0 || y < 0 || x >= width_px || y >= height_px || row_bytes <= 0)
+	if (cols <= 0)
 		return;
-	uint8_t *p = base + y * row_bytes + (x >> 4) * 8 + ((x >> 3) & 1);
-	const int bitnum = 7 - (x & 7);
-	const uint8_t maskbit = (uint8_t)(1u << (unsigned)bitnum);
-	const uint8_t c = (uint8_t)(color4 & 15);
-	for (int pl = 0; pl < 4; pl++) {
-		uint8_t *pb = p + pl * 2;
-		if (c & (uint8_t)(1u << pl))
-			*pb |= maskbit;
-		else
-			*pb &= (uint8_t)~maskbit;
-	}
+	const uint16_t word = (cols >= 16)
+	    ? accum
+	    : (uint16_t)(((uint16_t)accum << (16 - cols)) | (uint16_t)(0xFFFFu >> cols));
+	*(uint16_t *)(mask_row + word_ix * 2) = word;
 }
 
-/* Clear mask bit → ST blitter clears dest before OR-merge. Leave 1 to preserve backdrop. */
-static inline void sprite_cache_mask_mark_writes(uint8_t *maskbm, int rowb, int x, int y)
+/*
+ * Force one interleaved planar pixel to ST color 0 (all bitplanes clear).
+ * Mask+OR blits always OR source planar; preserve columns (mask=1) must stay zero
+ * so the OR step is a no-op and the backdrop from the mask-AND pass is kept.
+ */
+static inline void sprite_cache_planar_clear_px(
+	uint8_t *planar_row, int row_bytes, int width_px, int height_px, int x)
 {
-	uint8_t *b = maskbm + (size_t)y * (size_t)rowb + (size_t)(x >> 3);
-	*b = (uint8_t)(*b & (uint8_t)~(0x80u >> (x & 7)));
+	if (!planar_row || x < 0 || x >= width_px || height_px <= 0 || row_bytes <= 0)
+		return;
+	uint8_t *p = planar_row + (x >> 4) * 8 + ((x >> 3) & 1);
+	const int bitnum = 7 - (x & 7);
+	const uint8_t maskbit = (uint8_t)(1u << (unsigned)bitnum);
+	for (int pl = 0; pl < 4; pl++)
+		p[pl * 2] &= (uint8_t)~maskbit;
 }
 
 /*
@@ -656,7 +660,7 @@ static BOOL sprite_cache_do_blitter(
 }
 
 /* Fills one cache slot from cropped source pixels and optional remaps.
- * Returns 1 = fast path (bulk C2P), 2 = slow path (per-pixel scratch), 0 = failure. */
+ * Returns 1 = fast path (bulk C2P), 2 = slow path (row remap + bulk line C2P), 0 = failure. */
 static int sprite_cache_fill_slot_pixels(
 	SpriteCacheTier *tr,
 	uint16_t slot,
@@ -722,44 +726,114 @@ static int sprite_cache_fill_slot_pixels(
 	(void)ax0;
 	(void)ay0;
 
+	if (crop_w > SPRITE_CACHE_ROW_BUF_MAX)
+		return 0;
+
+	/*
+	 * Remap path (trans / fade / ghost): per-row chunky buffer, then bulk line C2P.
+	 * Per-pixel C2P_Map8ToPlanar4 + scratch writes was the main cache-miss hotspot; we
+	 * still apply trans/fade/ghost per column but convert each row with PairLUT/movep.
+	 * Mask bits are shift-accumulated 16 at a time instead of patching one byte per pixel.
+	 * Preserve columns are cleared back to zero planar after C2P (see post-row loop).
+	 */
 	const BOOL masked_merge = (ghost_tab != nullptr) || (trans != 0);
 	const uint8_t *const ghost_cls = ghost_tab;
 	const uint8_t *const ghost_blend = ghost_cls ? ghost_cls + 256 : nullptr;
+	uint8_t row_buf[SPRITE_CACHE_ROW_BUF_MAX];
+	uint8_t row_preserve[SPRITE_CACHE_ROW_BUF_MAX];
 
+	ST_FRAME_BAR_C2P_BEGIN();
 	for (int row = crop_y; row < crop_y + crop_h; ++row) {
 		const uint8_t *srow = src + (size_t)row * (size_t)stride;
-		for (int col = crop_x; col < crop_x + crop_w; ++col) {
+		const int sy = row - crop_y;
+		uint8_t *mask_row = maskbm + (size_t)sy * (size_t)mask_rowb;
+		/* 16-bit left-shift accum for one mask word (16 pixels). */
+		uint16_t mask_acc = 0;
+		int mask_run = 0;
+		int mask_word_ix = 0;
+
+		/* Pass 1: remap source indices into row_buf; build mask in the same scan. */
+		for (int sx = 0; sx < crop_w; ++sx) {
+			const int col = crop_x + sx;
 			const uint8_t raw = srow[col];
-			if (trans && raw == 0)
-				continue;
+			bool preserve = true;
+			uint8_t pal8 = 0;
 
-			unsigned char pal8 = raw;
-
-			if (ghost_cls && ghost_blend) {
-				const uint8_t cls = ghost_cls[raw];
-				if (cls != 0xFFu) {
-					/*
-					 * Sprite-local checkerboard mask dither (~50%); must not use screen coords
-					 * so cached fills are valid at any placement.
-					 */
-					if (((col ^ row) & 1) != 0)
-						continue;
-					pal8 = ghost_blend[(size_t)cls * 256u + SPRITE_CACHE_GHOST_SYNTH_BACKDROP_IX];
+			if (trans && raw == 0) {
+				/* Leave pal8=0; mask preserves backdrop. */
+			} else {
+				pal8 = raw;
+				if (ghost_cls && ghost_blend) {
+					const uint8_t cls = ghost_cls[raw];
+					if (cls != 0xFFu) {
+						/*
+						 * Sprite-local checkerboard mask dither (~50%); must not use screen coords
+						 * so cached fills are valid at any placement.
+						 */
+						if (((col ^ row) & 1) != 0) {
+							/* Checkerboard skip: preserve backdrop. */
+						} else {
+							pal8 = ghost_blend[(size_t)cls * 256u + SPRITE_CACHE_GHOST_SYNTH_BACKDROP_IX];
+							preserve = false;
+						}
+					} else {
+						pal8 = fade_tab ? fade_tab[raw] : raw;
+						preserve = false;
+					}
+				} else if (fade_tab) {
+					pal8 = fade_tab[raw];
+					preserve = false;
 				} else {
-					pal8 = fade_tab ? fade_tab[raw] : raw;
+					preserve = false;
 				}
-			} else if (fade_tab) {
-				pal8 = fade_tab[raw];
 			}
 
-			const int sx = col - crop_x;
-			const int sy = row - crop_y;
-			const unsigned char c4 = C2P_Map8ToPlanar4(sx, sy, pal8);
-			sprite_cache_scratch_put_px(planar, planar_rowb, scratch_w, scratch_h, sx, sy, c4);
-			if (masked_merge)
-				sprite_cache_mask_mark_writes(maskbm, mask_rowb, sx, sy);
+			row_buf[sx] = pal8;
+			row_preserve[sx] = (masked_merge && preserve) ? 1 : 0;
+
+			if (masked_merge) {
+				/* 1 = preserve (skip blit), 0 = draw this column. Shift every column. */
+				mask_acc = (uint16_t)((mask_acc << 1) | (preserve ? 1u : 0u));
+				mask_run++;
+				if (mask_run == 16) {
+					sprite_cache_mask_flush_run(mask_row, mask_word_ix, 16, mask_acc);
+					mask_acc = 0;
+					mask_run = 0;
+					mask_word_ix++;
+				}
+			}
+		}
+
+		if (masked_merge && mask_run > 0)
+			sprite_cache_mask_flush_run(mask_row, mask_word_ix, mask_run, mask_acc);
+
+		/* Pass 2: 8bpp row → interleaved planar (Bayer uses sprite-local sx,sy). */
+		C2P_Render_Logical_Row_To_Planar(
+		    row_buf,
+		    crop_w,
+		    planar + (size_t)sy * (size_t)planar_rowb,
+		    planar_rowb,
+		    scratch_w,
+		    scratch_h,
+		    0,
+		    sy,
+		    0,
+		    sy);
+
+		/*
+		 * Bulk C2P writes every column; restore true zero planar on preserve columns
+		 * (transparent, ghost checkerboard off-phase). Required because OR blit is
+		 * not mask-gated — non-zero planar there would tint the preserved backdrop.
+		 */
+		if (masked_merge) {
+			uint8_t *planar_row = planar + (size_t)sy * (size_t)planar_rowb;
+			for (int sx = 0; sx < crop_w; ++sx) {
+				if (row_preserve[sx])
+					sprite_cache_planar_clear_px(planar_row, planar_rowb, scratch_w, scratch_h, sx);
+			}
 		}
 	}
+	ST_FRAME_BAR_C2P_END();
 	return 2;
 }
 

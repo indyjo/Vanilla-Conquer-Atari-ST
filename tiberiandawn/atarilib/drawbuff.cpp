@@ -1549,6 +1549,10 @@ extern "C" VOID Buffer_Remap(void *thisptr, int sx, int sy, int width, int heigh
 	int x1 = sx + width - 1;
 	int y1 = sy + height - 1;
 
+	if (x0 >= vpw || y0 >= vph || x1 < 0 || y1 < 0) {
+		return;
+	}
+
 	if (x0 < 0) x0 = 0;
 	if (y0 < 0) y0 = 0;
 	if (x1 >= vpw) x1 = vpw - 1;
@@ -1557,11 +1561,40 @@ extern "C" VOID Buffer_Remap(void *thisptr, int sx, int sy, int width, int heigh
 		return;
 	}
 
-	for (int y = y0; y <= y1; ++y) {
-		for (int x = x0; x <= x1; ++x) {
-			unsigned char src = (unsigned char)Buffer_Get_Pixel(vp, x, y);
-			Buffer_Put_Pixel(vp, x, y, map[src]);
+	const int rect_w = x1 - x0 + 1;
+	const int rect_h = y1 - y0 + 1;
+
+	if (VP_Is_Planar(vp)) {
+		GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
+		uint8_t *root = (uint8_t *)gb->Get_Buffer();
+		if (!root) {
+			return;
 		}
+		C2P_Remap_Planar_Rect(
+			root,
+			GB_ST_Planar_Row_Bytes(gb),
+			gb->Get_Width(),
+			gb->Get_Height(),
+			vp->Get_XPos() + x0,
+			vp->Get_YPos() + y0,
+			rect_w,
+			rect_h,
+			map);
+		return;
+	}
+
+	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
+	if (!viewport_base) {
+		return;
+	}
+
+	const int row_stride = Get_Row_Stride(vp);
+	unsigned char *row = viewport_base + x0 + y0 * row_stride;
+	for (int lines = rect_h; lines > 0; --lines) {
+		for (int i = 0; i < rect_w; ++i) {
+			row[i] = map[row[i]];
+		}
+		row += row_stride;
 	}
 }
 

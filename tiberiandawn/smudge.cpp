@@ -237,7 +237,7 @@ bool SmudgeClass::Mark(MarkType mark)
                         }
 
                         if (!Debug_Clipped_Tactical_Redraw) {
-                            cell->Redraw_Objects();
+                            cell->Redraw_Objects(newcell);
                         }
                     }
                 }
@@ -372,13 +372,14 @@ void SmudgeClass::Disown(CELL cell)
     if (Class->IsBib) {
         for (int w = 0; w < Class->Width; w++) {
             for (int h = 0; h < Class->Height; h++) {
-                CellClass& cellptr = Map[cell + w + (h * MAP_CELL_W)];
+                CELL redraw_cell = cell + w + (h * MAP_CELL_W);
+                CellClass& cellptr = Map[redraw_cell];
 
                 if (cellptr.Overlay == OVERLAY_NONE || !OverlayTypeClass::As_Reference(cellptr.Overlay).IsWall) {
                     cellptr.Smudge = SMUDGE_NONE;
                     cellptr.SmudgeData = 0;
                     cellptr.Owner = HOUSE_NONE;
-                    cellptr.Redraw_Objects();
+                    cellptr.Redraw_Objects(redraw_cell);
                 }
             }
         }

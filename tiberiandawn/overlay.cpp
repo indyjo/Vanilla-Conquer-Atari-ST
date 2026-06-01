@@ -315,7 +315,7 @@ bool OverlayClass::Mark(MarkType mark)
                 cellptr->Recalc_Attributes();
             }
             if (!Debug_Clipped_Tactical_Redraw) {
-                cellptr->Redraw_Objects();
+                cellptr->Redraw_Objects(cell);
             }
             Delete_This();
             return (true);

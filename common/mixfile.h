@@ -20,6 +20,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include "debugstring.h"
 #include "listnode.h"
 #include "pk.h"
 #include "buff.h"
@@ -40,6 +41,11 @@ bool Force_CD_Available(int);
 void Emergency_Exit(int);
 extern int RequiredCD;
 extern bool RunningAsDLL;
+
+static inline long MixFile_Payload_KiB(int data_size)
+{
+    return (data_size + 1023) / 1024;
+}
 
 template <class T, class TCRC = CRCEngine> class MixFileClass : public VanillaNode<MixFileClass<T>>
 {
@@ -345,6 +351,7 @@ MixFileClass<T, TCRC>::MixFileClass(char const* filename)
     **	Attach to list of mixfiles.
     */
     MixList.Add_Tail(this);
+    DBG_INFO("MIX: registered %s (%d files)", filename, Count);
 }
 
 /***********************************************************************************************
@@ -477,6 +484,7 @@ MixFileClass<T, TCRC>::MixFileClass(char const* filename, PKey const* key)
     **	Attach to list of mixfiles.
     */
     MixList.Add_Tail(this);
+    DBG_INFO("MIX: registered %s (%d files)", filename, Count);
 }
 
 /***********************************************************************************************
@@ -565,6 +573,7 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(char const* fil
     if (mixer != NULL) {
         return (mixer->Cache(buffer));
     }
+    DBG_INFO("MIX: cache %s (not registered)", filename ? filename : "(null)");
     return (false);
 }
 
@@ -592,6 +601,8 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(Buffer const* b
     */
     if (Data != NULL)
         return (true);
+
+    DBG_INFO("MIX: caching %s (%ld KiB)", Filename ? Filename : "(null)", MixFile_Payload_KiB(DataSize));
 
     /*
     **	If a buffer was supplied (and it is big enough), then use it as the data block
@@ -643,6 +654,7 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(Buffer const* b
             delete[] static_cast<char*>(Data);
             Data = NULL;
             file.Error(EIO);
+            DBG_INFO("MIX: cache %s [FAIL] read", Filename ? Filename : "(null)");
             return (false);
         }
 
@@ -659,13 +671,16 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(Buffer const* b
             if (memcmp(digest1, digest2, sizeof(digest1)) != 0) {
                 delete[] static_cast<char*>(Data);
                 Data = NULL;
+                DBG_INFO("MIX: cache %s [FAIL] digest", Filename ? Filename : "(null)");
                 return (false);
             }
         }
 
+        DBG_INFO("MIX: cache %s [OK]", Filename ? Filename : "(null)");
         return (true);
     }
     IsAllocated = false;
+    DBG_INFO("MIX: cache %s [FAIL] alloc", Filename ? Filename : "(null)");
     return (false);
 }
 

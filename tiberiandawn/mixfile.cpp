@@ -45,9 +45,7 @@
 
 
 #include	"function.h"
-#if defined(ATARI_ST)
-#include	<stdio.h>
-#endif
+#include	"debugstring.h"
 #ifndef POSIX
 #include	<direct.h>
 #include	<fcntl.h>
@@ -96,20 +94,10 @@ template<class T> int Compare(T const *obj1, T const *obj2) {
 */
 MixFileClass * MixFileClass::First = 0;
 
-#if defined(ATARI_ST)
-static void MixFile_Log(char const *msg)
-{
-	if (msg && *msg) {
-		fputs(msg, stdout);
-		fflush(stdout);
-	}
-}
-
 static long MixFile_Payload_KiB(long data_size)
 {
 	return (data_size + 1023L) / 1024L;
 }
-#endif
 
 
 /*********************************************************************************************** 
@@ -305,14 +293,7 @@ MixFileClass::MixFileClass(char const *filename)
 	} else {
 		Add_Tail(*First);
 	}
-#if defined(ATARI_ST)
-	{
-		char msg[128];
-		snprintf(msg, sizeof(msg), "MIX: registered %s (%d files)\n",
-		    Filename, Count);
-		MixFile_Log(msg);
-	}
-#endif
+	DBG_INFO("MIX: registered %s (%d files)", Filename, Count);
 	return;
 
 error_close_buffer:
@@ -409,14 +390,7 @@ bool MixFileClass::Cache(char const *filename)
 	if (mixer) {
 		return(mixer->Cache());
 	}
-#if defined(ATARI_ST)
-	{
-		char msg[96];
-		snprintf(msg, sizeof(msg), "MIX: cache %s (not registered)\n",
-		    filename ? filename : "(null)");
-		MixFile_Log(msg);
-	}
-#endif
+	DBG_INFO("MIX: cache %s (not registered)", filename ? filename : "(null)");
 	return(false);
 }
 
@@ -439,19 +413,13 @@ bool MixFileClass::Cache(char const *filename)
  *=============================================================================================*/
 bool MixFileClass::Cache(void)
 {
-#if defined(ATARI_ST)
 	long const payload_kib = MixFile_Payload_KiB(DataSize);
-	char msg[128];
-#endif
 
 	if (Data) {
 		return(true);
 	}
 
-#if defined(ATARI_ST)
-	snprintf(msg, sizeof(msg), "MIX: caching %s (%ld KiB) ", Filename, payload_kib);
-	MixFile_Log(msg);
-#endif
+	DBG_INFO("MIX: caching %s (%ld KiB)", Filename, payload_kib);
 
 	Data = new char [DataSize];
 	if (Data) {
@@ -472,14 +440,10 @@ bool MixFileClass::Cache(void)
 #endif
 		}
 		file.Close();
-#if defined(ATARI_ST)
-		MixFile_Log("[OK]\n");
-#endif
+		DBG_INFO("MIX: cache %s [OK]", Filename);
 		return(true);
 	}
-#if defined(ATARI_ST)
-	MixFile_Log("[FAIL]\n");
-#endif
+	DBG_INFO("MIX: cache %s [FAIL] alloc", Filename);
 #ifdef GERMAN
 	Fatal("Kann Datei \"%s\" nicht laden.", Filename);
 #else

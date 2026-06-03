@@ -216,7 +216,7 @@ VC_COMMON_CPP_SOURCES = \
 	../common/bfiofile.cpp ../common/blowfish.cpp ../common/blowpipe.cpp \
 	../common/blwstraw.cpp ../common/buff.cpp ../common/ccfile.cpp \
 	../common/cdfile.cpp ../common/combuf.cpp ../common/control.cpp \
-	../common/crc.cpp ../common/crew.cpp \
+	../common/crc.cpp 	../common/crew.cpp ../common/debugstring.cpp \
 	../common/fading.cpp ../common/field.cpp ../common/file.cpp \
 	../common/file_posix.cpp ../common/framelimit.cpp ../common/fixed.cpp \
 	../common/hsv.cpp ../common/ini.cpp ../common/int.cpp \
@@ -647,7 +647,7 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTD
 	$(INTDIR)/st_load_uncompress.o \
 	$(INTDIR)/buff.o $(INTDIR)/bfiofile.o $(INTDIR)/blwstraw.o $(INTDIR)/blowfish.o \
 	$(INTDIR)/crc.o $(INTDIR)/fading.o $(INTDIR)/file.o $(INTDIR)/file_posix.o \
-	$(INTDIR)/paths.o $(INTDIR)/paths_posix.o \
+	$(INTDIR)/paths.o $(INTDIR)/paths_posix.o $(INTDIR)/debugstring.o \
 	$(INTDIR)/pk.o $(INTDIR)/pkstraw.o $(INTDIR)/rndstraw.o $(INTDIR)/sha.o $(INTDIR)/shastraw.o \
 	$(INTDIR)/straw.o $(INTDIR)/xstraw.o $(INTDIR)/wwkeyboard.o \
 	$(INTDIR)/misc.o $(INTDIR)/random.o $(INTDIR)/int.o $(INTDIR)/mp.o

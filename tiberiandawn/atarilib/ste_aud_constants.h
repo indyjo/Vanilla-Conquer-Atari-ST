@@ -27,7 +27,7 @@ enum { STE_AUD_COMP_PCM = 0, STE_AUD_COMP_IMA99 = 99 };
 /* Private in-memory hint: duplicate logical PCM samples on pull() after Sample_Make_PCM(). */
 #define STE_AUD_FLAG_DUP2X 4
 /* One-shot limits (large IMA scores / long voice). Tune down on very small RAM systems. */
-enum { STE_AUD99_MAX_COMPRESSED_PAYLOAD = 2UL * 1024UL * 1024UL }; /* bytes after 12-byte AUD header */
+enum { STE_AUD99_MAX_COMPRESSED_PAYLOAD = 8UL * 1024UL * 1024UL }; /* bytes after 12-byte AUD header */
 enum { STE_AUD99_MAX_DECODED_PCM_BYTES = 8UL * 1024UL * 1024UL };  /* 16-bit PCM from AUD */
 enum { STE_AUD99_MAX_SINGLE_FRAME_PCM = 262144u }; /* max declared decomp bytes per AUD99 frame (sanity) */
 

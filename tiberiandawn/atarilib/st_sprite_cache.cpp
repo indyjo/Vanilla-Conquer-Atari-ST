@@ -209,23 +209,6 @@ static inline void sprite_cache_mask_flush_run(uint8_t *mask_row, int word_ix, i
 }
 
 /*
- * Force one interleaved planar pixel to ST color 0 (all bitplanes clear).
- * Mask+OR blits always OR source planar; preserve columns (mask=1) must stay zero
- * so the OR step is a no-op and the backdrop from the mask-AND pass is kept.
- */
-static inline void sprite_cache_planar_clear_px(
-	uint8_t *planar_row, int row_bytes, int width_px, int height_px, int x)
-{
-	if (!planar_row || x < 0 || x >= width_px || height_px <= 0 || row_bytes <= 0)
-		return;
-	uint8_t *p = planar_row + (x >> 4) * 8 + ((x >> 3) & 1);
-	const int bitnum = 7 - (x & 7);
-	const uint8_t maskbit = (uint8_t)(1u << (unsigned)bitnum);
-	for (int pl = 0; pl < 4; pl++)
-		p[pl * 2] &= (uint8_t)~maskbit;
-}
-
-/*
  * ST interleaved planar + 1bpp mask layout for a tight crop: width rounded up to 16 px, height = crop_h.
  * Row strides match the blitter / C2P helpers (8 bytes per 16 horizontal pixels in planar, 2 in mask).
  */
@@ -734,13 +717,12 @@ static int sprite_cache_fill_slot_pixels(
 	 * Per-pixel C2P_Map8ToPlanar4 + scratch writes was the main cache-miss hotspot; we
 	 * still apply trans/fade/ghost per column but convert each row with PairLUT/movep.
 	 * Mask bits are shift-accumulated 16 at a time instead of patching one byte per pixel.
-	 * Preserve columns are cleared back to zero planar after C2P (see post-row loop).
+	 * Backdrop columns use pal8=0 before C2P so planar stays color-0 for mask+OR blits.
 	 */
 	const BOOL masked_merge = (ghost_tab != nullptr) || (trans != 0);
 	const uint8_t *const ghost_cls = ghost_tab;
 	const uint8_t *const ghost_blend = ghost_cls ? ghost_cls + 256 : nullptr;
 	uint8_t row_buf[SPRITE_CACHE_ROW_BUF_MAX];
-	uint8_t row_preserve[SPRITE_CACHE_ROW_BUF_MAX];
 
 	ST_FRAME_BAR_C2P_BEGIN();
 	for (int row = crop_y; row < crop_y + crop_h; ++row) {
@@ -771,7 +753,7 @@ static int sprite_cache_fill_slot_pixels(
 						 * so cached fills are valid at any placement.
 						 */
 						if (((col ^ row) & 1) != 0) {
-							/* Checkerboard skip: preserve backdrop. */
+							/* Checkerboard skip: preserve backdrop (pal8 cleared below). */
 						} else {
 							pal8 = ghost_blend[(size_t)cls * 256u + SPRITE_CACHE_GHOST_SYNTH_BACKDROP_IX];
 							preserve = false;
@@ -788,8 +770,9 @@ static int sprite_cache_fill_slot_pixels(
 				}
 			}
 
+			if (preserve)
+				pal8 = 0;
 			row_buf[sx] = pal8;
-			row_preserve[sx] = (masked_merge && preserve) ? 1 : 0;
 
 			if (masked_merge) {
 				/* 1 = preserve (skip blit), 0 = draw this column. Shift every column. */
@@ -819,19 +802,6 @@ static int sprite_cache_fill_slot_pixels(
 		    sy,
 		    0,
 		    sy);
-
-		/*
-		 * Bulk C2P writes every column; restore true zero planar on preserve columns
-		 * (transparent, ghost checkerboard off-phase). Required because OR blit is
-		 * not mask-gated — non-zero planar there would tint the preserved backdrop.
-		 */
-		if (masked_merge) {
-			uint8_t *planar_row = planar + (size_t)sy * (size_t)planar_rowb;
-			for (int sx = 0; sx < crop_w; ++sx) {
-				if (row_preserve[sx])
-					sprite_cache_planar_clear_px(planar_row, planar_rowb, scratch_w, scratch_h, sx);
-			}
-		}
 	}
 	ST_FRAME_BAR_C2P_END();
 	return 2;

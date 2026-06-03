@@ -3,7 +3,8 @@
 Host utility that repacks C&C MIX archives for the Atari ST port.
 
 For each embedded file it autodetects the asset type, converts Westwood AUD99
-(IMA ADPCM) to 11 kHz 8-bit mono PCM `.AUD` where needed, and pads payloads so
+(IMA ADPCM) to 11 kHz 8-bit mono PCM `.AUD` where needed (2:1 downsample by
+averaging adjacent decoded samples), and pads payloads so
 every file starts at an even byte offset from the beginning of the MIX. This
 avoids unaligned 16/32-bit reads on m68k when game code treats payload bytes as
 structs.

@@ -347,7 +347,6 @@ int remix_convert_aud99(const unsigned char *in, size_t in_len, unsigned char **
 	unsigned char *out;
 	unsigned long written;
 	unsigned long left;
-	unsigned long phase;
 	unsigned short rate;
 	unsigned long payload_bytes;
 	unsigned long out_cap;
@@ -381,7 +380,6 @@ int remix_convert_aud99(const unsigned char *in, size_t in_len, unsigned char **
 	memcpy(out, in, (size_t)REMIX_AUD_HDR_LEN);
 	written = 0;
 	left = convert_samples;
-	phase = 0;
 	while (left > 0UL) {
 		unsigned long batch = left > (unsigned long)REMIX_AUDIO_PULL_BLOCK
 		    ? (unsigned long)REMIX_AUDIO_PULL_BLOCK
@@ -395,11 +393,12 @@ int remix_convert_aud99(const unsigned char *in, size_t in_len, unsigned char **
 		got = (unsigned long)ima99_stream_pull(&convert, (signed char *)scratch, (unsigned)batch);
 		if (got != batch)
 			goto fail;
-		for (i = 0; i < got; ++i) {
-			if ((phase & 1UL) == 0UL)
-				out[(size_t)REMIX_AUD_HDR_LEN + (size_t)written++] =
-				    (unsigned char)((int)(signed char)scratch[i] + 128);
-			++phase;
+		for (i = 0; i < got; i += 2) {
+			int const a = (int)(signed char)scratch[i];
+			int const b = (int)(signed char)scratch[i + 1];
+			int const avg = (a + b) / 2;
+			out[(size_t)REMIX_AUD_HDR_LEN + (size_t)written++] =
+			    (unsigned char)(avg + 128);
 		}
 		left -= got;
 	}

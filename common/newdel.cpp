@@ -33,9 +33,14 @@
  *   operator delete -- Overides the global delete function.               *
  *   operator NEW[] -- Overides the array version of new.                  *
  *   operator delete[] -- Overides the array version of delete[]           *
+ *   operator NEW (std::nothrow) -- Atari ST only; see NEWDEL.CPP          *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "wwmem.h"
+
+#ifdef ATARI_ST
+#include <new>
+#endif
 
 /*=========================================================================*/
 /* The following PRIVATE functions are in this file:                       */
@@ -78,6 +83,30 @@ void* operator new[](size_t size)
 {
     return (Alloc((unsigned int)size, MEM_NEW));
 }
+
+#ifdef ATARI_ST
+/***************************************************************************
+ * OPERATOR NEW (std::nothrow) -- Atari ST; same as operator new above.   *
+ *                                                                         *
+ * Required when the game is built with -mfastcall: new (std::nothrow)    *
+ * otherwise uses libsupc++'s operator new(..., nothrow_t), which breaks  *
+ * in practice (__Unwind_SjLj_Register overwrites the jsr return address, *
+ * then rts to 0). Provide this thin Alloc wrapper so the call stays in   *
+ * game code compiled with the same -mfastcall flags as the rest of C&C.  *
+ *=========================================================================*/
+void* operator new(size_t size, const std::nothrow_t&) noexcept
+{
+    return (Alloc((unsigned int)size, MEM_NEW));
+}
+
+/***************************************************************************
+ * OPERATOR NEW[] (std::nothrow) -- Atari ST array form.                   *
+ *=========================================================================*/
+void* operator new[](size_t size, const std::nothrow_t&) noexcept
+{
+    return (Alloc((unsigned int)size, MEM_NEW));
+}
+#endif /* ATARI_ST */
 
 /***************************************************************************
  * OPERATOR DELETE -- Overides the global delete function.                 *

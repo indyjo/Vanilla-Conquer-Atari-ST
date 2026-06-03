@@ -117,11 +117,19 @@ INCLUDES += -I$(MINT_LIBSTDCPP_INC) -I$(MINT_LIBSTDCPP_INC)/m68k-atari-mint
 endif
 endif
 
+# m68k fastcall ABI (a2/d2 args, d0 return): must match at compile and link time.
+FASTCALL ?= 1
+FASTCALL_FLAGS :=
+ifeq ($(FASTCALL),1)
+FASTCALL_FLAGS = -mfastcall
+endif
+
 # Common compiler flags (GCC style)
 CXXFLAGS_COMMON = -Wall -Wextra -fno-exceptions
 CXXFLAGS_COMMON += $(INCLUDES)
 CXXFLAGS_COMMON += -Wno-unused-parameter -Wno-sign-compare -Wno-deprecated-declarations
 CXXFLAGS_COMMON += -std=c++17 -fpermissive
+CXXFLAGS_COMMON += $(FASTCALL_FLAGS)
 
 # Note: Windows-specific libraries may not be available for m68k target
 # You may need to provide alternatives or stub implementations
@@ -198,6 +206,11 @@ else
 LDFLAGS += -shared
 LDFLAGS += -Wl,-soname,$(TARGET_NAME).dll
 endif
+
+# Link driver flags: LDFLAGS plus ABI flags. Appended here (not via LDFLAGS +=) because
+# Release WITH_SYMBOLS uses "override LDFLAGS :=" which drops a later LDFLAGS +=.
+LINKFLAGS = $(LDFLAGS) $(FASTCALL_FLAGS)
+
 # Generate import library (may not be supported on all targets)
 # Will be handled separately if needed
 
@@ -381,13 +394,13 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 # Atari ST: Build TOS executable
 $(TARGET_EXE): $(ALL_OBJECTS) | $(OUTDIR) $(INTDIR)
 	@echo "Linking $(TARGET_EXE)..."
-	$(CXX) $(LDFLAGS) -o $(TARGET_EXE) $(ALL_OBJECTS) $(LIBS)
+	$(CXX) $(LINKFLAGS) -o $(TARGET_EXE) $(ALL_OBJECTS) $(LIBS)
 	@echo "TOS executable created: $(TARGET_EXE)"
 else
 # Windows: Build DLL
 $(TARGET_DLL): $(ALL_OBJECTS) | $(OUTDIR)
 	@echo "Linking $(TARGET_DLL)..."
-	$(CXX) $(LDFLAGS) -o $(TARGET_DLL) $(ALL_OBJECTS) $(LIBS)
+	$(CXX) $(LINKFLAGS) -o $(TARGET_DLL) $(ALL_OBJECTS) $(LIBS)
 	@echo "Creating import library $(TARGET_LIB)..."
 	@$(AR) rcs $(TARGET_LIB) $(ALL_OBJECTS) 2>/dev/null || echo "Note: Import library creation skipped"
 endif
@@ -582,6 +595,7 @@ endif
 	@echo "  PROFILE_BORDER=0    - Atari-only: disable audio pen-0 border timing (default: 0)"
 	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
+	@echo "  FASTCALL=0       - Disable -mfastcall on compile and link (default: 1)"
 	@echo "  PLATFORM=Win32 - Target platform (default: Win32)"
 	@echo "  CROSS_PREFIX   - Cross-compiler path (default: \$$HOME/opt/cross-mint/bin)"
 	@echo "  USE_ATARILIB   - Force use of ATARILIB (default: auto-detect)"
@@ -657,7 +671,7 @@ st-tests: $(ST_TEST_EXE)
 
 $(ST_TEST_EXE): $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) | $(OUTDIR) $(INTDIR)
 	@echo "Linking $(ST_TEST_EXE)..."
-	$(CXX) $(LDFLAGS) -o $(ST_TEST_EXE) $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) $(LIBS)
+	$(CXX) $(LINKFLAGS) -o $(ST_TEST_EXE) $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) $(LIBS)
 
 $(INTDIR)/st_tests_main.o: $(ST_SUITE_DIR)/st_tests_main.cpp | $(INTDIR)
 	@echo "Compiling $<..."

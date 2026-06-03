@@ -19,6 +19,7 @@
 #include <mint/osbind.h>
 
 #include "st_screen.h"
+#include "lrucache.h"
 
 /* Kept local to avoid including CONQUER.CPP private define. */
 static const int ST_SHAPE_TRANS_FLAG = 0x40;
@@ -44,19 +45,16 @@ static uint8_t *g_tile_linear_24x24 = NULL;
 static uint8_t *g_tile_planar_cache_raw = NULL;
 static uint8_t *g_tile_planar_cache_aligned = NULL;
 static BOOL g_tile_scratch_init_attempted = FALSE;
-static unsigned long g_tile_planar_cache_clock = 1;
 static BOOL g_tile_cache_debug_show = FALSE;
 static BOOL g_tile_cache_debug_key_prev = FALSE;
 
-typedef struct STTilePlanarCacheEntry_ {
-	unsigned long identity_key;
-	unsigned long last_used_tick;
+struct STTilePlanarCacheSlot {
 	unsigned short atlas_x;
 	unsigned short atlas_y;
-	BOOL valid;
-} STTilePlanarCacheEntry;
+};
 
-static STTilePlanarCacheEntry g_tile_planar_cache[ST_TILE_PLANAR_CACHE_SLOTS];
+static STTilePlanarCacheSlot g_tile_planar_slots[ST_TILE_PLANAR_CACHE_SLOTS];
+static LruCache<unsigned long, uint16_t> g_tile_planar_lru((size_t)ST_TILE_PLANAR_CACHE_SLOTS);
 
 enum { ST_HZ200_ADDR = 0x4BA };
 
@@ -90,52 +88,6 @@ static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
 	return NULL;
 }
 
-static inline unsigned long Next_Tile_Planar_Cache_Tick(void)
-{
-	unsigned long t = ++g_tile_planar_cache_clock;
-	if (t == 0UL) {
-		int i;
-		g_tile_planar_cache_clock = 1UL;
-		for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
-			if (g_tile_planar_cache[i].valid) {
-				g_tile_planar_cache[i].last_used_tick = 1UL;
-			}
-		}
-		return 1UL;
-	}
-	return t;
-}
-
-static STTilePlanarCacheEntry *Find_Tile_Planar_Cache_Entry(
-	unsigned long identity_key)
-{
-	int i;
-	for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
-		STTilePlanarCacheEntry *e = &g_tile_planar_cache[i];
-		if (!e->valid)
-			continue;
-		if (e->identity_key == identity_key) {
-			e->last_used_tick = Next_Tile_Planar_Cache_Tick();
-			return e;
-		}
-	}
-	return NULL;
-}
-
-static STTilePlanarCacheEntry *Reserve_Tile_Planar_Cache_Entry(void)
-{
-	int i;
-	STTilePlanarCacheEntry *best = &g_tile_planar_cache[0];
-	for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
-		STTilePlanarCacheEntry *e = &g_tile_planar_cache[i];
-		if (!e->valid)
-			return e;
-		if (e->last_used_tick < best->last_used_tick)
-			best = e;
-	}
-	return best;
-}
-
 static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb)
 {
 	return gb && gb->Is_ST_Planar();
@@ -167,7 +119,7 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 	uint8_t *dst_root;
 	int dx_abs;
 	int dy_abs;
-	STTilePlanarCacheEntry *cache_entry;
+	uint16_t slot;
 
 	if (dst_x < 0) {
 		clip_src_x = -dst_x;
@@ -201,20 +153,20 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 		return FALSE;
 	}
 
-	cache_entry = Find_Tile_Planar_Cache_Entry(identity_key);
-	if (!cache_entry) {
+	if (!g_tile_planar_lru.get(identity_key, slot)) {
 		return FALSE;
 	}
 
 	{
+		STTilePlanarCacheSlot const &atlas = g_tile_planar_slots[slot];
 		int const dst_bpl = GB_ST_Planar_Row_Bytes(dst_gb);
 		BOOL blit_ok = ST_Blitter_Planar_Rect_Blit(
 		g_tile_planar_cache_aligned,
 		ST_TILE_PLANAR_CACHE_BPL,
 		ST_TILE_PLANAR_CACHE_W,
 		ST_TILE_PLANAR_CACHE_H,
-		(int)cache_entry->atlas_x + clip_src_x,
-		(int)cache_entry->atlas_y + clip_src_y,
+		(int)atlas.atlas_x + clip_src_x,
+		(int)atlas.atlas_y + clip_src_y,
 		dst_root,
 		dst_bpl,
 		dst_gb->Get_Width(),
@@ -245,12 +197,13 @@ static BOOL Ensure_Terrain_Tile_Scratch(void)
 			& ~((unsigned long long)(ST_TILE_PLANAR_CACHE_ALIGN - 1));
 		g_tile_planar_cache_aligned = (uint8_t *)(void *)aligned;
 		memset(g_tile_planar_cache_aligned, 0, (size_t)ST_TILE_PLANAR_CACHE_BYTES);
-		memset(g_tile_planar_cache, 0, sizeof(g_tile_planar_cache));
+		g_tile_planar_lru.clear();
 		for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
-			g_tile_planar_cache[i].atlas_x =
+			g_tile_planar_slots[i].atlas_x =
 				(unsigned short)((i % ST_TILE_PLANAR_CACHE_TILES_PER_ROW) * ST_TILE_LINEAR_W);
-			g_tile_planar_cache[i].atlas_y =
+			g_tile_planar_slots[i].atlas_y =
 				(unsigned short)((i / ST_TILE_PLANAR_CACHE_TILES_PER_ROW) * ST_TILE_LINEAR_H);
+			g_tile_planar_lru.put(UINT32_MAX ^ (unsigned long)(unsigned)i, (uint16_t)i);
 		}
 		return TRUE;
 	}
@@ -1866,16 +1819,17 @@ iconset_decode_done:
 				&& dx_abs >= 0 && dy_abs >= 0
 				&& dx_abs + clip_blit_w <= dst_pw_fb
 				&& dy_abs + clip_blit_h <= dst_ph_fb) {
-				STTilePlanarCacheEntry *cache_entry =
-					Find_Tile_Planar_Cache_Entry(stamp_identity_key);
-				if (cache_entry) {
+				uint16_t slot = 0;
+				BOOL const cache_hit = g_tile_planar_lru.get(stamp_identity_key, slot) ? TRUE : FALSE;
+				if (cache_hit) {
+					STTilePlanarCacheSlot const &atlas = g_tile_planar_slots[slot];
 					if (ST_Blitter_Planar_Rect_Blit(
 							g_tile_planar_cache_aligned,
 							ST_TILE_PLANAR_CACHE_BPL,
 							ST_TILE_PLANAR_CACHE_W,
 							ST_TILE_PLANAR_CACHE_H,
-							(int)cache_entry->atlas_x + clip_src_x,
-							(int)cache_entry->atlas_y + clip_src_y,
+							(int)atlas.atlas_x + clip_src_x,
+							(int)atlas.atlas_y + clip_src_y,
 							dst_root,
 							dst_bpl_fb,
 							dst_pw_fb,
@@ -1903,39 +1857,42 @@ iconset_decode_done:
 				}
 
 				/* Cache the full 24x24 tile; clipping happens in blitter source coordinates. */
-				cache_entry = Reserve_Tile_Planar_Cache_Entry();
-				C2P_Render_Logical_To_Planar_Rect(
-					g_tile_linear_24x24,
-					ST_TILE_LINEAR_W,
-					ST_TILE_LINEAR_H,
-					ST_TILE_LINEAR_W,
-					g_tile_planar_cache_aligned,
-					ST_TILE_PLANAR_CACHE_BPL,
-					ST_TILE_PLANAR_CACHE_W,
-					ST_TILE_PLANAR_CACHE_H,
-					(int)cache_entry->atlas_x,
-					(int)cache_entry->atlas_y,
-					0,
-					0);
-				if (ST_Blitter_Planar_Rect_Blit(
+				if (!cache_hit
+					&& !g_tile_planar_lru.retarget_oldest_slot(stamp_identity_key, slot)) {
+					goto fast24_fallback;
+				}
+				{
+					STTilePlanarCacheSlot const &atlas = g_tile_planar_slots[slot];
+					C2P_Render_Logical_To_Planar_Rect(
+						g_tile_linear_24x24,
+						ST_TILE_LINEAR_W,
+						ST_TILE_LINEAR_H,
+						ST_TILE_LINEAR_W,
 						g_tile_planar_cache_aligned,
 						ST_TILE_PLANAR_CACHE_BPL,
 						ST_TILE_PLANAR_CACHE_W,
 						ST_TILE_PLANAR_CACHE_H,
-						(int)cache_entry->atlas_x + clip_src_x,
-						(int)cache_entry->atlas_y + clip_src_y,
-						dst_root,
-						dst_bpl_fb,
-						dst_pw_fb,
-						dst_ph_fb,
-						dx_abs,
-						dy_abs,
-						clip_blit_w,
-						clip_blit_h)) {
-					cache_entry->identity_key = stamp_identity_key;
-					cache_entry->last_used_tick = Next_Tile_Planar_Cache_Tick();
-					cache_entry->valid = TRUE;
-					return;
+						(int)atlas.atlas_x,
+						(int)atlas.atlas_y,
+						0,
+						0);
+					if (ST_Blitter_Planar_Rect_Blit(
+							g_tile_planar_cache_aligned,
+							ST_TILE_PLANAR_CACHE_BPL,
+							ST_TILE_PLANAR_CACHE_W,
+							ST_TILE_PLANAR_CACHE_H,
+							(int)atlas.atlas_x + clip_src_x,
+							(int)atlas.atlas_y + clip_src_y,
+							dst_root,
+							dst_bpl_fb,
+							dst_pw_fb,
+							dst_ph_fb,
+							dx_abs,
+							dy_abs,
+							clip_blit_w,
+							clip_blit_h)) {
+						return;
+					}
 				}
 			}
 		} else {

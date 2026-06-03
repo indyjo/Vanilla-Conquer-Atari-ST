@@ -4,6 +4,7 @@
  */
 
 #include "st_audio_asset_autotest.h"
+#include "st_audio_mix_test.h"
 #include "st_autotests.h"
 #include "st_build_frame_assets.h"
 #include "st_font_browser.h"
@@ -80,6 +81,7 @@ static void audio_tests_submenu(void)
 		} else {
 			printf("f First hit in list order\n");
 		}
+		printf("m Dual-sample mix (2 voices, volumes)\n");
 		printf("0 Back to main menu\n");
 		printf("Choice: ");
 		fflush(stdout);
@@ -130,6 +132,10 @@ static void audio_tests_submenu(void)
 			} else {
 				printf("Audio: PASS\n");
 			}
+			continue;
+		}
+		if (ch == 'm' || ch == 'M') {
+			(void)st_run_interactive_audio_dual_mix();
 			continue;
 		}
 		printf("Unknown option.\n");

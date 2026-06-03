@@ -18,6 +18,9 @@ extern "C" {
 int st_mix_extract_file(const char *mix_path, const char *entry_name,
 		unsigned char **out_data, size_t *out_size);
 
+/* Human-readable reason for negative st_mix_extract_file return codes. */
+const char *st_mix_extract_errmsg(int err);
+
 #ifdef __cplusplus
 }
 #endif

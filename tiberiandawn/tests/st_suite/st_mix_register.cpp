@@ -15,6 +15,9 @@ int st_tests_register_mixes_once(void)
 	static MFCD *s_local = NULL;
 	static MFCD *s_temperat = NULL;
 	static MFCD *s_general = NULL;
+	static MFCD *s_speech = NULL;
+	static MFCD *s_sounds = NULL;
+	static MFCD *s_scores = NULL;
 
 	if (s_initialized) {
 		return 0;
@@ -45,5 +48,17 @@ int st_tests_register_mixes_once(void)
 		printf("StMixReg: WARN cannot register GENERAL.MIX\n");
 		rc = -1;
 	}
+
+	/* EVA / scores / SFX archives (disk extract + optional MFCD::Retrieve). */
+	if (CCFileClass("SPEECH.MIX").Is_Available()) {
+		s_speech = new (std::nothrow) MFCD("SPEECH.MIX");
+	}
+	if (CCFileClass("SOUNDS.MIX").Is_Available()) {
+		s_sounds = new (std::nothrow) MFCD("SOUNDS.MIX");
+	}
+	if (CCFileClass("SCORES.MIX").Is_Available()) {
+		s_scores = new (std::nothrow) MFCD("SCORES.MIX");
+	}
+
 	return rc;
 }

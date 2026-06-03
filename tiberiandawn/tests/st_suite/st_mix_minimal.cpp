@@ -4,6 +4,8 @@
 
 #include "st_mix_minimal.h"
 
+#include "ccfile.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,6 +81,33 @@ static int st_mix_comp_crc(const void *a, const void *b)
 	return 0;
 }
 
+const char *st_mix_extract_errmsg(int err)
+{
+	switch (err) {
+	case -2:
+		return "MIX file not found";
+	case -7:
+		return "entry not in MIX index";
+	default:
+		return "MIX read/parse error";
+	}
+}
+
+static int st_mix_open_disk(CCFileClass &mix, char const *mix_path)
+{
+	if (!mix_path) {
+		return -2;
+	}
+	mix.Set_Name(mix_path);
+	if (!mix.Is_Available()) {
+		return -2;
+	}
+	if (!mix.Open(READ)) {
+		return -2;
+	}
+	return 0;
+}
+
 int st_mix_extract_file(const char *mix_path, const char *entry_name,
 		unsigned char **out_data, size_t *out_size)
 {
@@ -93,31 +122,32 @@ int st_mix_extract_file(const char *mix_path, const char *entry_name,
 	st_mix_strupr(namecopy);
 	long key_crc = st_mix_crc(namecopy, (long)strlen(namecopy));
 
-	FILE *f = fopen(mix_path, "rb");
-	if (!f)
+	CCFileClass mix;
+	if (st_mix_open_disk(mix, mix_path) != 0) {
 		return -2;
+	}
 
 	StMixFileHeader fh;
-	if (fread(&fh, 1, sizeof(fh), f) != sizeof(fh)) {
-		fclose(f);
+	if (mix.Read(&fh, sizeof(fh)) != (int)sizeof(fh)) {
+		mix.Close();
 		return -3;
 	}
 	int count = (int)st_mix_swap16(fh.count);
 	long data_size = st_mix_swap32(fh.size);
 	if (count <= 0 || count > 1000000 || data_size < 0) {
-		fclose(f);
+		mix.Close();
 		return -4;
 	}
 
 	size_t index_bytes = (size_t)count * sizeof(StMixSubBlock);
 	StMixSubBlock *blocks = (StMixSubBlock *)malloc(index_bytes);
 	if (!blocks) {
-		fclose(f);
+		mix.Close();
 		return -5;
 	}
-	if (fread(blocks, 1, index_bytes, f) != index_bytes) {
+	if (mix.Read(blocks, (int)index_bytes) != (int)index_bytes) {
 		free(blocks);
-		fclose(f);
+		mix.Close();
 		return -6;
 	}
 
@@ -134,40 +164,40 @@ int st_mix_extract_file(const char *mix_path, const char *entry_name,
 	StMixSubBlock *hit = (StMixSubBlock *)bsearch(&key, blocks, (size_t)count, sizeof(StMixSubBlock), st_mix_comp_crc);
 	if (!hit || hit->size <= 0) {
 		free(blocks);
-		fclose(f);
+		mix.Close();
 		return -7;
 	}
 
 	long data_base = (long)sizeof(StMixFileHeader) + (long)index_bytes;
 	if (hit->offset < 0 || hit->offset > data_size || hit->size > data_size - hit->offset) {
 		free(blocks);
-		fclose(f);
+		mix.Close();
 		return -8;
 	}
 
 	unsigned char *buf = (unsigned char *)malloc((size_t)hit->size);
 	if (!buf) {
 		free(blocks);
-		fclose(f);
+		mix.Close();
 		return -9;
 	}
 
-	if (fseek(f, data_base + hit->offset, SEEK_SET) != 0) {
+	if (mix.Seek(data_base + hit->offset, SEEK_SET) != data_base + hit->offset) {
 		free(buf);
 		free(blocks);
-		fclose(f);
+		mix.Close();
 		return -10;
 	}
-	if (fread(buf, 1, (size_t)hit->size, f) != (size_t)hit->size) {
+	if (mix.Read(buf, (int)hit->size) != (int)hit->size) {
 		free(buf);
 		free(blocks);
-		fclose(f);
+		mix.Close();
 		return -11;
 	}
 
 	size_t extracted_size = (size_t)hit->size;
 	free(blocks);
-	fclose(f);
+	mix.Close();
 	*out_data = buf;
 	*out_size = extracted_size;
 	return 0;

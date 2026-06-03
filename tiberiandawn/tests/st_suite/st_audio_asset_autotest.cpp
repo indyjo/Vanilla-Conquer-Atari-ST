@@ -3,8 +3,7 @@
  * Servicing matches in-game ATARI_ST: VBL hook installed by Audio_Init; wait on Wait_Vert_Blank
  * and Sound_Maintenance (deferred teardown only, no main-thread ring refill).
  *
- * Key-click muting uses TOS conterm ($484) bit 0; st_tests_main runs submenu / bundle
- * under Super(0L) before calling push/pop (MiNT user-mode access to $484 bus-errors).
+ * Key-click muting uses TOS conterm ($484) bit 0 via Supexec (MiNT user-mode $484 bus-errors).
  */
 
 #include "st_audio_asset_autotest.h"
@@ -13,9 +12,13 @@
 #include "audio.h"
 #include "misc.h"
 #include "st_mix_minimal.h"
+#include "ste_aud_constants.h"
+
+#include <mint/osbind.h>
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
 	char const *mix;
@@ -63,27 +66,122 @@ enum { ST_CONTERM_STACK = 8 };
 static unsigned char s_conterm_saved[ST_CONTERM_STACK];
 static int s_conterm_depth;
 
-void st_conterm_keyclick_mute_push(void)
+static long st_conterm_push_super(void)
 {
 	volatile unsigned char *ct = (volatile unsigned char *)0x484UL;
 	if (s_conterm_depth < ST_CONTERM_STACK) {
 		s_conterm_saved[s_conterm_depth++] = *ct;
 		*ct = (unsigned char)(*ct & (unsigned char)~1u);
 	}
+	return 0;
 }
 
-void st_conterm_keyclick_mute_pop(void)
+static long st_conterm_pop_super(void)
 {
 	volatile unsigned char *ct = (volatile unsigned char *)0x484UL;
 	if (s_conterm_depth > 0) {
 		*ct = s_conterm_saved[--s_conterm_depth];
 	}
+	return 0;
+}
+
+void st_conterm_keyclick_mute_push(void)
+{
+	(void)Supexec(st_conterm_push_super);
+}
+
+void st_conterm_keyclick_mute_pop(void)
+{
+	(void)Supexec(st_conterm_pop_super);
 }
 
 struct StKeyclickMuteRAII {
 	StKeyclickMuteRAII() { st_conterm_keyclick_mute_push(); }
 	~StKeyclickMuteRAII() { st_conterm_keyclick_mute_pop(); }
 };
+
+static unsigned long st_aud_payload_bytes(unsigned char const *b)
+{
+	unsigned long const szf = (unsigned long)b[2] | ((unsigned long)b[3] << 8) | ((unsigned long)b[4] << 16)
+	    | ((unsigned long)b[5] << 24);
+	unsigned long const uncomp = (unsigned long)b[6] | ((unsigned long)b[7] << 8) | ((unsigned long)b[8] << 16)
+	    | ((unsigned long)b[9] << 24);
+	unsigned char const compression = b[11];
+	unsigned long aud_bytes = (unsigned long)STE_AUD_HDR_LEN + szf;
+	if (compression == (unsigned char)STE_AUD_COMP_PCM && szf == 0UL && uncomp > 0UL) {
+		aud_bytes = (unsigned long)STE_AUD_HDR_LEN + uncomp;
+	}
+	return aud_bytes;
+}
+
+static int st_aud_copy_malloc(void const *sample, unsigned char **out, size_t *out_len)
+{
+	if (!sample || !out || !out_len) {
+		return -1;
+	}
+	unsigned char const *b = (unsigned char const *)sample;
+	unsigned long const aud_bytes = st_aud_payload_bytes(b);
+	if (aud_bytes < (unsigned long)STE_AUD_HDR_LEN) {
+		return -1;
+	}
+	unsigned char *buf = (unsigned char *)malloc(aud_bytes);
+	if (!buf) {
+		return -9;
+	}
+	memcpy(buf, b, (size_t)aud_bytes);
+	*out = buf;
+	*out_len = (size_t)aud_bytes;
+	return 0;
+}
+
+int st_aud_load_entry(char const *aud_name, char const *const *mix_paths,
+		unsigned char **out, size_t *out_len, char const **hit_source)
+{
+	if (!aud_name || !out || !out_len) {
+		return -1;
+	}
+	*out = NULL;
+	*out_len = 0;
+
+	if (mix_paths) {
+		for (int i = 0; mix_paths[i]; i++) {
+			int const mx = st_mix_extract_file(mix_paths[i], aud_name, out, out_len);
+			if (mx == 0 && *out && *out_len >= 12u) {
+				if (hit_source) {
+					*hit_source = mix_paths[i];
+				}
+				return 0;
+			}
+			if (*out) {
+				free(*out);
+				*out = NULL;
+				*out_len = 0;
+			}
+		}
+	}
+
+	void const *ptr = MFCD::Retrieve(aud_name);
+	if (!ptr && CCFileClass("SPEECH.MIX").Is_Available()) {
+		(void)MFCD::Cache("SPEECH.MIX");
+		ptr = MFCD::Retrieve(aud_name);
+	}
+	if (!ptr && CCFileClass("SOUNDS.MIX").Is_Available()) {
+		(void)MFCD::Cache("SOUNDS.MIX");
+		ptr = MFCD::Retrieve(aud_name);
+	}
+	if (ptr && st_aud_copy_malloc(ptr, out, out_len) == 0) {
+		if (hit_source) {
+			*hit_source = "MFCD";
+		}
+		return 0;
+	}
+	if (*out) {
+		free(*out);
+		*out = NULL;
+		*out_len = 0;
+	}
+	return -1;
+}
 
 static BOOL st_audio_init_game_rate(void)
 {

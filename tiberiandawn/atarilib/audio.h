@@ -82,6 +82,9 @@ typedef enum {
 	SFX_LAST
 } SFX_Type;
 
+/* Matches common/soundio (DOS): score streams use strongest preemption rank. */
+#define PRIORITY_MAX 255
+
 /*=========================================================================*/
 /* The following prototypes are for the file: SOUNDIO.CPP						*/
 /*=========================================================================*/

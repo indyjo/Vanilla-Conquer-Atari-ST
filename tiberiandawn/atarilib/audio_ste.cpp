@@ -287,10 +287,17 @@ static void ste_audio_alloc_shutdown(void)
 	g_dma_pool = 0;
 }
 
+/*
+ * Global attenuation on every voice (theme, EVA, SFX) before per-sample LUT mapping.
+ * Halves requested volume so dual-voice sums stay inside signed 8-bit after ste_mix_two_add.
+ */
+enum { STE_GAME_VOLUME_NUM = 1, STE_GAME_VOLUME_DEN = 2 };
+
 /* Map a stream's logical 8-bit domain to scaled signed-DMA bytes. */
 static void ste_volume_lut_build(unsigned char lut[256], int vol, SteStreamSampleDomain domain)
 {
 	vol = Bound(vol, 0, 0xFF);
+	vol = (vol * STE_GAME_VOLUME_NUM) / STE_GAME_VOLUME_DEN;
 	for (unsigned i = 0; i < 256U; ++i) {
 		int const s = domain == STE_STREAM_DOMAIN_U8 ? (int)i - 128 : (int)(signed char)(unsigned char)i;
 		int o = (s * vol) >> 8;
@@ -650,16 +657,28 @@ void Sound_Callback(void)
 	ste_audio_service_core();
 }
 
+/*
+ * Pick a voice for a new stream.
+ *
+ * Priority matches DOS soundio: higher numeric value = stronger.
+ * Preempt only an active voice whose priority is less than or equal to the incoming value
+ * (same rule as Get_Free_Sample_Handle: skip while existing.Priority > incoming).
+ *
+ * Returns -1 if both voices are active with stronger priority than incoming.
+ */
 static int ste_pick_voice_for_play(int priority)
 {
-	(void)priority;
 	for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
 		if (!g_voice_ss[vi].active) {
 			return vi;
 		}
 	}
-	/* Both occupied: replace the overlay slot so voice 0 can hold longer streams. */
-	return STE_MIX_VOICES - 1;
+	for (int vi = STE_MIX_VOICES - 1; vi >= 0; --vi) {
+		if (g_voice_ss[vi].play_priority <= priority) {
+			return vi;
+		}
+	}
+	return -1;
 }
 
 int File_Stream_Sample(char const* filename, BOOL real_time_start)
@@ -717,7 +736,7 @@ int File_Stream_Sample_Vol(char const* filename, int volume, BOOL)
 	}
 	g_stream_file_buf = buf;
 	g_stream_file_len = (unsigned long)sz;
-	if (Play_Sample(buf, 0, volume, 0) < 0) {
+	if (Play_Sample(buf, PRIORITY_MAX, volume, 0) < 0) {
 		free(g_stream_file_buf);
 		g_stream_file_buf = 0;
 		g_stream_file_len = 0;
@@ -950,6 +969,9 @@ int Play_Sample(void const* sample, int priority, int volume, signed short)
 	ste_process_pending_voice_shutdown();
 
 	int const vi = ste_pick_voice_for_play(priority);
+	if (vi < 0) {
+		return -1;
+	}
 	int cold_arm = 0;
 
 	{

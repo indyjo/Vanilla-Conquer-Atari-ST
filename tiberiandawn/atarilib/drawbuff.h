@@ -67,5 +67,8 @@ extern BOOL AllowHardwareBlitFills;
 // Color translation table for font rendering (declared in drawbuff.cpp)
 extern unsigned char ColorXlat[256];
 
+/* Rebuild planar font mask/color tables after ColorXlat changes (Set_Font_Palette). */
+void Font_Planar_Rebuild_Tables(void);
+
 #endif /* DRAWBUFF_H */
 

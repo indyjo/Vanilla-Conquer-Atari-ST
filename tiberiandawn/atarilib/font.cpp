@@ -5,6 +5,7 @@
  */
 
 #include "font.h"
+#include "drawbuff.h"
 
 // Font spacing variables - initialized to 0
 extern "C" int FontXSpacing = 0;
@@ -147,10 +148,7 @@ void * Set_Font(void const *fontptr)
 extern "C" void Set_Font_Palette_Range(void const *palette, int start_idx, int end_idx)
 {
 	if (!palette) return;
-	
-	// Import ColorXlat from drawbuff.cpp
-	extern unsigned char ColorXlat[256];
-	
+
 	const unsigned char *pal = (const unsigned char *)palette;
 	
 	// Update ColorXlat table for the specified range
@@ -159,5 +157,6 @@ extern "C" void Set_Font_Palette_Range(void const *palette, int start_idx, int e
 	for (int i = start_idx; i <= end_idx && i < 16; i++) {
 		ColorXlat[i] = pal[i];
 	}
+	Font_Planar_Rebuild_Tables();
 }
 

@@ -263,6 +263,13 @@ static inline int Get_Row_Stride(GraphicViewPortClass *vp) {
 // Color translation table for font rendering
 // This maps font palette indices (0-15) to actual color values
 // Made non-static so it can be accessed from font.cpp
+/*
+ * Planar font fast path: per-plane mask/color at bit 0 only (0xFFFF = preserve pixel).
+ * Rebuilt from ColorXlat[0..15] via C2P_MapNearestLUT (solid pens, no Bayer).
+ */
+static uint16_t FontPlanarMask[4][16];
+static uint16_t FontPlanarColor[4][16];
+
 unsigned char ColorXlat[256] = {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
@@ -871,6 +878,163 @@ extern "C" BOOL Linear_Scale_To_Linear(void *src, void *dest, int src_x, int src
 }
 
 /*=========================================================================*/
+/* Planar font tables and row rasterizer (no per-pixel PutPixel).           */
+/*=========================================================================*/
+
+static void Font_Planar_Fill_Slot(int font_idx, unsigned char pal_idx)
+{
+	if (font_idx < 0 || font_idx > 15)
+		return;
+
+	if (pal_idx == 0) {
+		for (int pl = 0; pl < 4; pl++) {
+			FontPlanarMask[pl][font_idx] = 0xFFFF;
+			FontPlanarColor[pl][font_idx] = 0;
+		}
+		return;
+	}
+
+	const unsigned char pen = C2P_Map8ToNearest4(pal_idx);
+	for (int pl = 0; pl < 4; pl++) {
+		FontPlanarMask[pl][font_idx] = 0xFFFE;
+		FontPlanarColor[pl][font_idx] = (pen & (unsigned char)(1u << pl)) ? (uint16_t)1 : (uint16_t)0;
+	}
+}
+
+void Font_Planar_Rebuild_Tables(void)
+{
+	for (int f = 0; f < 16; f++)
+		Font_Planar_Fill_Slot(f, ColorXlat[f]);
+}
+
+static inline void Font_Planar_Rebuild_Slot(int font_idx)
+{
+	Font_Planar_Fill_Slot(font_idx, ColorXlat[font_idx]);
+}
+
+static inline uint16_t Font_Planar_Rol_Left16(uint16_t word, int count)
+{
+	count &= 15;
+	if (count == 0)
+		return word;
+	return (uint16_t)((word << count) | (word >> (16 - count)));
+}
+
+static inline uint16_t Font_Planar_Rol_Right16(uint16_t word, int count)
+{
+	count &= 15;
+	if (count == 0)
+		return word;
+	return (uint16_t)((word >> count) | (word << (16 - count)));
+}
+
+static inline uint16_t Font_Planar_Apply_Lsb(uint16_t word, uint16_t mask, uint16_t color)
+{
+	return (uint16_t)((word & mask) | color);
+}
+
+static inline unsigned char Font_Planar_Next_Font_Idx(const unsigned char **font_data, int *low_nibble_next)
+{
+	if (*low_nibble_next) {
+		const unsigned char f = (unsigned char)((**font_data >> 4) & 0x0F);
+		(*font_data)++;
+		*low_nibble_next = 0;
+		return f;
+	}
+	const unsigned char f = (unsigned char)(**font_data & 0x0F);
+	*low_nibble_next = 1;
+	return f;
+}
+
+/*
+ * Draw one scanline on interleaved ST planar memory.
+ * font_data: packed font bytes (low nibble first); NULL = solid_slot for every pixel.
+ * Screen bit 15-(x&15) is brought to the LSB with ror.w; rol.w #1 steps to the next column.
+ */
+static void Font_Planar_Draw_Row(
+	uint8_t *planar_root,
+	int row_bytes,
+	int abs_x0,
+	int abs_y,
+	unsigned char width,
+	const unsigned char *font_data,
+	unsigned char solid_slot)
+{
+	if (!planar_root || row_bytes <= 0 || width == 0)
+		return;
+
+	uint8_t *row = planar_root + (size_t)abs_y * (size_t)row_bytes;
+
+	for (int pl = 0; pl < 4; pl++) {
+		unsigned char col = 0;
+		int abs_x = abs_x0;
+		const unsigned char *fp = font_data;
+		int low_nibble_next = 0;
+
+		while (col < width) {
+			const int widx = abs_x >> 4;
+			const int align = 15 - (abs_x & 15);
+			int run = align + 1;
+			if ((int)(width - col) < run)
+				run = (int)width - (int)col;
+
+			uint16_t *wp = (uint16_t *)(void *)(row + widx * 8) + pl;
+			uint16_t w = *wp;
+			if (align)
+				w = Font_Planar_Rol_Right16(w, align);
+
+			for (int i = 0; i < run; i++) {
+				unsigned char f;
+				if (font_data) {
+					f = Font_Planar_Next_Font_Idx(&fp, &low_nibble_next);
+				} else {
+					f = solid_slot;
+				}
+				w = Font_Planar_Apply_Lsb(w, FontPlanarMask[pl][f], FontPlanarColor[pl][f]);
+				if (i + 1 < run)
+					w = Font_Planar_Rol_Left16(w, 1);
+			}
+
+			{
+				const int step = run - 1;
+				if (step)
+					w = Font_Planar_Rol_Right16(w, step);
+				if (align)
+					w = Font_Planar_Rol_Left16(w, align);
+				*wp = w;
+			}
+
+			col = (unsigned char)(col + (unsigned char)run);
+			abs_x += run;
+		}
+	}
+}
+
+static void Font_Planar_Draw_Glyph_Data_Row(
+	int abs_x0,
+	int abs_y,
+	uint8_t *planar_root,
+	int row_bytes,
+	unsigned char charwidth,
+	const unsigned char *data_ptr)
+{
+	if (charwidth > 64)
+		return;
+
+	Font_Planar_Draw_Row(planar_root, row_bytes, abs_x0, abs_y, charwidth, data_ptr, 0);
+}
+
+static void Font_Planar_Draw_Solid_Row(
+	int abs_x0,
+	int abs_y,
+	uint8_t *planar_root,
+	int row_bytes,
+	unsigned char charwidth)
+{
+	Font_Planar_Draw_Row(planar_root, row_bytes, abs_x0, abs_y, charwidth, NULL, 0);
+}
+
+/*=========================================================================*/
 /* Buffer_Print -- Prints text to a buffer                                  */
 /*=========================================================================*/
 extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int fcolor, int bcolor)
@@ -890,11 +1054,18 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
 	if (!VP_Is_Planar(vp) && !viewport_base) return 0;
 	
+	const int planar_fast = VP_Is_Planar(vp);
+
 	// Set up color translation table
 	ColorXlat[0] = (unsigned char)bcolor;
 	ColorXlat[1] = (unsigned char)fcolor;
 	ColorXlat[16] = (unsigned char)fcolor;
-	
+	if (planar_fast) {
+		/* Buffer_Print only patches slots 0/1; gradient slots come from Set_Font_Palette. */
+		Font_Planar_Rebuild_Slot(0);
+		Font_Planar_Rebuild_Slot(1);
+	}
+
 	// Get font structure pointers
 	const unsigned char *font_bytes = (const unsigned char *)FontPtr;
 	unsigned short info_block_offset = ReadLE16(font_bytes + FONTINFOBLOCK);
@@ -921,13 +1092,22 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 	// Calculate starting position in buffer (linear layout only)
 	unsigned char *curline = NULL;
 	unsigned char *startdraw = NULL;
-	if (!VP_Is_Planar(vp)) {
+	uint8_t *planar_root = NULL;
+	int planar_row_bytes = 0;
+	int abs_xpos = 0;
+	int abs_ypos = 0;
+	if (!planar_fast) {
 		curline = viewport_base + cur_y * bufferwidth;
 		startdraw = curline + cur_x;
 	} else {
-		startdraw = (unsigned char *)vp->Get_Graphic_Buffer()->Get_Buffer();
+		GraphicBufferClass *gbp = vp->Get_Graphic_Buffer();
+		planar_root = (uint8_t *)gbp->Get_Buffer();
+		planar_row_bytes = GB_ST_Planar_Row_Bytes(gbp);
+		abs_xpos = vp->Get_XPos();
+		abs_ypos = vp->Get_YPos();
+		startdraw = planar_root;
 	}
-	
+
 	// Process each character
 	const char *string = str;
 	while (*string) {
@@ -938,17 +1118,17 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 			cur_y += maxheight + FontYSpacing;
 			if (cur_y + maxheight > (unsigned)vpheight) break;
 			
-			if (!VP_Is_Planar(vp))
+			if (!planar_fast)
 				curline = viewport_base + cur_y * bufferwidth;
-			
+
 			// CR returns to original x, LF goes to x=0
 			if (ch == 13) {
 				cur_x = original_x;
 			} else {
 				cur_x = 0;
 			}
-			
-			if (!VP_Is_Planar(vp))
+
+			if (!planar_fast)
 				startdraw = curline + cur_x;
 			continue;
 		}
@@ -964,10 +1144,10 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 			cur_y += maxheight + FontYSpacing;
 			if (cur_y + maxheight > (unsigned)vpheight) break;
 			
-			if (!VP_Is_Planar(vp))
+			if (!planar_fast)
 				curline = viewport_base + cur_y * bufferwidth;
 			cur_x = original_x;
-			if (!VP_Is_Planar(vp))
+			if (!planar_fast)
 				startdraw = curline + cur_x;
 			continue;
 		}
@@ -983,106 +1163,137 @@ extern "C" LONG Buffer_Print(void *thisptr, const char *str, int x, int y, int f
 		unsigned char bottomblank = maxheight - (topblank + charheight);
 		
 		unsigned char *draw_ptr = startdraw;
-		
-		// Draw top blank area
+		unsigned char draw_width = charwidth;
+		if (cur_x >= (unsigned)vpwidth) {
+			draw_width = 0;
+		} else if (cur_x + (unsigned)charwidth > (unsigned)vpwidth) {
+			draw_width = (unsigned char)((unsigned)vpwidth - cur_x);
+		}
+		const int abs_char_x = abs_xpos + cur_x;
+
+		// Draw top blank area (skip when background palette index is 0)
 		if (topblank > 0) {
-			unsigned char bgcolor = ColorXlat[0];
-			if (bgcolor != 0) {  // Not transparent
-				for (unsigned char row = 0; row < topblank; row++) {
-					for (unsigned char col = 0; col < charwidth; col++) {
-						if (cur_x + col < (unsigned)vpwidth && cur_y + row < (unsigned)vpheight) {
-							if (VP_Is_Planar(vp))
-								Buffer_Put_Pixel(vp, cur_x + col, cur_y + row, bgcolor);
-							else {
+			if (ColorXlat[0] != 0) {
+				if (planar_fast && draw_width > 0) {
+					for (unsigned char row = 0; row < topblank; row++) {
+						if (cur_y + row < (unsigned)vpheight)
+							Font_Planar_Draw_Solid_Row(
+								abs_char_x, abs_ypos + cur_y + row, planar_root, planar_row_bytes, draw_width);
+					}
+				} else {
+					unsigned char bgcolor = ColorXlat[0];
+					for (unsigned char row = 0; row < topblank; row++) {
+						for (unsigned char col = 0; col < charwidth; col++) {
+							if (cur_x + col < (unsigned)vpwidth && cur_y + row < (unsigned)vpheight) {
 								unsigned char *row_ptr = draw_ptr;
 								row_ptr[col] = bgcolor;
 							}
 						}
-					}
-					if (!VP_Is_Planar(vp))
 						draw_ptr += bufferwidth;
+					}
 				}
 			} else {
-				if (!VP_Is_Planar(vp))
+				if (!planar_fast)
 					draw_ptr += topblank * bufferwidth;
 			}
 		}
-		
+
 		// Draw character data
 		if (charheight > 0) {
 			const unsigned char *data_ptr = chardata;
 			for (unsigned char row = 0; row < charheight; row++) {
-				unsigned char col = 0;
-				unsigned char remaining_width = charwidth;
-				
-				while (remaining_width > 0) {
-					// Read a byte containing 2 pixels
-					unsigned char data_byte = *data_ptr++;
-					
-					// Process low nibble (first pixel)
-					unsigned char pixel = data_byte & 0x0F;
-					unsigned char color = ColorXlat[pixel];
-					if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + row < (unsigned)vpheight) {
-						if (color != 0) {  // Not transparent
-							if (VP_Is_Planar(vp))
-								Buffer_Put_Pixel(vp, cur_x + col, cur_y + topblank + row, color);
-							else {
-								unsigned char *row_ptr = draw_ptr;
-								row_ptr[col] = color;
-							}
+				if (cur_y + topblank + row >= (unsigned)vpheight)
+					break;
+
+				if (planar_fast && draw_width > 0 && charwidth <= 64) {
+					Font_Planar_Draw_Glyph_Data_Row(
+						abs_char_x,
+						abs_ypos + cur_y + topblank + row,
+						planar_root,
+						planar_row_bytes,
+						draw_width,
+						data_ptr);
+					const unsigned char bytes = (unsigned char)((charwidth + 1) / 2);
+					data_ptr += bytes;
+				} else if (planar_fast) {
+					unsigned char col = 0;
+					unsigned char remaining_width = charwidth;
+					while (remaining_width > 0) {
+						unsigned char data_byte = *data_ptr++;
+						unsigned char pixel = data_byte & 0x0F;
+						if (ColorXlat[pixel] != 0)
+							Buffer_Put_Pixel(
+								vp, cur_x + col, cur_y + topblank + row, ColorXlat[pixel]);
+						col++;
+						remaining_width--;
+						if (remaining_width > 0) {
+							pixel = (data_byte >> 4) & 0x0F;
+							if (ColorXlat[pixel] != 0)
+								Buffer_Put_Pixel(
+									vp, cur_x + col, cur_y + topblank + row, ColorXlat[pixel]);
+							col++;
+							remaining_width--;
 						}
 					}
-					col++;
-					remaining_width--;
-					
-					// Process high nibble (second pixel) if width remaining
-					if (remaining_width > 0) {
-						pixel = (data_byte >> 4) & 0x0F;
-						color = ColorXlat[pixel];
-						if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + row < (unsigned)vpheight) {
-							if (color != 0) {  // Not transparent
-								if (VP_Is_Planar(vp))
-									Buffer_Put_Pixel(vp, cur_x + col, cur_y + topblank + row, color);
-								else {
-									unsigned char *row_ptr = draw_ptr;
-									row_ptr[col] = color;
-								}
-							}
+				} else {
+					unsigned char col = 0;
+					unsigned char remaining_width = charwidth;
+					while (remaining_width > 0) {
+						unsigned char data_byte = *data_ptr++;
+						unsigned char pixel = data_byte & 0x0F;
+						unsigned char color = ColorXlat[pixel];
+						if (color != 0 && cur_x + col < (unsigned)vpwidth) {
+							unsigned char *row_ptr = draw_ptr;
+							row_ptr[col] = color;
 						}
 						col++;
 						remaining_width--;
-					}
-				}
-				
-				if (!VP_Is_Planar(vp))
-					draw_ptr += bufferwidth;
-			}
-		}
-		
-		// Draw bottom blank area
-		if (bottomblank > 0) {
-			unsigned char bgcolor = ColorXlat[0];
-			if (bgcolor != 0) {  // Not transparent
-				for (unsigned char row = 0; row < bottomblank; row++) {
-					for (unsigned char col = 0; col < charwidth; col++) {
-						if (cur_x + col < (unsigned)vpwidth && cur_y + topblank + charheight + row < (unsigned)vpheight) {
-							if (VP_Is_Planar(vp))
-								Buffer_Put_Pixel(vp, cur_x + col, cur_y + topblank + charheight + row, bgcolor);
-							else {
+						if (remaining_width > 0) {
+							pixel = (data_byte >> 4) & 0x0F;
+							color = ColorXlat[pixel];
+							if (color != 0 && cur_x + col < (unsigned)vpwidth) {
 								unsigned char *row_ptr = draw_ptr;
-								row_ptr[col] = bgcolor;
+								row_ptr[col] = color;
 							}
+							col++;
+							remaining_width--;
 						}
 					}
-					if (!VP_Is_Planar(vp))
-						draw_ptr += bufferwidth;
+					draw_ptr += bufferwidth;
+				}
+			}
+		}
+
+		// Draw bottom blank area
+		if (bottomblank > 0 && ColorXlat[0] != 0) {
+			if (planar_fast && draw_width > 0) {
+				for (unsigned char row = 0; row < bottomblank; row++) {
+					if (cur_y + topblank + charheight + row < (unsigned)vpheight)
+						Font_Planar_Draw_Solid_Row(
+							abs_char_x,
+							abs_ypos + cur_y + topblank + charheight + row,
+							planar_root,
+							planar_row_bytes,
+							draw_width);
+				}
+			} else {
+				unsigned char bgcolor = ColorXlat[0];
+				for (unsigned char row = 0; row < bottomblank; row++) {
+					for (unsigned char col = 0; col < charwidth; col++) {
+						if (cur_x + col < (unsigned)vpwidth
+							&& cur_y + topblank + charheight + row < (unsigned)vpheight) {
+							unsigned char *row_ptr = draw_ptr;
+							row_ptr[col] = bgcolor;
+						}
+					}
+					draw_ptr += bufferwidth;
 				}
 			}
 		}
 		
 		// Update position for next character
 		cur_x = next_x;
-		if (!VP_Is_Planar(vp)) {
+		if (!planar_fast) {
 			curline = viewport_base + cur_y * bufferwidth;
 			startdraw = curline + cur_x;
 		}

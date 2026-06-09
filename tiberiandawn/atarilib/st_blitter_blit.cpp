@@ -4,8 +4,56 @@
 
 #include "st_blitter_blit.h"
 
+#include "st_cache.h"
 #include "st_frame_meter.h"
 #include <stddef.h>
+
+/*
+ * Planar rect byte span used for D-cache maintenance (full scanline width × height).
+ */
+static void ST_Blit_Cache_Rect_Span(
+	const uint8_t *base, int row_bytes, int y_abs, int pixel_height,
+	const void **out_start, size_t *out_len)
+{
+	const uint8_t *row0 = base + (size_t)y_abs * (size_t)row_bytes;
+	*out_start = row0;
+	*out_len = (size_t)row_bytes * (size_t)pixel_height;
+}
+
+/*
+ * Case B: CPU may hold dirty lines; push so BLiTTER sees RAM. After BLiTTER,
+ * invalidate (no writeback) so stale CPU cache cannot clobber BLiTTER output.
+ */
+static void ST_Blit_Sync_Cache_Before(
+	const uint8_t *src_root, int src_row_bytes, int sy_abs, int pixel_height,
+	uint8_t *dst_root, int dst_row_bytes, int dy_abs)
+{
+	const void *src_start = NULL;
+	const void *dst_start = NULL;
+	size_t src_len = 0;
+	size_t dst_len = 0;
+	ST_Blit_Cache_Rect_Span(src_root, src_row_bytes, sy_abs, pixel_height, &src_start, &src_len);
+	ST_Blit_Cache_Rect_Span(dst_root, dst_row_bytes, dy_abs, pixel_height, &dst_start, &dst_len);
+	ST_Cache_Push_Range(src_start, src_len);
+	ST_Cache_Push_Range(dst_start, dst_len);
+}
+
+static void ST_Blit_Sync_Cache_After(
+	const uint8_t *src_root, int src_row_bytes, int sy_abs, int pixel_height,
+	uint8_t *dst_root, int dst_row_bytes, int dy_abs,
+	BOOL same_surface)
+{
+	const void *dst_start = NULL;
+	size_t dst_len = 0;
+	ST_Blit_Cache_Rect_Span(dst_root, dst_row_bytes, dy_abs, pixel_height, &dst_start, &dst_len);
+	ST_Cache_Invalidate_Range(dst_start, dst_len);
+	if (same_surface) {
+		const void *src_start = NULL;
+		size_t src_len = 0;
+		ST_Blit_Cache_Rect_Span(src_root, src_row_bytes, sy_abs, pixel_height, &src_start, &src_len);
+		ST_Cache_Invalidate_Range(src_start, src_len);
+	}
+}
 
 /*
  * Return a word-sized view of a BLiTTER register. Register addresses are
@@ -298,6 +346,9 @@ static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 		+ (size_t)((dst_word_left >> 4) * 8);
 	const unsigned char skew_reg = (unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
 
+	ST_Blit_Sync_Cache_Before(
+		src_root, src_row_bytes, sy_abs, pixel_height,
+		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
 	for (short pl = 0; pl < 4; ++pl) {
 		ST_Blit_Copy_Plane_Skew_Masked(
@@ -317,6 +368,10 @@ static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 			blit_op);
 	}
 	ST_FRAME_BAR_BLIT_END();
+	ST_Blit_Sync_Cache_After(
+		src_root, src_row_bytes, sy_abs, pixel_height,
+		dst_root, dst_row_bytes, dy_abs,
+		same_surface);
 	return TRUE;
 }
 
@@ -446,6 +501,9 @@ BOOL ST_Blitter_Mask_And_Planar_Rect(
 	 */
 	const unsigned char skew_reg = (unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
 
+	ST_Blit_Sync_Cache_Before(
+		mask_root, mask_row_bytes, sy_abs, pixel_height,
+		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
 	for (short pl = 0; pl < 4; ++pl) {
 		ST_Blit_And_Mask_To_Plane_Skew_Masked(
@@ -464,5 +522,9 @@ BOOL ST_Blitter_Mask_And_Planar_Rect(
 			endmask3);
 	}
 	ST_FRAME_BAR_BLIT_END();
+	ST_Blit_Sync_Cache_After(
+		mask_root, mask_row_bytes, sy_abs, pixel_height,
+		dst_root, dst_row_bytes, dy_abs,
+		FALSE);
 	return TRUE;
 }

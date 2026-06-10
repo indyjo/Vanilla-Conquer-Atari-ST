@@ -383,7 +383,7 @@ endif
 # BUILD RULES
 #=============================================================================
 
-.PHONY: all clean cleanall help st-tests
+.PHONY: all clean cleanall help st-tests itch-release
 
 # Default target
 all: $(TARGET_EXE)
@@ -585,8 +585,9 @@ help:
 	@echo ""
 	@echo "Targets:"
 ifeq ($(PLATFORM_LIB),ATARILIB)
-	@echo "  all      - Build the TOS executable (default)"
-	@echo "  st-tests - Build tstcnc(.d).tos (on-machine / interactive suite)"
+	@echo "  all          - Build the TOS executable (default)"
+	@echo "  st-tests     - Build tstcnc(.d).tos (on-machine / interactive suite)"
+	@echo "  itch-release - Tagged clean-tree release zips for itch.io (see below)"
 else
 	@echo "  all      - Build the DLL (default)"
 endif
@@ -622,6 +623,8 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  make USE_ATARILIB=1 CONFIG=release CXX_OPT_REL=-O3 WITH_SYMBOLS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/ -j4"
 	@echo "  make PROFILE_FRAME_BAR=0 - Atari build without tab-strip profiler (on by default)"
 	@echo "  make PROFILE_BORDER=0    - Audio VBL/IMA decode border timing (on by default)"
+	@echo "  make itch-release        - dist/itch/cncst-x.y.z.zip + cncst-sym-x.y.z.zip"
+	@echo "                             (requires tag release/atarist/vx.y.z on HEAD; clean repo unless ITCH_ALLOW_DIRTY=1)"
 endif
 	@echo ""
 	@echo "Cross-Compiler:"
@@ -766,6 +769,91 @@ $(INTDIR)/st_load_uncompress.o: $(ST_SUITE_DIR)/st_load_uncompress.cpp | $(INTDI
 $(INTDIR)/title_pcx_load_st_tests.o: ATARILIB/title_pcx_load.cpp | $(INTDIR)
 	@echo "Compiling $< (st-tests)..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -DCNC_ST_TEST_EXE -o $@ -c $<
+endif
+
+#=============================================================================
+# itch.io release packages (Atari ST only)
+#=============================================================================
+ifeq ($(PLATFORM_LIB),ATARILIB)
+
+GIT_ROOT = $(abspath ..)
+NM = $(CROSS_PREFIX)/$(CROSS_TARGET)-nm
+STRIP = $(CROSS_PREFIX)/$(CROSS_TARGET)-strip
+ITCH_DIST_DIR = dist/itch
+ITCH_STAGE_DIR = $(ITCH_DIST_DIR)/stage
+ITCH_RELEASE_TOS = ./bin/AtariST/cnc.tos
+ITCH_MAX_TOS_BYTES = 2097152
+# Set ITCH_ALLOW_DIRTY=1 to skip the clean working-tree check (local/test builds only).
+ITCH_ALLOW_DIRTY ?= 0
+
+itch-release:
+	@set -e; \
+	echo "=== itch.io release ==="; \
+	if [ "$(ITCH_ALLOW_DIRTY)" != "1" ] && [ -n "$$(git -C "$(GIT_ROOT)" status --porcelain)" ]; then \
+		echo "error: repository is not clean (commit or stash changes first, or ITCH_ALLOW_DIRTY=1)" >&2; \
+		exit 1; \
+	fi; \
+	if [ "$(ITCH_ALLOW_DIRTY)" = "1" ] && [ -n "$$(git -C "$(GIT_ROOT)" status --porcelain)" ]; then \
+		echo "warning: ITCH_ALLOW_DIRTY=1 — proceeding with dirty working tree"; \
+	fi; \
+	RELEASE_TAG=$$(git -C "$(GIT_ROOT)" describe --exact-match --tags --match 'release/atarist/v*' HEAD 2>/dev/null || true); \
+	if [ -z "$$RELEASE_TAG" ]; then \
+		echo "error: HEAD must be tagged release/atarist/vx.y.z" >&2; \
+		exit 1; \
+	fi; \
+	case "$$RELEASE_TAG" in \
+		release/atarist/v[0-9]*.[0-9]*.[0-9]*) ;; \
+		*) echo "error: tag must match release/atarist/vx.y.z (got $$RELEASE_TAG)" >&2; exit 1;; \
+	esac; \
+	VERSION=$${RELEASE_TAG#release/atarist/v}; \
+	echo "Release tag: $$RELEASE_TAG (version $$VERSION)"; \
+	$(MAKE) clean CONFIG=Release; \
+	$(MAKE) all CONFIG=Release WITH_SYMBOLS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/; \
+	if [ ! -f "$(ITCH_RELEASE_TOS)" ]; then \
+		echo "error: $(ITCH_RELEASE_TOS) not found after build" >&2; \
+		exit 1; \
+	fi; \
+	rm -rf "$(ITCH_DIST_DIR)"; \
+	mkdir -p "$(ITCH_STAGE_DIR)"; \
+	echo "Extracting Hatari-compatible symbols..."; \
+	{ echo "# $$RELEASE_TAG — generated from cnc.tos for Hatari debugger/profiler"; \
+	  "$(NM)" -n "$(ITCH_RELEASE_TOS)" | awk '$$2 ~ /^[TDB]$$/ {print $$1, $$2, $$3}'; } \
+	  > "$(ITCH_DIST_DIR)/cnc.sym"; \
+	cp "$(ITCH_RELEASE_TOS)" "$(ITCH_STAGE_DIR)/cnc.tos"; \
+	echo "Stripping debug symbols from staged cnc.tos..."; \
+	"$(STRIP)" "$(ITCH_STAGE_DIR)/cnc.tos"; \
+	TOS_SIZE=$$(wc -c < "$(ITCH_STAGE_DIR)/cnc.tos" | tr -d ' '); \
+	if [ "$$TOS_SIZE" -ge $(ITCH_MAX_TOS_BYTES) ]; then \
+		echo "error: stripped cnc.tos is $$TOS_SIZE bytes (limit $(ITCH_MAX_TOS_BYTES))" >&2; \
+		exit 1; \
+	fi; \
+	echo "Stripped cnc.tos: $$TOS_SIZE bytes"; \
+	for f in atari-assets/*.w16; do \
+		if [ -f "$$f" ]; then cp "$$f" "$(ITCH_STAGE_DIR)/"; fi; \
+	done; \
+	printf '%s\r\n' \
+		"Command & Conquer for Atari ST" \
+		"" \
+		"Extract these files to a folder on your Atari ST hard drive (emulated or real)." \
+		"" \
+		"To play the game, copy the MIX files from an official Command & Conquer DOS CD into the same folder as the executable." \
+		"" \
+		"Further information:" \
+		"https://indyjo.itch.io/commandconquer-tiberian-dawn-atari-st" \
+		"" \
+		"This game is provided under the terms of the GNU General Public License, version 3 (GPLv3)." \
+		"" \
+		"Source code:" \
+		"https://github.com/indyjo/Vanilla-Conquer-Atari-ST" \
+		> "$(ITCH_STAGE_DIR)/readme.txt"; \
+	GAME_ZIP="$(ITCH_DIST_DIR)/cncst-$$VERSION.zip"; \
+	SYM_ZIP="$(ITCH_DIST_DIR)/cncst-sym-$$VERSION.zip"; \
+	rm -f "$$GAME_ZIP" "$$SYM_ZIP"; \
+	( cd "$(ITCH_STAGE_DIR)" && zip -q -r "../cncst-$$VERSION.zip" . ); \
+	( cd "$(ITCH_DIST_DIR)" && zip -q "cncst-sym-$$VERSION.zip" cnc.sym ); \
+	echo "Created $$GAME_ZIP"; \
+	echo "Created $$SYM_ZIP"
+
 endif
 
 #=============================================================================

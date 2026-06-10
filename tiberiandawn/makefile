@@ -307,7 +307,7 @@ endif
 # ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp \
-	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_cache.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_cache.cpp $(PLATFORM_LIB)/st_cache_ops.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp $(PLATFORM_LIB)/ikbd.cpp \
 	$(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/wwkeyboard_st.cpp \
 	$(PLATFORM_LIB)/mouseww.cpp \
@@ -466,9 +466,9 @@ $(INTDIR)/misc_ATARILIB.o: ATARILIB/misc.cpp | $(INTDIR)
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
-# cpushl/cinvl require 68040+ opcodes; runtime _MCPU guard skips them on plain 68000.
-$(INTDIR)/st_cache.o: ATARILIB/st_cache.cpp | $(INTDIR)
-	@echo "Compiling $< (68040 cache ops)..."
+# cpushl/cinvl live in st_cache_ops.cpp; st_cache.cpp probes _CPU cookie at runtime.
+$(INTDIR)/st_cache_ops.o: ATARILIB/st_cache_ops.cpp | $(INTDIR)
+	@echo "Compiling $< (68040 cache line ops)..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -mcpu=68040 -o $@ -c $<
 

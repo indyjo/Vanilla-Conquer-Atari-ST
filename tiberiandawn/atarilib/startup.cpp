@@ -45,6 +45,7 @@
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
 #include	"gbuffer.h"  // GBC_ST_PLANAR_LORES, Uses_ST_LoRes_Planar_Layout
 #include	"ikbd.h"
+#include	"st_cache.h"
 #include	"st_screen.h"
 #include	"palette.h"
 #include	"../../common/timer_st_vbl.h"
@@ -241,6 +242,7 @@ int main(int argc, char *argv[])
 				if (Palette) delete [] Palette;
 				return (EXIT_FAILURE);
 			}
+			ST_Cache_Init();
 
 			printf("C&C - Initialising video surfaces.\n");
 			printf("C&C - ScreenWidth: %d, ScreenHeight: %d\n", ScreenWidth, ScreenHeight);

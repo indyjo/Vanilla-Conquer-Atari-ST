@@ -1,61 +1,61 @@
 /*
- * st_cache.cpp — D-cache push/invalidate for 68040-class CPUs (no BLiTTER snooping).
+ * st_cache.cpp — Function pointers default to no-ops; ST_Cache_Init binds 68030+ impls.
  */
 
 #include "st_cache.h"
 
-#include <stdint.h>
+#include "st_cache_ops.h"
+
+#include <mint/cookie.h>
+
+static void ST_Cache_Push_Range_Noop(const void *start, size_t len)
+{
+	(void)start;
+	(void)len;
+}
+
+static void ST_Cache_Invalidate_Range_Noop(const void *start, size_t len)
+{
+	(void)start;
+	(void)len;
+}
 
 #if ST_BLIT_CACHE_COHERENCY
 
-static int ST_Cache_Is_Active(void)
+static void ST_Cache_Push_Range_Impl(const void *start, size_t len)
 {
-#if defined(__mc68040__) || defined(__mc68060__) || defined(__mc68030__)
-	return 1;
-#else
-	extern long _MCPU;
-	return _MCPU == 30L || _MCPU == 40L || _MCPU == 60L;
-#endif
-}
-
-void ST_Cache_Push_Range(const void *start, size_t len)
-{
-	if (!ST_Cache_Is_Active() || !start || len == 0) {
+	if (!start || len == 0) {
 		return;
 	}
-	uintptr_t a = (uintptr_t)start & ~(uintptr_t)15u;
-	uintptr_t end = (uintptr_t)start + len;
-	for (; a < end; a += 16u) {
-		__asm__ __volatile__("cpushl %%dc,%0" : : "m" (*(const char *)a));
-	}
-	__asm__ __volatile__("" ::: "memory");
+	ST_Cache_Push_Lines(start, len);
 }
 
-void ST_Cache_Invalidate_Range(const void *start, size_t len)
+static void ST_Cache_Invalidate_Range_Impl(const void *start, size_t len)
 {
-	if (!ST_Cache_Is_Active() || !start || len == 0) {
+	if (!start || len == 0) {
 		return;
 	}
-	uintptr_t a = (uintptr_t)start & ~(uintptr_t)15u;
-	uintptr_t end = (uintptr_t)start + len;
-	for (; a < end; a += 16u) {
-		__asm__ __volatile__("cinvl %%dc,%0" : : "m" (*(const char *)a));
-	}
-	__asm__ __volatile__("" ::: "memory");
-}
-
-#else /* !ST_BLIT_CACHE_COHERENCY */
-
-void ST_Cache_Push_Range(const void *start, size_t len)
-{
-	(void)start;
-	(void)len;
-}
-
-void ST_Cache_Invalidate_Range(const void *start, size_t len)
-{
-	(void)start;
-	(void)len;
+	ST_Cache_Invalidate_Lines(start, len);
 }
 
 #endif /* ST_BLIT_CACHE_COHERENCY */
+
+ST_Cache_Range_Fn ST_Cache_Push_Range = ST_Cache_Push_Range_Noop;
+ST_Cache_Range_Fn ST_Cache_Invalidate_Range = ST_Cache_Invalidate_Range_Noop;
+
+void ST_Cache_Init(void)
+{
+#if ST_BLIT_CACHE_COHERENCY
+	long cpu = 0;
+
+	if (Getcookie(C__CPU, &cpu) != C_FOUND) {
+		return;
+	}
+
+	cpu &= 0xFFFFL;
+	if (cpu == 30L || cpu == 40L || cpu == 60L) {
+		ST_Cache_Push_Range = ST_Cache_Push_Range_Impl;
+		ST_Cache_Invalidate_Range = ST_Cache_Invalidate_Range_Impl;
+	}
+#endif
+}

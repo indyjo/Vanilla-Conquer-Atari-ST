@@ -20,6 +20,9 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#if defined(ATARI_ST)
+#include <cstdio>
+#endif
 #include "debugstring.h"
 #include "listnode.h"
 #include "pk.h"
@@ -46,6 +49,16 @@ static inline long MixFile_Payload_KiB(int data_size)
 {
     return (data_size + 1023) / 1024;
 }
+
+#if defined(ATARI_ST)
+static inline void MixFile_Announce_Load(char const* filename, bool ok)
+{
+    if (filename != NULL && filename[0] != '\0') {
+        std::printf("Load %s [%s]\n", filename, ok ? "ok" : "fail");
+        std::fflush(stdout);
+    }
+}
+#endif
 
 template <class T, class TCRC = CRCEngine> class MixFileClass : public VanillaNode<MixFileClass<T>>
 {
@@ -655,6 +668,9 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(Buffer const* b
             Data = NULL;
             file.Error(EIO);
             DBG_INFO("MIX: cache %s [FAIL] read", Filename ? Filename : "(null)");
+#if defined(ATARI_ST)
+            MixFile_Announce_Load(Filename, false);
+#endif
             return (false);
         }
 
@@ -672,15 +688,24 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(Buffer const* b
                 delete[] static_cast<char*>(Data);
                 Data = NULL;
                 DBG_INFO("MIX: cache %s [FAIL] digest", Filename ? Filename : "(null)");
+#if defined(ATARI_ST)
+                MixFile_Announce_Load(Filename, false);
+#endif
                 return (false);
             }
         }
 
         DBG_INFO("MIX: cache %s [OK]", Filename ? Filename : "(null)");
+#if defined(ATARI_ST)
+        MixFile_Announce_Load(Filename, true);
+#endif
         return (true);
     }
     IsAllocated = false;
     DBG_INFO("MIX: cache %s [FAIL] alloc", Filename ? Filename : "(null)");
+#if defined(ATARI_ST)
+    MixFile_Announce_Load(Filename, false);
+#endif
     return (false);
 }
 

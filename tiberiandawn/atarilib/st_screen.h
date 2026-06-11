@@ -1,8 +1,11 @@
 /*
  * st_screen.h - Atari ST video: TOS snapshot, shifter sync + line base, game buffer registration.
  * Does not read or write STE palette ($FF8240); use Set_Palette / Fade_Palette_To from game code.
- * Ctrl+F10 toggles display between the game's framebuffer (low res) and the original
- * TOS console framebuffer (saved resolution) so console output uses TOS rendering.
+ *
+ * ST_SEPARATE_DEBUG_SCREEN (makefile SEPARATE_DEBUG_SCREEN=1): game uses a dedicated planar
+ * buffer; hardware line base is set directly; Ctrl+F10 toggles to the captured TOS console.
+ * Without it: visible page is TOS Logbase, video is set up via Setscreen(), debug text and
+ * game graphics share the same screen memory.
  */
 
 #ifndef ST_SCREEN_H
@@ -18,8 +21,8 @@ void ST_Screen_Capture_Tos_Video_State(void);
 /* Lo-res check, hide VDI cursor. Returns 0 if not ST low. */
 int ST_Screen_Enter_LoRes_Game_Video(void);
 
-/* Game visible planar buffer (separate from TOS Logbase); width/height e.g. 320, 200. */
-void ST_Screen_Register_Game_Visible(void *phys_visible_planar, int width, int height);
+/* Allocate (if needed) and return the planar pointer VisiblePage should use. */
+void *ST_Screen_Register_Game_Visible(int width, int height);
 
 /* Low res ($FF8260) + shifter video base -> game buffer (OS Logbase unchanged). */
 void ST_Screen_Apply_Game_Video_Hardware(void);

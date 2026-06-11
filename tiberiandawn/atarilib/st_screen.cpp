@@ -1,8 +1,9 @@
 /*
  * st_screen.cpp - Atari ST video: TOS log/phys/rez snapshot, shifter sync ($FF8260),
- * hardware line base ($FF8201/03/0D). Ctrl+F10 toggles phys+rez between game buffer
- * and the captured TOS console framebuffer. STE palette is not touched here — use
- * Set_Palette etc. from game code; startup snapshots/restores HW pens around the run.
+ * hardware line base ($FF8201/03/0D). With ST_SEPARATE_DEBUG_SCREEN, Ctrl+F10 toggles
+ * phys+rez between game buffer and the captured TOS console framebuffer. Without it,
+ * the game draws to TOS Logbase and video is set up via Setscreen(). STE palette is not
+ * touched here — use Set_Palette etc. from game code; startup snapshots/restores HW pens.
  */
 
 #include "st_screen.h"
@@ -16,6 +17,39 @@
 
 #include <stdio.h>
 #include <stdint.h>
+
+enum { ST_LORES_PLANAR_BYTES = 32768 };
+
+#if ST_SEPARATE_DEBUG_SCREEN
+
+static unsigned char *Visible_Alloc = NULL;
+static unsigned char *Visible_Plane = NULL;
+
+static void *Alloc_Visible_Plane(int width, int height)
+{
+	(void)width;
+	(void)height;
+
+	if (Visible_Plane) {
+		return Visible_Plane;
+	}
+
+	Visible_Alloc = new unsigned char[ST_LORES_PLANAR_BYTES + 256];
+	if (!Visible_Alloc) {
+		return NULL;
+	}
+
+	uintptr_t raw = (uintptr_t)Visible_Alloc;
+	Visible_Plane = (unsigned char *)((raw + 255u) & ~(uintptr_t)255u);
+	return Visible_Plane;
+}
+
+static void Free_Visible_Plane(void)
+{
+	delete[] Visible_Alloc;
+	Visible_Alloc = NULL;
+	Visible_Plane = NULL;
+}
 
 /*
  * ST shifter sync (shift mode): $FF8260 low byte — same convention as TOS Getrez():
@@ -113,11 +147,11 @@ int ST_Screen_Enter_LoRes_Game_Video(void)
 	return 1;
 }
 
-void ST_Screen_Register_Game_Visible(void *phys_visible_planar, int width, int height)
+void *ST_Screen_Register_Game_Visible(int width, int height)
 {
-	(void)width;
-	(void)height;
-	Game_Visible_Planar = phys_visible_planar;
+	void *plane = Alloc_Visible_Plane(width, height);
+	Game_Visible_Planar = plane;
+	return plane;
 }
 
 void ST_Screen_Shutdown_Restore_Tos(void)
@@ -130,6 +164,9 @@ void ST_Screen_Shutdown_Restore_Tos(void)
 		printf("C&C - Restored TOS shifter: phys=$%lX rez=%d (log=$%lX unchanged in OS).\n",
 			Tos_PhysBase, Tos_Rez, Tos_LogBase);
 	}
+
+	Free_Visible_Plane();
+	Game_Visible_Planar = NULL;
 }
 
 void ST_Screen_Hardware_Set_Phys_Base(void *phys)
@@ -198,3 +235,75 @@ int ST_Debug_Screen_Is_Active(void)
 {
 	return Tos_Console_Visible ? 1 : 0;
 }
+
+#else /* !ST_SEPARATE_DEBUG_SCREEN */
+
+static long Tos_LogBase = 0;
+static long Tos_PhysBase = 0;
+static int Tos_Rez = 0;
+static int Tos_StateCaptured = 0;
+
+void ST_Screen_Capture_Tos_Video_State(void)
+{
+	if (Tos_StateCaptured) {
+		return;
+	}
+	Tos_LogBase = Logbase();
+	Tos_PhysBase = Physbase();
+	Tos_Rez = Getrez();
+	Tos_StateCaptured = 1;
+	printf("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d\n",
+		Tos_LogBase, Tos_PhysBase, Tos_Rez);
+}
+
+int ST_Screen_Enter_LoRes_Game_Video(void)
+{
+	Setscreen(-1L, -1L, 0);
+
+	int rez = Getrez();
+	if (rez != 0) {
+		printf("C&C - Error: Not in Lorez (low resolution) mode. Current mode: %d\n", rez);
+		printf("C&C - Please switch to low resolution (320x200) mode.\n");
+		return 0;
+	}
+
+	Cursconf(CURS_HIDE, 0);
+
+	return 1;
+}
+
+void *ST_Screen_Register_Game_Visible(int width, int height)
+{
+	(void)width;
+	(void)height;
+	return (void *)Logbase();
+}
+
+void ST_Screen_Shutdown_Restore_Tos(void)
+{
+	if (Tos_StateCaptured) {
+		Setscreen(Tos_LogBase, Tos_PhysBase, (long)Tos_Rez);
+		printf("C&C - Restored TOS video: log=$%lX phys=$%lX rez=%d\n",
+			Tos_LogBase, Tos_PhysBase, Tos_Rez);
+	}
+}
+
+void ST_Screen_Hardware_Set_Phys_Base(void *phys)
+{
+	(void)phys;
+}
+
+void ST_Screen_Apply_Game_Video_Hardware(void)
+{
+}
+
+void ST_Debug_Screen_Service(void)
+{
+}
+
+int ST_Debug_Screen_Is_Active(void)
+{
+	return 0;
+}
+
+#endif /* ST_SEPARATE_DEBUG_SCREEN */

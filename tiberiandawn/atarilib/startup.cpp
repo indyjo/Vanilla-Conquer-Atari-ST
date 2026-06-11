@@ -247,31 +247,21 @@ int main(int argc, char *argv[])
 		*/
 		if (ScreenWidth == 320 && ScreenHeight == 200) {
 			/*
-			 * ST shifter uses 256-byte-aligned video base. Allocate separate visible + hidden
-			 * planar pages in ST-RAM. TOS keeps Logbase/Physbase on its original screen for
-			 * console output; the game points the shifter at its buffer via $FF8201/$FF8203/
-			 * $FF820D and $FF8260 (st_screen.cpp), not Setscreen, so TOS keeps rendering glyphs
-			 * into the shell buffer.
+			 * ST shifter uses 256-byte-aligned video base. Hidden planar page in ST-RAM;
+			 * visible buffer is allocated in st_screen.cpp when ST_SEPARATE_DEBUG_SCREEN.
 			 */
-			static unsigned char *st_visible_alloc = NULL;
 			static unsigned char *st_hidden_alloc = NULL;
-			static unsigned char *st_visible_plane = NULL;
 			static unsigned char *st_hidden_plane = NULL;
-			if (!st_visible_alloc) {
-				st_visible_alloc = new unsigned char[32768 + 256];
-				uintptr_t raw_v = (uintptr_t)st_visible_alloc;
-				st_visible_plane = (unsigned char *)((raw_v + 255u) & ~(uintptr_t)255u);
-			}
 			if (!st_hidden_alloc) {
 				st_hidden_alloc = new unsigned char[32768 + 256];
 				uintptr_t raw_h = (uintptr_t)st_hidden_alloc;
 				st_hidden_plane = (unsigned char *)((raw_h + 255u) & ~(uintptr_t)255u);
 			}
-			VisiblePage.Init(320, 200, st_visible_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+			void *vis_plane = ST_Screen_Register_Game_Visible(320, 200);
+			VisiblePage.Init(320, 200, vis_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
 			HiddenPage.Init(320, 200, st_hidden_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
 			VisiblePage.Clear(0);
 			HiddenPage.Clear(0);
-			ST_Screen_Register_Game_Visible(VisiblePage.Get_Buffer(), 320, 200);
 			ST_Screen_Apply_Game_Video_Hardware();
 		} else {
 			VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);

@@ -2,12 +2,14 @@
  * st_screen.cpp - Atari ST video: TOS log/phys/rez snapshot, shifter sync ($FF8260),
  * hardware line base ($FF8201/03/0D). With ST_SEPARATE_DEBUG_SCREEN, Ctrl+F10 toggles
  * phys+rez between game buffer and the captured TOS console framebuffer. Without it,
- * the game draws to TOS Logbase and video is set up via Setscreen(). STE palette is not
- * touched here — use Set_Palette etc. from game code; startup snapshots/restores HW pens.
+ * the game draws to TOS Logbase and video is set up via Setscreen().
+ * ST_Screen_Capture_Tos_Video_State also snapshots the 16 STE hardware pens ($FF8240);
+ * ST_Screen_Shutdown_Restore_Tos restores video and palette together.
  */
 
 #include "st_screen.h"
 
+#include "palette.h"
 #include "ikbd.h"
 #include "keyboard.h"
 #include "misc.h"
@@ -19,6 +21,11 @@
 #include <stdint.h>
 
 enum { ST_LORES_PLANAR_BYTES = 32768 };
+
+static int ST_Current_Video_Matches(long log_base, long phys_base, int rez)
+{
+	return (long)Logbase() == log_base && (long)Physbase() == phys_base && Getrez() == rez;
+}
 
 #if ST_SEPARATE_DEBUG_SCREEN
 
@@ -127,6 +134,7 @@ void ST_Screen_Capture_Tos_Video_State(void)
 	Tos_PhysBase = (unsigned long)Physbase();
 	Tos_Rez = Getrez();
 	Tos_StateCaptured = 1;
+	Palette_ST_Capture_Hardware_State_Once();
 	printf("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d\n",
 		Tos_LogBase, Tos_PhysBase, Tos_Rez);
 }
@@ -159,11 +167,15 @@ void ST_Screen_Shutdown_Restore_Tos(void)
 	Restore_Original_Resolution();
 
 	if (Tos_StateCaptured) {
-		ST_Shifter_Set_Sync_Mode_Only(Tos_Rez);
-		ST_Screen_Hardware_Set_Phys_Base((void *)Tos_PhysBase);
-		printf("C&C - Restored TOS shifter: phys=$%lX rez=%d (log=$%lX unchanged in OS).\n",
-			Tos_PhysBase, Tos_Rez, Tos_LogBase);
+		if (!ST_Current_Video_Matches((long)Tos_LogBase, (long)Tos_PhysBase, Tos_Rez)) {
+			ST_Shifter_Set_Sync_Mode_Only(Tos_Rez);
+			ST_Screen_Hardware_Set_Phys_Base((void *)Tos_PhysBase);
+			printf("C&C - Restored TOS shifter: phys=$%lX rez=%d (log=$%lX unchanged in OS).\n",
+				Tos_PhysBase, Tos_Rez, Tos_LogBase);
+		}
 	}
+
+	Palette_ST_Restore_Hardware_State_And_Clear();
 
 	Free_Visible_Plane();
 	Game_Visible_Planar = NULL;
@@ -252,6 +264,7 @@ void ST_Screen_Capture_Tos_Video_State(void)
 	Tos_PhysBase = Physbase();
 	Tos_Rez = Getrez();
 	Tos_StateCaptured = 1;
+	Palette_ST_Capture_Hardware_State_Once();
 	printf("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d\n",
 		Tos_LogBase, Tos_PhysBase, Tos_Rez);
 }
@@ -282,10 +295,12 @@ void *ST_Screen_Register_Game_Visible(int width, int height)
 void ST_Screen_Shutdown_Restore_Tos(void)
 {
 	if (Tos_StateCaptured) {
-		Setscreen(Tos_LogBase, Tos_PhysBase, (long)Tos_Rez);
-		printf("C&C - Restored TOS video: log=$%lX phys=$%lX rez=%d\n",
-			Tos_LogBase, Tos_PhysBase, Tos_Rez);
+		/* Setscreen clears the framebuffer; skip if already on the saved mode. */
+		if (!ST_Current_Video_Matches(Tos_LogBase, Tos_PhysBase, Tos_Rez)) {
+			Setscreen(Tos_LogBase, Tos_PhysBase, (long)Tos_Rez);
+		}
 	}
+	Palette_ST_Restore_Hardware_State_And_Clear();
 }
 
 void ST_Screen_Hardware_Set_Phys_Base(void *phys)

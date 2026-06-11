@@ -415,7 +415,6 @@ void Prog_End(const char *why, bool fatal)
 		WWMouse = NULL;
 	}
 
-	Palette_ST_Restore_Hardware_State_And_Clear();
 	ST_Screen_Shutdown_Restore_Tos();
 
 	Cursconf(CURS_SHOW, 0);
@@ -570,7 +569,6 @@ BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel)
 	if (!ST_Screen_Enter_LoRes_Game_Video()) {
 		return FALSE;
 	}
-	Palette_ST_Capture_Hardware_State_Once();
 	return TRUE;
 }
 

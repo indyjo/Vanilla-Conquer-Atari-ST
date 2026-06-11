@@ -47,6 +47,9 @@
 #include "atarilib/st_sprite_cache.h"
 #ifdef ATARI_ST
 #include "atarilib/ikbd.h"
+#include "atarilib/st_screen.h"
+#include <mint/osbind.h>
+#include <stdlib.h>
 #endif
 #include <cstdarg>
 #include <cstdint>
@@ -719,6 +722,29 @@ bool DLL_Export_Get_Input_Key_State(KeyNumType key)
  *=============================================================================================*/
 void Memory_Error_Handler(void)
 {
+#ifdef ATARI_ST
+    Memory_Error = NULL;
+    ST_Screen_Shutdown_Restore_Tos();
+    fputs("Out of memory.\n", stderr);
+    fflush(stderr);
+    /*
+     * Supervisor mode: stop halts without exit/cleanup that can break TOS.
+     * User mode: wait for a key and return to the OS normally.
+     */
+    {
+        unsigned short sr;
+        __asm__ volatile("move.w %%sr, %0" : "=d"(sr));
+        if (sr & 0x2000u) {
+            fputs("System halted - reset or enter debugger.", stderr);
+            fflush(stderr);
+            for (;;) {
+                __asm__ volatile("stop #0x2700");
+            }
+        }
+    }
+    (void)Cconin();
+    exit(1);
+#else
     GlyphX_Debug_Print("Error - out of memory.");
     VisiblePage.Clear();
     Set_Palette(GamePalette);
@@ -730,4 +756,5 @@ void Memory_Error_Handler(void)
     // Nope. ST - 1/10/2019 10:38AM
     // PostQuitMessage( 0 );
     // ExitProcess(0);
+#endif
 }

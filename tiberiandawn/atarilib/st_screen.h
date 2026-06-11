@@ -1,6 +1,7 @@
 /*
  * st_screen.h - Atari ST video: TOS snapshot, shifter sync + line base, game buffer registration.
- * Does not read or write STE palette ($FF8240); use Set_Palette / Fade_Palette_To from game code.
+ * ST_Screen_Capture_Tos_Video_State snapshots log/phys/rez and the 16 STE hardware pens;
+ * ST_Screen_Shutdown_Restore_Tos puts both back. Game palette changes use Set_Palette etc.
  *
  * ST_SEPARATE_DEBUG_SCREEN (makefile SEPARATE_DEBUG_SCREEN=1): game uses a dedicated planar
  * buffer; hardware line base is set directly; Ctrl+F10 toggles to the captured TOS console.

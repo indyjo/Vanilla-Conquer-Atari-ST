@@ -296,10 +296,34 @@ extern "C" void IKBD_ISR_Entry(void)
 	*MFP_ISRA = (unsigned char)(*MFP_ISRA & (unsigned char)~0x40u);
 }
 
+static void IKBD_Restore_Tos_Mouse_Hardware(void)
+{
+	/*
+	 * Install switches to relative mode (0x08). TOS/desktop need absolute (0x09)
+	 * and a sane position in 0..65535 space.
+	 */
+	char set_absolute_mouse = 0x09;
+	Ikbdws(1, &set_absolute_mouse);
+	{
+		unsigned char set_pos[5] = { 0x0B, 0x80, 0x00, 0x80, 0x00 };
+		Ikbdws(5, set_pos);
+	}
+}
+
 static long IKBD_Install_Supervisor(void)
 {
-	char set_relative_mouse = 0x08;
-	Ikbdws(1, &set_relative_mouse);
+	/*
+	 * Previous run may have exited without restoring the IKBD (OOM, bus error).
+	 * Reset the controller before we hook vector $118.
+	 */
+	{
+		char ikbd_restore = 0x14;
+		Ikbdws(1, &ikbd_restore);
+	}
+	{
+		char set_relative_mouse = 0x08;
+		Ikbdws(1, &set_relative_mouse);
+	}
 	MouseX = IKBD_MOUSE_WIDTH / 2;
 	MouseY = IKBD_MOUSE_HEIGHT / 2;
 	PrevIKBDVector = (void (*)(void))Setexc(IKBD_VECTOR_NUMBER, (void (*)())IKBD_ISR_Entry);
@@ -307,13 +331,14 @@ static long IKBD_Install_Supervisor(void)
 	return 1;
 }
 
-static long IKBD_Uninstall_Supervisor(void)
+static long IKBD_Shutdown_Supervisor(void)
 {
 	if (HandlerInstalled && PrevIKBDVector) {
 		Setexc(IKBD_VECTOR_NUMBER, (void (*)())PrevIKBDVector);
 	}
 	HandlerInstalled = 0;
 	PrevIKBDVector = NULL;
+	IKBD_Restore_Tos_Mouse_Hardware();
 	return 1;
 }
 
@@ -330,12 +355,11 @@ BOOL IKBD_Install(void)
 
 void IKBD_Uninstall(void)
 {
-	if (!HandlerInstalled) {
-		printf("IKBD: interrupt handler not installed.\n");
-		return;
-	}
-	Supexec(IKBD_Uninstall_Supervisor);
-	printf("IKBD: interrupt handler uninstalled.\n");
+	/*
+	 * Always restore vector (if hooked) and IKBD mouse mode, even when OOM
+	 * prevented a full install — do not printf here (may re-enter Alloc).
+	 */
+	Supexec(IKBD_Shutdown_Supervisor);
 }
 
 void IKBD_Service(void)

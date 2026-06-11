@@ -1,5 +1,5 @@
 /*
- * st_cache_ops.cpp — 68030/68040/68060 cache line push/invalidate (cpushl/cinvl).
+ * st_cache_ops.cpp — 68040/68060 cache line push/invalidate (cpushl/cinvl).
  * Compiled with -mcpu=68040 so the assembler accepts these opcodes. Only called
  * from st_cache.cpp after a runtime _CPU cookie probe.
  */

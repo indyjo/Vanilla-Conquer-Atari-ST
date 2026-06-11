@@ -1,5 +1,5 @@
 /*
- * st_cache.h — 68030/68040/68060 D-cache maintenance for BLiTTER/CPU coherency.
+ * st_cache.h — 68040/68060 D-cache maintenance for BLiTTER/CPU coherency.
  *
  * Set ST_BLIT_CACHE_COHERENCY to 0 to disable (default: 1).
  * Call ST_Cache_Init() once at startup; pointers default to no-ops and are

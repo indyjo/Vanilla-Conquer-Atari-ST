@@ -1,5 +1,5 @@
 /*
- * st_cache_ops.h — 68030+ D-cache line ops (cpushl/cinvl); separate TU for -mcpu=68040.
+ * st_cache_ops.h — 68040+ D-cache line ops (cpushl/cinvl); separate TU for -mcpu=68040.
  */
 
 #ifndef ST_CACHE_OPS_H

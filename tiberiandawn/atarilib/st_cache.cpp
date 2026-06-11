@@ -1,5 +1,5 @@
 /*
- * st_cache.cpp — Function pointers default to no-ops; ST_Cache_Init binds 68030+ impls.
+ * st_cache.cpp — Function pointers default to no-ops; ST_Cache_Init binds 68040+ impls.
  */
 
 #include "st_cache.h"
@@ -53,7 +53,7 @@ void ST_Cache_Init(void)
 	}
 
 	cpu &= 0xFFFFL;
-	if (cpu == 30L || cpu == 40L || cpu == 60L) {
+	if (cpu == 40L || cpu == 60L) {
 		ST_Cache_Push_Range = ST_Cache_Push_Range_Impl;
 		ST_Cache_Invalidate_Range = ST_Cache_Invalidate_Range_Impl;
 	}

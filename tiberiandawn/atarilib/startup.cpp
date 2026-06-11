@@ -69,6 +69,7 @@ void Check_Use_Compressed_Shapes (void);
 void Move_Point(short &x, short &y, register DirType dir, unsigned short distance);
 void Prog_End(const char *why, bool fatal);
 void Read_Setup_Options(RawFileClass *config_file);
+static bool Load_Private_Config_From_INI(RawFileClass &cfile);
 BOOL Set_Video_Mode(void *hwnd, int w, int h, int bits_per_pixel);
 
 bool VideoBackBufferAllowed = true;
@@ -184,204 +185,194 @@ int main(int argc, char *argv[])
 			// For Atari ST, we'll continue anyway but warn the user
 		}
 
-		if (cfile.Is_Available()) {
+		bool const have_conquer_ini = Load_Private_Config_From_INI(cfile);
+		Read_Setup_Options( &cfile );
 
-#ifndef NOMEMCHECK
-			char * cdata = (char *)Load_Alloc_Data(cfile);
-			Read_Private_Config_Struct(cdata, &NewConfig);
-			delete [] cdata;
-#else
-			Read_Private_Config_Struct((char *)Load_Alloc_Data(cfile), &NewConfig);
-#endif
-			Read_Setup_Options( &cfile );
+		printf("C&C - Initialising audio.\n");
 
-			printf("C&C - Initialising audio.\n");
+		/*
+		** Initialize audio system (STe-class DMA 8-bit mono in audio_ste.cpp).
+		*/
+		SoundOn = Audio_Init ( NULL , 8 , false , 11025*2 , 0 );
+		if (!SoundOn) {
+			printf("C&C - Failed to initialize audio.\n");
+		}
 
-			/*
-			** Initialize audio system (STe-class DMA 8-bit mono in audio_ste.cpp).
-			*/
-			SoundOn = Audio_Init ( NULL , 8 , false , 11025*2 , 0 );
-			if (!SoundOn) {
-				printf("C&C - Failed to initialize audio.\n");
-			}
+		Palette = new(MEM_CLEAR) unsigned char[768];
 
-			Palette = new(MEM_CLEAR) unsigned char[768];
-
-			BOOL video_success = FALSE;
-			printf("C&C - Setting video mode.\n");
+		BOOL video_success = FALSE;
+		printf("C&C - Setting video mode.\n");
 #ifdef ATARI_ST
-			ScreenWidth = 320;
-			ScreenHeight = 200;
+		ScreenWidth = 320;
+		ScreenHeight = 200;
 #endif
-			/*
-			** Set video mode for Atari ST
-			** TODO: Implement Set_Video_Mode for Atari ST (VDI/XBIOS)
-			*/
-			if (ScreenHeight == 400){
-				if (Set_Video_Mode (NULL, ScreenWidth, ScreenHeight, 8)){
-					video_success = TRUE;
-				}else{
-					if (Set_Video_Mode (NULL, ScreenWidth, 480, 8)){
-						video_success = TRUE;
-						ScreenHeight = 480;
-					}
-				}
+		/*
+		** Set video mode for Atari ST
+		** TODO: Implement Set_Video_Mode for Atari ST (VDI/XBIOS)
+		*/
+		if (ScreenHeight == 400){
+			if (Set_Video_Mode (NULL, ScreenWidth, ScreenHeight, 8)){
+				video_success = TRUE;
 			}else{
-				if (Set_Video_Mode (NULL, ScreenWidth, ScreenHeight, 8)){
+				if (Set_Video_Mode (NULL, ScreenWidth, 480, 8)){
 					video_success = TRUE;
+					ScreenHeight = 480;
 				}
 			}
-
-			if (!video_success){
-				printf("C&C - Failed to set video mode.\n");
-				if (Palette) delete [] Palette;
-				return (EXIT_FAILURE);
+		}else{
+			if (Set_Video_Mode (NULL, ScreenWidth, ScreenHeight, 8)){
+				video_success = TRUE;
 			}
-			if (!Require_ST_Blitter()) {
-				printf("C&C - Atari BLiTTER chip not available. This build requires BLiTTER hardware.\n");
-				if (Palette) delete [] Palette;
-				return (EXIT_FAILURE);
-			}
-			ST_Cache_Init();
+		}
 
-			printf("C&C - Initialising video surfaces.\n");
-			printf("C&C - ScreenWidth: %d, ScreenHeight: %d\n", ScreenWidth, ScreenHeight);
+		if (!video_success){
+			printf("C&C - Failed to set video mode.\n");
+			if (Palette) delete [] Palette;
+			return (EXIT_FAILURE);
+		}
+		if (!Require_ST_Blitter()) {
+			printf("C&C - Atari BLiTTER chip not available. This build requires BLiTTER hardware.\n");
+			if (Palette) delete [] Palette;
+			return (EXIT_FAILURE);
+		}
+		ST_Cache_Init();
 
+		printf("C&C - Initialising video surfaces.\n");
+		printf("C&C - ScreenWidth: %d, ScreenHeight: %d\n", ScreenWidth, ScreenHeight);
+
+		/*
+		** Initialize video buffers
+		** ST LoRes: allocate separate visible + hidden planar pages (320x200 only).
+		** Other resolutions keep linear 8bpp + per-frame C2P fallback.
+		*/
+		if (ScreenWidth == 320 && ScreenHeight == 200) {
 			/*
-			** Initialize video buffers
-			** ST LoRes: allocate separate visible + hidden planar pages (320x200 only).
-			** Other resolutions keep linear 8bpp + per-frame C2P fallback.
-			*/
-			if (ScreenWidth == 320 && ScreenHeight == 200) {
-				/*
-				 * ST shifter uses 256-byte-aligned video base. Allocate separate visible + hidden
-				 * planar pages in ST-RAM. TOS keeps Logbase/Physbase on its original screen for
-				 * console output; the game points the shifter at its buffer via $FF8201/$FF8203/
-				 * $FF820D and $FF8260 (st_screen.cpp), not Setscreen, so TOS keeps rendering glyphs
-				 * into the shell buffer.
-				 */
-				static unsigned char *st_visible_alloc = NULL;
-				static unsigned char *st_hidden_alloc = NULL;
-				static unsigned char *st_visible_plane = NULL;
-				static unsigned char *st_hidden_plane = NULL;
-				if (!st_visible_alloc) {
-					st_visible_alloc = new unsigned char[32768 + 256];
-					uintptr_t raw_v = (uintptr_t)st_visible_alloc;
-					st_visible_plane = (unsigned char *)((raw_v + 255u) & ~(uintptr_t)255u);
-				}
-				if (!st_hidden_alloc) {
-					st_hidden_alloc = new unsigned char[32768 + 256];
-					uintptr_t raw_h = (uintptr_t)st_hidden_alloc;
-					st_hidden_plane = (unsigned char *)((raw_h + 255u) & ~(uintptr_t)255u);
-				}
-				VisiblePage.Init(320, 200, st_visible_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
-				HiddenPage.Init(320, 200, st_hidden_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
-				VisiblePage.Clear(0);
-				HiddenPage.Clear(0);
-				ST_Screen_Register_Game_Visible(VisiblePage.Get_Buffer(), 320, 200);
-				ST_Screen_Apply_Game_Video_Hardware();
-			} else {
-				VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
-				HiddenPage.Init (ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
+			 * ST shifter uses 256-byte-aligned video base. Allocate separate visible + hidden
+			 * planar pages in ST-RAM. TOS keeps Logbase/Physbase on its original screen for
+			 * console output; the game points the shifter at its buffer via $FF8201/$FF8203/
+			 * $FF820D and $FF8260 (st_screen.cpp), not Setscreen, so TOS keeps rendering glyphs
+			 * into the shell buffer.
+			 */
+			static unsigned char *st_visible_alloc = NULL;
+			static unsigned char *st_hidden_alloc = NULL;
+			static unsigned char *st_visible_plane = NULL;
+			static unsigned char *st_hidden_plane = NULL;
+			if (!st_visible_alloc) {
+				st_visible_alloc = new unsigned char[32768 + 256];
+				uintptr_t raw_v = (uintptr_t)st_visible_alloc;
+				st_visible_plane = (unsigned char *)((raw_v + 255u) & ~(uintptr_t)255u);
 			}
-
-			if (VisiblePage.Get_Height() == 480){
-				SeenBuff.Attach(&VisiblePage,0, 40, ScreenWidth, 400);
-				HidPage.Attach(&HiddenPage, 0, 40, ScreenWidth, 400);
-			}else{
-				SeenBuff.Attach(&VisiblePage,0, 0, ScreenWidth, ScreenHeight);
-				HidPage.Attach(&HiddenPage, 0, 0, ScreenWidth, ScreenHeight);
+			if (!st_hidden_alloc) {
+				st_hidden_alloc = new unsigned char[32768 + 256];
+				uintptr_t raw_h = (uintptr_t)st_hidden_alloc;
+				st_hidden_plane = (unsigned char *)((raw_h + 255u) & ~(uintptr_t)255u);
 			}
-			printf("C&C - Adjusting variables for resolution.\n");
-			Options.Adjust_Variables_For_Resolution();
+			VisiblePage.Init(320, 200, st_visible_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+			HiddenPage.Init(320, 200, st_hidden_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+			VisiblePage.Clear(0);
+			HiddenPage.Clear(0);
+			ST_Screen_Register_Game_Visible(VisiblePage.Get_Buffer(), 320, 200);
+			ST_Screen_Apply_Game_Video_Hardware();
+		} else {
+			VisiblePage.Init( ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
+			HiddenPage.Init (ScreenWidth , ScreenHeight , NULL , 0 , (GBC_Enum)0);
+		}
 
-			printf("C&C - Setting palette.\n");
-			/////////Set_Palette(Palette);
+		if (VisiblePage.Get_Height() == 480){
+			SeenBuff.Attach(&VisiblePage,0, 40, ScreenWidth, 400);
+			HidPage.Attach(&HiddenPage, 0, 40, ScreenWidth, 400);
+		}else{
+			SeenBuff.Attach(&VisiblePage,0, 0, ScreenWidth, ScreenHeight);
+			HidPage.Attach(&HiddenPage, 0, 0, ScreenWidth, ScreenHeight);
+		}
+		printf("C&C - Adjusting variables for resolution.\n");
+		Options.Adjust_Variables_For_Resolution();
 
-			WindowList[0][WINDOWWIDTH] 	= SeenBuff.Get_Width();
-			WindowList[0][WINDOWHEIGHT]	= SeenBuff.Get_Height();
+		printf("C&C - Setting palette.\n");
+		/////////Set_Palette(Palette);
 
-			/*
-			** Install the memory error handler
-			*/
-			Memory_Error = &Memory_Error_Handler;
+		WindowList[0][WINDOWWIDTH] 	= SeenBuff.Get_Width();
+		WindowList[0][WINDOWHEIGHT]	= SeenBuff.Get_Height();
 
-			printf("C&C - Creating mouse class.\n");
-			WWMouse = new WWMouseClass(&SeenBuff, 32, 32);
-			MouseInstalled = TRUE;
-			IKBD_Install();
-			Keyboard = CreateWWKeyboardClass();
+		/*
+		** Install the memory error handler
+		*/
+		Memory_Error = &Memory_Error_Handler;
 
-			/*
-			** See if we should run the intro
-			*/
-			printf("C&C - Reading CONQUER.INI.\n");
-			char *buffer = (char*)Alloc(64000 , MEM_NORMAL);
+		printf("C&C - Creating mouse class.\n");
+		WWMouse = new WWMouseClass(&SeenBuff, 32, 32);
+		MouseInstalled = TRUE;
+		IKBD_Install();
+		Keyboard = CreateWWKeyboardClass();
+
+		/*
+		** See if we should run the intro
+		*/
+		printf("C&C - Reading CONQUER.INI.\n");
+		char *buffer = (char*)Alloc(64000 , MEM_NORMAL);
+		if (have_conquer_ini) {
 			cfile.Read(buffer, cfile.Size());
 			buffer[cfile.Size()] = '\0';
+		} else {
+			buffer[0] = '\0';
+		}
 
-			/*
-			**	Check for forced intro movie run disabling. If the conquer
-			**	configuration file says "no", then don't run the intro.
-			*/
-			char tempbuff[5];
-			WWGetPrivateProfileString("Intro", "PlayIntro", "Yes", tempbuff, 4, buffer);
-			if ((_stricmp(tempbuff, "No") == 0) || SpawnedFromWChat) {
-				Special.IsFromInstall = false;
-			}else{
-				Special.IsFromInstall = true;
-			}
-			SlowPalette = WWGetPrivateProfileInt("Options", "SlowPalette", 1, buffer);
+		/*
+		**	Check for forced intro movie run disabling. If the conquer
+		**	configuration file says "no", then don't run the intro.
+		*/
+		char tempbuff[5];
+		WWGetPrivateProfileString("Intro", "PlayIntro", "Yes", tempbuff, 4, buffer);
+		if ((_stricmp(tempbuff, "No") == 0) || SpawnedFromWChat) {
+			Special.IsFromInstall = false;
+		}else{
+			Special.IsFromInstall = true;
+		}
+		SlowPalette = WWGetPrivateProfileInt("Options", "SlowPalette", 1, buffer);
 
 #ifdef DEMO
-			/*
-			**	Check for override directory path for CD searches.
-			*/
-			WWGetPrivateProfileString("CD", "Path", ".", OverridePath, sizeof(OverridePath), buffer);
+		/*
+		**	Check for override directory path for CD searches.
+		*/
+		WWGetPrivateProfileString("CD", "Path", ".", OverridePath, sizeof(OverridePath), buffer);
 #endif
 
-			/*
-			** Regardless of whether we should run it or not, here we're
-			** gonna change it to say "no" in the future.
-			*/
-			WWWritePrivateProfileString("Intro", "PlayIntro", "No", buffer);
-			cfile.Write(buffer, strlen(buffer));
+		/*
+		** Regardless of whether we should run it or not, here we're
+		** gonna change it to say "no" in the future.
+		*/
+		WWWritePrivateProfileString("Intro", "PlayIntro", "No", buffer);
+		cfile.Write(buffer, strlen(buffer));
 
-			Free(buffer);
+		Free(buffer);
 
-			/*
-			**	If the intro is being run for the first time, then don't
-			**	allow breaking out of it with the <ESC> key.
-			*/
-			if (Special.IsFromInstall) {
-				BreakoutAllowed = false;
-			}
-
-			Memory_Error_Exit = Print_Error_End_Exit;
-
-			printf("C&C - Entering main game.\n");
-			Main_Game(argc, argv);
-
-			VisiblePage.Clear();
-			HiddenPage.Clear();
-
-			Memory_Error_Exit = Print_Error_Exit;
-
-			printf("C&C - About to exit.\n");
-			ReadyToQuit = 1;
-
-			/*
-			** Cleanup
-			*/
-			Prog_End(NULL, false);
-
-			return (EXIT_SUCCESS);
-
-		} else {
-			puts("Run SETUP program first.");
-			puts("\n");
-			getchar();
+		/*
+		**	If the intro is being run for the first time, then don't
+		**	allow breaking out of it with the <ESC> key.
+		*/
+		if (Special.IsFromInstall) {
+			BreakoutAllowed = false;
 		}
+
+		Memory_Error_Exit = Print_Error_End_Exit;
+
+		printf("C&C - Entering main game.\n");
+		Main_Game(argc, argv);
+
+		VisiblePage.Clear();
+		HiddenPage.Clear();
+
+		Memory_Error_Exit = Print_Error_Exit;
+
+		printf("C&C - About to exit.\n");
+		ReadyToQuit = 1;
+
+		/*
+		** Cleanup
+		*/
+		Prog_End(NULL, false);
+
+		return (EXIT_SUCCESS);
 
 		if (Palette){
 			delete [] Palette;
@@ -494,6 +485,43 @@ void Print_Error_Exit(char *string)
 	if (!RunningAsDLL) {
 		exit(1);
 	}
+}
+
+/***********************************************************************************************
+ * Load_Private_Config_From_INI -- Load CONQUER.INI and read private config struct            *
+ *                                                                                             *
+ * INPUT:   cfile  -- CONQUER.INI file object                                                  *
+ *                                                                                             *
+ * OUTPUT:  true if the file existed; false if defaults were used                              *
+ *                                                                                             *
+ * HISTORY:                                                                                    *
+ *   06/11/2026 : Extracted from main for missing-INI handling                                 *
+ *=============================================================================================*/
+static bool Load_Private_Config_From_INI(RawFileClass &cfile)
+{
+	bool const have_ini = cfile.Is_Available();
+	char default_ini[1] = {'\0'};
+	char *profile_data = default_ini;
+	void *profile_alloc = NULL;
+
+	if (have_ini) {
+		profile_alloc = Load_Alloc_Data(cfile);
+		if (profile_alloc) {
+			profile_data = (char *)profile_alloc;
+		}
+	} else {
+		printf("C&C - CONQUER.INI not found; using defaults.\n");
+	}
+
+	Read_Private_Config_Struct(profile_data, &NewConfig);
+
+#ifndef NOMEMCHECK
+	if (profile_alloc) {
+		free(profile_alloc);
+	}
+#endif
+
+	return have_ini;
 }
 
 /***********************************************************************************************

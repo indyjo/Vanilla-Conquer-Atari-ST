@@ -50,6 +50,36 @@
 #include	"palette.h"
 #include	"../../common/timer_st_vbl.h"
 
+static bool Game_Still_Initializing = true;
+static bool Init_Keypress_Shown = false;
+
+bool ST_Game_Still_Initializing(void)
+{
+	return Game_Still_Initializing;
+}
+
+void ST_Mark_Game_Init_Complete(void)
+{
+	Game_Still_Initializing = false;
+	Init_Keypress_Shown = false;
+}
+
+void ST_Init_Await_Keypress(void)
+{
+	if (!Game_Still_Initializing || Init_Keypress_Shown) {
+		return;
+	}
+	Init_Keypress_Shown = true;
+	printf("\nPress enter to exit.");
+	fflush(stdout);
+	for (;;) {
+		int const ch = fgetc(stdin);
+		if (ch == '\r' || ch == '\n' || ch == EOF) {
+			break;
+		}
+	}
+}
+
 static BOOL Require_ST_Blitter(void)
 {
 	short cfg = Blitmode(-1);
@@ -228,11 +258,13 @@ int main(int argc, char *argv[])
 		if (!video_success){
 			printf("C&C - Failed to set video mode.\n");
 			if (Palette) delete [] Palette;
+			ST_Init_Await_Keypress();
 			return (EXIT_FAILURE);
 		}
 		if (!Require_ST_Blitter()) {
 			printf("C&C - Atari BLiTTER chip not available. This build requires BLiTTER hardware.\n");
 			if (Palette) delete [] Palette;
+			ST_Init_Await_Keypress();
 			return (EXIT_FAILURE);
 		}
 		ST_Cache_Init();
@@ -395,6 +427,9 @@ void Prog_End(const char *why, bool fatal)
 		printf("Prog_End: %s\n", why);
 	}
 	if (fatal) {
+		if (Game_Still_Initializing) {
+			ST_Init_Await_Keypress();
+		}
 		abort();
 	}
 	
@@ -455,7 +490,9 @@ void Delete_Swap_Files(void)
 void Print_Error_End_Exit(char *string)
 {
 	printf( "%s\n", string );
-	if (Keyboard) {
+	if (Game_Still_Initializing) {
+		ST_Init_Await_Keypress();
+	} else if (Keyboard) {
 		Keyboard->Get();
 	} else {
 		getchar();

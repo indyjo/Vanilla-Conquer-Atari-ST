@@ -60,7 +60,7 @@ void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsig
 	CCFileClass file_obj(name);
 	if (!file_obj.Is_Available()) {
 #ifdef ATARI_ST
-		printf("C&C ST - %s not available (need CONQUER.MIX in cwd).\n", name);
+		printf("C&C ST - %s not available (check GENERAL.MIX / LOCAL.MIX in cwd).\n", name);
 #endif
 		return;
 	}

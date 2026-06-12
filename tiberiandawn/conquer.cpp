@@ -142,8 +142,15 @@ void Main_Game(int argc, char* argv[])
     **	Perform one-time-only initializations
     */
     if (!Init_Game(argc, argv)) {
+#ifdef ATARI_ST
+        ST_Init_Await_Keypress();
+#endif
         return;
     }
+
+#ifdef ATARI_ST
+    ST_Mark_Game_Init_Complete();
+#endif
 
     CCDebugString("C&C95 - Game initialisation complete.\n");
     /*

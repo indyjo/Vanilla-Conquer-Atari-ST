@@ -33,6 +33,13 @@ void *Build_Fading_Table(void const *palette, void const *dest, long int color, 
 void Restore_Cached_Icons(void);
 void Invalidate_Cached_Icons(void);
 
+/* True from program start until Init_Game completes successfully. */
+bool ST_Game_Still_Initializing(void);
+void ST_Mark_Game_Init_Complete(void);
+
+/* During initialization, wait for Enter on the console before exiting. */
+void ST_Init_Await_Keypress(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -320,6 +320,9 @@ bool Init_Game(int, char*[])
 #endif
         WWMessageBox().Process(buffer, TXT_OK);
         Prog_End();
+#ifdef ATARI_ST
+        ST_Init_Await_Keypress();
+#endif
         exit(1);
     }
 

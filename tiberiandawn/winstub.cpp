@@ -727,6 +727,10 @@ void Memory_Error_Handler(void)
     ST_Screen_Shutdown_Restore_Tos();
     fputs("Out of memory.\n", stderr);
     fflush(stderr);
+    if (ST_Game_Still_Initializing()) {
+        ST_Init_Await_Keypress();
+        exit(1);
+    }
     /*
      * Supervisor mode: stop halts without exit/cleanup that can break TOS.
      * User mode: wait for a key and return to the OS normally.

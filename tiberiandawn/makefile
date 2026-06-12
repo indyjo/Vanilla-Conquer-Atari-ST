@@ -833,6 +833,13 @@ itch-release:
 		exit 1; \
 	fi; \
 	echo "Stripped cnc.tos: $$TOS_SIZE bytes"; \
+	echo "Building remix.tos..."; \
+	$(MAKE) -C tools/remix mint CROSS_PREFIX="$(CROSS_PREFIX)" CROSS_TARGET="$(CROSS_TARGET)"; \
+	if [ ! -f tools/remix/remix.tos ]; then \
+		echo "error: tools/remix/remix.tos not found after build" >&2; \
+		exit 1; \
+	fi; \
+	cp tools/remix/remix.tos "$(ITCH_STAGE_DIR)/remix.tos"; \
 	for f in atari-assets/*.w16; do \
 		if [ -f "$$f" ]; then cp "$$f" "$(ITCH_STAGE_DIR)/"; fi; \
 	done; \
@@ -842,6 +849,7 @@ itch-release:
 		"Extract these files to a folder on your Atari ST hard drive (emulated or real)." \
 		"" \
 		"To play the game, copy the MIX files from an official Command & Conquer DOS CD into the same folder as the executable." \
+		"Run remix.tos once before cnc.tos to repack MIX files for Atari ST (even offsets, audio conversion)." \
 		"" \
 		"Further information:" \
 		"https://indyjo.itch.io/commandconquer-tiberian-dawn-atari-st" \

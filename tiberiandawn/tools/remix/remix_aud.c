@@ -1,6 +1,5 @@
 /*
- * AUD99 (Westwood IMA) decode and PCM rewrite for Atari STE playback.
- * Logic mirrors tiberiandawn/atarilib/audio_ste.cpp Sample_Make_PCM().
+ * AUD99 (Westwood IMA) decode for remix tooling.
  */
 
 #include "remix_aud.h"
@@ -14,20 +13,29 @@ struct WsAdpcmState {
 };
 
 struct Ima99Core {
-	const unsigned char *pay;
-	unsigned long pay_len;
+	RemixAudReadFn read_fn;
+	void *read_ctx;
+	unsigned char *comp_buf;
+	size_t comp_cap;
+	size_t comp_len;
+	size_t comp_pos;
 	const unsigned char *next_hdr;
-	struct WsAdpcmState ws_mono;
-	const unsigned char *frame_comp_base;
+	unsigned long pay_remain;
+	struct WsAdpcmState ws_l;
+	struct WsAdpcmState ws_r;
+	unsigned channels;
 	unsigned frame_comp_len;
 	unsigned frame_comp_off;
 	unsigned frame_samples_total;
 	unsigned frame_samples_emitted;
+	unsigned char frame_hdr[8];
+	int have_frame_hdr;
 };
 
 struct Ima99Stream {
 	struct Ima99Core ima;
 	unsigned long total_output_samples;
+	unsigned long samples_emitted;
 	signed char skip_scratch[REMIX_IMA_SKIP_SCRATCH];
 };
 
@@ -39,20 +47,6 @@ static unsigned short read_le16(const unsigned char *p)
 static unsigned long read_le32(const unsigned char *p)
 {
 	return (unsigned long)p[0] | ((unsigned long)p[1] << 8) | ((unsigned long)p[2] << 16) | ((unsigned long)p[3] << 24);
-}
-
-static void write_le16(unsigned char *p, unsigned short v)
-{
-	p[0] = (unsigned char)(v & 0xFFu);
-	p[1] = (unsigned char)((v >> 8) & 0xFFu);
-}
-
-static void write_le32(unsigned char *p, unsigned long v)
-{
-	p[0] = (unsigned char)(v & 0xFFu);
-	p[1] = (unsigned char)((v >> 8) & 0xFFu);
-	p[2] = (unsigned char)((v >> 16) & 0xFFu);
-	p[3] = (unsigned char)((v >> 24) & 0xFFu);
 }
 
 static int clamp16(int x)
@@ -129,8 +123,6 @@ static unsigned ws_adpcm_decode_mono8(
     signed char *dst, unsigned dst_samples, unsigned *out_src_bytes_used)
 {
 	unsigned nbytes;
-	unsigned char const *s;
-	signed char *d;
 	unsigned p;
 
 	if (out_src_bytes_used)
@@ -151,8 +143,9 @@ static unsigned ws_adpcm_decode_mono8(
 	{
 		int pred = st->predictor;
 		int si = clamp_step((int)st->step_index);
-		d = dst;
-		s = src;
+		signed char *d = dst;
+		const unsigned char *s = src;
+
 		p = nbytes;
 		while (p--) {
 			unsigned char const b = *s++;
@@ -167,81 +160,90 @@ static unsigned ws_adpcm_decode_mono8(
 	return nbytes << 1;
 }
 
-static void ima99_reset(struct Ima99Stream *s)
+static void ima_compact(struct Ima99Core *ima)
 {
-	memset(s, 0, sizeof(*s));
-}
+	size_t remain;
 
-static void ima99_stream_init(struct Ima99Stream *s, const unsigned char *payload, unsigned long payload_len)
-{
-	memset(&s->ima, 0, sizeof(s->ima));
-	s->ima.pay = payload;
-	s->ima.pay_len = payload_len;
-	s->ima.next_hdr = payload;
-}
-
-static int ima99_bind_from_aud(struct Ima99Stream *s, const unsigned char *aud, unsigned long aud_bytes)
-{
-	unsigned long payload_len;
-	unsigned long pcm_cap;
-	unsigned long payload_avail;
-	unsigned long src_samples;
-	const unsigned char *payload;
-
-	ima99_reset(s);
-	if (aud_bytes < (unsigned long)REMIX_AUD_HDR_LEN || aud == NULL)
-		return 0;
-	if (aud[11] != REMIX_AUD_COMP_IMA99)
-		return 0;
-	if ((aud[10] & REMIX_AUD_FLAG_STEREO) != 0)
-		return 0;
-
-	{
-		unsigned long const size_file = read_le32(aud + 2);
-		unsigned long const uncomp = read_le32(aud + 6);
-		unsigned const aud_stride = (aud[10] & REMIX_AUD_FLAG_16BIT) ? 2u : 1u;
-
-		if (size_file == 0UL || size_file > REMIX_AUD99_MAX_COMPRESSED_PAYLOAD || uncomp == 0UL
-		    || (uncomp & 1UL) != 0UL || uncomp > REMIX_AUD99_MAX_DECODED_PCM_BYTES)
-			return 0;
-		pcm_cap = uncomp;
-		if (pcm_cap == 0UL || pcm_cap > REMIX_AUD99_MAX_DECODED_PCM_BYTES)
-			return 0;
-		payload_avail = aud_bytes > (unsigned long)REMIX_AUD_HDR_LEN
-		    ? aud_bytes - (unsigned long)REMIX_AUD_HDR_LEN
-		    : 0;
-		payload_len = size_file;
-		if (payload_len > payload_avail)
-			payload_len = payload_avail;
-		if (payload_len == 0UL)
-			return 0;
-		src_samples = pcm_cap / aud_stride;
-		if (src_samples == 0UL)
-			return 0;
-		payload = aud + REMIX_AUD_HDR_LEN;
-		ima99_stream_init(s, payload, payload_len);
-		s->total_output_samples = src_samples;
+	if (ima->comp_pos == 0)
+		return;
+	if (ima->comp_pos >= ima->comp_len) {
+		ima->comp_pos = 0;
+		ima->comp_len = 0;
+		return;
 	}
-	return 1;
+	remain = ima->comp_len - ima->comp_pos;
+	memmove(ima->comp_buf, ima->comp_buf + ima->comp_pos, remain);
+	ima->comp_len = remain;
+	ima->comp_pos = 0;
 }
 
-static int ima99_open_next_frame(struct Ima99Stream *s)
+static size_t ima_read_more(struct Ima99Core *ima, size_t need)
 {
-	struct Ima99Core *ima = &s->ima;
-	const unsigned char *const pay_end = ima->pay + ima->pay_len;
+	size_t got;
+	unsigned char *nbuf;
+	size_t ncap;
+
+	if (!ima->read_fn || need == 0)
+		return 0;
+	if (ima->comp_len + need > ima->comp_cap) {
+		ncap = ima->comp_cap ? ima->comp_cap * 2u : 4096u;
+		while (ncap < ima->comp_len + need)
+			ncap *= 2u;
+		nbuf = (unsigned char *)realloc(ima->comp_buf, ncap);
+		if (!nbuf)
+			return 0;
+		ima->comp_buf = nbuf;
+		ima->comp_cap = ncap;
+	}
+	got = ima->read_fn(ima->read_ctx, ima->comp_buf + ima->comp_len, need);
+	if (got == 0)
+		return 0;
+	ima->comp_len += got;
+	return got;
+}
+
+static int ima_ensure_bytes(struct Ima99Core *ima, size_t need)
+{
+	while (ima->comp_len - ima->comp_pos < need && ima->pay_remain > 0) {
+		size_t avail = ima->comp_len - ima->comp_pos;
+		size_t want = need - avail;
+
+		if (want > ima->pay_remain)
+			want = (size_t)ima->pay_remain;
+		if (want > 8192u)
+			want = 8192u;
+		if (want == 0)
+			want = 1;
+		{
+			size_t got = ima_read_more(ima, want);
+			if (got == 0)
+				return 0;
+			ima->pay_remain -= got;
+		}
+	}
+	return ima->comp_len - ima->comp_pos >= need;
+}
+
+static int ima_load_frame(struct Ima99Core *ima)
+{
 	unsigned comp;
 	unsigned decomp;
 	unsigned magic;
 	unsigned frame_pcm;
 	unsigned cap;
 
-	if (ima->next_hdr + 8 > pay_end)
+	ima->frame_comp_off = 0;
+	ima->frame_samples_emitted = 0;
+	ima->have_frame_hdr = 0;
+
+	if (!ima_ensure_bytes(ima, 8))
 		return 0;
-	comp = read_le16(ima->next_hdr);
-	decomp = read_le16(ima->next_hdr + 2);
-	magic = (unsigned)read_le32(ima->next_hdr + 4);
-	if (magic != REMIX_AUD99_FRAME_MAGIC || comp == 0 || decomp == 0 || (decomp & 1u) != 0
-	    || ima->next_hdr + 8 + comp > pay_end)
+
+	memcpy(ima->frame_hdr, ima->comp_buf + ima->comp_pos, 8);
+	comp = read_le16(ima->frame_hdr);
+	decomp = read_le16(ima->frame_hdr + 2);
+	magic = (unsigned)read_le32(ima->frame_hdr + 4);
+	if (magic != REMIX_AUD99_FRAME_MAGIC || comp == 0 || decomp == 0 || (decomp & 1u) != 0)
 		return 0;
 
 	frame_pcm = decomp;
@@ -251,50 +253,61 @@ static int ima99_open_next_frame(struct Ima99Stream *s)
 	if (frame_pcm == 0 || (frame_pcm & 1u) != 0 || frame_pcm > REMIX_AUD99_MAX_SINGLE_FRAME_PCM)
 		return 0;
 
-	{
-		const unsigned char *const chunk = ima->next_hdr + 8;
-		ima->next_hdr += 8 + comp;
-		ima->frame_comp_base = chunk;
-	}
+	if (!ima_ensure_bytes(ima, 8u + (size_t)comp))
+		return 0;
+
+	ima->comp_pos += 8;
 	ima->frame_comp_len = comp;
-	ima->frame_comp_off = 0;
 	ima->frame_samples_total = frame_pcm >> 1;
-	ima->frame_samples_emitted = 0;
+	ima->have_frame_hdr = 1;
 	return 1;
 }
 
-static unsigned ima99_stream_pull(struct Ima99Stream *s, signed char *dst, unsigned max_out)
+static int ima_advance_frame(struct Ima99Core *ima)
+{
+	if (ima->have_frame_hdr) {
+		ima->comp_pos += ima->frame_comp_off;
+		ima->frame_comp_off = 0;
+		ima->have_frame_hdr = 0;
+		ima_compact(ima);
+	}
+	return ima_load_frame(ima);
+}
+
+static int ima_ensure_frame(struct Ima99Core *ima)
+{
+	if (ima->have_frame_hdr && ima->frame_samples_emitted < ima->frame_samples_total)
+		return 1;
+	return ima_advance_frame(ima);
+}
+
+static unsigned ima_pull_mono(struct Ima99Core *ima, signed char *dst, unsigned max_out)
 {
 	unsigned written = 0;
 
 	while (written < max_out) {
-		struct Ima99Core *ima = &s->ima;
 		unsigned need;
-		unsigned rem_samples;
+		unsigned rem;
 		unsigned n;
 		unsigned comp_left;
 		const unsigned char *csrc;
 		unsigned src_used;
 		unsigned produced;
 
-		if (ima->frame_samples_emitted >= ima->frame_samples_total) {
-			ima->frame_comp_off = ima->frame_comp_len;
-			if (!ima99_open_next_frame(s))
-				break;
-		}
+		if (!ima_ensure_frame(ima))
+			break;
 
 		need = max_out - written;
-		rem_samples = ima->frame_samples_total - ima->frame_samples_emitted;
-		n = need < rem_samples ? need : rem_samples;
+		rem = ima->frame_samples_total - ima->frame_samples_emitted;
+		n = need < rem ? need : rem;
 		n &= ~1u;
 		if (n == 0)
 			break;
 
 		comp_left = ima->frame_comp_len - ima->frame_comp_off;
-		csrc = ima->frame_comp_base + ima->frame_comp_off;
+		csrc = ima->comp_buf + ima->comp_pos + ima->frame_comp_off;
 		src_used = 0;
-		produced = ws_adpcm_decode_mono8(
-		    &ima->ws_mono, csrc, comp_left, dst + written, n, &src_used);
+		produced = ws_adpcm_decode_mono8(&ima->ws_l, csrc, comp_left, dst + written, n, &src_used);
 		ima->frame_comp_off += src_used;
 		ima->frame_samples_emitted += produced;
 		written += produced;
@@ -304,125 +317,187 @@ static unsigned ima99_stream_pull(struct Ima99Stream *s, signed char *dst, unsig
 	return written;
 }
 
-static unsigned long ima99_skip(struct Ima99Stream *s, unsigned long sample_count)
+static unsigned ima_pull_stereo(struct Ima99Core *ima, signed char *dst, unsigned max_out)
 {
-	unsigned long skipped = 0;
-	unsigned long left = sample_count;
+	unsigned written = 0;
+	signed char lr[REMIX_AUDIO_PULL_BLOCK * 2];
 
-	while (left > 0UL) {
-		unsigned batch = left > (unsigned long)REMIX_IMA_SKIP_SCRATCH
-		    ? (unsigned)REMIX_IMA_SKIP_SCRATCH
-		    : (unsigned)left;
-		unsigned got;
+	while (written < max_out) {
+		unsigned need;
+		unsigned rem;
+		unsigned n;
+		unsigned half;
+		unsigned comp_left;
+		const unsigned char *csrc;
+		unsigned src_used_l;
+		unsigned src_used_r;
+		unsigned produced_l;
+		unsigned produced_r;
+		unsigned i;
 
-		batch &= ~1u;
-		if (batch == 0)
+		if (!ima_ensure_frame(ima))
 			break;
-		got = ima99_stream_pull(s, s->skip_scratch, batch);
-		if (got == 0)
+
+		need = max_out - written;
+		rem = ima->frame_samples_total - ima->frame_samples_emitted;
+		n = need < rem ? need : rem;
+		n &= ~1u;
+		if (n == 0)
 			break;
-		skipped += (unsigned long)got;
-		left -= (unsigned long)got;
+		if (n > REMIX_AUDIO_PULL_BLOCK)
+			n = REMIX_AUDIO_PULL_BLOCK;
+
+		half = ima->frame_comp_len / 2u;
+		comp_left = half - ima->frame_comp_off;
+		if (comp_left == 0)
+			break;
+		csrc = ima->comp_buf + ima->comp_pos + ima->frame_comp_off;
+		produced_l = ws_adpcm_decode_mono8(&ima->ws_l, csrc, comp_left, lr, n, &src_used_l);
+		produced_r = ws_adpcm_decode_mono8(
+		    &ima->ws_r, csrc + half, comp_left, lr + n, n, &src_used_r);
+		if (src_used_l != src_used_r || produced_l != produced_r || produced_l == 0)
+			break;
+		for (i = 0; i < produced_l; ++i)
+			dst[written + i] = (signed char)(((int)lr[i] + (int)lr[n + i]) / 2);
+		ima->frame_comp_off += src_used_l;
+		ima->frame_samples_emitted += produced_l;
+		written += produced_l;
 	}
-	return skipped;
+	return written;
 }
+
+static void ima99_reset(struct Ima99Stream *s)
+{
+	memset(s, 0, sizeof(*s));
+}
+
+static int ima99_bind_stream(
+    struct Ima99Stream *s, const unsigned char *aud, unsigned long aud_bytes,
+    RemixAudReadFn read_fn, void *read_ctx, unsigned long payload_len)
+{
+	unsigned long uncomp;
+	unsigned aud_stride;
+	unsigned long src_samples;
+
+	ima99_reset(s);
+	if (aud_bytes < (unsigned long)REMIX_AUD_HDR_LEN || aud == NULL || aud[11] != REMIX_AUD_COMP_IMA99)
+		return 0;
+
+	{
+		unsigned long const size_file = read_le32(aud + 2);
+		unsigned char const flags = aud[10];
+
+		uncomp = read_le32(aud + 6);
+		aud_stride = (flags & REMIX_AUD_FLAG_16BIT) ? 2u : 1u;
+		if (size_file == 0UL || size_file > REMIX_AUD99_MAX_COMPRESSED_PAYLOAD || uncomp == 0UL
+		    || (uncomp & 1UL) != 0UL || uncomp > REMIX_AUD99_MAX_DECODED_PCM_BYTES)
+			return 0;
+		if (payload_len == 0UL || payload_len > size_file)
+			payload_len = size_file;
+		src_samples = uncomp / aud_stride;
+		if ((flags & REMIX_AUD_FLAG_STEREO) != 0)
+			src_samples /= 2u;
+		if (src_samples == 0UL)
+			return 0;
+		s->ima.read_fn = read_fn;
+		s->ima.read_ctx = read_ctx;
+		s->ima.pay_remain = payload_len;
+		s->ima.channels = ((flags & REMIX_AUD_FLAG_STEREO) != 0) ? 2u : 1u;
+		s->total_output_samples = src_samples;
+	}
+	return 1;
+}
+
+static unsigned ima99_stream_pull(struct Ima99Stream *s, signed char *dst, unsigned max_out)
+{
+	if (s->ima.channels == 2)
+		return ima_pull_stereo(&s->ima, dst, max_out);
+	return ima_pull_mono(&s->ima, dst, max_out);
+}
+
+static void ima99_free(struct Ima99Stream *s)
+{
+	free(s->ima.comp_buf);
+	s->ima.comp_buf = NULL;
+	s->ima.comp_cap = 0;
+	s->ima.comp_len = 0;
+}
+
+struct RemixImaCtx {
+	struct Ima99Stream stream;
+};
 
 int remix_is_aud99(const unsigned char *data, size_t len)
 {
-	struct Ima99Stream probe;
+	if (len < (size_t)REMIX_AUD_HDR_LEN || data[11] != REMIX_AUD_COMP_IMA99)
+		return 0;
+	if ((data[10] & REMIX_AUD_FLAG_STEREO) != 0)
+		return 1;
+	{
+		unsigned long const uncomp = read_le32(data + 6);
+		unsigned const aud_stride = (data[10] & REMIX_AUD_FLAG_16BIT) ? 2u : 1u;
+		if (uncomp == 0 || (uncomp & 1u) != 0)
+			return 0;
+		if (uncomp / aud_stride == 0)
+			return 0;
+	}
+	return 1;
+}
 
-	if (len < (size_t)REMIX_AUD_HDR_LEN)
+RemixImaCtx *remix_ima_stream_create(
+    const unsigned char *aud, size_t aud_len, unsigned long payload_len,
+    RemixAudReadFn read_fn, void *read_ctx)
+{
+	RemixImaCtx *ctx = (RemixImaCtx *)calloc(1, sizeof(RemixImaCtx));
+	if (!ctx)
+		return NULL;
+	if (!ima99_bind_stream(&ctx->stream, aud, (unsigned long)aud_len, read_fn, read_ctx, payload_len)) {
+		free(ctx);
+		return NULL;
+	}
+	return ctx;
+}
+
+unsigned long remix_ima_stream_total_samples(const RemixImaCtx *ctx)
+{
+	if (!ctx)
 		return 0;
-	if (data[11] != REMIX_AUD_COMP_IMA99)
+	return ctx->stream.total_output_samples;
+}
+
+unsigned remix_ima_stream_pending_frame_samples(RemixImaCtx *ctx)
+{
+	struct Ima99Core *ima;
+
+	if (!ctx)
 		return 0;
-	return ima99_bind_from_aud(&probe, data, (unsigned long)len);
+	ima = &ctx->stream.ima;
+	if (!ima_ensure_frame(ima))
+		return 0;
+	return ima->frame_samples_total - ima->frame_samples_emitted;
+}
+
+unsigned remix_ima_stream_pull_s8(RemixImaCtx *ctx, signed char *dst, unsigned max_out)
+{
+	if (!ctx)
+		return 0;
+	return ima99_stream_pull(&ctx->stream, dst, max_out);
+}
+
+void remix_ima_stream_destroy(RemixImaCtx *ctx)
+{
+	if (!ctx)
+		return;
+	ima99_free(&ctx->stream);
+	free(ctx);
 }
 
 int remix_convert_aud99(const unsigned char *in, size_t in_len, unsigned char **out_buf, size_t *out_len)
 {
-	struct Ima99Stream convert;
-	unsigned long total_samples;
-	unsigned long convert_samples;
-	unsigned char scratch[REMIX_AUDIO_PULL_BLOCK];
-	unsigned char *out;
-	unsigned long written;
-	unsigned long left;
-	unsigned short rate;
-	unsigned long payload_bytes;
-	unsigned long out_cap;
-	unsigned long out_size;
-
-	if (!in || !out_buf || !out_len)
-		return 0;
-	*out_buf = NULL;
-	*out_len = 0;
-
-	if (!remix_is_aud99(in, in_len))
-		return 0;
-
-	if (!ima99_bind_from_aud(&convert, in, (unsigned long)in_len))
-		return 0;
-
-	total_samples = convert.total_output_samples;
-	convert_samples = total_samples & ~1UL;
-	if (convert_samples == 0UL || ima99_skip(&convert, convert_samples) != convert_samples)
-		return 0;
-
-	if (!ima99_bind_from_aud(&convert, in, (unsigned long)in_len))
-		return 0;
-
-	/* Worst case: header + one byte per two decoded samples. */
-	out_cap = (unsigned long)REMIX_AUD_HDR_LEN + (convert_samples >> 1) + 16UL;
-	out = (unsigned char *)malloc(out_cap);
-	if (!out)
-		return 0;
-
-	memcpy(out, in, (size_t)REMIX_AUD_HDR_LEN);
-	written = 0;
-	left = convert_samples;
-	while (left > 0UL) {
-		unsigned long batch = left > (unsigned long)REMIX_AUDIO_PULL_BLOCK
-		    ? (unsigned long)REMIX_AUDIO_PULL_BLOCK
-		    : left;
-		unsigned long i;
-		unsigned long got;
-
-		batch &= ~1UL;
-		if (batch == 0)
-			goto fail;
-		got = (unsigned long)ima99_stream_pull(&convert, (signed char *)scratch, (unsigned)batch);
-		if (got != batch)
-			goto fail;
-		for (i = 0; i < got; i += 2) {
-			int const a = (int)(signed char)scratch[i];
-			int const b = (int)(signed char)scratch[i + 1];
-			int const avg = (a + b) / 2;
-			out[(size_t)REMIX_AUD_HDR_LEN + (size_t)written++] =
-			    (unsigned char)(avg + 128);
-		}
-		left -= got;
-	}
-
-	rate = read_le16(in);
-	if (rate > 1u)
-		rate = (unsigned short)(rate / 2u);
-
-	payload_bytes = written;
-	out_size = (unsigned long)REMIX_AUD_HDR_LEN + payload_bytes;
-	if (out_size > out_cap)
-		goto fail;
-
-	write_le16(out, rate);
-	write_le32(out + 2, payload_bytes);
-	write_le32(out + 6, payload_bytes);
-	out[10] = REMIX_AUD_FLAG_DUP2X;
-	out[11] = REMIX_AUD_COMP_PCM;
-
-	*out_buf = out;
-	*out_len = (size_t)out_size;
-	return 1;
-
-fail:
-	free(out);
+	/* Built by remix_audio buffer path; kept for compatibility. */
+	(void)in;
+	(void)in_len;
+	(void)out_buf;
+	(void)out_len;
 	return 0;
 }

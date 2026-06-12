@@ -31,6 +31,10 @@ Tracked follow-ups for the Atari ST/MiNT port.
 
 ## Content / Media Platform Gaps
 
+- [ ] **Remove `STE_AUD_FLAG_DUP2X` from runtime audio** (`tiberiandawn/atarilib/ste_aud_constants.h`, `ste_stream_pcm.cpp`, `audio_ste.cpp`, `Sample_Make_PCM`).
+  - DUP2X was a producer-side playback hint (duplicate samples when DMA runs at ~25 kHz). Remix tooling will emit plain 11025 Hz 8-bit mono PCM with `rate=11025` and no DUP2X; sample-rate policy should be negotiated between asset prep and the STE driver, not via a flag in the `.AUD` header.
+  - After remix lands: drop DUP2X handling in the pull path; play assets at the rate in the header.
+
 - [ ] Port `Get_CD_Index` for Atari ST/MiNT (covert-CD detection).
   - **Not blocking default build:** `BONUS_MISSIONS`, `FRENCH`, and `GERMAN` are off in `tiberiandawn/defines.h`, so references in `init.cpp` / `conquer.cpp` are compiled out. No implementation is linked today.
   - Add a stub in `st_link_stubs.cpp` (return `-1`) if those defines are re-enabled before a real port.
@@ -41,7 +45,7 @@ Existing pipeline (see also `tiberiandawn/atari.md`):
 
 | Tool | Role |
 |------|------|
-| [`remix`](tiberiandawn/tools/remix/readme.md) | Repack `.MIX` (even offsets, AUD99 → PCM) |
+| [`remix`](tiberiandawn/tools/remix/readme.md) / `remix.tos` | Repack `.MIX` (even offsets, all audio → 11025 Hz 8-bit mono PCM) |
 | [`paltool`](tiberiandawn/tools/paltool/paltool.c) | Extract 768-byte `.PAL` from BMP / CPS / WSA |
 | [`palette-opt`](tiberiandawn/tools/palette-opt/readme.md) | Build single `C2P_WeightSet` (`.W16`) from one `.PAL` |
 | `gen_cps_w16.py`, `histtool`, `w16fix` | Batch / histogram / fixups for asset prep |
@@ -117,5 +121,5 @@ Upstream Vanilla Conquer readme: [`README-vanilla-conquer.md`](README-vanilla-co
 - [x] **`TimerClass` / 60 Hz timing** — `common/timer_st_vbl.cpp` + `St_Vbl_Timer_Init()` in `startup.cpp` after `Super(0)`.
 - [x] **`Audio_Init` (STe DMA)** — `tiberiandawn/atarilib/audio_ste.cpp`, called from `startup.cpp`.
 - [x] **`Set_Video_Mode` (LoRes game video)** — `ST_Screen_Enter_LoRes_Game_Video()` in `startup.cpp`.
-- [x] **`remix` MIX repack tool** — `tiberiandawn/tools/remix/` (even-offset payloads, AUD99 → PCM where needed).
+- [x] **`remix` MIX repack tool (host)** — `tiberiandawn/tools/remix/` (even-offset payloads; expand to full audio normalize + MiNT `remix.tos`).
 - [x] **WSA / XOR delta APIs** — `tiberiandawn/wsa.cpp` (not `atarilib/wsa.cpp`; header is `atarilib/wsa.h`).

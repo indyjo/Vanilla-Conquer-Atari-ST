@@ -157,3 +157,16 @@ long Total_Ram_Free(MemoryFlagType flag)
 	return st + tt;
 }
 
+void *Stram_Alloc(unsigned long bytes_to_alloc)
+{
+	long const a = Mxalloc((long)bytes_to_alloc, MX_STRAM);
+	return a > 0L ? (void *)a : (void *)0;
+}
+
+void Stram_Free(void *pointer)
+{
+	if (pointer) {
+		Mfree(pointer);
+	}
+}
+

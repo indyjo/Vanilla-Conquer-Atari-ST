@@ -13,6 +13,8 @@
 #include "ikbd.h"
 #include "keyboard.h"
 #include "misc.h"
+#include "memflag.h"
+#include "st_hw_probe.h"
 
 #include <mint/osbind.h>
 #include <mint/ostruct.h>
@@ -41,7 +43,7 @@ static void *Alloc_Visible_Plane(int width, int height)
 		return Visible_Plane;
 	}
 
-	Visible_Alloc = new unsigned char[ST_LORES_PLANAR_BYTES + 256];
+	Visible_Alloc = (unsigned char *)Stram_Alloc((unsigned long)ST_LORES_PLANAR_BYTES + 256u);
 	if (!Visible_Alloc) {
 		return NULL;
 	}
@@ -53,7 +55,7 @@ static void *Alloc_Visible_Plane(int width, int height)
 
 static void Free_Visible_Plane(void)
 {
-	delete[] Visible_Alloc;
+	Stram_Free(Visible_Alloc);
 	Visible_Alloc = NULL;
 	Visible_Plane = NULL;
 }
@@ -65,6 +67,11 @@ static void Free_Visible_Plane(void)
  */
 #define ST_SHIFTER_SYNC_MODE ((volatile unsigned char *)0xFF8260UL)
 
+static unsigned long Tos_LogBase = 0;
+static unsigned long Tos_PhysBase = 0;
+static int Tos_Rez = 0;
+static int Tos_StateCaptured = 0;
+
 static void ST_Shifter_Set_Sync_Mode_Only(int rez)
 {
 	unsigned char v = (unsigned char)((unsigned)rez & 3u);
@@ -72,13 +79,18 @@ static void ST_Shifter_Set_Sync_Mode_Only(int rez)
 		v = 2u;
 	}
 	Wait_Vert_Blank();
+	if (!ST_Hw_Is_Ste_Class()) {
+		if (v == 0) {
+			Setscreen(-1L, -1L, 0L);
+		} else if (Tos_StateCaptured) {
+			Setscreen((long)Tos_LogBase, (long)Tos_PhysBase, (long)v);
+		} else {
+			Setscreen(-1L, -1L, (long)v);
+		}
+		return;
+	}
 	*ST_SHIFTER_SYNC_MODE = v;
 }
-
-static unsigned long Tos_LogBase = 0;
-static unsigned long Tos_PhysBase = 0;
-static int Tos_Rez = 0;
-static int Tos_StateCaptured = 0;
 
 static int OriginalResolution = -1;
 static int ResolutionChanged = 0;
@@ -189,6 +201,11 @@ void ST_Screen_Hardware_Set_Phys_Base(void *phys)
 	}
 
 	Wait_Vert_Blank();
+
+	if (!ST_Hw_Is_Ste_Class()) {
+		Setscreen(-1L, (long)a, 0L);
+		return;
+	}
 
 	volatile unsigned char *const p_hi = (volatile unsigned char *)0xFF8201UL;
 	volatile unsigned char *const p_mid = (volatile unsigned char *)0xFF8203UL;

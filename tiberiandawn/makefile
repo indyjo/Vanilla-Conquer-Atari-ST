@@ -323,7 +323,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_screen.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_screen.cpp,)
 
 # Assembly sources (platform-specific)
 # Root directory files use uppercase .ASM, ATARILIB files use lowercase .asm (as tracked in git)
@@ -666,7 +666,7 @@ endif
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o \
-	$(INTDIR)/st_planar_draw.o \
+	$(INTDIR)/st_planar_draw.o $(INTDIR)/st_hw_probe.o $(INTDIR)/st_cache.o $(INTDIR)/st_cache_ops.o \
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/rawfile.o $(INTDIR)/font.o \
 	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \

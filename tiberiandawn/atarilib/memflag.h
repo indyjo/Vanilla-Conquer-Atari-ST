@@ -63,6 +63,10 @@ long Ram_Free(MemoryFlagType flag);
 long Heap_Size(MemoryFlagType flag);
 long Total_Ram_Free(MemoryFlagType flag);
 
+/* Chip/ST-RAM visible to BLiTTER and STE DMA (not TT-RAM). */
+void *Stram_Alloc(unsigned long bytes_to_alloc);
+void Stram_Free(void *pointer);
+
 /*=========================================================================
  * Operator new overloads for memory flags
  *=========================================================================*/

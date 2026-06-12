@@ -285,7 +285,13 @@ int main(int argc, char *argv[])
 			static unsigned char *st_hidden_alloc = NULL;
 			static unsigned char *st_hidden_plane = NULL;
 			if (!st_hidden_alloc) {
-				st_hidden_alloc = new unsigned char[32768 + 256];
+				st_hidden_alloc = (unsigned char *)Stram_Alloc(32768u + 256u);
+				if (!st_hidden_alloc) {
+					printf("C&C - Failed to allocate hidden planar page in ST-RAM.\n");
+					if (Palette) delete [] Palette;
+					ST_Init_Await_Keypress();
+					return (EXIT_FAILURE);
+				}
 				uintptr_t raw_h = (uintptr_t)st_hidden_alloc;
 				st_hidden_plane = (unsigned char *)((raw_h + 255u) & ~(uintptr_t)255u);
 			}

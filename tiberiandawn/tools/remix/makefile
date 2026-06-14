@@ -8,7 +8,7 @@ CROSS_TARGET ?= m68k-atari-mint
 MINT_CC = $(CROSS_PREFIX)/$(CROSS_TARGET)-gcc
 MINT_CFLAGS ?= -O2 -Wall -Wextra -std=c99 -I.
 
-COMMON_SRCS = remix_mix.c remix_detect.c remix_print.c remix_audio.c remix_aud.c remix_unzap.c
+COMMON_SRCS = remix_mix.c remix_merge.c remix_detect.c remix_print.c remix_audio.c remix_aud.c remix_unzap.c
 COMMON_OBJS = $(COMMON_SRCS:.c=.o)
 MINT_COMMON_OBJS = $(COMMON_SRCS:.c=_mint.o)
 

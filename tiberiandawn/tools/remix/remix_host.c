@@ -17,6 +17,8 @@
 #define PATH_MAX 4096
 #endif
 
+#define REMIX_MAX_INPUTS 8
+
 static int paths_same(const char *a, const char *b)
 {
 	if (strcmp(a, b) == 0)
@@ -96,6 +98,7 @@ static void usage(const char *prog)
 	fprintf(stderr,
 	    "Usage:\n"
 	    "  %s -o output.mix input.mix\n"
+	    "  %s -o output.mix first.mix second.mix [...]\n"
 	    "  %s -d input_dir [-o output_dir]\n"
 	    "\n"
 	    "Repack C&C MIX archive(s):\n"
@@ -103,11 +106,13 @@ static void usage(const char *prog)
 	    "  - convert audio to 11025 Hz 8-bit mono PCM .AUD\n"
 	    "  - pad payloads so each begins at an even offset from the MIX start\n"
 	    "\n"
+	    "Multiple inputs merge index entries (same CRC + size: keep first) then repack.\n"
+	    "\n"
 	    "Options:\n"
 	    "  -o, --output PATH   output MIX file, or output directory with -d\n"
 	    "  -d, --directory DIR remix all .mix/.MIX files in DIR (non-recursive)\n"
 	    "  -h, --help          show this help\n",
-	    prog, prog);
+	    prog, prog, prog);
 }
 
 static int remix_directory(const char *dir, const char *out_dir)
@@ -192,17 +197,20 @@ static int remix_directory(const char *dir, const char *out_dir)
 
 int main(int argc, char **argv)
 {
-	const char *in_path = NULL;
+	const char *inputs[REMIX_MAX_INPUTS];
+	unsigned input_count = 0;
 	const char *out_path = NULL;
 	const char *in_dir = NULL;
 	RemixConfig cfg;
 	RemixStats stats;
 	int argi;
 	int rc;
+	unsigned i;
 
 	remix_stats_init(&stats);
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.ui = REMIX_UI_HOST;
+	cfg.fallback_copy_on_convert_fail = 1;
 
 	for (argi = 1; argi < argc; ++argi) {
 		if (!strcmp(argv[argi], "-o") || !strcmp(argv[argi], "--output")) {
@@ -224,17 +232,17 @@ int main(int argc, char **argv)
 			fprintf(stderr, "error: unknown option %s\n", argv[argi]);
 			usage(argv[0]);
 			return 1;
-		} else if (in_path) {
-			fprintf(stderr, "error: unexpected argument %s\n", argv[argi]);
-			usage(argv[0]);
-			return 1;
 		} else {
-			in_path = argv[argi];
+			if (input_count >= REMIX_MAX_INPUTS) {
+				fprintf(stderr, "error: too many input files (max %d)\n", REMIX_MAX_INPUTS);
+				return 1;
+			}
+			inputs[input_count++] = argv[argi];
 		}
 	}
 
-	if (in_dir && in_path) {
-		fprintf(stderr, "error: use either -d or a single input MIX file, not both\n");
+	if (in_dir && input_count > 0) {
+		fprintf(stderr, "error: use either -d or input MIX file(s), not both\n");
 		return 1;
 	}
 
@@ -250,18 +258,21 @@ int main(int argc, char **argv)
 		return remix_directory(in_dir, out_path) ? 0 : 1;
 	}
 
-	if (!in_path || !out_path) {
+	if (input_count == 0 || !out_path) {
 		usage(argv[0]);
 		return 1;
 	}
-	if (paths_same(in_path, out_path)) {
-		fprintf(stderr, "error: output path must differ from input path\n");
-		return 1;
+
+	for (i = 0; i < input_count; ++i) {
+		if (paths_same(inputs[i], out_path)) {
+			fprintf(stderr, "error: output path must differ from input path %s\n", inputs[i]);
+			return 1;
+		}
 	}
 
-	rc = remix_mix_file(in_path, out_path, &cfg, &stats);
+	rc = remix_mix_merge_and_repack(out_path, inputs, input_count, &cfg, &stats);
 	if (rc < 0) {
-		fprintf(stderr, "error: unsupported MIX %s\n", in_path);
+		fprintf(stderr, "error: unsupported MIX input\n");
 		return 1;
 	}
 	return rc > 0 ? 0 : 1;

@@ -220,8 +220,11 @@ static int process_entry(
 	snprintf(e->type_in, sizeof(e->type_in), "empty");
 	snprintf(e->type_out, sizeof(e->type_out), "empty");
 
-	if (e->old_size == 0)
+	if (e->old_size == 0) {
+		if (cfg->entry_report)
+			cfg->entry_report(e, cfg->entry_report_ctx);
 		return 1;
+	}
 
 	in_pos = (long)mix->data_start + (long)e->old_offset;
 	if (fseek(in, in_pos, SEEK_SET) != 0)
@@ -294,7 +297,7 @@ static int process_entry(
 				remix_print_st_progress_reset();
 				remix_print_st_warn(warn);
 				remix_print_st_progress("COPY", 0, total);
-			} else {
+			} else if (cfg->ui == REMIX_UI_HOST) {
 				remix_print_st_warn(warn);
 			}
 			if (fseek(out, out_payload_start, SEEK_SET) != 0)
@@ -321,11 +324,14 @@ static int process_entry(
 	if (cfg->ui == REMIX_UI_HOST)
 		remix_print_host_entry(e);
 
+	if (cfg->entry_report)
+		cfg->entry_report(e, cfg->entry_report_ctx);
+
 	(void)converted;
 	return 1;
 }
 
-int remix_mix_file(const char *in_path, const char *out_path, const RemixConfig *cfg, RemixStats *stats)
+int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConfig *cfg, RemixStats *stats)
 {
 	FILE *in = NULL;
 	FILE *out = NULL;
@@ -357,7 +363,7 @@ int remix_mix_file(const char *in_path, const char *out_path, const RemixConfig 
 
 	if (cfg->ui == REMIX_UI_ST)
 		remix_print_st_mix_header(in_path, mix.count);
-	else
+	else if (cfg->ui == REMIX_UI_HOST)
 		remix_print_host_banner(in_path, out_path, mix.count, mix.data_start);
 
 	if (cfg->ui == REMIX_UI_HOST)
@@ -390,6 +396,11 @@ fail:
 	fclose(out);
 	free_mix(&mix);
 	return 0;
+}
+
+int remix_mix_file(const char *in_path, const char *out_path, const RemixConfig *cfg, RemixStats *stats)
+{
+	return remix_mix_file_ex(in_path, out_path, cfg, stats);
 }
 
 int remix_mix_file_inplace(const char *in_path, const char *temp_path, const RemixConfig *cfg, RemixStats *stats)

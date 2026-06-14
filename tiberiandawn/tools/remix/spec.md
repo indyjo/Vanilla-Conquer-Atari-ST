@@ -323,6 +323,47 @@ Shared headers: `remix.h`, `remix_aud.h`, `remix_detect.h`, `remix_audio.h`,
 
 ---
 
+## MIX merge (dual-disc GENERAL.MIX)
+
+When both GDI and NOD install discs are available, `GENERAL.MIX` from each side must be
+combined before repack. `remix_mix_merge()` unions index entries from multiple plain MIX
+inputs:
+
+| Case | Action |
+|------|--------|
+| CRC not yet in output | add entry (payload copied from that source file) |
+| Same CRC, same size | skip (keep first) |
+| Same CRC, different size | error |
+
+Output index is sorted by **CRC ascending as signed int32** (same as repack). Merge does
+not convert audio or apply even-byte alignment — run `remix_mix_file()` (or
+`remix_mix_merge_and_repack()`) afterward.
+
+Host CLI:
+
+```bash
+remix -o general.mix gdi/GENERAL.MIX nod/GENERAL.MIX   # merge + repack
+remix -o output.mix input.mix                            # repack only
+```
+
+---
+
+## WebAssembly UI mode
+
+`RemixConfig.ui` selects output behaviour:
+
+| Mode | Use |
+|------|-----|
+| `REMIX_UI_HOST` | Host CLI table (`remix_print_host_*`) |
+| `REMIX_UI_ST` | 40-column MiNT UI |
+| `REMIX_UI_WASM` | Silent — no stdout; optional `entry_report` callback |
+
+`remix_mix_file_ex()` is the full repack entry point. Set `entry_report` to receive
+each `RemixEntry` after processing (CRC, sizes, `type_in` / `type_out`). Used by
+[remix-web](../remix-web/) WASM glue (`remix_wasm.c`).
+
+---
+
 ## References
 
 - Westwood AUD: [ModdingWiki](https://moddingwiki.shikadi.net/wiki/Westwood_AUD_Format), [aud3.txt](http://vladan.bato.net/cnc/aud3.txt) (document revision, not codec type 3).

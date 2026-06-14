@@ -51,12 +51,17 @@ typedef struct RemixStats {
 
 typedef enum RemixUi {
 	REMIX_UI_HOST,
-	REMIX_UI_ST
+	REMIX_UI_ST,
+	REMIX_UI_WASM
 } RemixUi;
+
+typedef void (*RemixEntryReportFn)(const RemixEntry *entry, void *user_data);
 
 typedef struct RemixConfig {
 	RemixUi ui;
 	int fallback_copy_on_convert_fail;
+	RemixEntryReportFn entry_report;
+	void *entry_report_ctx;
 } RemixConfig;
 
 void remix_stats_init(RemixStats *stats);
@@ -64,7 +69,19 @@ void remix_stats_init(RemixStats *stats);
 int remix_mix_file(
     const char *in_path, const char *out_path, const RemixConfig *cfg, RemixStats *stats);
 
+/** Same as remix_mix_file; name documents optional entry_report in cfg. */
+int remix_mix_file_ex(
+    const char *in_path, const char *out_path, const RemixConfig *cfg, RemixStats *stats);
+
 int remix_mix_file_inplace(
     const char *in_path, const char *temp_path, const RemixConfig *cfg, RemixStats *stats);
+
+/** Union index entries from in_paths[0..in_count-1]. Returns 1 ok, 0 error, -1 bad MIX. */
+int remix_mix_merge(const char *out_path, const char **in_paths, unsigned in_count);
+
+/** Merge (if in_count > 1) then repack to out_path. */
+int remix_mix_merge_and_repack(
+    const char *out_path, const char **in_paths, unsigned in_count, const RemixConfig *cfg,
+    RemixStats *stats);
 
 #endif /* REMIX_H */

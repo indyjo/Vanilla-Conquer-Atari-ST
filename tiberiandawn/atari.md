@@ -73,3 +73,15 @@ The following MIX files must be present in the same directory as `CNC.TOS`. Thes
   - `DESERT.MIX`   — desert theater graphics
 
 Additional .MIX files may be loaded based on mission or expansion content, but the ones above are the minimum required for the core campaign.
+
+## Preparing MIX files (Remix Web)
+
+Use **[Remix Web](tools/remix-web/)** — a browser wizard that extracts MIX archives from your own GDI and NOD install discs, merges `GENERAL.MIX`, and repacks with [REMIX](tools/remix/) (11025 Hz audio, even byte offsets).
+
+```bash
+make remix-web   # from tiberiandawn/
+```
+
+Open `tools/remix-web/web/dist/index.html` via a local static server, or run `npm run dev` in `tools/remix-web/web/` during development. You need both GDI and NOD install disc images (ISO or a ZIP containing one ISO each; volume labels must read `GDI` and `NOD`). Optionally attach the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) to bundle `cnc.tos` and `*.W16` palette weights.
+
+See [tools/remix-web/readme.md](tools/remix-web/readme.md) for full usage.

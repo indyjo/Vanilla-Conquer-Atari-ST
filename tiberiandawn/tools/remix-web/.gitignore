@@ -1,0 +1,5 @@
+web/node_modules/
+web/dist/
+dist/
+web/public/remix.js
+web/public/remix.wasm

@@ -777,6 +777,38 @@ $(INTDIR)/title_pcx_load_st_tests.o: ATARILIB/title_pcx_load.cpp | $(INTDIR)
 endif
 
 #=============================================================================
+# remix-web — browser MIX prep wizard (host build, static output)
+#=============================================================================
+
+remix-web:
+	@set -e; \
+	SAVED_PATH="$$PATH"; \
+	if [ -f "$$HOME/emsdk/emsdk_env.sh" ]; then \
+		. "$$HOME/emsdk/emsdk_env.sh"; \
+	else \
+		echo "error: ~/emsdk/emsdk_env.sh not found" >&2; \
+		exit 1; \
+	fi; \
+	$(MAKE) -C tools/remix-web/wasm; \
+	cd tools/remix-web/web && PATH="$$SAVED_PATH" npm ci && PATH="$$SAVED_PATH" npm run build; \
+	echo "remix-web built: tools/remix-web/web/dist/"
+
+REMIX_WEB_ITCH_ZIP = tools/remix-web/dist/remix-web-itch.zip
+
+remix-web-itch: remix-web
+	@set -e; \
+	if [ ! -f tools/remix-web/web/dist/index.html ]; then \
+		echo "error: tools/remix-web/web/dist/index.html not found" >&2; \
+		exit 1; \
+	fi; \
+	mkdir -p tools/remix-web/dist; \
+	rm -f "$(REMIX_WEB_ITCH_ZIP)"; \
+	( cd tools/remix-web/web/dist && zip -q -r "../../dist/remix-web-itch.zip" . ); \
+	echo "Created $(REMIX_WEB_ITCH_ZIP) (upload to itch.io as HTML)"
+
+.PHONY: remix-web remix-web-itch
+
+#=============================================================================
 # itch.io release packages (Atari ST only)
 #=============================================================================
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -852,7 +884,7 @@ itch-release:
 		"Run remix.tos once before cnc.tos to repack MIX files for Atari ST (even offsets, audio conversion)." \
 		"" \
 		"Further information:" \
-		"https://indyjo.itch.io/commandconquer-tiberian-dawn-atari-st" \
+		"https://indyjo.itch.io/commandconquer" \
 		"" \
 		"This game is provided under the terms of the GNU General Public License, version 3 (GPLv3)." \
 		"" \

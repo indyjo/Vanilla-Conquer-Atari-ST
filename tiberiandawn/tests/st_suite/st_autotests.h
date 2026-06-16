@@ -11,10 +11,12 @@ typedef struct {
 	StAutotestStatus c2p;
 	StAutotestStatus build_frame;
 	StAutotestStatus audio;
+	StAutotestStatus terrain_clip;
 	unsigned c2p_checksum;
 	int bf_ok;
 	int bf_skip;
 	int bf_fail;
+	int terrain_clip_failures;
 } StAutotestReport;
 
 /* Runs C2P, Build_Frame (CONQUER.MIX SHPs), and one .AUD clip. Returns 0 if all PASS. */

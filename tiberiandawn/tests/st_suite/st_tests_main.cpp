@@ -12,6 +12,8 @@
 #include "st_planar_line_bench.h"
 #include "st_wsa_playback.h"
 #include "st_cps_browser.h"
+#include "st_terrain_tile_left_clip_autotest.h"
+#include "st_blitter_rect_interactive.h"
 
 #include <mint/osbind.h>
 
@@ -51,11 +53,13 @@ static void print_banner(void)
 	printf("8 Auto: same as 1\n");
 	printf("9 Auto: TITLE 8-way blitter scroll\n");
 	printf("b Auto: 24x24 tile skew matrix\n");
+	printf("t Auto: terrain left-clip atlas\n");
 	printf("f Interactive: font browser (.FNT)\n");
 	printf("w Interactive: WSA playback\n");
 	printf("c Interactive: CPS / W16 browser\n");
 	printf("l Auto: planar line benchmark\n");
 	printf("a Audio tests (submenu)\n");
+	printf("i Interactive: blit rect tuner\n");
 	printf("0 Exit\n");
 	printf("Choice: ");
 	fflush(stdout);
@@ -144,9 +148,107 @@ static void audio_tests_submenu(void)
 	SuperToUser(ssp);
 }
 
+static int st_read_auto_cmd_char(void)
+{
+	FILE *f = fopen("TST_AUTO.CMD", "r");
+	if (!f) {
+		return 0;
+	}
+	int ch = fgetc(f);
+	fclose(f);
+	remove("TST_AUTO.CMD");
+	if (ch == '\r' || ch == '\n' || ch == EOF) {
+		return 0;
+	}
+	if (ch >= 'A' && ch <= 'Z') {
+		ch += 'a' - 'A';
+	}
+	return ch;
+}
+
+static int st_dispatch_menu_choice(int ch)
+{
+	switch (ch) {
+	case '1':
+		return st_run_automated_bundle();
+	case '2':
+		st_run_interactive_gradient();
+		break;
+	case '4':
+		st_run_interactive_title_production_path();
+		break;
+	case '5':
+		st_run_interactive_title_menu_overlay();
+		break;
+	case '6':
+		st_run_interactive_title_mouse_cursor();
+		break;
+	case '7':
+		st_run_interactive_build_frame_xor_grid();
+		break;
+	case '8':
+		return st_run_automated_bundle();
+	case 'a':
+	case 'A':
+		audio_tests_submenu();
+		break;
+	case '9':
+		st_run_interactive_blitter_planar();
+		break;
+	case 'b':
+	case 'B':
+		st_run_blitter_tile_skew_matrix();
+		break;
+	case 't':
+	case 'T': {
+		long old_ssp = Super(0L);
+		int const rc = st_run_terrain_tile_left_clip_autotest_ex(1, NULL);
+		SuperToUser(old_ssp);
+		return rc;
+	}
+	case 'f':
+	case 'F':
+		st_run_interactive_font_browser();
+		break;
+	case 'w':
+	case 'W':
+		st_run_interactive_wsa_playback();
+		break;
+	case 'c':
+	case 'C':
+		st_run_interactive_cps_browser();
+		break;
+	case 'i':
+	case 'I':
+		st_run_interactive_blitter_rect();
+		break;
+	case 'l':
+	case 'L':
+		return st_run_planar_line_bench();
+	case '0':
+	case 27: /* ESC */
+		printf("Bye.\n");
+		return 0;
+	default:
+		printf("Unknown option.\n");
+		break;
+	}
+	return 0;
+}
+
 int main(void)
 {
 	(void)st_tests_register_mixes_once();
+
+	int const auto_ch = st_read_auto_cmd_char();
+	if (auto_ch) {
+		printf("Auto-run: %c\n", auto_ch);
+		int const rc = st_dispatch_menu_choice(auto_ch);
+		if (auto_ch == '1' || auto_ch == '8' || auto_ch == 't' || auto_ch == 'l') {
+			Pterm0();
+			return rc;
+		}
+	}
 
 	for (;;) {
 		print_banner();
@@ -154,62 +256,10 @@ int main(void)
 		int ch = (int)(w & 0xFF);
 		printf("%c\n", (ch >= 32 && ch < 127) ? ch : '?');
 
-		switch (ch) {
-		case '1':
-			(void)st_run_automated_bundle();
-			break;
-		case '2':
-			st_run_interactive_gradient();
-			break;
-		case '4':
-			st_run_interactive_title_production_path();
-			break;
-		case '5':
-			st_run_interactive_title_menu_overlay();
-			break;
-		case '6':
-			st_run_interactive_title_mouse_cursor();
-			break;
-		case '7':
-			st_run_interactive_build_frame_xor_grid();
-			break;
-		case '8':
-			(void)st_run_automated_bundle();
-			break;
-		case 'a':
-		case 'A':
-			audio_tests_submenu();
-			break;
-		case '9':
-			st_run_interactive_blitter_planar();
-			break;
-		case 'b':
-		case 'B':
-			st_run_blitter_tile_skew_matrix();
-			break;
-		case 'f':
-		case 'F':
-			st_run_interactive_font_browser();
-			break;
-		case 'w':
-		case 'W':
-			st_run_interactive_wsa_playback();
-			break;
-		case 'c':
-		case 'C':
-			st_run_interactive_cps_browser();
-			break;
-		case 'l':
-		case 'L':
-			(void)st_run_planar_line_bench();
-			break;
-		case '0':
-		case 27: /* ESC */
+		if (ch == '0' || ch == 27) {
 			printf("Bye.\n");
 			return 0;
-		default:
-			printf("Unknown option.\n");
-			break;
 		}
+		(void)st_dispatch_menu_choice(ch);
 	}
 }

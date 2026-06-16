@@ -17,13 +17,14 @@ Output: `bin/AtariST/cnc_st_tests.tos`
 
 | Option | Type | Purpose |
 |--------|------|---------|
-| **1** | Automated | **All automated tests:** C2P planar checksum + **Build_Frame** SHP spot-checks (CONQUER.MIX) + one **`.AUD`** playback. Single summary block at the end (`Overall: PASS` / `FAIL`). |
+| **1** | Automated | **All automated tests:** C2P planar checksum + **Build_Frame** SHP spot-checks (CONQUER.MIX) + one **`.AUD`** playback + **terrain left-clip atlas** blitter check. Single summary block at the end (`Overall: PASS` / `FAIL`). |
 | **2** | Interactive | **16×16 VGA index grid** (8×8 px/cell) plus a **16-pen ST strip** (2 px below the grid) through C2P. Menu lists every **`*.W16`** in the **current directory**; after choosing one, select a **`*.PAL`** file from the cwd as well. The chosen **`.PAL`** supplies RGB, and the chosen **`.W16`** supplies weights/subset. Exits if no **`.W16`** or **`.PAL`** files are present. |
 | **4** | Interactive | **Production title draw:** caches **`CONQUER.MIX`**, loads **`TITLE.CPS`** through **`Load_Title_Screen`** (same path as game), primes **`CurrentPalette`** with **TEMPERAT.PAL** before load (cold-start equivalent), then displays planar 320×200. This is the **title background only**, not the full main menu (buttons/text still need the real menu/dialog code). |
 | **5** | Interactive | `TITLE.CPS` production path plus **main menu overlay** (dialog + gradient labels). |
 | **6** | Interactive | `TITLE.CPS` plus **moving mouse cursor** using **`MOUSE.SHP`** from **`LOCAL.MIX`**. |
 | **7** | Interactive | Console menu **`1`**–**`7`** (`E1`, `E2`, `POWER`, `MINIGUN`, `FIRE1`, `OPTIONS`, `TREX` from **`CONQUER.MIX`**); then **`Build_Frame` every frame** of the chosen SHP, tiled on a **4×4 checker** (logical **13**/**14**), grid **bottom-padded** (**8** px). **No** `printf` / `st_wrap_puts` during the low-rez preview; confirm with **silent** **Y**/**Z** vs **N** (Tips below). |
 | **8** | Automated | Same as **1** (alias). Runs under **`Super(0L)`** with **`conterm`** key-click mute on MiNT. |
+| **t** | Automated | **Terrain left-clip atlas** (also in **1**/**8**). Hatari: `tests/st_suite/run_tstcnc_hatari.sh t` (writes `TST_AUTO.CMD`, uses `--conout 2`). |
 | **a** | Submenu | **Audio tests:** pick **1**–**n** for a fixed **MIX / .AUD** row, **n+1** or **f** for “first hit in list order” (same as **8**’s audio step), **m** for **dual-sample mix** (two selectable clips + volumes, VBL-serviced STE DMA — same path as theme + EVA), **0** / **ESC** back. The submenu stays in **supervisor mode** for its lifetime so **`conterm`** key-click muting is safe under MiNT memory protection. |
 | **c** | Interactive | **CPS / W16 browser:** lists every **`.CPS`** referenced in game sources with its weight set (**`.W16`** on disk, or built-in **HTITLE** for **`TITLE.CPS`**). Pick an entry; image stays on screen until any key. |
 

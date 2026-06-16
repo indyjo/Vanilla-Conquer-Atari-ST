@@ -27,10 +27,6 @@ int IKBD_Key_Is_Down(int vk);
 static const int ST_TILE_LINEAR_W = 24;
 static const int ST_TILE_LINEAR_H = 24;
 static const int ST_TILE_LINEAR_BYTES = ST_TILE_LINEAR_W * ST_TILE_LINEAR_H;
-/*
- * Keep planar scratch wider than tile width so we can place the tile at sx = dx mod 16.
- * This makes src/dst nibble alignment equal (skew_low = 0), avoiding problematic skew cases.
- */
 static const int ST_TILE_PLANAR_CACHE_SLOTS = 128;
 static const int ST_TILE_PLANAR_CACHE_TILES_PER_ROW = 13; /* 13*24=312, keep 8px right margin */
 static const int ST_TILE_PLANAR_CACHE_W = 320;
@@ -163,14 +159,10 @@ static BOOL Try_Blit_Cached_Terrain_Tile(
 		BOOL blit_ok = ST_Blitter_Planar_Rect_Blit(
 		g_tile_planar_cache_aligned,
 		ST_TILE_PLANAR_CACHE_BPL,
-		ST_TILE_PLANAR_CACHE_W,
-		ST_TILE_PLANAR_CACHE_H,
 		(int)atlas.atlas_x + clip_src_x,
 		(int)atlas.atlas_y + clip_src_y,
 		dst_root,
 		dst_bpl,
-		dst_gb->Get_Width(),
-		dst_gb->Get_Height(),
 		dx_abs,
 		dy_abs,
 		clip_blit_w,
@@ -739,14 +731,10 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 		if (ST_Blitter_Planar_Rect_Blit(
 				src_root,
 				src_bpl,
-				src_gb->Get_Width(),
-				src_gb->Get_Height(),
 				sx_abs,
 				sy_abs,
 				dst_root,
 				dst_bpl,
-				dest_gb->Get_Width(),
-				dest_gb->Get_Height(),
 				dx_abs,
 				dy_abs,
 				pixel_width,
@@ -2037,14 +2025,10 @@ iconset_decode_done:
 					if (ST_Blitter_Planar_Rect_Blit(
 							g_tile_planar_cache_aligned,
 							ST_TILE_PLANAR_CACHE_BPL,
-							ST_TILE_PLANAR_CACHE_W,
-							ST_TILE_PLANAR_CACHE_H,
 							(int)atlas.atlas_x + clip_src_x,
 							(int)atlas.atlas_y + clip_src_y,
 							dst_root,
 							dst_bpl_fb,
-							dst_pw_fb,
-							dst_ph_fb,
 							dx_abs,
 							dy_abs,
 							clip_blit_w,
@@ -2090,14 +2074,10 @@ iconset_decode_done:
 					if (ST_Blitter_Planar_Rect_Blit(
 							g_tile_planar_cache_aligned,
 							ST_TILE_PLANAR_CACHE_BPL,
-							ST_TILE_PLANAR_CACHE_W,
-							ST_TILE_PLANAR_CACHE_H,
 							(int)atlas.atlas_x + clip_src_x,
 							(int)atlas.atlas_y + clip_src_y,
 							dst_root,
 							dst_bpl_fb,
-							dst_pw_fb,
-							dst_ph_fb,
 							dx_abs,
 							dy_abs,
 							clip_blit_w,

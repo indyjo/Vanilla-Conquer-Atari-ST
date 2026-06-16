@@ -573,7 +573,7 @@ clean:
 	@rm -f $(OUTDIR)/cnc_st_tests.tos
 	@rm -f $(OUTDIR)/tstcnc.tos
 	@rm -f $(OUTDIR)/tstcncd.tos
-	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_cps_browser.o $(INTDIR)/title_pcx_load_st_tests.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/st_blitter_blit.o
+	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_cps_browser.o $(INTDIR)/title_pcx_load_st_tests.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/st_blitter_blit.o
 
 # Clean all configurations
 cleanall:
@@ -663,7 +663,7 @@ ST_TEST_EXE = $(OUTDIR)/tstcncd.tos
 else
 ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
 endif
-ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
+ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_title_menu_overlay.o $(INTDIR)/st_title_mouse_cursor.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o \
 	$(INTDIR)/st_planar_draw.o $(INTDIR)/st_hw_probe.o $(INTDIR)/st_cache.o $(INTDIR)/st_cache_ops.o \
@@ -699,11 +699,19 @@ $(INTDIR)/st_c2p_autotests.o: $(ST_SUITE_DIR)/st_c2p_autotests.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
+$(INTDIR)/st_terrain_tile_left_clip_autotest.o: $(ST_SUITE_DIR)/st_terrain_tile_left_clip_autotest.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
 $(INTDIR)/st_interactive.o: $(ST_SUITE_DIR)/st_interactive.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 $(INTDIR)/st_blitter_interactive.o: $(ST_SUITE_DIR)/st_blitter_interactive.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_blitter_rect_interactive.o: $(ST_SUITE_DIR)/st_blitter_rect_interactive.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 

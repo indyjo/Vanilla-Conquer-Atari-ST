@@ -8,10 +8,14 @@
 #include "st_blitter_blit.h"
 #include "st_frame_meter.h"
 
+#include "ikbd.h"
+#include "keyboard.h"
+
 #include "lrucache.h"
 
 #include <stdint.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -124,6 +128,7 @@ static bool g_sprite_cache_inited = false;
 static int g_sprite_cache_cap[4] = { ST_SPRITE_CACHE_CAPACITY_16, ST_SPRITE_CACHE_CAPACITY_32,
 	ST_SPRITE_CACHE_CAPACITY_64, ST_SPRITE_CACHE_CAPACITY_96 };
 static SpriteCacheTierStats g_sprite_cache_stats[4];
+static bool g_sprite_cache_stats_key_prev = false;
 
 /* 32-bit rotate-left helper used by lightweight hash mixers. */
 static inline uint32_t sprite_cache_rotl32(uint32_t x, unsigned r)
@@ -303,6 +308,45 @@ static void sprite_cache_reset_stats(void)
 {
 	std::memset(g_sprite_cache_stats, 0, sizeof(g_sprite_cache_stats));
 }
+
+#if defined(__MINT__)
+static void sprite_cache_dump_stats_and_reset(void)
+{
+	static const int dims[4] = { SPRITE_CACHE_D16, SPRITE_CACHE_D32, SPRITE_CACHE_D64, SPRITE_CACHE_D96 };
+	for (int ti = 0; ti < 4; ++ti) {
+		const SpriteCacheTierStats &st = g_sprite_cache_stats[ti];
+		unsigned long fill_ratio_100 = 0;
+		unsigned long cached_slots = 0;
+		unsigned long cached_pixels_sum = 0;
+		SpriteCacheTier *const tr = sprite_cache_tier_from_index(ti);
+		if (tr && tr->slot_meta) {
+			for (int si = 0; si < tr->capacity; ++si) {
+				SpriteCacheSlotMeta const &sm = tr->slot_meta[si];
+				if (!sm.occupied)
+					continue;
+				cached_slots++;
+				cached_pixels_sum += (unsigned long)sm.crop_w * (unsigned long)sm.crop_h;
+			}
+		}
+		if (cached_slots != 0UL) {
+			const unsigned long slot_pixels = (unsigned long)dims[ti] * (unsigned long)dims[ti];
+			const unsigned long denom = cached_slots * slot_pixels;
+			if (denom != 0UL) {
+				fill_ratio_100 = (cached_pixels_sum * 100UL + (denom / 2UL)) / denom;
+			}
+		}
+		const unsigned long fills = st.fills_fast + st.fills_slow;
+		printf("SpriteCache tier %d: hits=%lu misses=%lu fills=%lu avg_fill=%lu%%\n",
+		    dims[ti],
+		    st.hits,
+		    st.misses,
+		    fills,
+		    fill_ratio_100);
+	}
+	std::fflush(stdout);
+	sprite_cache_reset_stats();
+}
+#endif
 
 /*
  * Tight bounds for index-0 transparency via edge scan: top/bottom rows, then left/right
@@ -568,6 +612,20 @@ extern "C" void ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults(void)
 	sprite_cache_apply_default_caps();
 	sprite_cache_shutdown();
 	sprite_cache_maybe_init();
+}
+
+void ST_Sprite_Cache_Stats_Debug_Service(void)
+{
+#if defined(__MINT__)
+	const bool down = (IKBD_Key_Is_Down(VK_MENU) && IKBD_Key_Is_Down(VK_D)) ? true : false;
+	if (down && !g_sprite_cache_stats_key_prev) {
+		sprite_cache_maybe_init();
+		sprite_cache_dump_stats_and_reset();
+	}
+	g_sprite_cache_stats_key_prev = down;
+#else
+	(void)0;
+#endif
 }
 
 /* Executes either opaque or mask+OR blitter sequence. */
@@ -854,10 +912,10 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		if (lazy_gate != nullptr && lazy_gate->fill != nullptr && lazy_gate->decoded == 0) {
 			unsigned long const built = lazy_gate->fill(lazy_gate->ctx);
 			if (built == 0UL) {
-				return 0;
+				return -1;
 			}
 			if ((const uint8_t *)(uintptr_t)built != raster_base) {
-				return 0;
+				return -1;
 			}
 			lazy_gate->decoded = 1;
 		}
@@ -871,15 +929,15 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 
 		const int tier_ix = sprite_cache_pick_tier_index_for_crop(crop_w, crop_h);
 		if (tier_ix < 0) {
-			return 0;
+			return -1;
 		}
 
 		tr = sprite_cache_tier_from_index(tier_ix);
 		if (!tr || !tr->lru || !tr->slot_meta) {
-			return 0;
+			return -1;
 		}
 		if (!tr->lru->retarget_oldest_slot(want, slot)) {
-			return 0;
+			return -1;
 		}
 
 		if (tr->slot_meta[slot].occupied) {
@@ -906,7 +964,7 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 			    crop_w,
 			    crop_h);
 		if (fill_route == 0) {
-			return 0;
+			return -1;
 		}
 
 		meta.crop_x = (uint16_t)crop_x;
@@ -980,7 +1038,7 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		    src_y,
 		    draw_w,
 		    draw_h)) {
-		return 0;
+		return -1;
 	}
 
 	return (long)((size_t)draw_w * (size_t)draw_h);
@@ -998,7 +1056,7 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
  *      tier pool whose per-slot planar+mask byte caps fit the crop's ST layout, fill slot, store meta.
  *   3) Blit only the intersection of current clip rectangle and cached crop rectangle.
  *
- * Return: blit_w*blit_h if the blitter path reports success, else 0 (skip, bad blit, etc.).
+ * Return: pixels composited (>= 0), or -1 on hard failure.
  *
  * Parameters:
  *   full_w/full_h — Decoded chunky frame extents at raster_base (stride src_stride ≥ full_w).
@@ -1024,7 +1082,7 @@ static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
 	long identity_key,
 	SpriteCacheLazyGate *lazy_gate)
 {
-	const long acc = sprite_cache_cached_tile_dispatch(dst_root_fb,
+	return sprite_cache_cached_tile_dispatch(dst_root_fb,
 	    dst_row_bytes,
 	    dst_width_pixels,
 	    dst_height_pixels,
@@ -1043,7 +1101,6 @@ static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
 	    raster_oy,
 	    identity_key,
 	    lazy_gate);
-	return acc ? acc : 0;
 }
 
 long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
@@ -1071,25 +1128,25 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	sprite_cache_maybe_init();
 	if (!dst_root_fb || dst_row_bytes <= 0 || dst_width_pixels <= 0 || dst_height_pixels <= 0
 		|| blit_w <= 0 || blit_h <= 0 || src_stride <= 0 || !raster_base) {
-		return 0;
+		return -1;
 	}
 	if (full_w <= 0 || full_h <= 0 || full_w > src_stride) {
-		return 0;
+		return -1;
 	}
 	if (raster_ox < 0 || raster_oy < 0) {
-		return 0;
+		return -1;
 	}
 	if (raster_ox + blit_w > full_w || raster_oy + blit_h > full_h) {
-		return 0;
+		return -1;
 	}
 	if (!g_sprite_cache_slab) {
-		return 0;
+		return -1;
 	}
 	{
 		const uint8_t *const expect =
 		    raster_base + (size_t)raster_oy * (size_t)src_stride + (size_t)raster_ox;
 		if (src != expect) {
-			return 0;
+			return -1;
 		}
 	}
 

@@ -16,7 +16,7 @@ extern "C" {
  * Ghost approximates translucent drawing via checkerboard mask dither (fully cacheable).
  *
  * Blits that need more planar or mask bytes than the largest tier slot (same byte budget as a 96×96
- * reference tile) return 0 from the cache path and fall back to software C2P in Buffer_Frame_To_Page_Ex.
+ * reference tile) return -1 from the cache path and fall back to software C2P in Buffer_Frame_To_Page_Ex.
  *
  * LRU keys mix identity_key with render-variant fingerprints (fade/ghost/trans state).
  * Cache slots store a cropped (minimal non-transparent) representation plus insets; viewport clip
@@ -25,6 +25,9 @@ extern "C" {
  *
  * full_w/full_h — unclipped frame width/height (same as logical stride rows / Buffer_Frame_To_Page w,h).
  * lazy_decode_miss: when non-NULL, invokes once on LRU cache miss — return must equal raster_base.
+ *
+ * Return value: pixels composited (>= 0), including 0 when the viewport clip does not intersect the
+ * cached crop. Returns -1 on hard failure (tier/blit/decode).
  */
 long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
 	int dst_row_bytes,
@@ -67,6 +70,9 @@ void ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults(void);
  * so planar LRU rows do not alias different tiles that share clip geometry (e.g. map stamps).
  */
 long ST_SPRITE_CACHE_Frame_Identity_Key(void const *blobs_root, int frame_index);
+
+/* Alt+D: print per-tier sprite LRU stats to stdout, then reset counters. */
+void ST_Sprite_Cache_Stats_Debug_Service(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

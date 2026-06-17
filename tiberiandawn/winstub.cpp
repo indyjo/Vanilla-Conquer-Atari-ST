@@ -565,7 +565,7 @@ long Buffer_Frame_To_Page_Ex(int x,
                                                               ex->identity_key,
                                                               (unsigned long (*)(void*))lazy_miss_fn,
                                                               lazy_miss_ctx);
-        if (drew > 0) {
+        if (drew >= 0) {
             return drew;
         }
         /*

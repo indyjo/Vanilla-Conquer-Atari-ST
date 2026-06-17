@@ -44,6 +44,8 @@ static BOOL g_tile_scratch_init_attempted = FALSE;
 static BOOL g_tile_cache_debug_show = FALSE;
 static BOOL g_tile_cache_debug_key_prev = FALSE;
 
+static BOOL Ensure_Terrain_Tile_Scratch(void);
+
 struct STTilePlanarCacheSlot {
 	unsigned short atlas_x;
 	unsigned short atlas_y;
@@ -59,18 +61,24 @@ static inline unsigned long ST_Read_Hz200(void)
 	return *(volatile unsigned long *)ST_HZ200_ADDR;
 }
 
-static void ST_Tile_Cache_Debug_Toggle_Maybe(void)
+void ST_Tile_Cache_Debug_Service(void)
 {
 	/* F10 alone: avoid clash with Ctrl+F10 (TOS console toggle in st_screen.cpp). */
 	int ctrl = IKBD_Key_Is_Down(VK_CONTROL);
 	BOOL down = (IKBD_Key_Is_Down(VK_F10) && !ctrl) ? TRUE : FALSE;
 	if (down && !g_tile_cache_debug_key_prev) {
 		g_tile_cache_debug_show = (g_tile_cache_debug_show == FALSE) ? TRUE : FALSE;
-		if (g_tile_cache_debug_show && g_tile_planar_cache_aligned) {
-			ST_Screen_Hardware_Set_Phys_Base(g_tile_planar_cache_aligned);
-			printf("TileCache debug view: ON (phys=tile atlas)\n");
-		} else if (VisiblePage.Get_Buffer()) {
-			ST_Screen_Hardware_Set_Phys_Base(VisiblePage.Get_Buffer());
+		if (g_tile_cache_debug_show) {
+			if (!Ensure_Terrain_Tile_Scratch() || !g_tile_planar_cache_aligned) {
+				g_tile_cache_debug_show = FALSE;
+				printf("TileCache debug view: atlas not available\n");
+			} else {
+				ST_Screen_Hardware_Set_Phys_Base(g_tile_planar_cache_aligned);
+				printf("TileCache debug view: ON (phys=tile atlas)\n");
+			}
+		} else {
+			ST_Screen_Apply_Game_Video_Hardware();
+			printf("TileCache debug view: OFF\n");
 		}
 	}
 	g_tile_cache_debug_key_prev = down;
@@ -1842,7 +1850,6 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	}
 	const unsigned long stamp_identity_key = ST_SPRITE_CACHE_Frame_Identity_Key(icondata, icon);
 	if (!remap && AllowHardwareBlitFills && VP_Is_Planar(vp) && Ensure_Terrain_Tile_Scratch()) {
-		ST_Tile_Cache_Debug_Toggle_Maybe();
 		BOOL maybe_24x24_tile = FALSE;
 		const unsigned char *base = (const unsigned char *)icondata;
 		const unsigned short iw = Read_LE16_Unsafe(base + 0);

@@ -43,4 +43,7 @@ void ST_Planar_Draw_VLine_Fast(
 	short y2_abs,
 	uint16_t color4);
 
+/* Fill words for flat nibble color (same table as ST_Planar_Fill_Rect_Fast). */
+void ST_Planar_Get_Fill_Words(uint16_t color4, uint16_t out[4]);
+
 #endif

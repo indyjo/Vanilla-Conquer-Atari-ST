@@ -70,5 +70,10 @@ extern unsigned char ColorXlat[256];
 /* Rebuild planar font mask/color tables after ColorXlat changes (Set_Font_Palette). */
 void Font_Planar_Rebuild_Tables(void);
 
+#ifdef ATARI_ST
+/* F10: toggle shifter between game buffer and terrain tile planar atlas (Call_Back). */
+void ST_Tile_Cache_Debug_Service(void);
+#endif
+
 #endif /* DRAWBUFF_H */
 

@@ -322,11 +322,30 @@ void ST_Screen_Shutdown_Restore_Tos(void)
 
 void ST_Screen_Hardware_Set_Phys_Base(void *phys)
 {
-	(void)phys;
+	uintptr_t a = (uintptr_t)phys;
+	if (a == 0u) {
+		return;
+	}
+
+	Wait_Vert_Blank();
+
+	if (!ST_Hw_Is_Ste_Class()) {
+		Setscreen(-1L, (long)a, 0L);
+		return;
+	}
+
+	volatile unsigned char *const p_hi = (volatile unsigned char *)0xFF8201UL;
+	volatile unsigned char *const p_mid = (volatile unsigned char *)0xFF8203UL;
+	volatile unsigned char *const p_low = (volatile unsigned char *)0xFF820DUL;
+
+	*p_hi = (unsigned char)((a >> 16) & 0xFFu);
+	*p_mid = (unsigned char)((a >> 8) & 0xFFu);
+	*p_low = (unsigned char)(a & 0xFFu);
 }
 
 void ST_Screen_Apply_Game_Video_Hardware(void)
 {
+	ST_Screen_Hardware_Set_Phys_Base((void *)Logbase());
 }
 
 void ST_Debug_Screen_Service(void)

@@ -83,7 +83,7 @@
 **	This define enables the full set of cheat keys and special
 **	command line options.
 */
-#if defined(INTERNAL_VERSION) || defined(PLAYTEST_VERSION)
+#if defined(INTERNAL_VERSION) || defined(PLAYTEST_VERSION) || defined(ATARI_ST)
 #define CHEAT_KEYS
 #endif
 

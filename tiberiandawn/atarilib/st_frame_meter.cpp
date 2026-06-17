@@ -1,5 +1,5 @@
 /*
- * ST frame profiler: rolling ~1 second (_hz200) averages, tab-strip bar display.
+ * ST frame profiler: rolling ~500 ms (_hz200) averages, tab-strip bar display.
  */
 #include "function.h"
 #include "ATARILIB/st_frame_meter.h"
@@ -12,6 +12,10 @@
 
 #ifndef ST_FRAME_BAR_HZ200_TICKS_ONE_SECOND
 #define ST_FRAME_BAR_HZ200_TICKS_ONE_SECOND 200
+#endif
+
+#ifndef ST_FRAME_BAR_HZ200_TICKS_PERIOD
+#define ST_FRAME_BAR_HZ200_TICKS_PERIOD 100 /* 500 ms at 200 Hz (~2 updates/sec) */
 #endif
 
 #ifndef ST_FRAME_BAR_HZ200_TICKS_FULL_BAR
@@ -74,7 +78,7 @@ bool StFrameMeterPendingRedraw;
 enum {
 	ST_FRAME_BAR_FPS_CHAR_W = 8,
 	ST_FRAME_BAR_FPS_CHAR_H = 8,
-	ST_FRAME_BAR_FPS_MAX_CHARS = 6,
+	ST_FRAME_BAR_FPS_MAX_CHARS = 7, /* optional clipped prefix 'c' + "999.99" */
 	ST_FRAME_BAR_FPS_PLANE = 0
 };
 
@@ -104,6 +108,7 @@ enum StFrameMeterGlyph {
 	ST_FM_GLYPH_8,
 	ST_FM_GLYPH_9,
 	ST_FM_GLYPH_DOT,
+	ST_FM_GLYPH_C,
 	ST_FM_GLYPH_SPACE
 };
 
@@ -119,6 +124,7 @@ static const uint16_t k_st_frame_meter_glyphs[][2][ST_FRAME_BAR_FPS_CHAR_H] = {
 	ST_FM_GLYPH8(0x3E, 0x63, 0x63, 0x3E, 0x63, 0x63, 0x3E, 0x00),
 	ST_FM_GLYPH8(0x3E, 0x63, 0x63, 0x3F, 0x03, 0x06, 0x3C, 0x00),
 	ST_FM_GLYPH8(0x00, 0x00, 0x00, 0x00, 0x18, 0x3C, 0x18, 0x00),
+	ST_FM_GLYPH8(0x1C, 0x36, 0x30, 0x30, 0x30, 0x36, 0x1C, 0x00),
 	ST_FM_GLYPH8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
 };
 
@@ -131,6 +137,8 @@ static int St_FrameMeter_GlyphIndex(char c)
 	switch (c) {
 	case '.':
 		return (int)ST_FM_GLYPH_DOT;
+	case 'c':
+		return (int)ST_FM_GLYPH_C;
 	default:
 		break;
 	}
@@ -182,7 +190,7 @@ static void St_FrameMeter_ClearFPSArea(GraphicViewPortClass *page, int x0, int b
 	int box_w = ST_FRAME_BAR_FPS_MAX_CHARS * ST_FRAME_BAR_FPS_CHAR_W;
 	int box_x = x0 + bw - box_w;
 	int box_x2 = box_x + box_w - 1;
-	int box_y2 = ST_FRAME_BAR_FPS_CHAR_H - 2;
+	int box_y2 = ST_FRAME_BAR_FPS_CHAR_H - 1;
 	if (box_x < 0) {
 		box_x = 0;
 	}
@@ -197,9 +205,13 @@ static void St_FrameMeter_ClearFPSArea(GraphicViewPortClass *page, int x0, int b
 	}
 }
 
-static void St_FrameMeter_DrawFPS(GraphicViewPortClass *page, int x0, int bw)
+static void St_FrameMeter_XorFPSText(
+	GraphicViewPortClass *page,
+	int text_x,
+	const char *text,
+	int len)
 {
-	if (page == nullptr) {
+	if (page == nullptr || text == nullptr || len <= 0) {
 		return;
 	}
 
@@ -221,9 +233,6 @@ static void St_FrameMeter_DrawFPS(GraphicViewPortClass *page, int x0, int bw)
 		return;
 	}
 
-	char text[ST_FRAME_BAR_FPS_MAX_CHARS + 1];
-	int len = St_FrameMeter_FormatFPS(text, s_disp_fps_x100);
-	int text_x = x0 + bw - (len * ST_FRAME_BAR_FPS_CHAR_W);
 	int rows = page->Get_Height();
 	if (rows > ST_FRAME_BAR_FPS_CHAR_H) {
 		rows = ST_FRAME_BAR_FPS_CHAR_H;
@@ -251,6 +260,18 @@ static void St_FrameMeter_DrawFPS(GraphicViewPortClass *page, int x0, int bw)
 
 #undef ST_FM_GLYPH8
 
+static void St_FrameMeter_DrawFPS(GraphicViewPortClass *page, int x0, int bw)
+{
+	char text[ST_FRAME_BAR_FPS_MAX_CHARS + 1];
+	int prefix = Debug_Clipped_Tactical_Redraw ? 1 : 0;
+	if (prefix) {
+		text[0] = 'c';
+	}
+	int len = St_FrameMeter_FormatFPS(text + prefix, s_disp_fps_x100) + prefix;
+	int text_x = x0 + bw - (len * ST_FRAME_BAR_FPS_CHAR_W);
+	St_FrameMeter_XorFPSText(page, text_x, text, len);
+}
+
 static void St_FrameMeter_MaybeRollPeriod(unsigned long hz_now)
 {
 	if (s_period_hz_start == 0) {
@@ -259,7 +280,7 @@ static void St_FrameMeter_MaybeRollPeriod(unsigned long hz_now)
 	}
 
 	unsigned long elapsed = hz_now - s_period_hz_start;
-	if (elapsed < (unsigned long)ST_FRAME_BAR_HZ200_TICKS_ONE_SECOND) {
+	if (elapsed < (unsigned long)ST_FRAME_BAR_HZ200_TICKS_PERIOD) {
 		return;
 	}
 
@@ -270,7 +291,11 @@ static void St_FrameMeter_MaybeRollPeriod(unsigned long hz_now)
 		s_disp_theme_avg = s_period_sum_theme / s_period_frames;
 		s_disp_c2p_avg = s_period_sum_c2p / s_period_frames;
 		s_disp_blit_avg = s_period_sum_blit / s_period_frames;
-		s_disp_fps_x100 = ((s_period_frames * (unsigned long)ST_FRAME_BAR_HZ200_TICKS_ONE_SECOND * 100UL) + (elapsed / 2)) / elapsed;
+		s_disp_fps_x100 =
+			((s_period_frames * (unsigned long)ST_FRAME_BAR_HZ200_TICKS_ONE_SECOND * 100UL) + (elapsed / 2)) / elapsed;
+		if (s_disp_fps_x100 > 99999UL) {
+			s_disp_fps_x100 = 99999UL;
+		}
 		for (int pi = 0; pi < (int)ST_FM_MAP_PHASE_COUNT; ++pi) {
 			s_disp_map_phase_avg[pi] = s_period_sum_map_phase[pi] / s_period_frames;
 		}
@@ -441,6 +466,7 @@ void StFrameMeter_Draw(GraphicViewPortClass *page, int width_factor)
 	int x0 = 80 * width_factor;
 	page->Fill_Rect(x0, 0, x0 + bw - 1, 3, BLACK);
 	St_FrameMeter_ClearFPSArea(page, x0, bw);
+
 	static const unsigned char k_map_phase_colours[ST_FM_MAP_PHASE_COUNT] = {
 		(unsigned char)CYAN,
 		(unsigned char)GREEN,
@@ -452,11 +478,6 @@ void StFrameMeter_Draw(GraphicViewPortClass *page, int width_factor)
 
 	for (int row = 0; row < 4; ++row) {
 		if (row == 1) {
-			/*
-			 * Graphics (render): LTGREY = total render. Overlays inside that span (_hz200 scale,
-			 * left → right): prep/scroll bookkeeping, terrain icons/smudges/overlays,
-			 * Layer GROUND/AIR/TOP draws, fog/shroud shadow rects.
-			 */
 			long span_r = ((long)(s_disp_render_avg * (unsigned long)bw) / scale);
 			if (span_r < 0) {
 				continue;

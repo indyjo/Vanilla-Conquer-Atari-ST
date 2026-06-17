@@ -5,8 +5,8 @@
  *
  * ST_SEPARATE_DEBUG_SCREEN (makefile SEPARATE_DEBUG_SCREEN=1): game uses a dedicated planar
  * buffer; hardware line base is set directly; Ctrl+F10 toggles to the captured TOS console.
- * Without it: visible page is TOS Logbase, video is set up via Setscreen(), debug text and
- * game graphics share the same screen memory.
+ * Without it: visible page is TOS Logbase, video is set up via Setscreen(). F10 tile-atlas
+ * debug still repoints phys via ST_Screen_Hardware_Set_Phys_Base (Setscreen / STE line base).
  */
 
 #ifndef ST_SCREEN_H

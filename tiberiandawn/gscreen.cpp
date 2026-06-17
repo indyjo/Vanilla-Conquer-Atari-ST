@@ -366,6 +366,12 @@ void GScreenClass::Render(void)
     //	IsToRedraw = true;
     //}
 
+#if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
+    if (StFrameMeterPendingRedraw) {
+        IsToUpdate = true;
+    }
+#endif
+
     if (IsToUpdate || IsToRedraw) {
 
         // WWMouse->Erase_Mouse(&HidPage, TRUE);

@@ -390,6 +390,8 @@ endif
 
 .PHONY: all clean cleanall help st-tests itch-release
 
+.DEFAULT_GOAL := all
+
 # Default target
 all: $(TARGET_EXE)
 	@echo "Build complete: $(TARGET_EXE)"
@@ -912,6 +914,9 @@ endif
 #=============================================================================
 # DEPENDENCIES
 #=============================================================================
+
+# defines.h toggles CHEAT_KEYS and other global #ifdef gates; stale .o files break the link.
+$(CPP_OBJECTS): defines.h
 
 # Note: For automatic dependency generation, you can:
 # 1. Add -MMD -MP to CXXFLAGS to generate .d files

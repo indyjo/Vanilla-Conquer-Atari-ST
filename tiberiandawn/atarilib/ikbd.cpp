@@ -2,7 +2,6 @@
 #include "keyboard.h"
 
 #include <mint/osbind.h>
-#include <stdio.h>
 
 enum IKBDParseStateType {
 	IKBD_PARSE_NORMAL = 0,

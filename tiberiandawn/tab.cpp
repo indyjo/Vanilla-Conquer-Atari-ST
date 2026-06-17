@@ -125,8 +125,8 @@ void TabClass::Draw_It(bool complete)
 
                 Fancy_Text_Print(TXT_TAB_BUTTON_CONTROLS, Eva_Width / 2, 0, fore, TBLACK, flags);
                 Fancy_Text_Print(TXT_TAB_SIDEBAR, width - (Eva_Width / 2), 0, fore, TBLACK, flags);
+                LogicPage->Unlock();
             }
-            LogicPage->Unlock();
         }
     }
 
@@ -136,8 +136,8 @@ void TabClass::Draw_It(bool complete)
             int width_factor = (width == 320) ? 1 : 2;
             StFrameMeter_Draw(LogicPage, width_factor);
             StFrameMeterPendingRedraw = false;
+            LogicPage->Unlock();
         }
-        LogicPage->Unlock();
     }
 #endif
 

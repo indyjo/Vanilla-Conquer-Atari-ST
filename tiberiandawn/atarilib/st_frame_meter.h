@@ -89,10 +89,6 @@ void StFrameMeter_Draw(GraphicViewPortClass *page, int width_factor);
 #define ST_FRAME_BAR_MAP_SHADOW_BEGIN() ((void)0)
 #define ST_FRAME_BAR_MAP_SHADOW_END() ((void)0)
 
-static inline void StFrameMeter_Draw(GraphicViewPortClass *, int)
-{
-}
-
 #endif /* ST_FRAME_BAR_PROFILE */
 
 #endif /* ST_FRAME_METER_H */

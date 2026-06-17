@@ -58,6 +58,10 @@
 #include <cstdlib>
 #include "settings.h"
 
+#ifdef ATARI_ST
+#include "ikbd.h"
+#endif
+
 #define ARRAY_SIZE(x) int(sizeof(x) / sizeof(x[0]))
 
 /*
@@ -217,6 +221,28 @@ bool WWKeyboardClass::Put_Key_Message(unsigned short vk_key, bool release)
     ** would be incompatible with the dos version.
     */
     if (!Is_Mouse_Key(vk_key)) {
+#ifdef ATARI_ST
+        /*
+        ** After the ST IKBD L/R split, Down(KN_LSHIFT) et al. query generic VK slots
+        ** (0x10/0x11/0x12) that no longer receive make/break events. Read modifiers
+        ** from the IKBD hold-state table instead. Do not apply caps-lock shift to
+        ** function keys — Debug_Key matches bare KN_F* codes via plain key value.
+        */
+        int vk_base = vk_key & 0xFF;
+        bool is_function = (vk_base >= VK_F1 && vk_base <= VK_F12);
+
+        if (IKBD_Key_Is_Down(VK_SHIFT)) {
+            vk_key |= WWKEY_SHIFT_BIT;
+        } else if (!is_function && IKBD_Key_Is_Down(VK_CAPITAL)) {
+            vk_key |= WWKEY_SHIFT_BIT;
+        }
+        if (IKBD_Key_Is_Down(VK_CONTROL)) {
+            vk_key |= WWKEY_CTRL_BIT;
+        }
+        if (IKBD_Key_Is_Down(VK_MENU)) {
+            vk_key |= WWKEY_ALT_BIT;
+        }
+#else
         if (Down(KN_LSHIFT) || Down(KN_RSHIFT) || Down(KN_CAPSLOCK) || Down(KN_NUMLOCK)) {
             vk_key |= WWKEY_SHIFT_BIT;
         }
@@ -226,6 +252,7 @@ bool WWKeyboardClass::Put_Key_Message(unsigned short vk_key, bool release)
         if (Down(KN_LALT) || Down(KN_RALT)) {
             vk_key |= WWKEY_ALT_BIT;
         }
+#endif
     }
 
     if (release) {

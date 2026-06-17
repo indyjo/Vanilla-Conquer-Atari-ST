@@ -88,6 +88,18 @@ static void Apply_Flat_HSpan_To_Row(
 	}
 }
 
+void ST_Planar_Get_Fill_Words(uint16_t color4, uint16_t out[4])
+{
+	const uint8_t c = (uint8_t)color4;
+	if (c > 15u || out == NULL) {
+		return;
+	}
+	out[0] = kFillWordsByNibble[c][0];
+	out[1] = kFillWordsByNibble[c][1];
+	out[2] = kFillWordsByNibble[c][2];
+	out[3] = kFillWordsByNibble[c][3];
+}
+
 void ST_Planar_Draw_HLine_Fast(
 	uint16_t *planar_root,
 	short planar_row_words,

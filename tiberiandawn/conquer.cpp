@@ -72,6 +72,7 @@
 #include "atarilib/st_frame_meter.h"
 
 #ifdef ATARI_ST
+#include "atarilib/drawbuff.h"
 #include "atarilib/st_screen.h"
 #include "st_sprite_cache.h"
 #include <limits.h>
@@ -1246,6 +1247,7 @@ void Call_Back(void)
         WWMouse->Process_Mouse();
     }
     ST_Debug_Screen_Service();
+    ST_Tile_Cache_Debug_Service();
 #endif
 
     /*
@@ -4077,9 +4079,6 @@ int Get_Resolution_Factor(void)
 void Blit_Hid_Page_To_Seen_Buff(void)
 {
     HidPage.Blit(SeenBuff);
-#ifdef ATARI_ST
-    ST_Screen_Apply_Game_Video_Hardware();
-#endif
 }
 
 /***********************************************************************************************

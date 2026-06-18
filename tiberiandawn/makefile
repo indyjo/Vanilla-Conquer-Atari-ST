@@ -104,6 +104,16 @@ SEPARATE_DEBUG_SCREEN ?= 0
 ifeq ($(SEPARATE_DEBUG_SCREEN),1)
 DEFINES += ST_SEPARATE_DEBUG_SCREEN
 endif
+# CHEAT_KEYS: full cheat keys and special command-line options (-DCHEAT_KEYS)
+# Default on for Debug, off for Release; override: make CHEAT_KEYS=1
+ifeq ($(CONFIG),Debug)
+CHEAT_KEYS ?= 1
+else
+CHEAT_KEYS ?= 0
+endif
+ifeq ($(CHEAT_KEYS),1)
+DEFINES += CHEAT_KEYS
+endif
 else
 DEFINES += WIN32 _WINDOWS _USRDLL TIBERIANDAWN_EXPORTS
 endif
@@ -915,7 +925,7 @@ endif
 # DEPENDENCIES
 #=============================================================================
 
-# defines.h toggles CHEAT_KEYS and other global #ifdef gates; stale .o files break the link.
+# defines.h and makefile DEFINES toggle CHEAT_KEYS and other #ifdef gates; stale .o files break the link.
 $(CPP_OBJECTS): defines.h
 
 # Note: For automatic dependency generation, you can:

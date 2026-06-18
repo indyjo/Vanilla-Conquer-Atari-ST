@@ -33,6 +33,8 @@ BOOL ST_Blitter_Planar_Screen_Rect_Blit(
 /**
  * Planar rectangle copy (4 interleaved bitplanes, 8 bytes per 16 pixels).
  * Caller must clip to buffer bounds before calling.
+ * Non-overlap blits up to 32×32 use HOG mode automatically; overlap (scroll) blits
+ * stay cooperative regardless of size.
  */
 BOOL ST_Blitter_Planar_Rect_Blit(
 	const uint8_t *src_root,

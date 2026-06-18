@@ -86,8 +86,25 @@ static const unsigned char k_skew_fxsr_nfsr[8] = {
 };
 
 enum {
-	ST_BLITTER_SHORT_MAX = 32767
+	ST_BLITTER_SHORT_MAX = 32767,
+	ST_BLIT_CTRL_START = 0x80u,
+	ST_BLIT_CTRL_START_HOG = 0xC0u,
+	/* Non-overlap blits at or below this size use bus-hogging mode (~10% faster). */
+	ST_BLIT_HOG_MAX_DIMENSION = 32
 };
+
+/*
+ * HOG (bus-hogging) for short blits only. Overlap / self-blits (scroll) stay
+ * cooperative so the CPU can service interrupts during long transfers.
+ */
+static BOOL ST_Blit_Should_Use_Hog(int pixel_width, int pixel_height, BOOL same_surface)
+{
+	if (same_surface || pixel_width <= 0 || pixel_height <= 0) {
+		return FALSE;
+	}
+	return (pixel_width <= ST_BLIT_HOG_MAX_DIMENSION
+		&& pixel_height <= ST_BLIT_HOG_MAX_DIMENSION);
+}
 
 typedef struct {
 	short dst_words;
@@ -167,7 +184,7 @@ static BOOL ST_Blit_Compute_BLIT_iT(
 	const unsigned char skew_reg =
 		(unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
 	/* One word per line + skew: FXSR primes the shift latch; Src_Xinc must be 0
-	 * (set in Run_Plane) so the prefetch re-reads the same word, not word+1. */
+	 * (set in Build_Hw_Setup) so the prefetch re-reads the same word, not word+1. */
 	const unsigned char skew_out =
 		(src_words == 1 && dst_words == 1 && skew_low != 0)
 		? (unsigned char)(skew_low | ST_BLIT_SKEW_FXSR)
@@ -185,27 +202,48 @@ static BOOL ST_Blit_Compute_BLIT_iT(
 	return TRUE;
 }
 
-/*
- * Program one plane per BLIT_iT register formulas:
- *   Src_Yinc = Src_NXLN - Src_NXWD * (src_words - 1)
- *   Dst_Yinc = Dst_NXLN - Dst_NXWD * (dst_words - 1)
- *   X_Count  = dst_words
- * No FXSR/NFSR tweaks to Src_Yinc — BLIT_iT span already matches actual reads.
- */
-static void ST_Blit_Run_Plane(
+static void ST_Blit_Set_Src_Addr(const uint8_t *src)
+{
+	size_t sa = (size_t)src;
+	*ST_BLT_REG(0xFFFF8A24UL) = (unsigned short)(sa >> 16);
+	*ST_BLT_REG(0xFFFF8A26UL) = (unsigned short)(sa & 0xFFFFu);
+}
+
+static void ST_Blit_Set_Dst_Addr(const uint8_t *dst)
+{
+	size_t da = (size_t)dst;
+	*ST_BLT_REG(0xFFFF8A32UL) = (unsigned short)(da >> 16);
+	*ST_BLT_REG(0xFFFF8A34UL) = (unsigned short)(da & 0xFFFFu);
+}
+
+typedef struct {
+	short src_x_inc;
+	short src_y_inc;
+	short dst_x_inc;
+	short dst_y_inc;
+	const uint8_t *src_word0;
+	uint8_t *dst_word0;
+	unsigned char ctrl_byte;
+	unsigned char blit_op;
+	BOOL src_addr_per_plane;
+} ST_Blit_Hw_Setup;
+
+static BOOL ST_Blit_Build_Hw_Setup(
 	const uint8_t *src_base, uint8_t *dst_base,
 	short src_row_bytes, short dst_row_bytes,
 	short src_x_inc, short dst_x_inc,
 	short src_word_bytes, short dst_word_bytes,
 	const ST_Blit_BLIT_iT_Plan *plan,
-	short lines, short plane_idx,
-	unsigned char blit_op)
+	short lines,
+	unsigned char blit_op,
+	BOOL hog_mode,
+	BOOL src_addr_per_plane,
+	ST_Blit_Hw_Setup *hw)
 {
 	const short dst_words = plan->dst_words;
 	const short src_words = plan->src_words;
-	if (!src_base || !dst_base || dst_words <= 0 || src_words <= 0 || lines <= 0
-		|| plane_idx < 0 || plane_idx > 3) {
-		return;
+	if (!src_base || !dst_base || !hw || dst_words <= 0 || src_words <= 0 || lines <= 0) {
+		return FALSE;
 	}
 
 	if (plan->reverse_x) {
@@ -213,7 +251,6 @@ static void ST_Blit_Run_Plane(
 		dst_x_inc = (short)-dst_x_inc;
 	}
 
-	/* X_Count==1: hardware ignores X inc for the transfer, but FXSR still steps it. */
 	if (dst_words == 1 && src_words == 1 && (plan->skew_reg & 0x0Fu) != 0u) {
 		src_x_inc = 0;
 		dst_x_inc = 0;
@@ -222,41 +259,87 @@ static void ST_Blit_Run_Plane(
 	const short src_row = plan->reverse_y ? (short)-src_row_bytes : src_row_bytes;
 	const short dst_row = plan->reverse_y ? (short)-dst_row_bytes : dst_row_bytes;
 
-	const short dst_y_inc = (short)(dst_row - (dst_words - 1) * dst_x_inc);
-	const short src_y_inc = (short)(src_row - (src_words - 1) * src_x_inc);
-
-	const uint8_t *src_start = src_base
+	hw->src_x_inc = src_x_inc;
+	hw->src_y_inc = (short)(src_row - (src_words - 1) * src_x_inc);
+	hw->dst_x_inc = dst_x_inc;
+	hw->dst_y_inc = (short)(dst_row - (dst_words - 1) * dst_x_inc);
+	hw->src_word0 = src_base
 		+ (plan->reverse_y ? (size_t)(lines - 1) * (size_t)src_row_bytes : 0u)
 		+ (plan->reverse_x ? (size_t)(src_words - 1) * (size_t)src_word_bytes : 0u);
-	uint8_t *dst_start = dst_base
+	hw->dst_word0 = dst_base
 		+ (plan->reverse_y ? (size_t)(lines - 1) * (size_t)dst_row_bytes : 0u)
 		+ (plan->reverse_x ? (size_t)(dst_words - 1) * (size_t)dst_word_bytes : 0u);
+	hw->ctrl_byte = hog_mode ? ST_BLIT_CTRL_START_HOG : ST_BLIT_CTRL_START;
+	hw->blit_op = blit_op;
+	hw->src_addr_per_plane = src_addr_per_plane;
+	return TRUE;
+}
 
-	ST_Blit_Wait_Idle();
-	*ST_BLT_REG(0xFFFF8A20UL) = (unsigned short)src_x_inc;
-	*ST_BLT_REG(0xFFFF8A22UL) = (unsigned short)src_y_inc;
-	{
-		size_t sa = (size_t)src_start;
-		*ST_BLT_REG(0xFFFF8A24UL) = (unsigned short)(sa >> 16);
-		*ST_BLT_REG(0xFFFF8A26UL) = (unsigned short)(sa & 0xFFFFu);
-	}
+/* Increments, endmasks, skew, HOP, OP, X_Count — unchanged across interleaved plane passes. */
+static void ST_Blit_Program_Fixed_Regs(
+	const ST_Blit_Hw_Setup *hw,
+	const ST_Blit_BLIT_iT_Plan *plan,
+	short dst_words)
+{
+	*ST_BLT_REG(0xFFFF8A20UL) = (unsigned short)hw->src_x_inc;
+	*ST_BLT_REG(0xFFFF8A22UL) = (unsigned short)hw->src_y_inc;
 	*ST_BLT_REG(0xFFFF8A28UL) = plan->endmask1;
 	*ST_BLT_REG(0xFFFF8A2AUL) = plan->endmask2;
 	*ST_BLT_REG(0xFFFF8A2CUL) = plan->endmask3;
-	*ST_BLT_REG(0xFFFF8A2EUL) = (unsigned short)dst_x_inc;
-	*ST_BLT_REG(0xFFFF8A30UL) = (unsigned short)dst_y_inc;
-	{
-		size_t da = (size_t)(dst_start + plane_idx * 2);
-		*ST_BLT_REG(0xFFFF8A32UL) = (unsigned short)(da >> 16);
-		*ST_BLT_REG(0xFFFF8A34UL) = (unsigned short)(da & 0xFFFFu);
-	}
+	*ST_BLT_REG(0xFFFF8A2EUL) = (unsigned short)hw->dst_x_inc;
+	*ST_BLT_REG(0xFFFF8A30UL) = (unsigned short)hw->dst_y_inc;
 	*ST_BLT_REG(0xFFFF8A36UL) = (unsigned short)dst_words;
-	*ST_BLT_REG(0xFFFF8A38UL) = (unsigned short)lines;
 	*(volatile unsigned char *)0xFFFF8A3AUL = 2;
-	*(volatile unsigned char *)0xFFFF8A3BUL = blit_op;
+	*(volatile unsigned char *)0xFFFF8A3BUL = hw->blit_op;
 	*(volatile unsigned char *)0xFFFF8A3DUL = plan->skew_reg;
-	*(volatile unsigned char *)0xFFFF8A3CUL = 0x80;
+}
+
+static void ST_Blit_Set_Y_Count(short lines)
+{
+	*ST_BLT_REG(0xFFFF8A38UL) = (unsigned short)lines;
+}
+
+/*
+ * BLIT_iT next_plane loop: fixed registers once, then per plane only
+ * Src_Addr, Dst_Addr, and Y_Count (hardware decrements Y_Count to zero each pass).
+ * X_Count is set once — it auto-reloads at the end of each blitted line.
+ * Wait before and after every kick (required for mask AND correctness).
+ */
+static void ST_Blit_Run_4_Planes(
+	const uint8_t *src_base, uint8_t *dst_base,
+	short src_row_bytes, short dst_row_bytes,
+	short src_x_inc, short dst_x_inc,
+	short src_word_bytes, short dst_word_bytes,
+	const ST_Blit_BLIT_iT_Plan *plan,
+	short lines,
+	unsigned char blit_op,
+	BOOL hog_mode,
+	BOOL src_addr_per_plane)
+{
+	ST_Blit_Hw_Setup hw;
+	if (!ST_Blit_Build_Hw_Setup(
+			src_base, dst_base,
+			src_row_bytes, dst_row_bytes,
+			src_x_inc, dst_x_inc,
+			src_word_bytes, dst_word_bytes,
+			plan, lines, blit_op, hog_mode, src_addr_per_plane, &hw)) {
+		return;
+	}
+
+	const short dst_words = plan->dst_words;
+
 	ST_Blit_Wait_Idle();
+	ST_Blit_Program_Fixed_Regs(&hw, plan, dst_words);
+
+	for (short pl = 0; pl < 4; ++pl) {
+		ST_Blit_Wait_Idle();
+		ST_Blit_Set_Src_Addr(hw.src_word0
+			+ (hw.src_addr_per_plane ? (size_t)pl * 2u : 0u));
+		ST_Blit_Set_Dst_Addr(hw.dst_word0 + (size_t)pl * 2u);
+		ST_Blit_Set_Y_Count(lines);
+		*(volatile unsigned char *)0xFFFF8A3CUL = hw.ctrl_byte;
+		ST_Blit_Wait_Idle();
+	}
 }
 
 BOOL ST_Blitter_Planar_Screen_Rect_Blit(
@@ -307,6 +390,7 @@ static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 	}
 
 	const BOOL same_surface = (src_root == dst_root);
+	const BOOL hog_mode = ST_Blit_Should_Use_Hog(pixel_width, pixel_height, same_surface);
 	const BOOL reverse_x = same_surface && (dx_abs > sx_abs);
 	const BOOL reverse_y = same_surface && (dy_abs > sy_abs);
 	ST_Blit_BLIT_iT_Plan plan;
@@ -330,21 +414,20 @@ static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 		src_root, src_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
-	for (short pl = 0; pl < 4; ++pl) {
-		ST_Blit_Run_Plane(
-			src + (size_t)pl * 2u,
-			dst,
-			(short)src_row_bytes,
-			(short)dst_row_bytes,
-			8,
-			8,
-			8,
-			8,
-			&plan,
-			(short)pixel_height,
-			pl,
-			blit_op);
-	}
+	ST_Blit_Run_4_Planes(
+		src,
+		dst,
+		(short)src_row_bytes,
+		(short)dst_row_bytes,
+		8,
+		8,
+		8,
+		8,
+		&plan,
+		(short)pixel_height,
+		blit_op,
+		hog_mode,
+		TRUE);
 	ST_FRAME_BAR_BLIT_END();
 	ST_Blit_Sync_Cache_After(
 		src_root, src_row_bytes, sy_abs, pixel_height,
@@ -391,7 +474,7 @@ BOOL ST_Blitter_Planar_Rect_Blit_Or(
 		7);
 }
 
-BOOL ST_Blitter_Mask_And_Planar_Rect(
+static BOOL ST_Blitter_Mask_And_Planar_Rect_With_Op(
 	const uint8_t *mask_root,
 	int mask_row_bytes,
 	int sx_abs,
@@ -413,6 +496,8 @@ BOOL ST_Blitter_Mask_And_Planar_Rect(
 		|| pixel_height > ST_BLITTER_SHORT_MAX) {
 		return FALSE;
 	}
+
+	const BOOL hog_mode = ST_Blit_Should_Use_Hog(pixel_width, pixel_height, FALSE);
 
 	ST_Blit_BLIT_iT_Plan plan;
 	if (!ST_Blit_Compute_BLIT_iT(
@@ -436,25 +521,42 @@ BOOL ST_Blitter_Mask_And_Planar_Rect(
 		mask_root, mask_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
-	for (short pl = 0; pl < 4; ++pl) {
-		ST_Blit_Run_Plane(
-			src,
-			dst,
-			(short)mask_row_bytes,
-			(short)dst_row_bytes,
-			2,
-			8,
-			2,
-			8,
-			&plan,
-			(short)pixel_height,
-			pl,
-			1);
-	}
+	ST_Blit_Run_4_Planes(
+		src,
+		dst,
+		(short)mask_row_bytes,
+		(short)dst_row_bytes,
+		2,
+		8,
+		2,
+		8,
+		&plan,
+		(short)pixel_height,
+		1,
+		hog_mode,
+		FALSE);
 	ST_FRAME_BAR_BLIT_END();
 	ST_Blit_Sync_Cache_After(
 		mask_root, mask_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs,
 		FALSE);
 	return TRUE;
+}
+
+BOOL ST_Blitter_Mask_And_Planar_Rect(
+	const uint8_t *mask_root,
+	int mask_row_bytes,
+	int sx_abs,
+	int sy_abs,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dx_abs,
+	int dy_abs,
+	int pixel_width,
+	int pixel_height)
+{
+	return ST_Blitter_Mask_And_Planar_Rect_With_Op(
+		mask_root, mask_row_bytes,
+		sx_abs, sy_abs, dst_root, dst_row_bytes,
+		dx_abs, dy_abs, pixel_width, pixel_height);
 }

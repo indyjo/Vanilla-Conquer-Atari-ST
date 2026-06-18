@@ -76,6 +76,7 @@
 
 #include "function.h"
 #include "settings.h"
+#include "vector.h"
 
 /*
 **	Define "_RETRIEVE" if the palette morphing tables are part of the loaded data. If this
@@ -821,9 +822,9 @@ void SidebarClass::Draw_It(bool complete)
     if (IsSidebarActive) {
         Column[0].Draw_It(complete);
         Column[1].Draw_It(complete);
-        Repair->Draw_Me(true);
-        Upgrade->Draw_Me(true);
-        Zoom->Draw_Me(true);
+        Repair->Draw_Me(false);
+        Upgrade->Draw_Me(false);
+        Zoom->Draw_Me(false);
     }
 
     IsToRedraw = false;

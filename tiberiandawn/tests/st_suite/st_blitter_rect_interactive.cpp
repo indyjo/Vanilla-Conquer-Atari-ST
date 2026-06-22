@@ -358,7 +358,6 @@ int st_run_interactive_blitter_rect(void)
 {
 	unsigned short saved_hw[ST_HW_PAL_COUNT];
 	unsigned char pal[768];
-	const int old_weight_set = C2P_Get_WeightSet();
 	long old_ssp = Super(0L);
 	int old_rez = Getrez();
 	long old_phys = (long)Physbase();
@@ -392,7 +391,6 @@ int st_run_interactive_blitter_rect(void)
 		return 1;
 	}
 
-	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
 	memset(CurrentPalette, 0x01, 768);
 	{
 		unsigned char warm[768];
@@ -402,7 +400,6 @@ int st_run_interactive_blitter_rect(void)
 	if (!st_load_title_offscreen(offscreen, pal)) {
 		free(offscreen);
 		free(checker_bg);
-		C2P_Select_WeightSet(old_weight_set);
 		st_conterm_keyclick_mute_pop();
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
@@ -411,7 +408,6 @@ int st_run_interactive_blitter_rect(void)
 		return 1;
 	}
 	Set_Palette(pal);
-	St_HW_Palette_Write_First16_From_Logical_Pal6(ST_HW_PALETTE_REGS, pal);
 	st_build_checker_planar(checker_bg, 2, 4);
 
 	StBlitRectParams params;
@@ -472,7 +468,6 @@ int st_run_interactive_blitter_rect(void)
 
 	printf("\nDone.\n");
 
-	C2P_Select_WeightSet(old_weight_set);
 	st_conterm_keyclick_mute_pop();
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);

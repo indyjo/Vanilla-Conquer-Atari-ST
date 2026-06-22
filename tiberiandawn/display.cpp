@@ -420,10 +420,6 @@ static int const TEX_W = 14;
 
 extern MFCD* TheaterIcons;
 
-#ifdef ATARI_ST
-extern "C" void Theater_Atari_TryInstallC2PWeights(const char* theater_root);
-#endif
-
 // Added for getting the input for special character keys from the client
 // - 6/26/2019 JAS
 extern bool DLL_Export_Get_Input_Key_State(KeyNumType key);
@@ -701,7 +697,8 @@ void DisplayClass::Init_Theater(TheaterType theater)
     Mem_Copy(GamePalette, OriginalPalette, 768);
 
 #ifdef ATARI_ST
-    Theater_Atari_TryInstallC2PWeights(Theaters[theater].Root);
+    if (theater >= THEATER_FIRST && theater < THEATER_COUNT)
+        C2P_Load_WeightSet(Theaters[theater].Root, "Theater");
 #endif
 
 #ifndef _RETRIEVE

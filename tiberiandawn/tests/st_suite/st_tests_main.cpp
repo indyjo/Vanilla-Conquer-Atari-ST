@@ -32,10 +32,6 @@ static int st_run_automated_bundle(void)
 }
 extern int st_run_interactive_gradient(void);
 extern int st_run_interactive_title_production_path(void);
-extern int st_run_interactive_title_menu_overlay(void);
-extern int st_run_interactive_title_mouse_cursor(void);
-extern int st_run_interactive_blitter_planar(void);
-extern int st_run_blitter_tile_skew_matrix(void);
 
 static void print_banner(void)
 {
@@ -46,13 +42,9 @@ static void print_banner(void)
 	printf("========================================\n");
 	printf("1 Auto: C2P + SHP + .AUD\n");
 	printf("2 Interactive: 16x16 grid; pick .W16\n");
-	printf("4 Interactive: TITLE prod path\n");
-	printf("5 Interactive: TITLE + menu overlay\n");
-	printf("6 Interactive: TITLE + mouse cursor\n");
+	printf("4 Interactive: TITLE + menu + mouse\n");
 	printf("7 Interactive: SHP grid (CONQUER.MIX)\n");
 	printf("8 Auto: same as 1\n");
-	printf("9 Auto: TITLE 8-way blitter scroll\n");
-	printf("b Auto: 24x24 tile skew matrix\n");
 	printf("t Auto: terrain left-clip atlas\n");
 	printf("f Interactive: font browser (.FNT)\n");
 	printf("w Interactive: WSA playback\n");
@@ -177,12 +169,6 @@ static int st_dispatch_menu_choice(int ch)
 	case '4':
 		st_run_interactive_title_production_path();
 		break;
-	case '5':
-		st_run_interactive_title_menu_overlay();
-		break;
-	case '6':
-		st_run_interactive_title_mouse_cursor();
-		break;
 	case '7':
 		st_run_interactive_build_frame_xor_grid();
 		break;
@@ -191,13 +177,6 @@ static int st_dispatch_menu_choice(int ch)
 	case 'a':
 	case 'A':
 		audio_tests_submenu();
-		break;
-	case '9':
-		st_run_interactive_blitter_planar();
-		break;
-	case 'b':
-	case 'B':
-		st_run_blitter_tile_skew_matrix();
 		break;
 	case 't':
 	case 'T': {

@@ -21,7 +21,7 @@
 #include <assert.h>
 
 #ifdef ATARI_ST
-extern "C" void WSA_Atari_TryInstallC2PWeights(const char *wsa_filename);
+#include "c2p.h"
 #endif
 
 
@@ -73,7 +73,7 @@ extern "C" void Install_Animation_C2P_WeightSet(void *handle)
 	if (!sys_header->file_name[0]) {
 		return;
 	}
-	WSA_Atari_TryInstallC2PWeights(sys_header->file_name);
+	C2P_Load_WeightSet(sys_header->file_name, "WSA");
 }
 #endif
 
@@ -360,7 +360,7 @@ extern "C" void *Open_Animation(char const *file_name, char *user_buffer, long u
 	sys_header->flags = (short)anim_flags;
 #ifdef ATARI_ST
 	if ((user_flags & WSA_DEFERRED_C2P_WEIGHTSET) == 0) {
-		WSA_Atari_TryInstallC2PWeights(file_name);
+		C2P_Load_WeightSet(file_name, "WSA");
 	}
 #endif
 	return user_buffer;

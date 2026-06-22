@@ -3,17 +3,21 @@
  */
 
 #include "c2p.h"
+#include "ccfile.h"
 #include "st_frame_meter.h"
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-/* Avoid including mouse.h; implemented in mouseww.cpp. */
+/* Avoid pulling in mouse/sprite headers; implemented elsewhere. */
 extern "C" void Invalidate_Mouse_Planar_Cache(void);
+extern "C" void ST_SPRITE_CACHE_Invalidate_Planar_Cache(void);
 
 static void C2P_Notify_Weights_Changed(void)
 {
 	Invalidate_Mouse_Planar_Cache();
+	ST_SPRITE_CACHE_Invalidate_Planar_Cache();
 }
 
 /* 4x4 Bayer threshold matrix, values 0..15 */
@@ -23,17 +27,6 @@ static const uint8_t Bayer4x4[16] = {
 	3, 11, 1,  9,
 	15, 7, 13, 5
 };
-
-#include "c2p_palette_opt_subset.inc"
-#include "c2p_palette_opt_weights.inc"
-#define kC2PPaletteOptWeight kC2PPaletteOptWeightHTitle
-#include "c2p_palette_opt_weights_htitle.inc"
-#undef kC2PPaletteOptWeight
-
-static const uint8_t kC2PPaletteOptSubsetHTitle[16] = {
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-};
-
 
 /*
  * Dithered color mapping table for chunky (8-bit) to planar (4-bit) conversion, using a 4x4 Bayer matrix.
@@ -65,7 +58,14 @@ uint8_t C2P_HW_Palette_Subset[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1
 /* Pair LUTs: 4 pair positions (pixels 0-1,2-3,4-5,6-7) and two-nibble index. */
 static uint32_t C2P_PairLUT[4][256];
 static int C2P_LUT_InitDone = 0;
-static int C2P_BuiltinWeightSet = C2P_WEIGHTSET_TEMPERAT;
+
+struct C2P_Context {
+	uint8_t map_dither[16][256];
+	uint8_t map_nearest[256];
+	uint8_t palette_index_clean4[256];
+	uint8_t hw_palette_subset[16];
+	uint32_t stdoom_frag[4][256][8];
+};
 
 /*
  * STDOOM-style full-width C2P (see STDOOM atari_c2p.c: bayer4_* + c2p_1x_lorez).
@@ -328,16 +328,6 @@ static void C2P_Rebuild_Tables_From_WeightRows(const uint8_t subset[16], const u
 	C2P_Rebuild_STDOOM_FragLUT(weights);
 }
 
-/* Rebuild LUTs from the built-in matrix selected by C2P_WeightSet. */
-static void C2P_Rebuild_Tables_From_SelectedWeights(void)
-{
-	if (C2P_BuiltinWeightSet == C2P_WEIGHTSET_HTITLE) {
-		C2P_Rebuild_Tables_From_WeightRows(kC2PPaletteOptSubsetHTitle, kC2PPaletteOptWeightHTitle);
-	} else {
-		C2P_Rebuild_Tables_From_WeightRows(kC2PPaletteOptSubset, kC2PPaletteOptWeight);
-	}
-}
-
 extern "C" int C2P_WeightSet_Validate(const C2P_WeightSet *weight_set)
 {
 	if (!weight_set) {
@@ -358,20 +348,7 @@ extern "C" int C2P_WeightSet_Validate(const C2P_WeightSet *weight_set)
 	return 1;
 }
 
-extern "C" int C2P_Get_WeightSet(void)
-{
-	return C2P_BuiltinWeightSet;
-}
-
-extern "C" void C2P_Select_WeightSet(int weight_set)
-{
-	const int normalized = (weight_set == C2P_WEIGHTSET_HTITLE) ? C2P_WEIGHTSET_HTITLE : C2P_WEIGHTSET_TEMPERAT;
-	C2P_BuiltinWeightSet = normalized;
-	C2P_Rebuild_Tables_From_SelectedWeights();
-	C2P_Notify_Weights_Changed();
-}
-
-extern "C" int C2P_Install_CustomWeights(const C2P_WeightSet *weight_set)
+extern "C" int C2P_Install_WeightSet(const C2P_WeightSet *weight_set)
 {
 	if (!C2P_WeightSet_Validate(weight_set)) {
 		return 0;
@@ -382,10 +359,83 @@ extern "C" int C2P_Install_CustomWeights(const C2P_WeightSet *weight_set)
 	return 1;
 }
 
-extern "C" void C2P_Clear_CustomWeights(void)
+static void C2P_Copy_Active_Luts_To_Context(C2P_Context *ctx)
 {
-	C2P_Rebuild_Tables_From_SelectedWeights();
+	memcpy(ctx->map_dither, C2P_MapDither, sizeof(ctx->map_dither));
+	memcpy(ctx->map_nearest, C2P_MapNearestLUT, sizeof(ctx->map_nearest));
+	memcpy(ctx->palette_index_clean4, C2P_PaletteIndexClean4LUT, sizeof(ctx->palette_index_clean4));
+	memcpy(ctx->hw_palette_subset, C2P_HW_Palette_Subset, sizeof(ctx->hw_palette_subset));
+	memcpy(ctx->stdoom_frag, C2P_STDOOM_FragLUT, sizeof(ctx->stdoom_frag));
+}
+
+static void C2P_Apply_Context_Luts(const C2P_Context *ctx)
+{
+	memcpy(C2P_MapDither, ctx->map_dither, sizeof(C2P_MapDither));
+	memcpy(C2P_MapNearestLUT, ctx->map_nearest, sizeof(C2P_MapNearestLUT));
+	memcpy(C2P_PaletteIndexClean4LUT, ctx->palette_index_clean4, sizeof(C2P_PaletteIndexClean4LUT));
+	memcpy(C2P_HW_Palette_Subset, ctx->hw_palette_subset, sizeof(C2P_HW_Palette_Subset));
+	memcpy(C2P_STDOOM_FragLUT, ctx->stdoom_frag, sizeof(C2P_STDOOM_FragLUT));
+}
+
+extern "C" C2P_Context *C2P_SaveContext(void)
+{
+	C2P_Context *ctx = (C2P_Context *)malloc(sizeof(C2P_Context));
+	if (!ctx) {
+		return NULL;
+	}
+	C2P_Copy_Active_Luts_To_Context(ctx);
+	return ctx;
+}
+
+extern "C" void C2P_RestoreContext(C2P_Context *ctx)
+{
+	if (!ctx) {
+		return;
+	}
+	C2P_InitPairLUT_Once();
+	C2P_Apply_Context_Luts(ctx);
 	C2P_Notify_Weights_Changed();
+}
+
+extern "C" void C2P_FreeContext(C2P_Context *ctx)
+{
+	free(ctx);
+}
+
+extern "C" int C2P_Load_WeightSet(const char *stem, const char *tag)
+{
+	char w16_name[16];
+	size_t i;
+	CCFileClass file;
+	C2P_WeightSet weights;
+	long got;
+
+	if (!stem || !stem[0]) {
+		return 0;
+	}
+
+	for (i = 0; stem[i] && stem[i] != '.' && i + 5 < sizeof(w16_name); ++i) {
+		w16_name[i] = stem[i];
+	}
+	if (i == 0 || i + 5 >= sizeof(w16_name)) {
+		return 0;
+	}
+	memcpy(w16_name + i, ".W16", 5);
+
+	if (!file.Open(w16_name, READ)) {
+		fprintf(stderr, "%s: warning: no C2P weights for '%s' (\"%s\")\n",
+			tag ? tag : "C2P", stem, w16_name);
+		return 0;
+	}
+
+	got = file.Read(&weights, (long)sizeof(weights));
+	file.Close();
+	if (got != (long)sizeof(weights) || !C2P_Install_WeightSet(&weights)) {
+		fprintf(stderr, "%s: warning: invalid C2P weights for '%s' (\"%s\")\n",
+			tag ? tag : "C2P", stem, w16_name);
+		return 0;
+	}
+	return 1;
 }
 
 static inline void Planar_Put_Pixel_RowBytes(

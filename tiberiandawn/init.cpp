@@ -52,9 +52,6 @@
 #ifdef ATARI_ST
 #include "st_temperat_palette.h"
 #endif
-#ifdef POSIX
-#include "atarilib/c2p.h"
-#endif
 
 /****************************************
 **	Function prototypes for this module **
@@ -1413,15 +1410,6 @@ bool Select_Game(bool fade)
     **	don't specify a variation, to make 'Set_Scenario_Name()' pick a random one.
     **	Skip this if we've already loaded a save-game.
     */
-#ifdef POSIX
-    /*
-     * Restore gameplay C2P mapping before we switch away from the title/menu flow.
-     * Title rendering selects the HTITLE weight set; gameplay terrain/icon draws
-     * should rebuild under the normal TEMPERAT mapping.
-     */
-    C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-#endif
-
     if (!gameloaded) {
         if (Debug_Map) {
             Set_Scenario_Name(Scen.ScenarioName, Scen.Scenario, ScenPlayer, ScenDir, SCEN_VAR_A);

@@ -53,6 +53,9 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
 
 void ST_SPRITE_CACHE_Init(void);
 
+/* Drop all cached planar slots (e.g. after C2P weight-set install). */
+void ST_SPRITE_CACHE_Invalidate_Planar_Cache(void);
+
 /*
  * Purge the sprite cache and rebuild tier slot pools with the given capacities. Pool indices 0..3
  * correspond to slab layouts sized like 16², 32², 64², 96² reference sprites (planar+mask bytes each);

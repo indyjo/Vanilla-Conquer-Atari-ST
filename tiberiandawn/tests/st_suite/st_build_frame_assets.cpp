@@ -923,7 +923,7 @@ int st_run_interactive_build_frame_xor_grid(void)
 	    (unsigned)tc,
 	    (unsigned long)buf_need);
 
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
+	C2P_Load_WeightSet("TEMPERAT", "Build frame assets");
 	{
 		unsigned char pal[768];
 		memcpy(pal, kStTemperatPal768, 768);

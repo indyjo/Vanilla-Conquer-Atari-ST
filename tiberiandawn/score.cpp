@@ -632,6 +632,10 @@ void ScoreClass::Presentation(void)
 	if (Special.IsJurassic && AreThingiesEnabled) return;
 
 #ifdef ATARI_ST
+	C2P_Context *c2p_saved = C2P_SaveContext();
+#endif
+
+#ifdef ATARI_ST
 	/* Aliases of HidPage backing store — no separate alloc (320×200 score layout). */
 	PseudoSeenBuff = HidPage.Get_Graphic_Buffer();
 	TextPrintBuffer = HidPage.Get_Graphic_Buffer();
@@ -1032,7 +1036,11 @@ void ScoreClass::Presentation(void)
 	VisiblePage.Clear();
 	#ifdef ATARI_ST
 	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
-	C2P_Clear_CustomWeights();
+	if (c2p_saved) {
+		C2P_RestoreContext(c2p_saved);
+		C2P_FreeContext(c2p_saved);
+		c2p_saved = NULL;
+	}
 	#endif
 	Set_Palette(GamePalette);
 
@@ -2003,6 +2011,9 @@ void Multi_Score_Presentation(void)
 	int oldfontxspacing = FontXSpacing;
 	char const *pal;
 
+#ifdef ATARI_ST
+	C2P_Context *c2p_saved = C2P_SaveContext();
+#endif
 
 	FontXSpacing = 0;
 	Map.Override_Mouse_Shape(MOUSE_NORMAL);
@@ -2110,7 +2121,11 @@ void Multi_Score_Presentation(void)
 	VisiblePage.Clear();
 	#ifdef ATARI_ST
 	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
-	C2P_Clear_CustomWeights();
+	if (c2p_saved) {
+		C2P_RestoreContext(c2p_saved);
+		C2P_FreeContext(c2p_saved);
+		c2p_saved = NULL;
+	}
 	#endif
 	Set_Palette(GamePalette);
 

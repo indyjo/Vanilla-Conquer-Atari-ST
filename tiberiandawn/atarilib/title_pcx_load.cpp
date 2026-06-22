@@ -9,6 +9,9 @@
 #include "gbuffer.h"
 #include "palette.h"
 
+#include <stdio.h>
+#include <string.h>
+
 #define POOL_SIZE 2048
 
 #pragma pack(push, 1)
@@ -29,31 +32,9 @@ static inline short SwapLE16(short val)
 #endif
 }
 
-static void Title_TryInstallC2PWeights(void)
-{
-	C2P_WeightSet weight_set;
-	CCFileClass file("TITLE.W16");
-	long got;
-
-	C2P_Clear_CustomWeights();
-	if (file.Is_Available() && file.Open(READ)) {
-		got = file.Read(&weight_set, (long)sizeof(weight_set));
-		file.Close();
-		if (got == (long)sizeof(weight_set) && C2P_Install_CustomWeights(&weight_set)) {
-			return;
-		}
-	}
-	C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
-}
-
 void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsigned char *palette)
 {
-	if (!name || !video_page || strcmp(name, "TITLE.CPS") != 0) {
-#ifdef ATARI_ST
-		if (name) {
-			printf("C&C ST - Load_Title_Screen skipped (name=%s).\n", name);
-		}
-#endif
+	if (!name || !video_page) {
 		return;
 	}
 
@@ -64,7 +45,9 @@ void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsig
 #endif
 		return;
 	}
-	Title_TryInstallC2PWeights();
+#ifdef ATARI_ST
+	C2P_Load_WeightSet(name, "Title");
+#endif
 	int uncomp_size = Load_Uncompress(file_obj, SysMemPage, SysMemPage, palette);
 #ifdef ATARI_ST
 	if (uncomp_size <= 0) {

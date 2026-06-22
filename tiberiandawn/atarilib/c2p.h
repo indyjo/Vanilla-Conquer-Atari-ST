@@ -14,11 +14,6 @@
 extern "C" {
 #endif
 
-enum {
-	C2P_WEIGHTSET_TEMPERAT = 0,
-	C2P_WEIGHTSET_HTITLE = 1
-};
-
 #define C2P_WEIGHTSET_MAGIC "W16"
 
 /*
@@ -34,16 +29,21 @@ typedef struct C2P_WeightSet {
 
 enum { C2P_WEIGHTSET_FILE_BYTES = (int)sizeof(C2P_WeightSet) };
 
+typedef struct C2P_Context C2P_Context;
+
 /* Returns non-zero if magic, row sums, and subset indices are valid. */
 int C2P_WeightSet_Validate(const C2P_WeightSet *weight_set);
 
-/* Select which palette-opt weight table drives 8-bit->4-bit mapping and rebuild dither tables. */
-void C2P_Select_WeightSet(int weight_set);
-int C2P_Get_WeightSet(void);
-/* Install custom weights + subset; LUTs are rebuilt during this call only (buffer may be freed after return). */
-int C2P_Install_CustomWeights(const C2P_WeightSet *weight_set);
-/* Rebuild LUTs from the built-in table for the current weight set (TEMPERAT / HTITLE). */
-void C2P_Clear_CustomWeights(void);
+/* Install weights + subset; LUTs are rebuilt during this call only (buffer may be freed after return). */
+int C2P_Install_WeightSet(const C2P_WeightSet *weight_set);
+/* Load <stem>.W16 and install; returns 1 on success. Logs and leaves weights unchanged on failure. */
+int C2P_Load_WeightSet(const char *stem, const char *tag);
+
+/* Snapshot of active C2P lookup tables (heap-allocated). NULL only on allocation failure. */
+C2P_Context *C2P_SaveContext(void);
+/* Restore lookup tables from a prior snapshot; does not free ctx. */
+void C2P_RestoreContext(C2P_Context *ctx);
+void C2P_FreeContext(C2P_Context *ctx);
 
 /* Map 8-bit palette index to one ST 4-bit color using current dither tables (absolute pixel coords). */
 unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char pal_idx);

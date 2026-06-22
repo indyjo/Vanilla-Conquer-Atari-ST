@@ -467,9 +467,40 @@ static void sprite_cache_apply_default_caps(void);
 static void sprite_cache_shutdown(void);
 static void sprite_cache_maybe_init(void);
 
+static void sprite_cache_reseed_tier_lru(SpriteCacheTier &tr, int tier_index)
+{
+	if (!tr.lru || !tr.slot_meta || tr.capacity <= 0)
+		return;
+
+	tr.lru->clear();
+	for (uint16_t i = 0; i < (uint16_t)tr.capacity; ++i) {
+		SpriteCacheKey dk;
+		std::memset(&dk, 0, sizeof(dk));
+		dk.src_key = UINT32_MAX ^ ((((uint32_t)tier_index) << 20) ^ (uint32_t)i);
+		dk.mode_pack = 0xFF;
+		dk.fade_token = (uint32_t)tier_index + 1u;
+		dk.ghost_token = 0x1000u + (uint32_t)i;
+		dk.trans_flag = false;
+		tr.lru->put(dk, i);
+		tr.slot_meta[i].crop_x = 0;
+		tr.slot_meta[i].crop_y = 0;
+		tr.slot_meta[i].crop_w = 0;
+		tr.slot_meta[i].crop_h = 0;
+		tr.slot_meta[i].occupied = 0;
+	}
+}
+
 void ST_SPRITE_CACHE_Init(void)
 {
 	sprite_cache_maybe_init();
+}
+
+extern "C" void ST_SPRITE_CACHE_Invalidate_Planar_Cache(void)
+{
+	if (!g_sprite_cache_inited)
+		return;
+	for (int t = 0; t < 4; ++t)
+		sprite_cache_reseed_tier_lru(g_sprite_cache_tiers[t], t);
 }
 
 static void sprite_cache_apply_default_caps(void)
@@ -562,21 +593,7 @@ static void sprite_cache_maybe_init(void)
 		tr.slot_meta = new (std::nothrow) SpriteCacheSlotMeta[(size_t)tr.capacity];
 		if (!tr.slot_meta)
 			goto fail;
-		for (uint16_t i = 0; i < (uint16_t)tr.capacity; ++i) {
-			SpriteCacheKey dk;
-			std::memset(&dk, 0, sizeof(dk));
-			dk.src_key = UINT32_MAX ^ ((((uint32_t)t) << 20) ^ (uint32_t)i);
-			dk.mode_pack = 0xFF;
-			dk.fade_token = (uint32_t)t + 1u;
-			dk.ghost_token = 0x1000u + (uint32_t)i;
-			dk.trans_flag = false;
-			tr.lru->put(dk, i);
-			tr.slot_meta[i].crop_x = 0;
-			tr.slot_meta[i].crop_y = 0;
-			tr.slot_meta[i].crop_w = 0;
-			tr.slot_meta[i].crop_h = 0;
-			tr.slot_meta[i].occupied = 0;
-		}
+		sprite_cache_reseed_tier_lru(tr, t);
 	}
 
 	g_sprite_cache_inited = true;

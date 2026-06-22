@@ -228,7 +228,7 @@ extern "C" int st_run_interactive_wsa_playback(void)
 
 	/*
 	 * Open_Animation already called WSA_Atari_TryInstallC2PWeights (per-WSA .W16).
-	 * Do not C2P_Select_WeightSet(TEMPERAT) here — that would overwrite custom weights.
+	 * Open_Animation already installed per-WSA .W16 weights.
 	 */
 	has_anim_palette = Get_Animation_Palette(anim);
 	if (has_anim_palette) {
@@ -254,7 +254,6 @@ extern "C" int st_run_interactive_wsa_playback(void)
 	printf("WSA: frames=%d size=%dx%d\n", frames, aw, ah);
 	if (frames <= 0) {
 		Close_Animation(anim);
-		C2P_Clear_CustomWeights();
 		Set_Logic_Page(old_logic);
 		st_hw_palette_write(saved_hw);
 		Setscreen(old_log, old_phys, old_rez);
@@ -284,7 +283,6 @@ extern "C" int st_run_interactive_wsa_playback(void)
 
 	ok = st_read_yes_no();
 
-	C2P_Clear_CustomWeights();
 	Set_Logic_Page(old_logic);
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);

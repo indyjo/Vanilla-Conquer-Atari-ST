@@ -1,6 +1,6 @@
 /*
  * Interactive: browse every CPS file referenced in TD source, each paired with
- * its C2P weight set (.W16 on disk, or built-in HTITLE for TITLE.CPS).
+ * its C2P weight set (.W16 on disk).
  *
  * Embedded-palette CPS: palette comes from Load_Uncompress skip data.
  * Others: external .PAL or map-selection WSA context (EUROPE.WSA, …).
@@ -30,7 +30,6 @@ typedef struct {
 	const char *w16_name;
 	const char *ext_pal_name;
 	int embedded_palette;
-	int builtin_weightset;
 	const char *context_note;
 } StCpsCatalogEntry;
 
@@ -38,14 +37,13 @@ typedef struct {
  * All .CPS assets referenced in Tiberian Dawn sources (mix2.txt / MAPSEL / ENDING / INIT).
  */
 static const StCpsCatalogEntry kCpsCatalog[] = {
-	{"TITLE.CPS", "TITLE.W16", NULL, 1, C2P_WEIGHTSET_HTITLE,
-	 "title + menus; embedded PAL"},
-	{"ATTRACT2.CPS", "ATTRACT2.W16", NULL, 1, -1, "RA teaser; embedded PAL"},
-	{"SATSEL.CPS", "SATSEL.W16", "SATSEL.PAL", 0, -1, "NOD sat map; SATSEL.PAL"},
-	{"CLICK_E.CPS", "EUROPE.W16", NULL, 0, -1, "GDI map pick; EUROPE.WSA ctx"},
-	{"CLICK_EB.CPS", "BOSNIA.W16", NULL, 0, -1, "GDI last scen; BOSNIA.WSA ctx"},
-	{"CLICK_A.CPS", "AFRICA.W16", NULL, 0, -1, "NOD map pick; AFRICA.WSA ctx"},
-	{"CLICK_SA.CPS", "S_AFRICA.W16", NULL, 0, -1, "NOD last scen; S_AFRICA.WSA ctx"},
+	{"TITLE.CPS", "TITLE.W16", NULL, 1, "title + menus; embedded PAL"},
+	{"ATTRACT2.CPS", "ATTRACT2.W16", NULL, 1, "RA teaser; embedded PAL"},
+	{"SATSEL.CPS", "SATSEL.W16", "SATSEL.PAL", 0, "NOD sat map; SATSEL.PAL"},
+	{"CLICK_E.CPS", "EUROPE.W16", NULL, 0, "GDI map pick; EUROPE.WSA ctx"},
+	{"CLICK_EB.CPS", "BOSNIA.W16", NULL, 0, "GDI last scen; BOSNIA.WSA ctx"},
+	{"CLICK_A.CPS", "AFRICA.W16", NULL, 0, "NOD map pick; AFRICA.WSA ctx"},
+	{"CLICK_SA.CPS", "S_AFRICA.W16", NULL, 0, "NOD last scen; S_AFRICA.WSA ctx"},
 };
 
 static const int kCpsCatalogCount = (int)(sizeof(kCpsCatalog) / sizeof(kCpsCatalog[0]));
@@ -89,30 +87,9 @@ static int st_load_pal768(const char *name, unsigned char *pal)
 	return 1;
 }
 
-static int st_try_install_w16(const char *w16_name, int builtin_fallback)
+static int st_try_install_w16(const char *w16_name)
 {
-	C2P_Clear_CustomWeights();
-	if (w16_name && w16_name[0]) {
-		C2P_WeightSet weight_set;
-		CCFileClass file(w16_name);
-		if (file.Is_Available() && file.Open(READ)) {
-			long got = file.Read(&weight_set, (long)sizeof(weight_set));
-			file.Close();
-			if (got == (long)sizeof(weight_set) && C2P_Install_CustomWeights(&weight_set)) {
-				return 1;
-			}
-		}
-	}
-	if (builtin_fallback == C2P_WEIGHTSET_HTITLE) {
-		C2P_Select_WeightSet(C2P_WEIGHTSET_HTITLE);
-		return 2;
-	}
-	if (builtin_fallback == C2P_WEIGHTSET_TEMPERAT) {
-		C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-		return 3;
-	}
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-	return 0;
+	return C2P_Load_WeightSet(w16_name, "CPS") ? 1 : 0;
 }
 
 static int st_pick_cps_index(void)
@@ -189,7 +166,7 @@ static int st_draw_cps_entry(int catalog_index)
 	Setscreen((long)screen.Get_Buffer(), (long)screen.Get_Buffer(), -1L);
 	vp.Clear(0);
 
-	weight_src = st_try_install_w16(e->w16_name, e->builtin_weightset);
+	weight_src = st_try_install_w16(e->w16_name);
 
 	if (e->ext_pal_name && !e->embedded_palette) {
 		if (!st_load_pal768(e->ext_pal_name, pal)) {
@@ -235,14 +212,10 @@ static int st_draw_cps_entry(int catalog_index)
 	Vsync();
 	Vsync();
 	printf("Showing %s (weights: %s", e->cps_name, e->w16_name);
-	if (weight_src == 1) {
-		printf(", custom .W16 loaded)\n");
-	} else if (weight_src == 2) {
-		printf(", built-in HTITLE)\n");
-	} else if (weight_src == 3) {
-		printf(", built-in TEMPERAT)\n");
+	if (weight_src) {
+		printf(", .W16 loaded)\n");
 	} else {
-		printf(", TEMPERAT fallback — add %s)\n", e->w16_name);
+		printf(" — missing or invalid %s)\n", e->w16_name);
 	}
 	printf("Press any key...\n");
 	fflush(stdout);
@@ -250,8 +223,6 @@ static int st_draw_cps_entry(int catalog_index)
 	ok = 1;
 
 restore:
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-	C2P_Clear_CustomWeights();
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
 	SuperToUser(old_ssp);

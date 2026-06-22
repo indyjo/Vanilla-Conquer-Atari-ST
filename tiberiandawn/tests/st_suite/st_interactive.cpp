@@ -108,21 +108,7 @@ static int st_scan_pal_in_cwd(char names[][14], int max_names)
 
 static int st_install_w16(const char *w16_name)
 {
-	C2P_Clear_CustomWeights();
-	if (!w16_name || !w16_name[0]) {
-		return 0;
-	}
-	C2P_WeightSet weight_set;
-	CCFileClass file(w16_name);
-	if (!file.Is_Available() || !file.Open(READ)) {
-		return 0;
-	}
-	long got = file.Read(&weight_set, (long)sizeof(weight_set));
-	file.Close();
-	if (got != (long)sizeof(weight_set)) {
-		return 0;
-	}
-	return C2P_Install_CustomWeights(&weight_set) ? 1 : 0;
+	return C2P_Load_WeightSet(w16_name, "Interactive") ? 1 : 0;
 }
 
 static int st_load_pal768(const char *pal_name, unsigned char *pal768)
@@ -157,7 +143,6 @@ static int st_show_index_grid(const char *w16_name, const char *pal_name)
 	}
 	if (!st_load_pal768(pal_name, pal)) {
 		printf("  FAIL: cannot load %s\n", pal_name ? pal_name : "(null)");
-		C2P_Clear_CustomWeights();
 		return 1;
 	}
 
@@ -190,8 +175,6 @@ static int st_show_index_grid(const char *w16_name, const char *pal_name)
 	ok = 1;
 
 restore:
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
-	C2P_Clear_CustomWeights();
 	st_hw_palette_write(saved_hw);
 	Setscreen(old_log, old_phys, old_rez);
 	SuperToUser(old_ssp);

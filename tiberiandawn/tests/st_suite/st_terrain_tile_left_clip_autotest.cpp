@@ -101,7 +101,6 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 	int old_rez = Getrez();
 	long old_phys = (long)Physbase();
 	long old_log = (long)Logbase();
-	const int old_weight_set = C2P_Get_WeightSet();
 
 	Setscreen(-1L, -1L, 0);
 	uint8_t *screen_hw = (uint8_t *)Logbase();
@@ -115,13 +114,12 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 		free(screen_ref);
 		free(checker_bg);
 		free(atlas);
-		C2P_Select_WeightSet(old_weight_set);
 		Setscreen(old_log, old_phys, old_rez);
 		st_wrap_puts("FAIL: terrain clip test allocation.", ST_TEXT_MAXCOL);
 		return 1;
 	}
 
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
+	C2P_Load_WeightSet("TEMPERAT", "Terrain clip autotest");
 	{
 		unsigned char pal[768];
 		memcpy(pal, kStTemperatPal768, sizeof(pal));
@@ -225,7 +223,6 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 	free(screen_ref);
 	free(checker_bg);
 	free(atlas);
-	C2P_Select_WeightSet(old_weight_set);
 	Setscreen(old_log, old_phys, old_rez);
 
 	if (case_failures == 0) {

@@ -322,7 +322,7 @@ int st_run_interactive_font_browser(void)
 	GraphicViewPortClass vp(&screen, 0, 0, ST_FB_SCR_W, ST_FB_SCR_H);
 	Setscreen((long)screen.Get_Buffer(), (long)screen.Get_Buffer(), -1L);
 
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
+	C2P_Load_WeightSet("TEMPERAT", "Font browser");
 	unsigned char pal[768];
 	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);

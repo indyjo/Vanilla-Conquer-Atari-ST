@@ -14,10 +14,10 @@
 #include <string.h>
 
 /*
- * Golden planar checksum (diagonal index pattern + TEMPERAT + current
- * c2p_palette_opt_weights). Recompute on host with ATARILIB/c2p.cpp if weights change.
+ * Golden planar checksum (diagonal index pattern + TEMPERAT.PAL +
+ * atari-assets/temperat.w16). Recompute on ST if temperat.w16 changes.
  */
-static const unsigned ST_C2P_AUTOTEST_PLANAR_CHECKSUM = 778880640u;
+static const unsigned ST_C2P_AUTOTEST_PLANAR_CHECKSUM = 1823032384u;
 
 int st_run_c2p_autotests_ex(int verbose, unsigned *out_checksum)
 {
@@ -33,11 +33,16 @@ int st_run_c2p_autotests_ex(int verbose, unsigned *out_checksum)
 		return 1;
 	}
 
-	C2P_Select_WeightSet(C2P_WEIGHTSET_TEMPERAT);
+	if (!C2P_Load_WeightSet("TEMPERAT", "C2P autotest")) {
+		st_wrap_puts("FAIL: could not load TEMPERAT.W16 (copy atari-assets/*.w16 to cwd).", ST_TEXT_MAXCOL);
+		free(chunky);
+		free(planar);
+		return 1;
+	}
 	memcpy(pal, kStTemperatPal768, 768);
 	Set_Palette(pal);
 
-	/* Clean representability API checks against current TEMPERAT weight set. */
+	/* Clean representability API checks against atari-assets/temperat.w16. */
 	{
 		uint8_t out_color = 0xEEu;
 		if (!C2P_Is_Palette_Index_Clean4(0, &out_color) || out_color != 0) {
@@ -45,8 +50,8 @@ int st_run_c2p_autotests_ex(int verbose, unsigned *out_checksum)
 			failures++;
 		}
 		out_color = 0xA5u;
-		if (C2P_Is_Palette_Index_Clean4(16, &out_color) || out_color != 0xA5u) {
-			st_wrap_puts("FAIL: C2P_Is_Palette_Index_Clean4 expected pal 16 non-clean and unchanged out.", ST_TEXT_MAXCOL);
+		if (!C2P_Is_Palette_Index_Clean4(16, &out_color) || out_color != 1) {
+			st_wrap_puts("FAIL: C2P_Is_Palette_Index_Clean4 expected pal 16 -> color 1.", ST_TEXT_MAXCOL);
 			failures++;
 		}
 	}

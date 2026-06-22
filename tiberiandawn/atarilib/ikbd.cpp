@@ -295,33 +295,44 @@ extern "C" void IKBD_ISR_Entry(void)
 	*MFP_ISRA = (unsigned char)(*MFP_ISRA & (unsigned char)~0x40u);
 }
 
+static inline void IKBD_Drain_Acia_Rx(void)
+{
+	while (((*IKBD_ACIA_STATUS) & 0x01u) != 0u) {
+		(void)(*IKBD_ACIA_DATA);
+	}
+}
+
 static void IKBD_Restore_Tos_Mouse_Hardware(void)
 {
 	/*
-	 * Install switches to relative mode (0x08). TOS/desktop need absolute (0x09)
-	 * and a sane position in 0..65535 space.
+	 * TOS/desktop defaults: mouse buttons as mouse, joystick events on,
+	 * relative reporting, threshold 1+1. (Forum-tested quit sequence.)
+	 * Do NOT use 0x0B with 16-bit coords — that command is threshold only.
 	 */
-	char set_absolute_mouse = 0x09;
-	Ikbdws(1, &set_absolute_mouse);
-	{
-		unsigned char set_pos[5] = { 0x0B, 0x80, 0x00, 0x80, 0x00 };
-		Ikbdws(5, set_pos);
-	}
+	static unsigned char const k_tos_desktop_mouse[] = {
+		0x07, 0x00,
+		0x14,
+		0x08,
+		0x0B, 0x01, 0x01
+	};
+	Ikbdws((long)(sizeof(k_tos_desktop_mouse) - 1u), (char const *)k_tos_desktop_mouse);
+	IKBD_Drain_Acia_Rx();
 }
 
 static long IKBD_Install_Supervisor(void)
 {
 	/*
 	 * Previous run may have exited without restoring the IKBD (OOM, bus error).
-	 * Reset the controller before we hook vector $118.
+	 * Reset the controller, then enable relative mode before hooking vector $118.
 	 */
 	{
-		char ikbd_restore = 0x14;
-		Ikbdws(1, &ikbd_restore);
+		unsigned char reset[] = { 0x80, 0x01 };
+		Ikbdws(1, (char *)reset);
+		IKBD_Drain_Acia_Rx();
 	}
 	{
-		char set_relative_mouse = 0x08;
-		Ikbdws(1, &set_relative_mouse);
+		unsigned char set_relative_mouse = 0x08;
+		Ikbdws(0, (char *)&set_relative_mouse);
 	}
 	MouseX = IKBD_MOUSE_WIDTH / 2;
 	MouseY = IKBD_MOUSE_HEIGHT / 2;
@@ -332,12 +343,17 @@ static long IKBD_Install_Supervisor(void)
 
 static long IKBD_Shutdown_Supervisor(void)
 {
+	/*
+	 * Restore IKBD hardware and drain stale relative packets before handing
+	 * vector $118 back to TOS; otherwise the desktop mouse stops updating.
+	 */
+	IKBD_Restore_Tos_Mouse_Hardware();
+	IKBD_Read_Acia_Bytes();
 	if (HandlerInstalled && PrevIKBDVector) {
 		Setexc(IKBD_VECTOR_NUMBER, (void (*)())PrevIKBDVector);
 	}
 	HandlerInstalled = 0;
 	PrevIKBDVector = NULL;
-	IKBD_Restore_Tos_Mouse_Hardware();
 	return 1;
 }
 

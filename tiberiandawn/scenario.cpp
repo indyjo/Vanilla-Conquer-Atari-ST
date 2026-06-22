@@ -258,8 +258,16 @@ bool Read_Scenario(char* root)
          * Use screen-sized tactical viewport. Passing map-cell dimensions here
          * expands TacLeptonWidth/Height to whole-map space, which breaks
          * Coord_To_Pixel clipping on ST 320x200 and pushes most draws off-screen.
+         *
+         * If the sidebar was activated while loading buildings (e.g. carry-over
+         * into the next mission), leave room for it — otherwise the tactical map
+         * is sized to the full screen and overdraws the sidebar.
          */
-        Map.Set_View_Dimensions(0, Map.Get_Tab_Height());
+        if (Map.IsSidebarActive) {
+            Map.Set_View_Dimensions(0, Map.Get_Tab_Height(), SeenBuff.Get_Width() - Map.SideBarWidth);
+        } else {
+            Map.Set_View_Dimensions(0, Map.Get_Tab_Height());
+        }
 
         /*
         **	SPECIAL CASE:

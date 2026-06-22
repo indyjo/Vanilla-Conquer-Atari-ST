@@ -822,9 +822,9 @@ void SidebarClass::Draw_It(bool complete)
     if (IsSidebarActive) {
         Column[0].Draw_It(complete);
         Column[1].Draw_It(complete);
-        Repair->Draw_Me(false);
-        Upgrade->Draw_Me(false);
-        Zoom->Draw_Me(false);
+        Repair->Draw_Me(complete);
+        Upgrade->Draw_Me(complete);
+        Zoom->Draw_Me(complete);
     }
 
     IsToRedraw = false;

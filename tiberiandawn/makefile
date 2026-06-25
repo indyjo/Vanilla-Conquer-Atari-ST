@@ -332,7 +332,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_screen.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp,)
 
 # Assembly sources (platform-specific)
 # Root directory files use uppercase .ASM, ATARILIB files use lowercase .asm (as tracked in git)
@@ -912,8 +912,17 @@ endif
 # DEPENDENCIES
 #=============================================================================
 
+# Makefile toggles (CHEAT_KEYS, etc.) change -D gates; track them so stale .o files
+# are not linked after e.g. make CHEAT_KEYS=1 on a Release tree.
+BUILD_FLAGS_STAMP := $(INTDIR)/.build_flags
+
+$(BUILD_FLAGS_STAMP): | $(INTDIR)
+	@printf 'CHEAT_KEYS=%s\nPROFILE_FRAME_BAR=%s\nPROFILE_BORDER=%s\nSEPARATE_DEBUG_SCREEN=%s\n' \
+		'$(CHEAT_KEYS)' '$(PROFILE_FRAME_BAR)' '$(PROFILE_BORDER)' '$(SEPARATE_DEBUG_SCREEN)' > '$@.tmp'
+	@if ! cmp -s '$@.tmp' '$@' 2>/dev/null; then mv '$@.tmp' '$@'; else rm -f '$@.tmp'; fi
+
 # defines.h and makefile DEFINES toggle CHEAT_KEYS and other #ifdef gates; stale .o files break the link.
-$(CPP_OBJECTS): defines.h
+$(CPP_OBJECTS): defines.h makefile $(BUILD_FLAGS_STAMP)
 
 # Note: For automatic dependency generation, you can:
 # 1. Add -MMD -MP to CXXFLAGS to generate .d files

@@ -70,6 +70,7 @@
 #include "common/settings.h"
 #include "common/winasm.h"
 #include "atarilib/st_frame_meter.h"
+#include "atarilib/st_playback_timing.h"
 
 #ifdef ATARI_ST
 #include "atarilib/drawbuff.h"
@@ -325,6 +326,19 @@ void Main_Game(int argc, char* argv[])
             Send_Statistics_Packet();
         }
 
+#ifndef DEMO
+        /*
+        **	Playback timing dialog must run before fading to black.
+        */
+        if ((RecordGame && !SuperRecord) || PlaybackGame) {
+            RecordFile.Close();
+        }
+
+        if (PlaybackGame) {
+            StPlaybackTiming_EndAndPrint();
+        }
+#endif
+
         /*
         **	Scenario is done; fade palette to black
         */
@@ -342,10 +356,6 @@ void Main_Game(int argc, char* argv[])
         ** (Skip this step if we're in playback mode; the modem or net won't have
         ** been initialized in that case.)
         */
-        if ((RecordGame && !SuperRecord) || PlaybackGame) {
-            RecordFile.Close();
-        }
-
         if (!PlaybackGame) {
 
             switch (GameToPlay) {

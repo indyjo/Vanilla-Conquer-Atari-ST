@@ -51,6 +51,7 @@
 
 #ifdef ATARI_ST
 #include "st_temperat_palette.h"
+#include "st_playback_timing.h"
 #endif
 
 /****************************************
@@ -1493,6 +1494,10 @@ bool Select_Game(bool fade)
         while (Get_Mouse_State() > 1) {
             Show_Mouse();
         }
+    }
+
+    if (PlaybackGame) {
+        StPlaybackTiming_Start();
     }
 
     return (true);

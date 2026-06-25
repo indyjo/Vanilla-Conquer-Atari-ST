@@ -882,6 +882,11 @@ itch-release:
 	for f in atari-assets/*.w16; do \
 		if [ -f "$$f" ]; then cp "$$f" "$(ITCH_STAGE_DIR)/"; fi; \
 	done; \
+	if [ ! -f atari-assets/record.bin ]; then \
+		echo "error: atari-assets/record.bin not found" >&2; \
+		exit 1; \
+	fi; \
+	cp atari-assets/record.bin "$(ITCH_STAGE_DIR)/"; \
 	printf '%s\r\n' \
 		"Command & Conquer for Atari ST" \
 		"" \
@@ -889,6 +894,8 @@ itch-release:
 		"" \
 		"To play the game, copy the MIX files from an official Command & Conquer DOS CD into the same folder as the executable." \
 		"Run remix.tos once before cnc.tos to repack MIX files for Atari ST (even offsets, audio conversion)." \
+		"" \
+		"Playback benchmark: record.bin is included. Run cnc.tos -XY (or -XYQ for mostly silent audio)." \
 		"" \
 		"Further information:" \
 		"https://indyjo.itch.io/commandconquer" \

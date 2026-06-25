@@ -26,7 +26,7 @@ int palette_subset_spread_colors_fix(const float *colors, int n, const PaletteSu
 
 /*
  * Same as palette_subset_spread_colors_fix; when json_export is non-NULL, fills pens
- * 0..n-1 in order and records one spread trace step per pen for optviz.
+ * 0..n-1 in order and records one spread trace step per pen for external visualization.
  */
 int palette_subset_spread_colors_fix_trace(const float *colors, int n,
 	const PaletteSubsetFix *fix, unsigned char *out_subset,

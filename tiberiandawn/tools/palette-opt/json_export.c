@@ -1,5 +1,5 @@
 /*
- * json_export.c - Streaming JSON trace writer for palette-opt / optviz.
+ * json_export.c - Streaming JSON trace writer for external visualization and tools.
  */
 
 #include "json_export.h"

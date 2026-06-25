@@ -117,9 +117,9 @@ Build with OpenMP on Linux (`make OPENMP=1`).
 ./palette-opt -p TEMPERAT.PAL --dump-ply /tmp/temperat -o temperat.w16
 ```
 
-### JSON trace (optviz)
+### JSON trace (external visualization)
 
-`--export-json FILE` writes a single optimization trace for [tools/optviz](../optviz/)
+`--export-json FILE` writes a single optimization trace for external visualization and tools
 (one `steps[]` entry every `--export-every=N`, default 25). Steps are **streamed to
 disk** as optimization runs (unbuffered); each step includes `subset`, `weights`,
 `cost`, `best_cost`, `iter_since_best`, and related SA fields.

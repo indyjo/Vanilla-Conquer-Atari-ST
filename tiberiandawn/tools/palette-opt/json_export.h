@@ -1,5 +1,5 @@
 /*
- * json_export.h - Optimization trace export for optviz animations.
+ * json_export.h - Optimization trace export for external visualization and tools.
  */
 
 #ifndef PALETTE_OPT_JSON_EXPORT_H

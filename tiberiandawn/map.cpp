@@ -108,9 +108,6 @@ void MapClass::One_Time(void)
 	**	Init the CellTriggers array to the required size.
 	*/
 	CellTriggers.Resize(MAP_CELL_TOTAL);
-
-#ifdef ATARI_ST
-#endif
 }
 
 ////////////////////////////////////////////////////
@@ -130,9 +127,6 @@ void MapClass::One_Time_Editor(void)
 	**	Init the CellTriggers array to the required size.
 	*/
 	CellTriggers.Resize(MAP_CELL_TOTAL);
-
-#ifdef ATARI_ST
-#endif
 }
 // End of change. - 06/15/2019 JAS
 ////////////////////////////////////////////////////

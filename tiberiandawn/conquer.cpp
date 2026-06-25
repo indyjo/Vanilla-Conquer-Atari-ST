@@ -2074,6 +2074,11 @@ unsigned PaletteCounter;
 
 int Load_Interpolated_Palettes(char const* filename, bool add)
 {
+#ifdef ATARI_ST
+    (void)filename;
+    (void)add;
+    return 0;
+#else
     int num_palettes = 0;
     int i;
     int start_palette;
@@ -2120,10 +2125,14 @@ int Load_Interpolated_Palettes(char const* filename, bool add)
 
     PaletteCounter = 0;
     return (num_palettes);
+#endif
 }
 
 void Free_Interpolated_Palettes(void)
 {
+#ifdef ATARI_ST
+    return;
+#else
     if (!InterpolationTable) {
         /* DOSMode should not interpolate anything.  */
         return;
@@ -2135,6 +2144,7 @@ void Free_Interpolated_Palettes(void)
             InterpolatedPalettes[i] = NULL;
         }
     }
+#endif
 }
 
 /***********************************************************************************************

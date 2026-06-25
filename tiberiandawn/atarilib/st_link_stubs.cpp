@@ -7,6 +7,7 @@
 #include "externs.h"
 #include "sidebarglyphx.h"
 #include "interpal.h"
+#include "winasm.h"
 #include "gbuffer.h"
 #include "vqaconfig.h"
 #include "vqatask.h"
@@ -14,6 +15,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+struct InterpolationTable* InterpolationTable = nullptr;
 
 unsigned char* InterpolationPalette = nullptr;
 bool InterpolationPaletteChanged = false;

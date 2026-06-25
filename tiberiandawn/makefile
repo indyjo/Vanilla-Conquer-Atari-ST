@@ -258,7 +258,7 @@ VC_COMMON_CPP_SOURCES = \
 	../common/rndstraw.cpp ../common/settings.cpp ../common/sha.cpp \
 	../common/shapipe.cpp ../common/shastraw.cpp ../common/straw.cpp \
 	../common/toggle.cpp ../common/timer.cpp ../common/timer_st_vbl.cpp ../common/timerdwn.cpp ../common/vector.cpp \
-	../common/winasm.cpp ../common/wwkeyboard.cpp \
+	../common/wwkeyboard.cpp \
 	../common/xpipe.cpp ../common/xstraw.cpp ../common/gadget.cpp
 else
 VC_COMMON_CPP_SOURCES =

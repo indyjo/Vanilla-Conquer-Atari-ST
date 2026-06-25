@@ -467,10 +467,12 @@ bool Init_Game(int, char*[])
         Rule.Process(RuleINI);
     }
 
+#ifndef ATARI_ST
     /* Initialize the Interpolation Table.  */
     if (Get_Resolution_Factor()) {
         InterpolationTable = new struct InterpolationTable();
     }
+#endif
 
     /*
     **	Initialize the animation system.
@@ -710,10 +712,12 @@ void Uninit_Game(void)
     WWDOS_Shutdown();
     delete[] Palette;
 
+#ifndef ATARI_ST
     if (InterpolationTable) {
         delete InterpolationTable;
         InterpolationTable = NULL;
     }
+#endif
 }
 //#endif
 

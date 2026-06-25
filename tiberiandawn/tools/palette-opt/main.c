@@ -1,3 +1,4 @@
+#include "json_export.h"
 #include "palette_color.h"
 #include "ply_dump.h"
 #include "subset_fix.h"
@@ -119,6 +120,12 @@ static void print_help(FILE *out, const char *prog)
 		"  --sa-t0=F         Initial temperature (default: auto).\n"
 		"  --sa-cool=F       Temperature multiplier per iter (default 0.9995).\n"
 		"\n"
+		"Animation trace (optviz):\n"
+		"  --export-json FILE\n"
+		"                Write optimization trace JSON for tools/optviz.\n"
+		"  --export-every=N  One trace step every N iterations (default 25).\n"
+		"                Use --bayer=2 for 2x2-tile traces (matches ST C2P).\n"
+		"\n"
 		"Without -o, prints C-style weight rows for all 256 indices to stdout.\n"
 		"\n"
 		"Examples:\n"
@@ -201,15 +208,24 @@ static void print_subset_comment(FILE *out, const char *label)
 	fprintf(out, "\n");
 }
 
-static int apply_subset_spread(int n, const PaletteSubsetFix *fix)
+static int apply_subset_spread(int n, const PaletteSubsetFix *fix, PaletteOptJsonExport *json,
+	const double *alpha, float lambda)
 {
-	const int got = palette_subset_spread_colors_fix(colors, n, fix, subset);
+	int got;
+
+	if (json) {
+		got = palette_subset_spread_colors_fix_trace(colors, n, fix, subset, json, dist_sq, alpha,
+			lambda);
+	} else {
+		got = palette_subset_spread_colors_fix(colors, n, fix, subset);
+	}
 	if (got != n) {
 		fprintf(stderr, "error: spread subset expected %d indices, got %d\n", n, got);
 		return 0;
 	}
 	subset_count = got;
-	print_subset_comment(stderr, "spread subset");
+	if (!json)
+		print_subset_comment(stderr, "spread subset");
 	return 1;
 }
 
@@ -371,6 +387,8 @@ int main(int argc, const char **argv)
 	const char *hist_path = NULL;
 	const char *subset_init_csv = NULL;
 	const char *subset_from_path = NULL;
+	const char *export_json_path = NULL;
+	int export_every = 25;
 	int continue_mode = 0;
 	int argi = 1;
 	int subset_n = 16;
@@ -381,6 +399,7 @@ int main(int argc, const char **argv)
 	PaletteSubsetOptParams sa_params;
 	PaletteSubsetFix subset_fix;
 	PaletteOptColorParams color_params;
+	PaletteOptJsonExport *json_export = NULL;
 	FILE *outf = NULL;
 	int print_weights;
 	int target;
@@ -470,6 +489,22 @@ int main(int argc, const char **argv)
 				return 1;
 			}
 			subset_from_path = argv[++argi];
+		} else if (!strncmp(argv[argi], "--export-json=", 14)) {
+			export_json_path = argv[argi] + 14;
+		} else if (!strcmp(argv[argi], "--export-json")) {
+			if (argi + 1 >= argc) {
+				print_usage(argv[0]);
+				return 1;
+			}
+			export_json_path = argv[++argi];
+		} else if (!strncmp(argv[argi], "--export-every=", 15)) {
+			export_every = atoi(argv[argi] + 15);
+		} else if (!strcmp(argv[argi], "--export-every")) {
+			if (argi + 1 >= argc) {
+				print_usage(argv[0]);
+				return 1;
+			}
+			export_every = atoi(argv[++argi]);
 		} else if (!strncmp(argv[argi], "--sa-iter=", 10)) {
 			sa_params.sa_max_iter = atoi(argv[argi] + 10);
 		} else if (!strncmp(argv[argi], "--sa-seed=", 10)) {
@@ -545,6 +580,10 @@ int main(int argc, const char **argv)
 		fprintf(stderr, "error: subset size must be 1..%d\n", PALETTE_SUBSET_MAX);
 		return 1;
 	}
+	if (export_every <= 0) {
+		fprintf(stderr, "error: --export-every must be > 0\n");
+		return 1;
+	}
 
 	if (output_path) {
 		if (continue_mode) {
@@ -580,6 +619,18 @@ int main(int argc, const char **argv)
 	palette_build_dist_sq_matrix(colors, dist_sq);
 	sa_params.lambda = lambda;
 
+	if (export_json_path) {
+		json_export = palette_opt_json_create(export_json_path, palette_path, raw_pal, colors,
+			&color_params, &sa_params, lambda, export_every,
+			palette_opt_weight_granularity, subset_n);
+		if (!json_export) {
+			fprintf(stderr, "error: failed to open JSON export: %s\n", export_json_path);
+			return 1;
+		}
+		fprintf(stderr, "json export: %s (every %d steps, streaming)\n", export_json_path,
+			export_every);
+	}
+
 	if (color_params.use_yuv) {
 		fprintf(stderr, "metric: YUV, gamma %.4g, Y scale %.4g\n",
 			(double)color_params.gamma, (double)color_params.y_scale);
@@ -614,7 +665,8 @@ int main(int argc, const char **argv)
 		fprintf(stderr, "subset init: continue from %s\n", output_path);
 	} else if (!apply_subset_init(subset_n, subset_init_csv, subset_from_path, &subset_fix)) {
 		if (!apply_subset_spread(subset_n,
-				palette_subset_fix_count(&subset_fix) > 0 ? &subset_fix : NULL))
+				palette_subset_fix_count(&subset_fix) > 0 ? &subset_fix : NULL,
+				json_export, alpha, lambda))
 			return 1;
 		fprintf(stderr, "subset init: farthest-point spread\n");
 	}
@@ -624,8 +676,9 @@ int main(int argc, const char **argv)
 		const PaletteSubsetFix *fix_arg =
 			palette_subset_fix_count(&subset_fix) > 0 ? &subset_fix : NULL;
 		if (palette_subset_opt_anneal(colors, dist_sq, subset, subset_n, fix_arg, alpha,
-				&sa_params, &stats, stderr) != 0) {
+				&sa_params, &stats, stderr, json_export) != 0) {
 			fprintf(stderr, "error: subset simulated annealing failed\n");
+			palette_opt_json_free(json_export);
 			return 1;
 		}
 		subset_count = subset_n;
@@ -639,10 +692,21 @@ int main(int argc, const char **argv)
 
 	memset(all_weights, 0, sizeof(all_weights));
 
+	if (json_export && palette_opt_json_should_export_weights(0, export_every)) {
+		if (!palette_opt_json_weights_step(json_export, 0, "start", subset, subset_count,
+				all_weights, colors, dist_sq, alpha, lambda)) {
+			fprintf(stderr, "error: json weights export failed at start\n");
+			palette_opt_json_free(json_export);
+			return 1;
+		}
+	}
+
 	for (target = 0; target < 256; target++) {
 		unsigned char wrow[16];
 		const float residual = palette_weight_opt_best(colors, dist_sq, subset, subset_count,
 			target, lambda, wrow);
+		const int targets_done = target + 1;
+		const char *note;
 
 		if (print_weights) {
 			int i;
@@ -655,6 +719,18 @@ int main(int argc, const char **argv)
 			printf("}, // %d: %f\n", target, residual);
 		}
 		memcpy(all_weights[target], wrow, 16);
+
+		if (!json_export)
+			continue;
+		if (!palette_opt_json_should_export_weights(targets_done, export_every))
+			continue;
+		note = (targets_done >= 256) ? "final" : "partial";
+		if (!palette_opt_json_weights_step(json_export, targets_done, note, subset, subset_count,
+				all_weights, colors, dist_sq, alpha, lambda)) {
+			fprintf(stderr, "error: json weights export failed at target %d\n", target);
+			palette_opt_json_free(json_export);
+			return 1;
+		}
 	}
 
 	if (output_path) {
@@ -694,6 +770,11 @@ int main(int argc, const char **argv)
 			return 1;
 		fprintf(stderr, "wrote %s.mix.ply\n", ply_prefix);
 	}
+
+	if (export_json_path)
+		fprintf(stderr, "wrote %s (%d steps)\n", export_json_path,
+			palette_opt_json_step_count(json_export));
+	palette_opt_json_free(json_export);
 
 	return 0;
 }

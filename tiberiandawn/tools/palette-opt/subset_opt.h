@@ -10,6 +10,8 @@
 
 #include <stdio.h>
 
+struct PaletteOptJsonExport;
+
 #define PALETTE_OPT_NUM_COLORS 256
 
 typedef struct PaletteSubsetOptParams {
@@ -59,6 +61,7 @@ int palette_subset_evaluate(const float *colors, const float *dist_sq, const uns
  */
 int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigned char *subset_io,
 	int subset_n, const PaletteSubsetFix *fix, const double *alpha,
-	const PaletteSubsetOptParams *params, PaletteSubsetOptStats *stats, FILE *log);
+	const PaletteSubsetOptParams *params, PaletteSubsetOptStats *stats, FILE *log,
+	struct PaletteOptJsonExport *json_export);
 
 #endif /* PALETTE_OPT_SUBSET_OPT_H */

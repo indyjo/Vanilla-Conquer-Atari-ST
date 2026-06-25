@@ -3,6 +3,7 @@
  */
 
 #include "subset_opt.h"
+#include "json_export.h"
 #include "subset_spread.h"
 #include "weight_opt.h"
 
@@ -242,7 +243,8 @@ static int log_sa_should_print(int iter, int log_every, const char *note)
 
 int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigned char *subset_io,
 	int subset_n, const PaletteSubsetFix *fix, const double *alpha,
-	const PaletteSubsetOptParams *params, PaletteSubsetOptStats *stats, FILE *log)
+	const PaletteSubsetOptParams *params, PaletteSubsetOptStats *stats, FILE *log,
+	PaletteOptJsonExport *json_export)
 {
 	PaletteSubsetOptParams defaults;
 	unsigned char subset_best[PALETTE_OPT_DEFAULT_SUBSET_N];
@@ -253,6 +255,8 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 	double T;
 	unsigned int rng;
 	int iter;
+	int last_iter = -1;
+	int last_export_iter = -1;
 	int accepted = 0;
 	int rejected = 0;
 	int slot;
@@ -261,6 +265,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 	float lambda;
 	int max_iter;
 	int log_every;
+	int export_every;
 	float t0, tmin, cool;
 
 	if (!colors || !dist_sq || !subset_io || subset_n <= 0
@@ -278,6 +283,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 	lambda = params->lambda;
 	max_iter = params->sa_max_iter >= 0 ? params->sa_max_iter : 100;
 	log_every = params->sa_log_every > 0 ? params->sa_log_every : 10;
+	export_every = json_export ? palette_opt_json_export_every(json_export) : 0;
 	tmin = params->sa_tmin > 0.0f ? params->sa_tmin : 1e-5f;
 	cool = params->sa_cool > 0.0f && params->sa_cool < 1.0f ? params->sa_cool : 0.9995f;
 	rng = params->sa_seed ? params->sa_seed : (unsigned int)time(NULL);
@@ -336,12 +342,22 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 
 	T = (double)t0;
 
+	if (json_export)
+		palette_opt_json_set_sa_t0(json_export, T);
+
 	fprintf(log, "  T0=%.6g\n", T);
 	fprintf(log, "  init cost=%.8g  e1=%.8g  e2=%.8g  subset=[", cost_cur, e1_cur, e2_cur);
 	log_subset(log, subset_cur, subset_n);
 	fprintf(log, "]\n");
 	log_sa_table_rule(log, log_every);
 	log_sa_header(log);
+
+	if (json_export) {
+		if (!palette_opt_json_anneal_step(json_export, 0, T, cost_cur, e1_cur, e2_cur, -1, -1,
+				"init", subset_cur, colors, dist_sq, alpha, lambda))
+			return -1;
+		last_export_iter = 0;
+	}
 
 	for (iter = 0; iter < max_iter && T > (double)tmin; iter++) {
 		unsigned char trial[PALETTE_OPT_DEFAULT_SUBSET_N];
@@ -399,7 +415,21 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 			log_sa_row(log, iter, T, cost_cur, cost_best, e1_cur, e2_cur, in_idx, out_idx, note);
 		}
 
+		if (json_export && palette_opt_json_should_export_anneal(iter, max_iter, export_every)) {
+			if (!palette_opt_json_anneal_step(json_export, iter, T, cost_cur, e1_cur, e2_cur,
+					in_idx, out_idx, note, subset_cur, colors, dist_sq, alpha, lambda))
+				return -1;
+			last_export_iter = iter;
+		}
+
+		last_iter = iter;
 		T *= (double)cool;
+	}
+
+	if (json_export && last_iter >= 0 && last_export_iter != last_iter) {
+		if (!palette_opt_json_anneal_step(json_export, last_iter, T, cost_cur, e1_cur, e2_cur,
+				in_idx, out_idx, "final", subset_cur, colors, dist_sq, alpha, lambda))
+			return -1;
 	}
 
 	memcpy(subset_io, subset_best, (size_t)subset_n);

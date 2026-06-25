@@ -117,6 +117,21 @@ Build with OpenMP on Linux (`make OPENMP=1`).
 ./palette-opt -p TEMPERAT.PAL --dump-ply /tmp/temperat -o temperat.w16
 ```
 
+### JSON trace (optviz)
+
+`--export-json FILE` writes a single optimization trace for [tools/optviz](../optviz/)
+(one `steps[]` entry every `--export-every=N`, default 25). Steps are **streamed to
+disk** as optimization runs (unbuffered); each step includes `subset`, `weights`,
+`cost`, `best_cost`, `iter_since_best`, and related SA fields.
+
+Use **`--bayer=2`** (2×2 tile, weight granularity 4) for traces and quick tests —
+matches the current Atari ST C2P path:
+
+```bash
+./palette-opt -p TEMPERAT.PAL -o temperat.w16 --bayer=2 \
+  --sa-iter=25000 --sa-seed=1 \
+  --export-json temperat_trace.json --export-every=25
+```
 
 ## Histograms (histtool)
 

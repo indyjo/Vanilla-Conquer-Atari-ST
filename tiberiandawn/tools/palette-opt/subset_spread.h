@@ -7,6 +7,8 @@
 
 #include "subset_fix.h"
 
+struct PaletteOptJsonExport;
+
 #define PALETTE_SUBSET_MAX 256
 
 /*
@@ -21,6 +23,15 @@
  */
 int palette_subset_spread_colors_fix(const float *colors, int n, const PaletteSubsetFix *fix,
 	unsigned char *out_subset);
+
+/*
+ * Same as palette_subset_spread_colors_fix; when json_export is non-NULL, fills pens
+ * 0..n-1 in order and records one spread trace step per pen for optviz.
+ */
+int palette_subset_spread_colors_fix_trace(const float *colors, int n,
+	const PaletteSubsetFix *fix, unsigned char *out_subset,
+	struct PaletteOptJsonExport *json_export, const float *dist_sq, const double *alpha,
+	float lambda);
 
 int palette_subset_spread_colors(const float *colors, int n, unsigned char *out_subset);
 

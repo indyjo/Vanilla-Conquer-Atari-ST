@@ -3,6 +3,7 @@
  */
 
 #include "subset_spread.h"
+#include "json_export.h"
 #include "palette_color.h"
 
 #include <float.h>
@@ -138,6 +139,60 @@ int palette_subset_spread_colors_fix(const float *colors, int n, const PaletteSu
 
 	if (palette_count != n)
 		return 0;
+
+	return n;
+}
+
+static int spread_pick_for_pen(const float *colors, const unsigned char *used,
+	const unsigned char *out_subset, int pen, const PaletteSubsetFix *fix, int pen_slot)
+{
+	int pick;
+
+	if (fix && palette_subset_fix_is_fixed(fix, pen_slot)) {
+		pick = fix->palette_index[pen_slot];
+		if (pick < 0 || pick > 255 || used[pick])
+			return -1;
+		return pick;
+	}
+
+	if (pen == 0) {
+		pick = pick_farthest_from_centroid(colors, used);
+	} else {
+		pick = pick_farthest_to_set(colors, used, out_subset, pen);
+	}
+	return pick;
+}
+
+int palette_subset_spread_colors_fix_trace(const float *colors, int n,
+	const PaletteSubsetFix *fix, unsigned char *out_subset,
+	PaletteOptJsonExport *json_export, const float *dist_sq, const double *alpha,
+	float lambda)
+{
+	unsigned char used[256];
+	int pen;
+
+	if (!colors || !out_subset || n <= 0 || n > PALETTE_SUBSET_MAX)
+		return 0;
+	if (!json_export || !dist_sq)
+		return palette_subset_spread_colors_fix(colors, n, fix, out_subset);
+
+	memset(used, 0, sizeof(used));
+	memset(out_subset, 0, (size_t)n);
+
+	for (pen = 0; pen < n; pen++) {
+		const int pick = spread_pick_for_pen(colors, used, out_subset, pen, fix, pen);
+		if (pick < 0) {
+			fprintf(stderr, "error: spread trace failed at pen %d\n", pen);
+			return 0;
+		}
+		out_subset[pen] = (unsigned char)pick;
+		used[pick] = 1;
+		if (!palette_opt_json_spread_step(json_export, pen, out_subset, colors, dist_sq, alpha,
+				lambda)) {
+			fprintf(stderr, "error: json spread export failed at pen %d\n", pen);
+			return 0;
+		}
+	}
 
 	return n;
 }

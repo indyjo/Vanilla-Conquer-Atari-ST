@@ -21,8 +21,6 @@
 #include "st_screen.h"
 #include "lrucache.h"
 
-/* Kept local to avoid including CONQUER.CPP private define. */
-static const int ST_SHAPE_TRANS_FLAG = 0x40;
 int IKBD_Key_Is_Down(int vk);
 static const int ST_TILE_LINEAR_W = 24;
 static const int ST_TILE_LINEAR_H = 24;
@@ -1850,22 +1848,13 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	}
 	const unsigned long stamp_identity_key = ST_SPRITE_CACHE_Frame_Identity_Key(icondata, icon);
 	if (!remap && AllowHardwareBlitFills && VP_Is_Planar(vp) && Ensure_Terrain_Tile_Scratch()) {
-		BOOL maybe_24x24_tile = FALSE;
 		const unsigned char *base = (const unsigned char *)icondata;
 		const unsigned short iw = Read_LE16_Unsafe(base + 0);
 		const unsigned short ih = Read_LE16_Unsafe(base + 2);
 		const unsigned short icount = Read_LE16_Unsafe(base + 4);
 		const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
-		if (iw == ST_TILE_LINEAR_W && ih == ST_TILE_LINEAR_H && icount > 0 && icons_off > 0) {
-			maybe_24x24_tile = TRUE;
-		} else {
-			const int tdw = Get_TD_SHP_Width(icondata);
-			const int tdh = Get_TD_SHP_Height(icondata);
-			if (tdw == ST_TILE_LINEAR_W && tdh == ST_TILE_LINEAR_H) {
-				maybe_24x24_tile = TRUE;
-			}
-		}
-		if (maybe_24x24_tile && Try_Blit_Cached_Terrain_Tile(vp, stamp_identity_key, x_pixel, y_pixel)) {
+		if (iw == ST_TILE_LINEAR_W && ih == ST_TILE_LINEAR_H && icount > 0 && icons_off > 0
+			&& Try_Blit_Cached_Terrain_Tile(vp, stamp_identity_key, x_pixel, y_pixel)) {
 			return;
 		}
 	}
@@ -1873,109 +1862,53 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 		return;
 	}
 
-	void *decoded_ptr = NULL;
-	int w = 0;
-	int h = 0;
 	/*
-	 * Most shape draws treat index 0 as transparent, but terrain/iconset tiles use
-	 * full 8bpp data where 0 is a valid color. Start with transparent semantics and
-	 * disable it for iconset-decoded tiles.
+	 * ICN iconset (IControl_Type): template .TEM tiles, TRANS.ICN, etc.
+	 * Each icon is a flat Width*Height byte array; index 0 is a valid color.
 	 */
-	BOOL use_shape_transparency = TRUE;
+	const unsigned char *base = (const unsigned char *)icondata;
+	const unsigned short iw = Read_LE16_Unsafe(base + 0);
+	const unsigned short ih = Read_LE16_Unsafe(base + 2);
+	const unsigned short icount = Read_LE16_Unsafe(base + 4);
+	const unsigned long total_size = Read_LE32_Unsafe(base + 8);
+	const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
+	const unsigned long map_off = Read_LE32_Unsafe(base + 28);
 
-	/*
-	 * First try iconset-layout stamps (legacy ICN loaded blocks).
-	 * Header fields are little-endian offsets; decode with byte reads.
-	 */
-	{
-		const unsigned char *base = (const unsigned char *)icondata;
-		const unsigned short iw = Read_LE16_Unsafe(base + 0);
-		const unsigned short ih = Read_LE16_Unsafe(base + 2);
-		const unsigned short icount = Read_LE16_Unsafe(base + 4);
-		const unsigned long total_size = Read_LE32_Unsafe(base + 8);
-		const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
-		const unsigned long map_off = Read_LE32_Unsafe(base + 28);
-		if (iw > 0 && ih > 0 && iw <= 128 && ih <= 128 && icount > 0 && icons_off > 0) {
-			const long logical_count = (long)iw * (long)ih;
-			int icon_index = icon;
-			if (map_off > 0) {
-				if (icon < 0 || icon >= logical_count) {
-					goto iconset_decode_done;
-				}
-				const unsigned char *map_ptr = base + map_off;
-				icon_index = (int)map_ptr[icon];
-			} else {
-				if (icon < 0 || icon >= (int)icount) {
-					goto iconset_decode_done;
-				}
-			}
-			if (icon_index >= 0 && icon_index < (int)icount) {
-				const long icon_size = (long)iw * (long)ih;
-				const unsigned char *icon_ptr = base + icons_off + (long)icon_index * icon_size;
-				const unsigned long icon_end = icons_off + (unsigned long)((long)icon_index * icon_size) + (unsigned long)icon_size;
-				if (icon_size > 0 && icon_size <= _ShapeBufferSize
-					&& (total_size == 0 || icon_end <= total_size)) {
-					Mem_Copy(icon_ptr, _ShapeBuffer, icon_size);
-					decoded_ptr = _ShapeBuffer;
-					w = (int)iw;
-					h = (int)ih;
-					use_shape_transparency = FALSE;
-				}
-			}
-		}
-iconset_decode_done:
-		;
-	}
-
-	/*
-	 * Try TD SHP block decode first (templ/terrain icon sets are typically this format).
-	 * Decode output is linear 8bpp frame bytes in _ShapeBuffer.
-	 */
-	if (!decoded_ptr) {
-		w = Get_TD_SHP_Width(icondata);
-		h = Get_TD_SHP_Height(icondata);
-		if (w > 0 && h > 0 && (long)(w * h) <= _ShapeBufferSize) {
-			int td_decoded = Decode_TD_SHP_Frame(icondata, icon, _ShapeBuffer, (int)_ShapeBufferSize);
-			if (td_decoded > 0) {
-				decoded_ptr = _ShapeBuffer;
-			}
-		}
-	}
-
-	/*
-	 * Fallback: classic SHP shape block (extract frame then decode shape stream).
-	 */
-	if (!decoded_ptr) {
-		void *shape = Extract_Shape(icondata, icon);
-		if (shape) {
-			w = Get_Shape_Width(shape);
-			h = Get_Shape_Height(shape);
-			if (w > 0 && h > 0 && (long)(w * h) <= _ShapeBufferSize) {
-				int decoded = Decode_Shape_To_Buffer(shape, _ShapeBuffer, (int)_ShapeBufferSize);
-				if (decoded > 0) {
-					decoded_ptr = _ShapeBuffer;
-				}
-			}
-		}
-	}
-
-	/* Last resort: KeyFrame decode path. */
-	if (!decoded_ptr) {
-		unsigned long frame_ptr = Build_Frame(icondata, (unsigned short)icon, _ShapeBuffer);
-		if (frame_ptr) {
-			w = (int)Get_Build_Frame_Width(icondata);
-			h = (int)Get_Build_Frame_Height(icondata);
-			decoded_ptr = (void *)frame_ptr;
-		}
-	}
-
-	if (!decoded_ptr) {
+	if (iw <= 0 || ih <= 0 || iw > 128 || ih > 128 || icount <= 0 || icons_off <= 0) {
 		return;
 	}
 
-	if (w <= 0 || h <= 0) {
+	const long logical_count = (long)iw * (long)ih;
+	int icon_index = icon;
+	if (map_off > 0) {
+		if (icon >= logical_count) {
+			return;
+		}
+		icon_index = (int)base[map_off + icon];
+	} else if (icon >= (int)icount) {
 		return;
 	}
+
+	if (icon_index < 0 || icon_index >= (int)icount) {
+		return;
+	}
+
+	const long icon_size = (long)iw * (long)ih;
+	if (icon_size <= 0 || icon_size > _ShapeBufferSize) {
+		return;
+	}
+
+	const unsigned char *icon_ptr = base + icons_off + (long)icon_index * icon_size;
+	const unsigned long icon_end =
+		icons_off + (unsigned long)((long)icon_index * icon_size) + (unsigned long)icon_size;
+	if (total_size != 0 && icon_end > total_size) {
+		return;
+	}
+
+	Mem_Copy(icon_ptr, _ShapeBuffer, icon_size);
+	void *const decoded_ptr = _ShapeBuffer;
+	const int w = (int)iw;
+	const int h = (int)ih;
 	/*
 	 * Fast terrain-tile path for ST planar targets:
 	 * decode -> 24x24 linear scratch -> 64x24 planar scratch -> blit to destination.
@@ -2044,19 +1977,6 @@ iconset_decode_done:
 					}
 				}
 				memcpy(g_tile_linear_24x24, decoded_ptr, (size_t)ST_TILE_LINEAR_BYTES);
-				/*
-				 * If index 0 must be transparent, the blitter D=S path is not correct.
-				 * Check only the sub-rect we would draw (matches viewport clip).
-				 */
-				if (use_shape_transparency) {
-					for (int ry = 0; ry < clip_blit_h; ry++) {
-						uint8_t *row = g_tile_linear_24x24
-							+ (size_t)(clip_src_y + ry) * ST_TILE_LINEAR_W + clip_src_x;
-						if (memchr(row, 0, (size_t)clip_blit_w) != NULL) {
-							goto fast24_fallback;
-						}
-					}
-				}
 
 				/* Cache the full 24x24 tile; clipping happens in blitter source coordinates. */
 				if (!cache_hit
@@ -2124,7 +2044,7 @@ fast24_fallback:
 			h,
 			decoded_ptr,
 			*vp,
-			SHAPE_WIN_REL | (use_shape_transparency ? ST_SHAPE_TRANS_FLAG : 0),
+			SHAPE_WIN_REL,
 			&stamp_ex);
 	}
 }

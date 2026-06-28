@@ -12,83 +12,14 @@
 #include "st_blitter_blit.h"
 #include "st_sprite_cache.h"
 #include "st_planar_draw.h"
+#include "st16_draw.h"
+#include "st16_iconset.h"
+#include "st16_convert.h"
 #include "memflag.h"
-#include <string.h>  // For memset
-#include <stdint.h>
+#include "tile.h"
+#include "tile.h"
 #include <stdio.h>
-#include <mint/osbind.h>
-
-#include "st_screen.h"
-#include "lrucache.h"
-
-int IKBD_Key_Is_Down(int vk);
-static const int ST_TILE_LINEAR_W = 24;
-static const int ST_TILE_LINEAR_H = 24;
-static const int ST_TILE_LINEAR_BYTES = ST_TILE_LINEAR_W * ST_TILE_LINEAR_H;
-static const int ST_TILE_PLANAR_CACHE_SLOTS = 128;
-static const int ST_TILE_PLANAR_CACHE_TILES_PER_ROW = 13; /* 13*24=312, keep 8px right margin */
-static const int ST_TILE_PLANAR_CACHE_W = 320;
-static const int ST_TILE_PLANAR_CACHE_ROWS =
-	(ST_TILE_PLANAR_CACHE_SLOTS + ST_TILE_PLANAR_CACHE_TILES_PER_ROW - 1) / ST_TILE_PLANAR_CACHE_TILES_PER_ROW;
-static const int ST_TILE_PLANAR_CACHE_H = ST_TILE_PLANAR_CACHE_ROWS * ST_TILE_LINEAR_H;
-static const int ST_TILE_PLANAR_CACHE_BPL = (ST_TILE_PLANAR_CACHE_W / 16) * 8;
-static const int ST_TILE_PLANAR_CACHE_BYTES = ST_TILE_PLANAR_CACHE_BPL * ST_TILE_PLANAR_CACHE_H;
-static const int ST_TILE_PLANAR_CACHE_ALIGN = 256;
-
-static uint8_t *g_tile_linear_24x24 = NULL;
-static uint8_t *g_tile_planar_cache_raw = NULL;
-static uint8_t *g_tile_planar_cache_aligned = NULL;
-static BOOL g_tile_scratch_init_attempted = FALSE;
-static BOOL g_tile_cache_debug_show = FALSE;
-static BOOL g_tile_cache_debug_key_prev = FALSE;
-
-static BOOL Ensure_Terrain_Tile_Scratch(void);
-
-struct STTilePlanarCacheSlot {
-	unsigned short atlas_x;
-	unsigned short atlas_y;
-};
-
-static STTilePlanarCacheSlot g_tile_planar_slots[ST_TILE_PLANAR_CACHE_SLOTS];
-static LruCache<unsigned long, uint16_t> g_tile_planar_lru((size_t)ST_TILE_PLANAR_CACHE_SLOTS);
-
-enum { ST_HZ200_ADDR = 0x4BA };
-
-static inline unsigned long ST_Read_Hz200(void)
-{
-	return *(volatile unsigned long *)ST_HZ200_ADDR;
-}
-
-void ST_Tile_Cache_Debug_Service(void)
-{
-	/* F10 alone: avoid clash with Ctrl+F10 (TOS console toggle in st_screen.cpp). */
-	int ctrl = IKBD_Key_Is_Down(VK_CONTROL);
-	BOOL down = (IKBD_Key_Is_Down(VK_F10) && !ctrl) ? TRUE : FALSE;
-	if (down && !g_tile_cache_debug_key_prev) {
-		g_tile_cache_debug_show = (g_tile_cache_debug_show == FALSE) ? TRUE : FALSE;
-		if (g_tile_cache_debug_show) {
-			if (!Ensure_Terrain_Tile_Scratch() || !g_tile_planar_cache_aligned) {
-				g_tile_cache_debug_show = FALSE;
-				printf("TileCache debug view: atlas not available\n");
-			} else {
-				ST_Screen_Hardware_Set_Phys_Base(g_tile_planar_cache_aligned);
-				printf("TileCache debug view: ON (phys=tile atlas)\n");
-			}
-		} else {
-			ST_Screen_Apply_Game_Video_Hardware();
-			printf("TileCache debug view: OFF\n");
-		}
-	}
-	g_tile_cache_debug_key_prev = down;
-}
-
-static uint8_t *Alloc_Planar_Blitter_Scratch(size_t bytes)
-{
-	long p = Mxalloc((long)bytes, MX_STRAM);
-	if (p > 0L)
-		return (uint8_t *)p;
-	return NULL;
-}
+#include <string.h>  // For memset
 
 static inline BOOL GB_Uses_ST_Planar_Surface(GraphicBufferClass *gb)
 {
@@ -101,124 +32,6 @@ static inline int GB_ST_Planar_Row_Bytes(GraphicBufferClass *gb)
 		return 0;
 	int const p = gb->Get_Pitch();
 	return (p > 0) ? p : ST_Planar_Row_Bytes(gb->Get_Width());
-}
-
-static BOOL Try_Blit_Cached_Terrain_Tile(
-	GraphicViewPortClass *vp,
-	unsigned long identity_key,
-	int x_pixel,
-	int y_pixel)
-{
-	const int vpw = vp->Get_Width();
-	const int vph = vp->Get_Height();
-	int dst_x = x_pixel;
-	int dst_y = y_pixel;
-	int clip_src_x = 0;
-	int clip_src_y = 0;
-	int clip_blit_w = ST_TILE_LINEAR_W;
-	int clip_blit_h = ST_TILE_LINEAR_H;
-	GraphicBufferClass *dst_gb;
-	uint8_t *dst_root;
-	int dx_abs;
-	int dy_abs;
-	uint16_t slot;
-
-	if (dst_x < 0) {
-		clip_src_x = -dst_x;
-		clip_blit_w -= clip_src_x;
-		dst_x = 0;
-	}
-	if (dst_y < 0) {
-		clip_src_y = -dst_y;
-		clip_blit_h -= clip_src_y;
-		dst_y = 0;
-	}
-	if (dst_x + clip_blit_w > vpw) {
-		clip_blit_w = vpw - dst_x;
-	}
-	if (dst_y + clip_blit_h > vph) {
-		clip_blit_h = vph - dst_y;
-	}
-	if (clip_blit_w <= 0 || clip_blit_h <= 0) {
-		return TRUE;
-	}
-
-	dst_gb = vp->Get_Graphic_Buffer();
-	dst_root = (dst_gb && GB_Uses_ST_Planar_Surface(dst_gb))
-		? (uint8_t *)dst_gb->Get_Buffer() : NULL;
-	dx_abs = vp->Get_XPos() + dst_x;
-	dy_abs = vp->Get_YPos() + dst_y;
-	if (!dst_gb || !dst_root
-		|| dx_abs < 0 || dy_abs < 0
-		|| dx_abs + clip_blit_w > dst_gb->Get_Width()
-		|| dy_abs + clip_blit_h > dst_gb->Get_Height()) {
-		return FALSE;
-	}
-
-	if (!g_tile_planar_lru.get(identity_key, slot)) {
-		return FALSE;
-	}
-
-	{
-		STTilePlanarCacheSlot const &atlas = g_tile_planar_slots[slot];
-		int const dst_bpl = GB_ST_Planar_Row_Bytes(dst_gb);
-		BOOL blit_ok = ST_Blitter_Planar_Rect_Blit(
-		g_tile_planar_cache_aligned,
-		ST_TILE_PLANAR_CACHE_BPL,
-		(int)atlas.atlas_x + clip_src_x,
-		(int)atlas.atlas_y + clip_src_y,
-		dst_root,
-		dst_bpl,
-		dx_abs,
-		dy_abs,
-		clip_blit_w,
-		clip_blit_h);
-		return blit_ok;
-	}
-}
-
-static BOOL Ensure_Terrain_Tile_Scratch(void)
-{
-	if (g_tile_linear_24x24 && g_tile_planar_cache_aligned)
-		return TRUE;
-	if (g_tile_scratch_init_attempted)
-		return FALSE;
-
-	g_tile_scratch_init_attempted = TRUE;
-	g_tile_linear_24x24 = (uint8_t *)Alloc((unsigned long)ST_TILE_LINEAR_BYTES, MEM_NORMAL);
-	g_tile_planar_cache_raw =
-		Alloc_Planar_Blitter_Scratch((size_t)(ST_TILE_PLANAR_CACHE_BYTES + ST_TILE_PLANAR_CACHE_ALIGN - 1));
-	if (g_tile_linear_24x24 && g_tile_planar_cache_raw) {
-		int i;
-		unsigned long long p = (unsigned long long)(const void *)g_tile_planar_cache_raw;
-		unsigned long long aligned = (p + (unsigned long long)(ST_TILE_PLANAR_CACHE_ALIGN - 1))
-			& ~((unsigned long long)(ST_TILE_PLANAR_CACHE_ALIGN - 1));
-		g_tile_planar_cache_aligned = (uint8_t *)(void *)aligned;
-		memset(g_tile_planar_cache_aligned, 0, (size_t)ST_TILE_PLANAR_CACHE_BYTES);
-		g_tile_planar_lru.clear();
-		for (i = 0; i < ST_TILE_PLANAR_CACHE_SLOTS; ++i) {
-			g_tile_planar_slots[i].atlas_x =
-				(unsigned short)((i % ST_TILE_PLANAR_CACHE_TILES_PER_ROW) * ST_TILE_LINEAR_W);
-			g_tile_planar_slots[i].atlas_y =
-				(unsigned short)((i / ST_TILE_PLANAR_CACHE_TILES_PER_ROW) * ST_TILE_LINEAR_H);
-			g_tile_planar_lru.put(UINT32_MAX ^ (unsigned long)(unsigned)i, (uint16_t)i);
-		}
-		return TRUE;
-	}
-	return FALSE;
-}
-
-static inline unsigned short Read_LE16_Unsafe(const unsigned char *p)
-{
-	return (unsigned short)((unsigned short)p[0] | ((unsigned short)p[1] << 8));
-}
-
-static inline unsigned long Read_LE32_Unsafe(const unsigned char *p)
-{
-	return (unsigned long)p[0]
-		| ((unsigned long)p[1] << 8)
-		| ((unsigned long)p[2] << 16)
-		| ((unsigned long)p[3] << 24);
 }
 
 static inline BOOL VP_Is_Planar(GraphicViewPortClass *vp)
@@ -1834,6 +1647,86 @@ extern "C" VOID Buffer_Fill_Quad(void *thisptr, VOID *span_buff, int x0, int y0,
 	Fill_Triangle_Solid(vp, x0, y0, x2, y2, x3, y3, fill);
 }
 
+static void Buffer_Draw_Stamp_8bpp(
+	GraphicViewPortClass *vp,
+	void const *icondata,
+	int icon,
+	int x_pixel,
+	int y_pixel,
+	void const *remap)
+{
+	const IControl_Type *ic = (const IControl_Type *)icondata;
+	int iw;
+	int ih;
+	int icount;
+	unsigned long total_size;
+	unsigned long icons_off;
+	unsigned long map_off;
+	int icon_index;
+	long icon_size;
+	const unsigned char *icon_ptr;
+	unsigned long icon_end;
+	unsigned long stamp_identity_key;
+
+	if (!_ShapeBuffer || _ShapeBufferSize <= 0 || !ic) {
+		return;
+	}
+
+	iw = (int)le16toh(ic->Width);
+	ih = (int)le16toh(ic->Height);
+	icount = (int)le16toh(ic->Count);
+	total_size = (unsigned long)le32toh(ic->Size);
+	icons_off = (unsigned long)le32toh(ic->Icons);
+	map_off = (unsigned long)le32toh(ic->Map);
+
+	if (iw <= 0 || ih <= 0 || iw > 128 || ih > 128 || icount <= 0 || icons_off <= 0) {
+		return;
+	}
+
+	icon_index = icon;
+	if (map_off > 0) {
+		const unsigned char *const base = (const unsigned char *)icondata;
+		if ((size_t)icon >= (size_t)icount) {
+			return;
+		}
+		icon_index = (int)base[map_off + (size_t)icon];
+	} else if (icon >= icount) {
+		return;
+	}
+
+	if (icon_index < 0 || (uint8_t)icon_index == 0xFF) {
+		return;
+	}
+
+	icon_size = (long)iw * (long)ih;
+	if (icon_size <= 0 || icon_size > _ShapeBufferSize) {
+		return;
+	}
+
+	icon_ptr = (const unsigned char *)icondata + icons_off + (long)icon_index * icon_size;
+	icon_end = icons_off + (unsigned long)((long)icon_index * icon_size) + (unsigned long)icon_size;
+	if (total_size != 0 && icon_end > total_size) {
+		return;
+	}
+
+	Mem_Copy(icon_ptr, _ShapeBuffer, (unsigned long)icon_size);
+	stamp_identity_key = ST_SPRITE_CACHE_Frame_Identity_Key(icondata, icon);
+	{
+		Bftp_ExArgs stamp_ex = { 0 };
+		stamp_ex.identity_key = stamp_identity_key;
+		Buffer_Frame_To_Page_Ex(
+			x_pixel,
+			y_pixel,
+			iw,
+			ih,
+			_ShapeBuffer,
+			*vp,
+			SHAPE_WIN_REL,
+			&stamp_ex);
+	}
+	(void)remap;
+}
+
 /*=========================================================================*/
 /* Buffer_Draw_Stamp -- Draws a stamp/icon on a buffer                     */
 /*=========================================================================*/
@@ -1846,207 +1739,33 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	if (!vp->Get_Graphic_Buffer()) {
 		return;
 	}
-	const unsigned long stamp_identity_key = ST_SPRITE_CACHE_Frame_Identity_Key(icondata, icon);
-	if (!remap && AllowHardwareBlitFills && VP_Is_Planar(vp) && Ensure_Terrain_Tile_Scratch()) {
-		const unsigned char *base = (const unsigned char *)icondata;
-		const unsigned short iw = Read_LE16_Unsafe(base + 0);
-		const unsigned short ih = Read_LE16_Unsafe(base + 2);
-		const unsigned short icount = Read_LE16_Unsafe(base + 4);
-		const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
-		if (iw == ST_TILE_LINEAR_W && ih == ST_TILE_LINEAR_H && icount > 0 && icons_off > 0
-			&& Try_Blit_Cached_Terrain_Tile(vp, stamp_identity_key, x_pixel, y_pixel)) {
+
+	if (remap || !VP_Is_Planar(vp)) {
+		Buffer_Draw_Stamp_8bpp(vp, icondata, icon, x_pixel, y_pixel, remap);
+		return;
+	}
+
+	IControl_Type *ic = (IControl_Type *)icondata;
+	int icons_off = le32toh(ic->Icons);
+
+	// If the iconset is not ST16 native, convert it to ST16
+	if (icons_off < (int)ST16_ICONS_V1) {
+		if (!ST16_Iconset_Should_Convert((const uint8_t *)icondata, (size_t)le32toh(ic->Size))) {
+			Buffer_Draw_Stamp_8bpp(vp, icondata, icon, x_pixel, y_pixel, remap);
 			return;
 		}
-	}
-	if (!_ShapeBuffer || _ShapeBufferSize <= 0) {
-		return;
-	}
-
-	/*
-	 * ICN iconset (IControl_Type): template .TEM tiles, TRANS.ICN, etc.
-	 * Each icon is a flat Width*Height byte array; index 0 is a valid color.
-	 */
-	const unsigned char *base = (const unsigned char *)icondata;
-	const unsigned short iw = Read_LE16_Unsafe(base + 0);
-	const unsigned short ih = Read_LE16_Unsafe(base + 2);
-	const unsigned short icount = Read_LE16_Unsafe(base + 4);
-	const unsigned long total_size = Read_LE32_Unsafe(base + 8);
-	const unsigned long icons_off = Read_LE32_Unsafe(base + 12);
-	const unsigned long map_off = Read_LE32_Unsafe(base + 28);
-
-	if (iw <= 0 || ih <= 0 || iw > 128 || ih > 128 || icount <= 0 || icons_off <= 0) {
-		return;
-	}
-
-	const long logical_count = (long)iw * (long)ih;
-	int icon_index = icon;
-	if (map_off > 0) {
-		if (icon >= logical_count) {
+		// Convert the iconset to ST16 in place
+		if (!ST16_Iconset_Resolve(icondata, NULL)) {
 			return;
 		}
-		icon_index = (int)base[map_off + icon];
-	} else if (icon >= (int)icount) {
-		return;
-	}
-
-	if (icon_index < 0 || icon_index >= (int)icount) {
-		return;
-	}
-
-	const long icon_size = (long)iw * (long)ih;
-	if (icon_size <= 0 || icon_size > _ShapeBufferSize) {
-		return;
-	}
-
-	const unsigned char *icon_ptr = base + icons_off + (long)icon_index * icon_size;
-	const unsigned long icon_end =
-		icons_off + (unsigned long)((long)icon_index * icon_size) + (unsigned long)icon_size;
-	if (total_size != 0 && icon_end > total_size) {
-		return;
-	}
-
-	Mem_Copy(icon_ptr, _ShapeBuffer, icon_size);
-	void *const decoded_ptr = _ShapeBuffer;
-	const int w = (int)iw;
-	const int h = (int)ih;
-	/*
-	 * Fast terrain-tile path for ST planar targets:
-	 * decode -> 24x24 linear scratch -> 64x24 planar scratch -> blit to destination.
-	 * Viewport clipping matches Buffer_Frame_To_Page (WINSTUB.CPP): C2P + blit only the
-	 * visible sub-rectangle so partially covered edge tiles stay on this path.
-	 */
-	if (w == ST_TILE_LINEAR_W && h == ST_TILE_LINEAR_H
-		&& !remap
-		&& AllowHardwareBlitFills
-		&& VP_Is_Planar(vp)
-		&& Ensure_Terrain_Tile_Scratch()) {
-		const int vpw = vp->Get_Width();
-		const int vph = vp->Get_Height();
-		int dst_x = x_pixel;
-		int dst_y = y_pixel;
-		int clip_src_x = 0;
-		int clip_src_y = 0;
-		int clip_blit_w = ST_TILE_LINEAR_W;
-		int clip_blit_h = ST_TILE_LINEAR_H;
-		if (dst_x < 0) {
-			clip_src_x = -dst_x;
-			clip_blit_w -= clip_src_x;
-			dst_x = 0;
-		}
-		if (dst_y < 0) {
-			clip_src_y = -dst_y;
-			clip_blit_h -= clip_src_y;
-			dst_y = 0;
-		}
-		if (dst_x + clip_blit_w > vpw) {
-			clip_blit_w = vpw - dst_x;
-		}
-		if (dst_y + clip_blit_h > vph) {
-			clip_blit_h = vph - dst_y;
-		}
-
-		if (clip_blit_w > 0 && clip_blit_h > 0) {
-			GraphicBufferClass *dst_gb = vp->Get_Graphic_Buffer();
-			uint8_t *dst_root = (dst_gb && GB_Uses_ST_Planar_Surface(dst_gb))
-				? (uint8_t *)dst_gb->Get_Buffer() : NULL;
-			const int dx_abs = vp->Get_XPos() + dst_x;
-			const int dy_abs = vp->Get_YPos() + dst_y;
-			const int dst_bpl_fb = dst_gb ? GB_ST_Planar_Row_Bytes(dst_gb) : 0;
-			const int dst_pw_fb = dst_gb ? dst_gb->Get_Width() : 0;
-			const int dst_ph_fb = dst_gb ? dst_gb->Get_Height() : 0;
-			if (dst_root && dst_gb
-				&& dx_abs >= 0 && dy_abs >= 0
-				&& dx_abs + clip_blit_w <= dst_pw_fb
-				&& dy_abs + clip_blit_h <= dst_ph_fb) {
-				uint16_t slot = 0;
-				BOOL const cache_hit = g_tile_planar_lru.get(stamp_identity_key, slot) ? TRUE : FALSE;
-				if (cache_hit) {
-					STTilePlanarCacheSlot const &atlas = g_tile_planar_slots[slot];
-					if (ST_Blitter_Planar_Rect_Blit(
-							g_tile_planar_cache_aligned,
-							ST_TILE_PLANAR_CACHE_BPL,
-							(int)atlas.atlas_x + clip_src_x,
-							(int)atlas.atlas_y + clip_src_y,
-							dst_root,
-							dst_bpl_fb,
-							dx_abs,
-							dy_abs,
-							clip_blit_w,
-							clip_blit_h)) {
-						return;
-					}
-				}
-				memcpy(g_tile_linear_24x24, decoded_ptr, (size_t)ST_TILE_LINEAR_BYTES);
-
-				/* Cache the full 24x24 tile; clipping happens in blitter source coordinates. */
-				if (!cache_hit
-					&& !g_tile_planar_lru.retarget_oldest_slot(stamp_identity_key, slot)) {
-					goto fast24_fallback;
-				}
-				{
-					STTilePlanarCacheSlot const &atlas = g_tile_planar_slots[slot];
-					C2P_Render_Logical_To_Planar_Rect(
-						g_tile_linear_24x24,
-						ST_TILE_LINEAR_W,
-						ST_TILE_LINEAR_H,
-						ST_TILE_LINEAR_W,
-						g_tile_planar_cache_aligned,
-						ST_TILE_PLANAR_CACHE_BPL,
-						ST_TILE_PLANAR_CACHE_W,
-						ST_TILE_PLANAR_CACHE_H,
-						(int)atlas.atlas_x,
-						(int)atlas.atlas_y,
-						0,
-						0);
-					if (ST_Blitter_Planar_Rect_Blit(
-							g_tile_planar_cache_aligned,
-							ST_TILE_PLANAR_CACHE_BPL,
-							(int)atlas.atlas_x + clip_src_x,
-							(int)atlas.atlas_y + clip_src_y,
-							dst_root,
-							dst_bpl_fb,
-							dx_abs,
-							dy_abs,
-							clip_blit_w,
-							clip_blit_h)) {
-						return;
-					}
-				}
-			}
-		} else {
-			/* Tile fully outside viewport; nothing to draw. */
+		ic = (IControl_Type *)icondata;
+		icons_off = le32toh(ic->Icons);
+		if (icons_off < (int)ST16_ICONS_V1) {
 			return;
 		}
 	}
 
-fast24_fallback:
-	/*
-	 * Planar LRU keys use the logical tile identity; clip is handled by blitter source offsets.
-	 */
-	if (w == ST_TILE_LINEAR_W && h == ST_TILE_LINEAR_H
-		&& !remap
-		&& VP_Is_Planar(vp)) {
-		static unsigned long s_last_warn_hz200 = 0;
-		unsigned long now_hz200 = ST_Read_Hz200();
-		/* Limit warning spam: at most one warning per second. */
-		if (now_hz200 - s_last_warn_hz200 >= 200UL) {
-			printf("WARNING: terrain tile fell back from blitter fast path (icon=%d)\n", icon);
-			s_last_warn_hz200 = now_hz200;
-		}
-	}
-	{
-		Bftp_ExArgs stamp_ex = { 0 };
-		stamp_ex.identity_key = stamp_identity_key;
-		Buffer_Frame_To_Page_Ex(
-			x_pixel,
-			y_pixel,
-			w,
-			h,
-			decoded_ptr,
-			*vp,
-			SHAPE_WIN_REL,
-			&stamp_ex);
-	}
+	(void)ST16_Blit_Stamp(vp, ic, icon, x_pixel, y_pixel);
 }
 
 /*=========================================================================*/

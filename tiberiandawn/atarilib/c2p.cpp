@@ -73,6 +73,7 @@ struct C2P_Context {
  * same Bayer + weight policy as init_c2p_table() lorez path in STDOOM.
  */
 static uint32_t C2P_STDOOM_FragLUT[4][256][8];
+static int C2P_Weights_Ready = 0;
 
 /* STDOOM bayer4_color — threshold uses row `phase` (0..3) and column `px%4`. */
 static int C2P_Bayer4_Color_Lorez(const uint8_t *weights, int phase, int px)
@@ -355,8 +356,14 @@ extern "C" int C2P_Install_WeightSet(const C2P_WeightSet *weight_set)
 	}
 
 	C2P_Rebuild_Tables_From_WeightRows(weight_set->subset, weight_set->weights);
+	C2P_Weights_Ready = 1;
 	C2P_Notify_Weights_Changed();
 	return 1;
+}
+
+extern "C" int C2P_Weights_Are_Ready(void)
+{
+	return C2P_Weights_Ready ? 1 : 0;
 }
 
 static void C2P_Copy_Active_Luts_To_Context(C2P_Context *ctx)
@@ -521,6 +528,103 @@ extern "C" void C2P_Render_Logical_Row_To_Planar(
 			dst_y0,
 			nib);
 	}
+}
+
+static void C2P_Render_Logical_Row_To_Planar_Nearest(
+	const uint8_t *logical_row,
+	int logical_w,
+	uint8_t *planar_row,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0)
+{
+	if (!logical_row || !planar_row || logical_w <= 0 || planar_row_bytes <= 0
+		|| planar_width_pixels <= 0 || planar_height_pixels <= 0) {
+		return;
+	}
+	if (dst_y0 < 0 || dst_y0 >= planar_height_pixels) {
+		return;
+	}
+
+	C2P_InitPairLUT_Once();
+	uint8_t *const planar_base = planar_row - (size_t)dst_y0 * (size_t)planar_row_bytes;
+	const int row_unaligned = ((dst_x0 & 7) != 0);
+	int x = 0;
+
+	for (; !row_unaligned && x + 8 <= logical_w; x += 8) {
+		const int lx = dst_x0 + x;
+		const int group = lx >> 4;
+		const int half = (lx >> 3) & 1;
+		uint8_t *dst = planar_row + group * 8 + half;
+
+		const uint8_t c0 = C2P_MapNearestLUT[logical_row[x + 0]];
+		const uint8_t c1 = C2P_MapNearestLUT[logical_row[x + 1]];
+		const uint8_t c2 = C2P_MapNearestLUT[logical_row[x + 2]];
+		const uint8_t c3 = C2P_MapNearestLUT[logical_row[x + 3]];
+		const uint8_t c4 = C2P_MapNearestLUT[logical_row[x + 4]];
+		const uint8_t c5 = C2P_MapNearestLUT[logical_row[x + 5]];
+		const uint8_t c6 = C2P_MapNearestLUT[logical_row[x + 6]];
+		const uint8_t c7 = C2P_MapNearestLUT[logical_row[x + 7]];
+
+		const uint32_t v =
+			C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
+			C2P_PairLUT[1][(uint8_t)((c2 << 4) | c3)] |
+			C2P_PairLUT[2][(uint8_t)((c4 << 4) | c5)] |
+			C2P_PairLUT[3][(uint8_t)((c6 << 4) | c7)];
+
+		C2P_Movep_Store(dst, v);
+	}
+
+	for (; x < logical_w; x++) {
+		const int lx = dst_x0 + x;
+		const uint8_t nib = C2P_MapNearestLUT[logical_row[x]];
+		Planar_Put_Pixel_RowBytes(
+			planar_base,
+			planar_row_bytes,
+			planar_width_pixels,
+			planar_height_pixels,
+			lx,
+			dst_y0,
+			nib);
+	}
+}
+
+extern "C" void C2P_Render_Logical_To_Planar_Rect_Nearest(
+	const uint8_t *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	uint8_t *planar_base,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0)
+{
+	int y;
+
+	if (!logical || !planar_base || logical_w <= 0 || logical_h <= 0
+		|| logical_stride <= 0 || planar_row_bytes <= 0
+		|| planar_width_pixels <= 0 || planar_height_pixels <= 0) {
+		return;
+	}
+	ST_FRAME_BAR_C2P_BEGIN();
+	for (y = 0; y < logical_h; y++) {
+		const uint8_t *src = logical + (size_t)y * (size_t)logical_stride;
+		uint8_t *dst_line = planar_base + (size_t)(dst_y0 + y) * (size_t)planar_row_bytes;
+		C2P_Render_Logical_Row_To_Planar_Nearest(
+			src,
+			logical_w,
+			dst_line,
+			planar_row_bytes,
+			planar_width_pixels,
+			planar_height_pixels,
+			dst_x0,
+			dst_y0 + y);
+	}
+	ST_FRAME_BAR_C2P_END();
 }
 
 extern "C" void C2P_Render_Logical_To_Planar_Rect(

@@ -1257,7 +1257,6 @@ void Call_Back(void)
         WWMouse->Process_Mouse();
     }
     ST_Debug_Screen_Service();
-    ST_Tile_Cache_Debug_Service();
     ST_Sprite_Cache_Stats_Debug_Service();
 #endif
 

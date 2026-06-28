@@ -44,6 +44,10 @@
 #include "function.h"
 #include "tile.h"
 
+#ifdef ATARI_ST
+#include "st16_convert.h"
+#endif
+
 static char const _slope00000001[] = {7, -1};
 static char const _slope000000101[] = {6, 8, -1};
 static char const _slope00000011[] = {6, 7, -1};
@@ -1831,6 +1835,11 @@ void TemplateTypeClass::Init(TheaterType theater)
             _makepath(fullname, NULL, NULL, tplate.IniName, Theaters[theater].Suffix);
             ptr = MFCD::Retrieve(fullname);
             ((void const*&)tplate.ImageData) = ptr;
+#ifdef ATARI_ST
+            if (ptr) {
+                ST16_Prewarm_Iconset(ptr);
+            }
+#endif
             // No need for icon caching now. ST - 12/19/2018 11:48AM
             //				Register_Icon_Set((void*)ptr,TRUE);		//Register icon set for video memory caching
         }

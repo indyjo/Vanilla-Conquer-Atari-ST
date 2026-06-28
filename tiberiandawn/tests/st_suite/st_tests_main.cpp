@@ -13,6 +13,7 @@
 #include "st_wsa_playback.h"
 #include "st_cps_browser.h"
 #include "st_terrain_tile_left_clip_autotest.h"
+#include "st_iconset_grid_interactive.h"
 #include "st_blitter_rect_interactive.h"
 
 #include <mint/osbind.h>
@@ -51,6 +52,7 @@ static void print_banner(void)
 	printf("c Interactive: CPS / W16 browser\n");
 	printf("l Auto: planar line benchmark\n");
 	printf("a Audio tests (submenu)\n");
+	printf("g Interactive: iconset image grid\n");
 	printf("i Interactive: blit rect tuner\n");
 	printf("0 Exit\n");
 	printf("Choice: ");
@@ -196,6 +198,10 @@ static int st_dispatch_menu_choice(int ch)
 	case 'c':
 	case 'C':
 		st_run_interactive_cps_browser();
+		break;
+	case 'g':
+	case 'G':
+		st_run_interactive_iconset_grid();
 		break;
 	case 'i':
 	case 'I':

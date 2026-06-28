@@ -38,6 +38,8 @@ int C2P_WeightSet_Validate(const C2P_WeightSet *weight_set);
 int C2P_Install_WeightSet(const C2P_WeightSet *weight_set);
 /* Load <stem>.W16 and install; returns 1 on success. Logs and leaves weights unchanged on failure. */
 int C2P_Load_WeightSet(const char *stem, const char *tag);
+/* TRUE after a successful C2P_Install_WeightSet / C2P_Load_WeightSet. */
+int C2P_Weights_Are_Ready(void);
 
 /* Snapshot of active C2P lookup tables (heap-allocated). NULL only on allocation failure. */
 C2P_Context *C2P_SaveContext(void);
@@ -95,6 +97,11 @@ void C2P_Render_Logical_To_ST_Screen(
 ** planar_width_pixels / planar_height_pixels bound the destination buffer for the slow tail
 ** (widths not divisible by 8).
 */
+/*
+ * Convert a logical 8bpp rectangle into a planar buffer region.
+ * abs_x0/abs_y0 are the screen-space origin for Bayer dither phase (mod 4).
+ * ST16 in-place conversion passes 0,0 so each icon's top-left pins phase (0,0).
+ */
 void C2P_Render_Logical_To_Planar_Rect(
 	const uint8_t *logical,
 	int logical_w,
@@ -126,6 +133,23 @@ void C2P_Render_Logical_Row_To_Planar(
 	int dst_y0,
 	int abs_x0,
 	int abs_y0);
+
+/*
+ * Like C2P_Render_Logical_To_Planar_Rect but uses C2P_MapNearestLUT (no Bayer phase).
+ * Use when dither is undesirable; ST16 terrain conversion uses the dithered rect helper
+ * with abs_x0=abs_y0=0 so each icon's top-left pins Bayer phase (0,0).
+ */
+void C2P_Render_Logical_To_Planar_Rect_Nearest(
+	const uint8_t *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	uint8_t *planar_base,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0);
 
 /* ST LoRes planar: canonical 320×200 screen; interleaved layout needs width multiple of 16. */
 #define ST_PLANAR_WIDTH 320

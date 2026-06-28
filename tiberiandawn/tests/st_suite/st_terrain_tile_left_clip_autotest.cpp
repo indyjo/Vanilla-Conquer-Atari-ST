@@ -1,12 +1,12 @@
 /*
- * Automated: terrain 24x24 left-edge clip via production-style planar atlas packing.
+ * Automated: terrain 24x24 left-edge clip via ST16 per-icon planar slabs.
  *
- * Mirrors drawbuff.cpp Try_Blit_Cached_Terrain_Tile / Buffer_Draw_Stamp:
- *   - atlas slots spaced 24px apart (neighbor tile at x+24)
- *   - left clip: clip_src_x, dst_x pinned to viewport origin, reduced width
- *   - ST_Blitter_Planar_Rect_Blit from atlas (no sx = dx & 15 alignment fudge)
+ * Mirrors ST16_Blit_Stamp / drawbuff.cpp production path:
+ *   - each icon is a 32x24 planar slab (384 bytes), not a shared atlas
+ *   - left clip: clip_src_x, reduced width
+ *   - ST_Blitter_Planar_Rect_Blit from icon planar (clip_src_x into slab)
  *
- * Reference: C2P_Blit_Linear8_To_Planar on the same linear sub-rectangle.
+ * Reference: CPU readback from the same planar icon sub-rectangle.
  * Requires real ST hardware BLiTTER (on-machine st-tests binary).
  */
 
@@ -14,6 +14,7 @@
 
 #include "c2p.h"
 #include "palette.h"
+#include "st16_iconset.h"
 #include "st_blitter_blit.h"
 #include "st_temperat_palette.h"
 #include "st_text.h"
@@ -27,9 +28,9 @@
 enum {
 	ST_TILE_W = 24,
 	ST_TILE_H = 24,
-	ST_ATLAS_W = 320,
-	ST_ATLAS_H = 24,
-	ST_ATLAS_BPL = (ST_ATLAS_W / 16) * 8,
+	ST_TILE_PLANAR_W = 32,
+	ST_TILE_PLANAR_ROW = (ST_TILE_PLANAR_W / 16) * 8,
+	ST_TILE_PLANAR_STRIDE = ST_TILE_PLANAR_ROW * ST_TILE_H,
 	ST_TAC_PIXEL_X = 0,
 	ST_MAX_CLIP_SRC_X = 22,
 	ST_MAX_MISMATCH_PRINT = 16,
@@ -55,20 +56,26 @@ static void st_build_synthetic_tile(unsigned char *tile, int seed)
 	}
 }
 
-static void st_build_production_atlas(
-	uint8_t *atlas,
-	const unsigned char *tile_a,
-	const unsigned char *tile_b)
+static void st_build_st16_planar_icon(uint8_t *planar, const unsigned char *tile)
 {
-	memset(atlas, 0, (size_t)ST_ATLAS_BPL * (size_t)ST_ATLAS_H);
+	ST16_PlanarLayout layout;
+
+	ST16_Compute_Planar_Layout(ST_TILE_W, ST_TILE_H, FALSE, &layout);
+	memset(planar, 0, (size_t)ST_TILE_PLANAR_STRIDE);
 	C2P_Render_Logical_To_Planar_Rect(
-		tile_a, ST_TILE_W, ST_TILE_H, ST_TILE_W,
-		atlas, ST_ATLAS_BPL, ST_ATLAS_W, ST_ATLAS_H,
-		0, 0, 0, 0);
-	C2P_Render_Logical_To_Planar_Rect(
-		tile_b, ST_TILE_W, ST_TILE_H, ST_TILE_W,
-		atlas, ST_ATLAS_BPL, ST_ATLAS_W, ST_ATLAS_H,
-		ST_TILE_W, 0, ST_TILE_W, 0);
+		tile,
+		ST_TILE_W,
+		ST_TILE_H,
+		ST_TILE_W,
+		planar,
+		layout.planar_row_bytes,
+		layout.planar_w,
+		layout.planar_h,
+		0,
+		0,
+		0,
+		0);
+	ST16_Clear_Planar_Icon_Padding(planar, &layout, ST_TILE_W, ST_TILE_H);
 }
 
 static int st_compare_clip_rect(
@@ -106,14 +113,16 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 	uint8_t *screen_hw = (uint8_t *)Logbase();
 	uint8_t *screen_ref = (uint8_t *)malloc(ST_PLANAR_FRAME_BYTES);
 	uint8_t *checker_bg = (uint8_t *)malloc(ST_PLANAR_FRAME_BYTES);
-	uint8_t *atlas = (uint8_t *)malloc((size_t)ST_ATLAS_BPL * (size_t)ST_ATLAS_H);
+	uint8_t *planar_a = (uint8_t *)malloc((size_t)ST_TILE_PLANAR_STRIDE);
+	uint8_t *planar_b = (uint8_t *)malloc((size_t)ST_TILE_PLANAR_STRIDE);
 	unsigned char tile_a[ST_TILE_W * ST_TILE_H];
 	unsigned char tile_b[ST_TILE_W * ST_TILE_H];
 
-	if (!screen_hw || !screen_ref || !checker_bg || !atlas) {
+	if (!screen_hw || !screen_ref || !checker_bg || !planar_a || !planar_b) {
 		free(screen_ref);
 		free(checker_bg);
-		free(atlas);
+		free(planar_a);
+		free(planar_b);
 		Setscreen(old_log, old_phys, old_rez);
 		st_wrap_puts("FAIL: terrain clip test allocation.", ST_TEXT_MAXCOL);
 		return 1;
@@ -128,23 +137,23 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 
 	st_build_synthetic_tile(tile_a, 11);
 	st_build_synthetic_tile(tile_b, 29);
-	st_build_production_atlas(atlas, tile_a, tile_b);
+	st_build_st16_planar_icon(planar_a, tile_a);
+	st_build_st16_planar_icon(planar_b, tile_b);
 	st_build_checker_planar(checker_bg, 2, 4);
 
 	int case_failures = 0;
 	int printed = 0;
-	static const int k_atlas_x[] = { 0, ST_TILE_W };
-	static const int k_dx_abs[] = { ST_TAC_PIXEL_X, ST_TAC_PIXEL_X + 8 };
+	const uint8_t *const k_icons[] = { planar_a, planar_b };
 
 	for (int ai = 0; ai < 2; ai++) {
-		const int atlas_x = k_atlas_x[ai];
+		const uint8_t *planar = k_icons[ai];
 		for (int clip_src_x = 0; clip_src_x <= ST_MAX_CLIP_SRC_X; clip_src_x++) {
 			const int clip_blit_w = ST_TILE_W - clip_src_x;
 			if (clip_blit_w <= 0) {
 				continue;
 			}
 			for (int di = 0; di < 2; di++) {
-				const int dx_abs = k_dx_abs[di];
+				const int dx_abs = (di == 0) ? ST_TAC_PIXEL_X : (ST_TAC_PIXEL_X + 8);
 				const int dy_abs = 16;
 				if (dx_abs + clip_blit_w > ST_PLANAR_WIDTH) {
 					continue;
@@ -153,11 +162,10 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 				memcpy(screen_hw, checker_bg, ST_PLANAR_FRAME_BYTES);
 				memcpy(screen_ref, checker_bg, ST_PLANAR_FRAME_BYTES);
 
-				const int sx_abs = atlas_x + clip_src_x;
 				if (!ST_Blitter_Planar_Rect_Blit(
-						atlas,
-						ST_ATLAS_BPL,
-						sx_abs,
+						planar,
+						ST_TILE_PLANAR_ROW,
+						clip_src_x,
 						0,
 						screen_hw,
 						ST_PLANAR_BYTES_PER_LINE,
@@ -167,8 +175,7 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 						ST_TILE_H)) {
 					case_failures++;
 					if (printed < ST_MAX_MISMATCH_PRINT) {
-						printf("  FAIL blit atlas=%d clip=%d dx=%d\n",
-							atlas_x, clip_src_x, dx_abs);
+						printf("  FAIL blit icon=%d clip=%d dx=%d\n", ai, clip_src_x, dx_abs);
 						printed++;
 					}
 					continue;
@@ -177,11 +184,11 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 				for (int ry = 0; ry < ST_TILE_H; ry++) {
 					for (int rx = 0; rx < clip_blit_w; rx++) {
 						const unsigned char c = ST_Planar_GetPixel(
-							atlas,
-							ST_ATLAS_BPL,
-							ST_ATLAS_W,
-							ST_ATLAS_H,
-							sx_abs + rx,
+							planar,
+							ST_TILE_PLANAR_ROW,
+							ST_TILE_PLANAR_W,
+							ST_TILE_H,
+							clip_src_x + rx,
 							ry);
 						ST_Planar_PutPixel(
 							screen_ref,
@@ -200,17 +207,17 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 					case_failures++;
 					if (printed < ST_MAX_MISMATCH_PRINT) {
 						printf(
-							"  MISMATCH atlas=%d clip=%d dx=%d sx%%16=%d dx%%16=%d px=%d\n",
-							atlas_x,
+							"  MISMATCH icon=%d clip=%d dx=%d sx%%16=%d dx%%16=%d px=%d\n",
+							ai,
 							clip_src_x,
 							dx_abs,
-							sx_abs & 15,
+							(clip_src_x) & 15,
 							dx_abs & 15,
 							mm);
 						printed++;
 					}
 				} else if (verbose) {
-					printf("  OK atlas=%d clip=%d dx=%d\n", atlas_x, clip_src_x, dx_abs);
+					printf("  OK icon=%d clip=%d dx=%d\n", ai, clip_src_x, dx_abs);
 				}
 			}
 		}
@@ -222,15 +229,16 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 
 	free(screen_ref);
 	free(checker_bg);
-	free(atlas);
+	free(planar_a);
+	free(planar_b);
 	Setscreen(old_log, old_phys, old_rez);
 
 	if (case_failures == 0) {
-		printf("  Terrain left-clip atlas: PASS\n");
+		printf("  Terrain left-clip ST16: PASS\n");
 		return 0;
 	}
 
-	printf("  Terrain left-clip atlas: FAIL (%d cases)\n", case_failures);
+	printf("  Terrain left-clip ST16: FAIL (%d cases)\n", case_failures);
 	return case_failures;
 }
 

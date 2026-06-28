@@ -83,6 +83,7 @@
 #ifdef ATARI_ST
 #include "st_blitter_blit.h"
 #include "c2p.h"
+#include "st16_convert.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -699,6 +700,7 @@ void DisplayClass::Init_Theater(TheaterType theater)
 #ifdef ATARI_ST
     if (theater >= THEATER_FIRST && theater < THEATER_COUNT)
         C2P_Load_WeightSet(Theaters[theater].Root, "Theater");
+    ST16_Prewarm_Iconset(TransIconset);
 #endif
 
 #ifndef _RETRIEVE

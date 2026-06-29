@@ -17,7 +17,7 @@
 #include "st16_convert.h"
 #include "memflag.h"
 #include "tile.h"
-#include "tile.h"
+#include "endianness.h"
 #include <stdio.h>
 #include <string.h>  // For memset
 
@@ -1746,25 +1746,27 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	}
 
 	IControl_Type *ic = (IControl_Type *)icondata;
-	int icons_off = le32toh(ic->Icons);
+	const uint8_t *base = (const uint8_t *)icondata;
 
-	// If the iconset is not ST16 native, convert it to ST16
-	if (icons_off < (int)ST16_ICONS_V1) {
-		if (!ST16_Iconset_Should_Convert((const uint8_t *)icondata, (size_t)le32toh(ic->Size))) {
+	/* Fast path: native magic at 0x20 + native Icons == 0x2c.
+	 * After ST16_Convert_InPlace all header fields are native-endian. */
+	if (ST16_Has_Native_Chunk(ic)) {
+		(void)ST16_Blit_Stamp(vp, ic, icon, x_pixel, y_pixel);
+		return;
+	}
+
+	/* Pre-convert: LE byte reads only (header is still little-endian). */
+	{
+		const size_t blob_size = (size_t)ST16_Read_LE32(base + 8);
+
+		if (!ST16_Iconset_Should_Convert(base, blob_size)) {
 			Buffer_Draw_Stamp_8bpp(vp, icondata, icon, x_pixel, y_pixel, remap);
 			return;
 		}
-		// Convert the iconset to ST16 in place
-		if (!ST16_Iconset_Resolve(icondata, NULL)) {
-			return;
-		}
-		ic = (IControl_Type *)icondata;
-		icons_off = le32toh(ic->Icons);
-		if (icons_off < (int)ST16_ICONS_V1) {
-			return;
-		}
 	}
-
+	if (!ST16_Iconset_Resolve(icondata, NULL)) {
+		return;
+	}
 	(void)ST16_Blit_Stamp(vp, ic, icon, x_pixel, y_pixel);
 }
 

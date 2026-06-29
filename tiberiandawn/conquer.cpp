@@ -74,9 +74,12 @@
 
 #ifdef ATARI_ST
 #include "atarilib/drawbuff.h"
+#include "atarilib/memflag.h"
 #include "atarilib/st_screen.h"
 #include "st_sprite_cache.h"
 #include <limits.h>
+
+static bool ST_Log_Free_Ram_On_Next_Main_Loop = false;
 #endif
 
 #define SHAPE_TRANS 0x40
@@ -200,6 +203,10 @@ void Main_Game(int argc, char* argv[])
 
         InMainLoop = true;
         Set_Video_Cursor_Clip(true);
+
+#ifdef ATARI_ST
+        ST_Log_Free_Ram_On_Next_Main_Loop = true;
+#endif
 
 #ifdef SCENARIO_EDITOR
         /*
@@ -1614,6 +1621,13 @@ bool Main_Loop()
     ** Allocate extra memory for uncompressed shapes as needed
     */
     Reallocate_Big_Shape_Buffer();
+
+#ifdef ATARI_ST
+    if (ST_Log_Free_Ram_On_Next_Main_Loop) {
+        ST_Log_Free_Ram_On_Next_Main_Loop = false;
+        ST_Log_Free_Memory("At game start");
+    }
+#endif
 
     /*
     ** Sync-bug trapping code

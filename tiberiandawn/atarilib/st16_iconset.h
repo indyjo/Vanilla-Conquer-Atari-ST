@@ -10,6 +10,7 @@
 #define ST16_ICONSET_H
 
 #include "function.h"
+#include "tile.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -30,8 +31,10 @@ extern "C" {
 #define ST16_CHUNK_TOTAL         12u
 #define ST16_PAYLOAD_SIZE        4u
 
-/* 'ST16' little-endian */
+/* 'ST16' on disk (little-endian uint32 interpretation). */
 #define ST16_MAGIC               0x36315453u
+/* Same four bytes as a native 68000 longword at ST16_Chunk_Type.magic. */
+#define ST16_MAGIC_NATIVE        0x53543136u
 
 #define ST16_FLAG_HAS_MASK       0x0001u
 
@@ -85,10 +88,64 @@ typedef struct ST16_PlanarLayout
 	int icon_stride;
 } ST16_PlanarLayout;
 
+static inline const ST16_Chunk_Type *ST16_Chunk(const IControl_Type *ic)
+{
+	return (const ST16_Chunk_Type *)(ic + 1);
+}
+
+/* LE path only — do not use on native-endian converted blobs. */
 uint16_t ST16_Read_LE16(const uint8_t *p);
 uint32_t ST16_Read_LE32(const uint8_t *p);
+uint16_t ST16_Read_BE16(const uint8_t *p);
+uint32_t ST16_Read_BE32(const uint8_t *p);
 void ST16_Write_LE16(uint8_t *p, uint16_t v);
 void ST16_Write_LE32(uint8_t *p, uint32_t v);
+void ST16_Write_BE16(uint8_t *p, uint16_t v);
+void ST16_Write_BE32(uint8_t *p, uint32_t v);
+
+/*
+ * Fast ST16 planar check: longword magic at 0x20 + Icons offset 0x2c.
+ * TRUE after convert whether or not the header has been native-swapped yet.
+ */
+BOOL ST16_Is_Planar_Ready(const IControl_Type *ic);
+
+/* TRUE when ST16 chunk magic is present and Icons is the native ST16 offset. */
+static inline BOOL ST16_Has_Native_Chunk(const IControl_Type *ic)
+{
+	if (!ic) {
+		return FALSE;
+	}
+	if (ST16_Chunk(ic)->magic != ST16_MAGIC_NATIVE) {
+		return FALSE;
+	}
+	return (uint32_t)ic->Icons == ST16_ICONS_V1;
+}
+
+typedef struct ST16_Blit_Context
+{
+	ST16_IControlView view;
+	BOOL has_mask;
+	BOOL native_hdr;
+} ST16_Blit_Context;
+
+/* Load header + mask flag for ST16_Blit_Stamp (native or LE-header planar). */
+BOOL ST16_Load_Blit_Context(const IControl_Type *ic, ST16_Blit_Context *ctx);
+
+/* Populate view from a native-endian IControl_Type (word-aligned iconset). */
+static inline void ST16_IControlView_From_Struct(const IControl_Type *ic, ST16_IControlView *out)
+{
+	if (!ic || !out) {
+		return;
+	}
+
+	out->width = (uint16_t)ic->Width;
+	out->height = (uint16_t)ic->Height;
+	out->count = (uint16_t)ic->Count;
+	out->size = (uint32_t)ic->Size;
+	out->icons_off = (uint32_t)ic->Icons;
+	out->transflag_off = (uint32_t)ic->TransFlag;
+	out->map_off = (uint32_t)ic->Map;
+}
 
 /*
  * Parse the fixed IControl header. Does not validate tail layout.
@@ -105,8 +162,16 @@ BOOL ST16_Iconset_Uses_Mask(const uint8_t *base, size_t blob_size);
 /* TRUE when Icons=0x20 (standard chunky 8bpp ICN). */
 BOOL ST16_Is_Standard(const uint8_t *base, size_t blob_size);
 
-/* TRUE when Icons>=0x2c and the ST16 chunk at 0x20 is present and valid. */
+/*
+ * TRUE when ST16 magic is present at 0x20 and the native-endian header validates.
+ */
 BOOL ST16_Is_Native(const uint8_t *base, size_t blob_size);
+
+/* Byte-swap IControl + chunk numerics to 68000 native order; leaves chunk.magic unchanged. */
+void ST16_Native_Swap_Header(IControl_Type *ic);
+
+/* Validate a native-endian ST16 blob (direct struct field access). */
+BOOL ST16_Validate_Native(const IControl_Type *ic, size_t blob_size);
 
 /*
  * Read ST16 chunk flags (offset 0x28). reserved must be 0.

@@ -8,6 +8,9 @@
 
 #include <string.h>
 
+typedef char ST16_IControl_Size_Check[(sizeof(IControl_Type) == ST16_ICONTROL_SIZE) ? 1 : -1];
+typedef char ST16_Chunk_Offset_Check[(ST16_CHUNK_OFFSET == sizeof(IControl_Type)) ? 1 : -1];
+
 uint16_t ST16_Read_LE16(const uint8_t *p)
 {
 	return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -19,6 +22,19 @@ uint32_t ST16_Read_LE32(const uint8_t *p)
 		| ((uint32_t)p[1] << 8)
 		| ((uint32_t)p[2] << 16)
 		| ((uint32_t)p[3] << 24);
+}
+
+uint16_t ST16_Read_BE16(const uint8_t *p)
+{
+	return (uint16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
+}
+
+uint32_t ST16_Read_BE32(const uint8_t *p)
+{
+	return ((uint32_t)p[0] << 24)
+		| ((uint32_t)p[1] << 16)
+		| ((uint32_t)p[2] << 8)
+		| (uint32_t)p[3];
 }
 
 void ST16_Write_LE16(uint8_t *p, uint16_t v)
@@ -33,6 +49,20 @@ void ST16_Write_LE32(uint8_t *p, uint32_t v)
 	p[1] = (uint8_t)((v >> 8) & 0xFFu);
 	p[2] = (uint8_t)((v >> 16) & 0xFFu);
 	p[3] = (uint8_t)((v >> 24) & 0xFFu);
+}
+
+void ST16_Write_BE16(uint8_t *p, uint16_t v)
+{
+	p[0] = (uint8_t)((v >> 8) & 0xFFu);
+	p[1] = (uint8_t)(v & 0xFFu);
+}
+
+void ST16_Write_BE32(uint8_t *p, uint32_t v)
+{
+	p[0] = (uint8_t)((v >> 24) & 0xFFu);
+	p[1] = (uint8_t)((v >> 16) & 0xFFu);
+	p[2] = (uint8_t)((v >> 8) & 0xFFu);
+	p[3] = (uint8_t)(v & 0xFFu);
 }
 
 BOOL ST16_Chunk_Valid(const uint8_t *base, size_t blob_size, uint16_t *flags_out)
@@ -52,6 +82,42 @@ BOOL ST16_Chunk_Valid(const uint8_t *base, size_t blob_size, uint16_t *flags_out
 	if (flags_out) {
 		*flags_out = ST16_Read_LE16(base + ST16_CHUNK_OFFSET + 8);
 	}
+	return TRUE;
+}
+
+BOOL ST16_Is_Planar_Ready(const IControl_Type *ic)
+{
+	if (!ic) {
+		return FALSE;
+	}
+	return *(const uint32_t *)((const uint8_t *)ic + ST16_CHUNK_OFFSET) == ST16_MAGIC_NATIVE;
+}
+
+BOOL ST16_Load_Blit_Context(const IControl_Type *ic, ST16_Blit_Context *ctx)
+{
+	const uint8_t *base;
+	uint16_t flags;
+
+	if (!ic || !ctx || !ST16_Is_Planar_Ready(ic)) {
+		return FALSE;
+	}
+
+	base = (const uint8_t *)ic;
+	if ((uint32_t)ic->Icons == ST16_ICONS_V1) {
+		ST16_IControlView_From_Struct(ic, &ctx->view);
+		flags = ST16_Chunk(ic)->flags;
+		ctx->native_hdr = TRUE;
+	} else {
+		ctx->view.size = ST16_Read_LE32(base + 8);
+		if (!ST16_Parse_IControl(base, (size_t)ctx->view.size, &ctx->view)) {
+			return FALSE;
+		}
+		if (!ST16_Chunk_Valid(base, (size_t)ctx->view.size, &flags)) {
+			return FALSE;
+		}
+		ctx->native_hdr = FALSE;
+	}
+	ctx->has_mask = (flags & ST16_FLAG_HAS_MASK) != 0;
 	return TRUE;
 }
 
@@ -135,21 +201,31 @@ BOOL ST16_Is_Standard(const uint8_t *base, size_t blob_size)
 
 BOOL ST16_Is_Native(const uint8_t *base, size_t blob_size)
 {
-	ST16_IControlView ic;
+	const IControl_Type *ic = (const IControl_Type *)base;
 
-	if (!ST16_Parse_IControl(base, blob_size, &ic)) {
+	if (!base || blob_size < ST16_ICONTROL_SIZE) {
 		return FALSE;
 	}
-	if (ic.icons_off < ST16_ICONS_V1) {
-		return FALSE;
-	}
-	return ST16_Chunk_Valid(base, blob_size, NULL);
+	return ST16_Has_Native_Chunk(ic) && ST16_Validate_Native(ic, blob_size);
 }
 
 BOOL ST16_Read_Chunk_Flags(const uint8_t *base, size_t blob_size, uint16_t *flags_out)
 {
-	if (!ST16_Is_Native(base, blob_size)) {
+	const IControl_Type *ic = (const IControl_Type *)base;
+
+	if (!base || blob_size < ST16_ICONTROL_SIZE + ST16_CHUNK_TOTAL) {
 		return FALSE;
+	}
+	if (ST16_Has_Native_Chunk(ic)) {
+		const ST16_Chunk_Type *chunk = ST16_Chunk(ic);
+
+		if (chunk->size != ST16_PAYLOAD_SIZE || chunk->reserved != 0) {
+			return FALSE;
+		}
+		if (flags_out) {
+			*flags_out = chunk->flags;
+		}
+		return TRUE;
 	}
 	return ST16_Chunk_Valid(base, blob_size, flags_out);
 }
@@ -244,13 +320,19 @@ size_t ST16_Icon_Image_Count(const uint8_t *base, size_t blob_size, const ST16_I
 		return 0;
 	}
 
-	if (base && blob_size >= ST16_ICONTROL_SIZE && ST16_Is_Native(base, blob_size)) {
+	if (base && blob_size >= ST16_ICONTROL_SIZE && ST16_Has_Native_Chunk((const IControl_Type *)base)) {
+		ST16_IControlView native_ic;
 		ST16_PlanarLayout layout;
-		uint16_t flags = 0;
+		const ST16_Chunk_Type *chunk = ST16_Chunk((const IControl_Type *)base);
+		uint16_t flags;
 
-		if (!ST16_Read_Chunk_Flags(base, blob_size, &flags)) {
+		ST16_IControlView_From_Struct((const IControl_Type *)base, &native_ic);
+		ic = &native_ic;
+
+		if (chunk->size != ST16_PAYLOAD_SIZE || chunk->reserved != 0) {
 			return 0;
 		}
+		flags = chunk->flags;
 		ST16_Compute_Planar_Layout(
 			(int)ic->width,
 			(int)ic->height,
@@ -519,6 +601,85 @@ BOOL ST16_Validate(const uint8_t *base, size_t blob_size)
 	}
 }
 
+void ST16_Native_Swap_Header(IControl_Type *ic)
+{
+	uint8_t *const base = (uint8_t *)ic;
+
+	if (!ic) {
+		return;
+	}
+
+	ST16_Write_BE16(base + 0, ST16_Read_LE16(base + 0));
+	ST16_Write_BE16(base + 2, ST16_Read_LE16(base + 2));
+	ST16_Write_BE16(base + 4, ST16_Read_LE16(base + 4));
+	ST16_Write_BE16(base + 6, ST16_Read_LE16(base + 6));
+	ST16_Write_BE32(base + 8, ST16_Read_LE32(base + 8));
+	ST16_Write_BE32(base + 12, ST16_Read_LE32(base + 12));
+	ST16_Write_BE32(base + 16, ST16_Read_LE32(base + 16));
+	ST16_Write_BE32(base + 20, ST16_Read_LE32(base + 20));
+	ST16_Write_BE32(base + 24, ST16_Read_LE32(base + 24));
+	ST16_Write_BE32(base + 28, ST16_Read_LE32(base + 28));
+
+	ST16_Write_BE32(base + ST16_CHUNK_OFFSET + 4, ST16_Read_LE32(base + ST16_CHUNK_OFFSET + 4));
+	ST16_Write_BE16(base + ST16_CHUNK_OFFSET + 8, ST16_Read_LE16(base + ST16_CHUNK_OFFSET + 8));
+	ST16_Write_BE16(base + ST16_CHUNK_OFFSET + 10, ST16_Read_LE16(base + ST16_CHUNK_OFFSET + 10));
+}
+
+BOOL ST16_Validate_Native(const IControl_Type *ic, size_t blob_size)
+{
+	ST16_IControlView view;
+	const uint8_t *base = (const uint8_t *)ic;
+	size_t data_end;
+	const ST16_Chunk_Type *chunk;
+	uint16_t flags;
+
+	if (!ic || blob_size < ST16_ICONTROL_SIZE) {
+		return FALSE;
+	}
+	if (!ST16_Has_Native_Chunk(ic)) {
+		return FALSE;
+	}
+
+	ST16_IControlView_From_Struct(ic, &view);
+	if (view.width <= 0 || view.height <= 0 || view.width > 128 || view.height > 128) {
+		return FALSE;
+	}
+	if (view.count <= 0) {
+		return FALSE;
+	}
+	if (view.icons_off < ST16_ICONS_V1) {
+		return FALSE;
+	}
+
+	chunk = ST16_Chunk(ic);
+	if (chunk->size != ST16_PAYLOAD_SIZE || chunk->reserved != 0) {
+		return FALSE;
+	}
+	flags = chunk->flags;
+
+	{
+		ST16_PlanarLayout layout;
+		BOOL const has_mask = (flags & ST16_FLAG_HAS_MASK) ? TRUE : FALSE;
+		size_t image_count;
+		size_t icons_bytes;
+
+		ST16_Compute_Planar_Layout((int)view.width, (int)view.height, has_mask, &layout);
+		if (layout.planar_stride <= 0 || layout.icon_stride <= 0) {
+			return FALSE;
+		}
+		image_count = ST16_Icon_Image_Count(base, blob_size, &view);
+		if (image_count == 0) {
+			return FALSE;
+		}
+		icons_bytes = image_count * (size_t)layout.icon_stride;
+		if (!ST16_Offset_In_Bounds(view.icons_off, icons_bytes, blob_size)) {
+			return FALSE;
+		}
+		data_end = (size_t)view.icons_off + icons_bytes;
+		return ST16_Validate_Tail(base, blob_size, &view, data_end);
+	}
+}
+
 BOOL ST16_Resolve_Icon_Index(
 	const uint8_t *base,
 	size_t blob_size,
@@ -532,15 +693,19 @@ BOOL ST16_Resolve_Icon_Index(
 	if (!base || !image_index_out || logical_icon < 0) {
 		return FALSE;
 	}
-	if (!ST16_Parse_IControl(base, blob_size, &ic)) {
+
+	if (ST16_Has_Native_Chunk((const IControl_Type *)base)) {
+		ST16_IControlView_From_Struct((const IControl_Type *)base, &ic);
+	} else if (!ST16_Parse_IControl(base, blob_size, &ic)) {
 		return FALSE;
 	}
+
 	image_count = ST16_Icon_Image_Count(base, blob_size, &ic);
 	if (image_count == 0) {
 		return FALSE;
 	}
 
-	if (ic.map_off != 0) {
+	if (ic.map_off > 0) {
 		if (ic.count == 0 || (size_t)logical_icon >= (size_t)ic.count) {
 			return FALSE;
 		}
@@ -603,14 +768,21 @@ const uint8_t *ST16_Planar_Icon_Ptr(
 	size_t off;
 	size_t image_count;
 
-	if (!layout_out || !ST16_Is_Native(base, blob_size)) {
+	if (!layout_out || !base || blob_size < ST16_ICONTROL_SIZE) {
 		return NULL;
 	}
-	if (!ST16_Parse_IControl(base, blob_size, &ic)) {
+
+	if (!ST16_Has_Native_Chunk((const IControl_Type *)base)) {
 		return NULL;
 	}
-	if (!ST16_Read_Chunk_Flags(base, blob_size, &flags)) {
-		return NULL;
+	ST16_IControlView_From_Struct((const IControl_Type *)base, &ic);
+	{
+		const ST16_Chunk_Type *chunk = ST16_Chunk((const IControl_Type *)base);
+
+		if (chunk->size != ST16_PAYLOAD_SIZE || chunk->reserved != 0) {
+			return NULL;
+		}
+		flags = chunk->flags;
 	}
 	image_count = ST16_Icon_Image_Count(base, blob_size, &ic);
 	if (image_index < 0 || (size_t)image_index >= image_count) {
@@ -645,7 +817,8 @@ const uint8_t *ST16_Mask_Icon_Ptr(
 	size_t off;
 
 	(void)layout;
-	if (!ST16_Is_Native(base, blob_size)) {
+	if (!base || blob_size < ST16_ICONTROL_SIZE
+		|| !ST16_Has_Native_Chunk((const IControl_Type *)base)) {
 		return NULL;
 	}
 
@@ -666,7 +839,7 @@ void ST16_Write_Chunk(uint8_t *base, uint16_t flags)
 	if (!base) {
 		return;
 	}
-	ST16_Write_LE32(base + ST16_CHUNK_OFFSET, ST16_MAGIC);
+	memcpy(base + ST16_CHUNK_OFFSET, "ST16", 4);
 	ST16_Write_LE32(base + ST16_CHUNK_OFFSET + 4, ST16_PAYLOAD_SIZE);
 	ST16_Write_LE16(base + ST16_CHUNK_OFFSET + 8, flags);
 	ST16_Write_LE16(base + ST16_CHUNK_OFFSET + 10, 0);

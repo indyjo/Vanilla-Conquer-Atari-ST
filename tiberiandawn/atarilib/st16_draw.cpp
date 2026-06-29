@@ -6,26 +6,8 @@
 
 #include "st16_iconset.h"
 #include "st_blitter_blit.h"
-#include "endianness.h"
 
 #include <stdint.h>
-
-static inline BOOL ST16_Read_Chunk_Has_Mask(const IControl_Type *iconset)
-{
-	const ST16_Chunk_Type *const chunk =
-		(const ST16_Chunk_Type *)((const char *)iconset + ST16_CHUNK_OFFSET);
-
-	if (le32toh(chunk->magic) != ST16_MAGIC) {
-		return FALSE;
-	}
-	if (le32toh(chunk->size) != ST16_PAYLOAD_SIZE) {
-		return FALSE;
-	}
-	if (le16toh(chunk->reserved) != 0) {
-		return FALSE;
-	}
-	return (le16toh(chunk->flags) & ST16_FLAG_HAS_MASK) != 0;
-}
 
 static uint8_t ST16_CPU_Get_Pixel(
 	const uint8_t *base,
@@ -284,13 +266,15 @@ BOOL ST16_Blit_Stamp(
 	int16_t y_pixel)
 {
 	const uint8_t *const base = (const uint8_t *)iconset;
-	const uint32_t icons_off = (uint32_t)le32toh(iconset->Icons);
-	const uint32_t map_off = (uint32_t)le32toh(iconset->Map);
-	const uint32_t total_size = (uint32_t)le32toh(iconset->Size);
-	const uint16_t tile_w = le16toh(iconset->Width);
-	const uint16_t tile_h = le16toh(iconset->Height);
-	const uint16_t map_count = le16toh(iconset->Count);
-	const BOOL has_mask = ST16_Read_Chunk_Has_Mask(iconset);
+	/* All fields are native-endian after ST16_Convert_InPlace — no le*toh. */
+	const uint32_t icons_off = (uint32_t)iconset->Icons;
+	const uint32_t map_off = (uint32_t)iconset->Map;
+	const uint32_t total_size = (uint32_t)iconset->Size;
+	const uint16_t tile_w = (uint16_t)iconset->Width;
+	const uint16_t tile_h = (uint16_t)iconset->Height;
+	const uint16_t map_count = (uint16_t)iconset->Count;
+	/* Chunk size/reserved were swapped; flags was already correct (little-endian 0 or 1). */
+	const BOOL has_mask = (ST16_Chunk(iconset)->flags & ST16_FLAG_HAS_MASK) != 0;
 	ST16_PlanarLayout layout;
 	int16_t image_index;
 	const uint8_t *planar;
@@ -313,13 +297,7 @@ BOOL ST16_Blit_Stamp(
 	int16_t vp_h;
 	int16_t trim;
 
-	if (!vp || !iconset || logical_icon < 0 || tile_w == 0 || tile_h == 0) {
-		return FALSE;
-	}
-	if (icons_off < ST16_ICONS_V1) {
-		return FALSE;
-	}
-
+	// Fast path for 24x24 tiles.
 	if (tile_w == ST16_TILE_W && tile_h == ST16_TILE_H) {
 		ST16_Fill_Planar_Layout_24x24(has_mask, &layout);
 	} else {
@@ -343,17 +321,7 @@ BOOL ST16_Blit_Stamp(
 		image_index = logical_icon;
 	}
 
-	if (image_index < 0 || (uint8_t)image_index == 0xFF) {
-		return TRUE;
-	}
-
 	planar = base + icons_off + (size_t)image_index * (size_t)layout.icon_stride;
-	if (total_size != 0
-		&& icons_off + (size_t)image_index * (size_t)layout.icon_stride
-			+ (size_t)layout.icon_stride
-			> (size_t)total_size) {
-		return FALSE;
-	}
 	mask = NULL;
 	if (has_mask) {
 		mask = planar + (size_t)layout.planar_stride;

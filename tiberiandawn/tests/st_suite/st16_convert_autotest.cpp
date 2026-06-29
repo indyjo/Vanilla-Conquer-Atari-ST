@@ -9,7 +9,9 @@
 #include "palette.h"
 #include "st16_convert.h"
 #include "st16_iconset.h"
+#include "st_mix_minimal.h"
 #include "st_temperat_palette.h"
+#include "tile.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -159,7 +161,7 @@ static int st16_run_clear1_tail_overlap_check(void)
 		return 1;
 	}
 
-	new_size = (size_t)ST16_Read_LE32(blob + 8);
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
 	{
 		const uint8_t *got = ST16_Planar_Icon_Ptr(blob, new_size, 10, &layout);
 		if (!got || st16_report_slab_diff(got, ref_planar, (size_t)layout.planar_stride, 10)) {
@@ -225,8 +227,8 @@ static int st16_run_wide_convert_check(void)
 		return fails;
 	}
 
-	new_size = (size_t)ST16_Read_LE32(blob + 8);
-	if (!ST16_Is_Native(blob, new_size) || !ST16_Validate(blob, new_size)) {
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
+	if (!ST16_Has_Native_Chunk((const IControl_Type *)blob)) {
 		fails++;
 		printf("  FAIL wide: native validate\n");
 	}
@@ -326,8 +328,8 @@ static int st16_run_d01_map_count_check(void)
 		return 1;
 	}
 
-	new_size = (size_t)ST16_Read_LE32(blob + 8);
-	if (!ST16_Is_Native(blob, new_size) || !ST16_Validate(blob, new_size)) {
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
+	if (!ST16_Validate_Native((const IControl_Type *)blob, new_size)) {
 		fails++;
 		printf("  FAIL D01 map: native validate\n");
 	}
@@ -370,6 +372,125 @@ static int st16_run_d01_map_count_check(void)
 		printf("  ST16 convert D01 map: PASS (count=%d images=%d)\n",
 			ST_D01_MAP_COUNT,
 			ST_D01_IMAGE_COUNT);
+	}
+	return fails;
+}
+
+enum { ST_W2_MAP_COUNT = 4 };
+
+static uint8_t const k_w2_map_expected[ST_W2_MAP_COUNT] = {0, 1, 2, 3};
+
+static int st16_verify_map_table(
+	unsigned char const *map,
+	int count,
+	uint8_t const *expected,
+	char const *label)
+{
+	int fails = 0;
+	int i;
+
+	if (!map) {
+		printf("  FAIL %s: map NULL\n", label);
+		return 1;
+	}
+	for (i = 0; i < count; ++i) {
+		if (map[i] != expected[i]) {
+			printf(
+				"  FAIL %s: map[%d]=%u want %u\n",
+				label,
+				i,
+				(unsigned)map[i],
+				(unsigned)expected[i]);
+			fails++;
+		}
+	}
+	return fails;
+}
+
+static int st16_simulate_read_binary_icon_check(void const *iconset, int icon_slot, char const *label)
+{
+	unsigned char const *map = (unsigned char const *)Get_Icon_Set_Map(iconset);
+
+	if (!map) {
+		printf("  FAIL %s: Get_Icon_Set_Map NULL (Read_Binary clears cell)\n", label);
+		return 1;
+	}
+	if ((signed char)map[icon_slot] == -1) {
+		printf(
+			"  FAIL %s: map[%d]==-1 (Read_Binary clears cell)\n",
+			label,
+			icon_slot);
+		return 1;
+	}
+	return 0;
+}
+
+static int st16_run_w2_real_asset_check(void)
+{
+	unsigned char *blob = NULL;
+	size_t blob_size = 0;
+	uint8_t scratch[ST_TILE_CHUNKY];
+	size_t new_size;
+	int fails = 0;
+	int i;
+	int image_index;
+
+	if (st_mix_extract_file("TEMPERAT.MIX", "W2.TEM", &blob, &blob_size) != 0) {
+		printf("  ST16 convert W2.TEM: SKIP (no TEMPERAT.MIX/W2.TEM)\n");
+		return 0;
+	}
+
+	if (!ST16_Iconset_Should_Convert(blob, blob_size)) {
+		fails++;
+		printf("  FAIL W2.TEM: Should_Convert\n");
+	}
+
+	if (!ST16_Convert_InPlace(blob, blob_size, scratch)) {
+		printf("  ST16 convert W2.TEM: FAIL (Convert_InPlace)\n");
+		free(blob);
+		return fails + 1;
+	}
+
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
+	if (!ST16_Has_Native_Chunk((const IControl_Type *)blob)) {
+		fails++;
+		printf("  FAIL W2.TEM: Has_Native_Chunk\n");
+	}
+	if (!ST16_Validate_Native((const IControl_Type *)blob, new_size)) {
+		fails++;
+		printf("  FAIL W2.TEM: Validate_Native\n");
+	}
+
+	fails += st16_verify_map_table(
+		(unsigned char const *)Get_Icon_Set_Map(blob),
+		ST_W2_MAP_COUNT,
+		k_w2_map_expected,
+		"W2.TEM Get_Icon_Set_Map");
+	fails += st16_simulate_read_binary_icon_check(blob, 0, "W2.TEM Read_Binary");
+
+	for (i = 0; i < ST_W2_MAP_COUNT; ++i) {
+		image_index = -1;
+		if (!ST16_Resolve_Icon_Index(blob, new_size, i, &image_index)
+			|| image_index != (int)k_w2_map_expected[i]) {
+			fails++;
+			printf(
+				"  FAIL W2.TEM: Resolve logical %d -> %d (want %d)\n",
+				i,
+				image_index,
+				(int)k_w2_map_expected[i]);
+		}
+	}
+
+	ST16_Prewarm_Iconset(blob);
+	fails += st16_verify_map_table(
+		(unsigned char const *)Get_Icon_Set_Map(blob),
+		ST_W2_MAP_COUNT,
+		k_w2_map_expected,
+		"W2.TEM after Prewarm");
+
+	free(blob);
+	if (fails == 0) {
+		printf("  ST16 convert W2.TEM: PASS (map=[0,1,2,3], Read_Binary slot0 ok)\n");
 	}
 	return fails;
 }
@@ -448,19 +569,20 @@ static int st16_run_transflag_region_image_count_check(void)
 		return 1;
 	}
 
-	new_size = (size_t)ST16_Read_LE32(blob + 8);
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
 	{
-		ST16_IControlView ic;
+		ST16_IControlView icview;
 		size_t image_count;
 
-		if (!ST16_Parse_IControl(blob, new_size, &ic)) {
+		if (!ST16_Has_Native_Chunk((const IControl_Type *)blob)) {
 			fails++;
-			printf("  FAIL transflag region native: Parse_IControl\n");
+			printf("  FAIL transflag region: Parse_IControl\n");
 		} else {
-			image_count = ST16_Icon_Image_Count(blob, new_size, &ic);
+			ST16_IControlView_From_Struct((const IControl_Type *)blob, &icview);
+			image_count = ST16_Icon_Image_Count(blob, new_size, &icview);
 			if (image_count != ST_TF_IMAGE_COUNT) {
 				fails++;
-				printf("  FAIL transflag region native: image_count %u (want %d)\n",
+				printf("  FAIL transflag region: image_count %u (want %d)\n",
 					(unsigned)image_count,
 					ST_TF_IMAGE_COUNT);
 			}
@@ -548,8 +670,8 @@ static int st16_run_s14_transflag_tail_check(void)
 		return 1;
 	}
 
-	new_size = (size_t)ST16_Read_LE32(blob + 8);
-	if (!ST16_Is_Native(blob, new_size) || !ST16_Validate(blob, new_size)) {
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
+	if (!ST16_Validate_Native((const IControl_Type *)blob, new_size)) {
 		fails++;
 		printf("  FAIL S14 tail: native validate\n");
 	}
@@ -671,8 +793,8 @@ static int st16_run_masked_convert_check(void)
 		return fails;
 	}
 
-	new_size = (size_t)ST16_Read_LE32(blob + 8);
-	if (!ST16_Is_Native(blob, new_size) || !ST16_Validate(blob, new_size)) {
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
+	if (!ST16_Validate_Native((const IControl_Type *)blob, new_size)) {
 		fails++;
 		printf("  FAIL masked: native validate\n");
 	}
@@ -778,8 +900,8 @@ int st_run_st16_convert_autotest_ex(int verbose, int *out_failures)
 		return fails;
 	}
 
-	new_size = (size_t)ST16_Read_LE32(blob + 8);
-	if (!ST16_Is_Native(blob, new_size) || !ST16_Validate(blob, new_size)) {
+	new_size = (size_t)((const IControl_Type *)blob)->Size;
+	if (!ST16_Validate_Native((const IControl_Type *)blob, new_size)) {
 		fails++;
 		printf("  FAIL: native validate\n");
 	}
@@ -812,6 +934,7 @@ int st_run_st16_convert_autotest_ex(int verbose, int *out_failures)
 	fails += st16_run_s14_transflag_tail_check();
 	fails += st16_run_clear1_tail_overlap_check();
 	fails += st16_run_masked_convert_check();
+	fails += st16_run_w2_real_asset_check();
 
 	if (out_failures) {
 		*out_failures = fails;

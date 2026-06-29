@@ -120,6 +120,10 @@ BOOL ST16_Convert_InPlace(uint8_t *base, size_t size, uint8_t *scratch_chunky)
 	if (!base || !scratch_chunky || size < ST16_ICONTROL_SIZE) {
 		return FALSE;
 	}
+	/* Already fully converted (native magic + native header fields). */
+	if (ST16_Has_Native_Chunk((const IControl_Type *)base)) {
+		return TRUE;
+	}
 	if (!ST16_Iconset_Should_Convert(base, size)) {
 		return FALSE;
 	}
@@ -155,15 +159,6 @@ BOOL ST16_Convert_InPlace(uint8_t *base, size_t size, uint8_t *scratch_chunky)
 	new_size = size - shrink;
 	tail_len = size - tail_old;
 	chunk_flags = has_mask ? ST16_FLAG_HAS_MASK : 0;
-
-	printf(
-		"ST16: converting iconset at %p (%u map, %u images, %ux%u%s)\n",
-		(void *)base,
-		(unsigned)ic.count,
-		(unsigned)image_count,
-		(unsigned)ic.width,
-		(unsigned)ic.height,
-		has_mask ? ", masked" : "");
 
 	/*
 	 * Per-icon [planar|mask] packing: each image's mask follows its planar slab.
@@ -232,13 +227,6 @@ BOOL ST16_Convert_InPlace(uint8_t *base, size_t size, uint8_t *scratch_chunky)
 			}
 
 			memcpy(scratch_chunky, src_ptr, chunky_stride);
-			printf(
-				"ST16: [%d/%u] image %d  8bpp@0x%lx -> planar@0x%lx\n",
-				i + 1,
-				(unsigned)image_count,
-				i,
-				(unsigned long)(icons_old + src_off),
-				(unsigned long)(dst_planar - base));
 
 			memset(dst_planar, 0, dst_slot_bytes);
 			C2P_Render_Logical_To_Planar_Rect(
@@ -280,13 +268,6 @@ BOOL ST16_Convert_InPlace(uint8_t *base, size_t size, uint8_t *scratch_chunky)
 					per_pixel_trans,
 					dst_mask,
 					&layout);
-				printf(
-					"ST16: [%d/%u] image %d  mask@0x%lx (trans=%d)\n",
-					i + 1,
-					(unsigned)image_count,
-					i,
-					(unsigned long)(dst_mask - base),
-					per_pixel_trans ? 1 : 0);
 			}
 		}
 
@@ -312,13 +293,11 @@ BOOL ST16_Convert_InPlace(uint8_t *base, size_t size, uint8_t *scratch_chunky)
 		ST16_Adjust_Tail_Offset(ic.transflag_off, tail_old, shrink));
 	ST16_Write_LE32(base + 28, ST16_Adjust_Tail_Offset(ic.map_off, tail_old, shrink));
 
-	printf(
-		"ST16: done, Icons=0x%lx, Size=%lu (freed %lu bytes)\n",
-		(unsigned long)ST16_ICONS_V1,
-		(unsigned long)new_size,
-		(unsigned long)shrink);
-
-	return ST16_Validate(base, new_size);
+	/* Swap all numeric IControl_Type fields and ST16 chunk numerics to native
+	 * (big-endian) order. Chunk magic bytes are NOT swapped — they read as
+	 * ST16_MAGIC_NATIVE on a 68000 native load both before and after. */
+	ST16_Native_Swap_Header((IControl_Type *)base);
+	return TRUE;
 }
 
 const void *ST16_Iconset_Resolve(const void *icondata, uint8_t *scratch_chunky)
@@ -331,14 +310,16 @@ const void *ST16_Iconset_Resolve(const void *icondata, uint8_t *scratch_chunky)
 		return NULL;
 	}
 
-	base = (const uint8_t *)icondata;
-	blob_size = (size_t)ST16_Read_LE32(base + 8);
-	if (blob_size < ST16_ICONTROL_SIZE) {
-		return NULL;
+	/* Already native — fast exit. */
+	if (ST16_Has_Native_Chunk((const IControl_Type *)icondata)) {
+		return icondata;
 	}
 
-	if (ST16_Is_Native(base, blob_size)) {
-		return icondata;
+	base = (const uint8_t *)icondata;
+	blob_size = (size_t)ST16_Read_LE32(base + 8);
+
+	if (blob_size < ST16_ICONTROL_SIZE) {
+		return NULL;
 	}
 
 	if (!ST16_Iconset_Should_Convert(base, blob_size)) {

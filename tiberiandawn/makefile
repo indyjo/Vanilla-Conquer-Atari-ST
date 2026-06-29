@@ -361,6 +361,8 @@ ROOT_CPP_OBJS := $(foreach obj,$(ROOT_CPP_OBJS),$(INTDIR)/$(shell echo $(notdir 
 PLATFORM_LIB_CPP_OBJS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.CPP,%.o,$(patsubst %.cpp,%.o,$(PLATFORM_LIB_CPP_SOURCES)))))
 # Handle alloc.cpp conflict: root version becomes alloc.o, platform lib version becomes alloc_platformlib.o
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
+# iconset.cpp exists in root (PC le32toh) and ATARILIB/ (ST16 native map) — keep platform object
+PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/iconset.o,$(INTDIR)/iconset_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 # misc.cpp exists in ../common/ (VC_COMMON) and ATARILIB/ — keep both objects
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/misc.o,$(INTDIR)/misc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 # gadget.cpp exists in ../common/ (VC_COMMON) and root GADGET.CPP — root excluded on ST
@@ -478,6 +480,12 @@ $(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/ALLOC.CPP | $(INTDIR)
 
 # ATARILIB misc.cpp (AllSurfaces, Wait_Vert_Blank, Calculate_CRC, …) vs common/misc.cpp
 $(INTDIR)/misc_ATARILIB.o: ATARILIB/misc.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+# ATARILIB iconset.cpp (ST16 Get_Icon_Set_Map) vs root iconset.cpp (PC le32toh)
+$(INTDIR)/iconset_ATARILIB.o: ATARILIB/iconset.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
@@ -675,13 +683,13 @@ else
 ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
 endif
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
-ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/CONST.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
-	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o \
+ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
+	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/iconset_ATARILIB.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o \
 	$(INTDIR)/st_planar_draw.o $(INTDIR)/st_hw_probe.o $(INTDIR)/st_cache.o $(INTDIR)/st_cache_ops.o \
-	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/LINK.o $(INTDIR)/newdel.o \
+	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/link.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/rawfile.o $(INTDIR)/font.o \
 	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
-	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/KEYFRAME.o $(INTDIR)/wsa.o \
+	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/keyframe.o $(INTDIR)/wsa.o \
 	$(INTDIR)/audio_ste.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
 	$(INTDIR)/st_load_uncompress.o \
 	$(INTDIR)/buff.o $(INTDIR)/bfiofile.o $(INTDIR)/blwstraw.o $(INTDIR)/blowfish.o \

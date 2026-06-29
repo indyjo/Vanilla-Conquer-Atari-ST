@@ -2,67 +2,94 @@
 
 This file collects Atari ST port specific implementation notes.
 
-## ST16 ICN / TEM Iconset Format
+## ST16 ICN iconset format
 
-Template terrain tiles (`.TEM` in theater MIX files) and icon stamps (`.ICN`, e.g. `TRANS.ICN`) use a Westwood **`IControl_Type`** header defined in `tile.h`. The Atari port adds an optional **ST16** extension for **blitter-ready** ST interleaved 16-color planar icon data.
+Westwood **ICN iconsets** (the `IControl_Type` blob in `tile.h`) hold terrain stamp graphics (roads, water, slopes, clear, etc.) and other icons such as `TRANS.ICN`. The Atari port adds an optional **ST16** extension for **blitter-ready** ST interleaved 16-color planar icon data.
+
+**File naming:** the format is always the same ICN iconset; only the extension marks the theater (or special case):
+
+
+| Extension | Theater / use                                   |
+| --------- | ----------------------------------------------- |
+| `.TEM`    | Temperate terrain iconsets (in `TEMPERAT.MIX`)    |
+| `.WIN`    | Winter terrain iconsets (in `WINTER.MIX`)         |
+| `.DES`    | Desert terrain iconsets (in `DESERT.MIX`)         |
+| `.ICN`    | Theater-independent iconsets (e.g. `TRANS.ICN`) |
+
 
 Implementation helpers: `atarilib/st16_iconset.h`.
 
-### Standard ICN (Westwood default)
+### Standard ICN iconset (Westwood default)
 
-| Offset | Size | Field |
-|--------|------|--------|
-| 0 | 2 | `Width` — icon width in pixels (24 for terrain) |
-| 2 | 2 | `Height` — icon height in pixels |
-| 4 | 2 | `Count` — number of distinct icon images in the set |
-| 6 | 2 | `Allocated` — always 0 on disk |
-| 8 | 4 | `Size` — total blob size |
-| 12 | 4 | `Icons` — **0x20** — offset to pixel data |
-| 16 | 4 | `Palettes` — usually 0 |
-| 20 | 4 | `Remaps` — usually 0 (unused in TD runtime) |
-| 24 | 4 | `TransFlag` — offset to per-image transparency bytes (optional) |
-| 28 | 4 | `Map` — offset to template cell → image index table (optional) |
+**Unconverted** Westwood iconsets (`Icons = 0x20`, no ST16 chunk): all numeric `IControl_Type` fields (`Width`, `Height`, `Count`, `Size`, `Icons`, tail offsets) are **little-endian (LE)** on disk, matching original PC TD. Read them with `ST16_Read_LE`* / `ST16_Parse_IControl`.
 
-**Pixel data** at `Icons` (`0x20`): uncompressed **8bpp palette indices**, row-major (`Width × Height` bytes per image), stored contiguously:
+**ST16 iconsets** (ST16 chunk present): numeric fields in `IControl_Type` **and** the ST16 chunk are **big-endian (BE)** — 68000 native order. The four `**ST16` magic bytes at `0x20` are not endian-swapped** (they read as `ST16_MAGIC_NATIVE`, bytes `53 54 31 36`). `**ST16_Has_Native_Chunk`** (ST16 magic + `Icons == 0x2c` in native BE) is the fast indicator that the whole numeric header is BE and may be read directly through `IControl_Type` / `ST16_Chunk_Type` without `le*toh`.
+
+
+| Offset | Size | Field                                                                                                                                          |
+| ------ | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0      | 2    | `Width` — icon width in pixels (24 for terrain)                                                                                                |
+| 2      | 2    | `Height` — icon height in pixels                                                                                                               |
+| 4      | 2    | `Count` — number of **logical** slots in the `Map` table (see below); **not** the number of distinct pixel images stored at `Icons` |
+| 6      | 2    | `Allocated` — always 0 on disk                                                                                                                 |
+| 8      | 4    | `Size` — total blob size                                                                                                                       |
+| 12     | 4    | `Icons` — **0x20** — offset to pixel data                                                                                                      |
+| 16     | 4    | `Palettes` — usually 0                                                                                                                         |
+| 20     | 4    | `Remaps` — usually 0 (unused in TD runtime)                                                                                                    |
+| 24     | 4    | `TransFlag` — offset to per-image transparency bytes (optional)                                                                                |
+| 28     | 4    | `Map` — offset to logical slot → physical image index table (optional)                                                                                 |
+
+
+**Pixel data** at `Icons` (`0x20`): uncompressed **8bpp palette indices**, row-major (`Width × Height` bytes per **physical image**), stored contiguously:
 
 ```text
-[image 0][image 1]…[image Count−1]
+[physical image 0][physical image 1]…[physical image N−1]
 ```
+
+`N` is the **physical image count** (bytes from `Icons` up to `Map` / `TransFlag`, divided by `Width × Height`). It is usually **≤ `Count`** and is **not** stored as a header field — use `ST16_Icon_Image_Count()` in code. Several logical map slots may reference the same physical image; some slots are empty (`Map[i] = 0xFF`).
 
 Index 0 is a valid color for terrain. Optional tables follow the icon bytes:
 
-- **`TransFlag`**: `Count` bytes; non-zero means skip palette index 0 when drawing.
-- **`Map`**: `template_W × template_H` bytes; maps logical cell slot → image index (`0xFF` = empty cell).
+- **`Map`**: **`Count` bytes** — logical slot → physical image index (`0xFF` = empty / do not draw). At draw time the engine passes a **logical** stamp index into this table, then blits `Icons + Map[logical] × (Width × Height)`.
+- **`TransFlag`**: one byte per **physical image** (table ends at `Map` when present); non-zero means skip palette index 0 when drawing.
 
 ### ST16 extension
 
-When planar ST data is present, the header is unchanged for the first 32 bytes except **`Icons`** and **`Size`**. A fixed **12-byte** chunk is inserted at offset **`0x20`**; planar pixels start at **`0x2c`**.
+An ST16 extension header signifies that the iconset is converted for Atari ST's 16-color mode. In this format, the icon pixel data is transformed from classic chunky VGA 8bpp into a true Atari planar layout, matching the system's interleaved 4bpp blitter format. Planar conversion allows direct display on hardware and optionally supports a separate mask plane for per-icon transparency effects.
 
-| `Icons` value | Meaning |
-|---------------|---------|
-| `0x20` | Standard 8bpp ICN (no ST16 chunk) |
-| `0x28` | Reserved (not used for TD `Icons`; avoids confusion with RA layout) |
-| `≥ 0x2c` | ST16 present; planar data at `Icons` (v1 uses **`0x2c`**) |
+To detect an ST16 header, examine offset `0x20` for the magic bytes `'ST16'` (`0x53 0x54 0x31 0x36`), or equivalently, check that `Icons` is `0x2c` or higher and validate the chunk structure. The file, when ST16 is present, is stored in big-endian (68000-native) byte order, in contrast to the older Westwood PC iconsets which are little-endian. Presence of the ST16 chunk means all numeric fields—including the initial header and subsequent chunk tables—must be read as big-endian words and longs. This dual-format design allows engines and tools to autodetect and process Atari-specific iconsets efficiently, while remaining backwards-compatible with original Westwood assets.
+
+
+| `Icons` value | Meaning                                                             |
+| ------------- | ------------------------------------------------------------------- |
+| `0x20`        | Standard 8bpp iconset (no ST16 chunk)                               |
+| `0x28`        | Reserved (not used for TD `Icons`; avoids confusion with RA layout) |
+| `≥ 0x2c`      | ST16 present; planar data at `Icons` (v1 uses `**0x2c**`)           |
+
 
 #### ST16 chunk (12 bytes at offset `0x20`)
 
-| Offset | Size | Field |
-|--------|------|--------|
-| 0x20 | 4 | Magic **`ST16`** — bytes `0x53 0x54 0x31 0x36`, LE `0x36315453` |
-| 0x24 | 4 | `size` — payload size, **4** for v1 |
-| 0x28 | 2 | `flags` — see below |
-| 0x2a | 2 | `reserved` — **0** (ignore on read) |
+
+| Offset | Size | Field                                                                                    |
+| ------ | ---- | ---------------------------------------------------------------------------------------- |
+| 0x20   | 4    | Magic `**ST16**` — bytes `0x53 0x54 0x31 0x36` (`ST16_MAGIC_NATIVE` as a 68000 longword) |
+| 0x24   | 4    | `size` — payload size, **4** for v1                                                      |
+| 0x28   | 2    | `flags` — see below                                                                      |
+| 0x2a   | 2    | `reserved` — **0** (ignore on read)                                                      |
+
 
 **Flags** (v1):
 
-| Bit | Name | Meaning |
-|-----|------|---------|
-| 0 | `HAS_MASK` | Separate 1bpp mask plane after all planar images |
-| 1–15 | — | Reserved, write 0 |
+
+| Bit  | Name       | Meaning                                          |
+| ---- | ---------- | ------------------------------------------------ |
+| 0    | `HAS_MASK` | Separate 1bpp mask plane after all planar images |
+| 1–15 | —          | Reserved, write 0                                |
+
 
 #### Planar icon data (at `Icons`, typically `0x2c`)
 
-Layout is derived from `Width`, `Height`, and `Count` (no extra header fields):
+Layout is derived from icon `**Width**`, `**Height**`, and the **physical image count** (not `Count`):
 
 ```text
 planar_w       = (Width + 15) rounded up to multiple of 16
@@ -70,14 +97,14 @@ planar_row     = (planar_w / 16) × 8 bytes
 planar_stride  = planar_row × Height
 ```
 
-Each image is a tight **ST interleaved 16-color planar** slab (same convention as `st_sprite_cache` / hardware blitter). Bytes are **post-C2P display nibbles** (0–15), not VGA palette indices.
+Each **physical image** is a tight **ST interleaved 16-color planar** slab (same convention as `st_sprite_cache` / hardware blitter). Bytes are **post-C2P display nibbles** (0–15), not VGA palette indices.
 
 For **24×24** terrain (`planar_w = 32`): **384 bytes** per image (`16 × 24`).
 
-All images are stored contiguously:
+Physical images are stored contiguously:
 
 ```text
-[planar image 0]…[planar image Count−1]
+[planar image 0]…[planar image N−1]
 ```
 
 #### Optional mask plane (`HAS_MASK`)
@@ -98,16 +125,16 @@ For **24×24**: **96 bytes** per mask image (`4 × 24`).
 ```text
 +0x00  IControl_Type (32 bytes), Icons = 0x2c, Size updated
 +0x20  ST16 chunk (12 bytes)
-+0x2c  planar icons: Count × planar_stride
-+…     mask icons: Count × mask_stride   (only if HAS_MASK)
-+…     TransFlag / Map                    (same semantics as standard ICN)
++0x2c  planar icons: N × planar_stride          (N = physical image count)
++…     mask icons: N × mask_stride             (only if HAS_MASK; per-icon [planar|mask] packing in convert)
++…     TransFlag / Map                         (Map has Count bytes; same semantics as standard iconset)
 ```
 
 `TransFlag` and `Map` offsets point past the planar (and mask) region. Terrain tiles are typically unmasked with `TransFlag` unused.
 
 #### Runtime conversion
 
-On first draw of a **24×24 standard ICN** template (after theater `.W16` weights are installed via `Init_Theater`), the Atari port converts the MIX-resident blob to ST16 **in place** (`ST16_Convert_InPlace` in `atarilib/st16_convert.cpp` via `ST16_Iconset_Resolve`): chunky pixels are overwritten with planar data, the header and tail (`Map` / `TransFlag`) are adjusted, and `Size` shrinks. No duplicate copy of the iconset is allocated. Until `C2P_Load_WeightSet` has run, draws use the standard 8bpp stamp path. Conversion is one-way; theater tiles are theater-specific.
+On first draw of a **24×24 standard iconset** (after theater `.W16` weights are installed via `Init_Theater`), the Atari port converts the MIX-resident blob to ST16 **in place** (`ST16_Convert_InPlace` in `atarilib/st16_convert.cpp` via `ST16_Iconset_Resolve`): chunky pixels are overwritten with planar data, the ST16 chunk is written at `0x20`, numeric header fields are stored in **BE**, and tail tables (`Map` / `TransFlag`) are adjusted; `Size` shrinks. No duplicate copy of the iconset is allocated. Until `C2P_Load_WeightSet` has run, draws use the standard 8bpp stamp path. Conversion is one-way; theater iconsets (`.TEM` / `.WIN` / `.DES`) are theater-specific.
 
 C2P uses **Bayer dither** with `abs_x0=abs_y0=0`, so each icon's top-left pixel pins dither phase `(0,0)` regardless of where the tile is drawn on screen. Each planar slab is zeroed before conversion; columns 24–31 (padding to the 32-pixel blitter width) are cleared afterward so leftover chunky bytes cannot appear as garbage at tile edges.
 
@@ -118,6 +145,17 @@ ST16: [1/<count>] image 0  8bpp@0x20 -> planar@0x2c
 ST16: done, Icons=0x2c, Size=<n> (freed <n> bytes)
 ```
 
+#### Header endianness
+
+
+| State                                            | Numeric header endianness | How to read                                    |
+| ------------------------------------------------ | ------------------------- | ---------------------------------------------- |
+| Standard iconset (`Icons = 0x20`, no ST16 chunk) | **LE**                    | `ST16_Read_LE`* / `ST16_Parse_IControl`        |
+| ST16 iconset (chunk present)                     | **BE** (native 68000)     | Direct struct access; no `le*toh` on hot paths |
+
+
+Runtime conversion reads the original LE Westwood blob, then writes back an ST16 blob whose numeric fields are **BE** (`ST16_Native_Swap_Header` during `ST16_Convert_InPlace`). Offline ST16 repack should emit the same BE layout directly. Unconverted blobs in MIX remain LE until converted.
+
 `Buffer_Draw_Stamp` resolves the iconset (converting once if needed), then blits planar data via `ST16_Blit_Stamp`. Unmasked terrain prefers the **hardware blitter** when `HardwareFills=1` in `CONQUER.INI`; otherwise (or if the blit fails) it falls back to a **CPU planar copy**. Masked ST16 stamps still require `HardwareFills`. The old per-tile planar LRU atlas cache has been removed.
 
 Implementation helpers: `atarilib/st16_iconset.h`, `atarilib/st16_draw.h`, `atarilib/st16_convert.h`.
@@ -126,11 +164,13 @@ Implementation helpers: `atarilib/st16_iconset.h`, `atarilib/st16_draw.h`, `atar
 
 `*.W16` files are **4116-byte** bundles matching `C2P_WeightSet` in `ATARILIB/c2p.h`:
 
-| Offset | Size | Field |
-|--------|------|--------|
-| 0 | 4 | Magic `W16\0` (bytes `0x57 0x31 0x36 0x00`) |
-| 4 | 16 | `subset[16]` — VGA palette index for each STE hardware pen 0..15 |
-| 20 | 4096 | `weights[256][16]` — dither mix weights (row-major) |
+
+| Offset | Size | Field                                                            |
+| ------ | ---- | ---------------------------------------------------------------- |
+| 0      | 4    | Magic `W16\0` (bytes `0x57 0x31 0x36 0x00`)                      |
+| 4      | 16   | `subset[16]` — VGA palette index for each STE hardware pen 0..15 |
+| 20     | 4096 | `weights[256][16]` — dither mix weights (row-major)              |
+
 
 Rules:
 
@@ -178,6 +218,7 @@ tools/palette-opt/palette-opt -p pal_extract_tmp/DESERT.PAL \
 Ship regenerated `.W16` files from `atari-assets/` next to `cnc.tos` (see `atari-assets/README.md`).
 
 ## Required MIX files
+
 Put these mix files next to the CNC.TOS executable:
 The following MIX files must be present in the same directory as `CNC.TOS`. These are loaded by the game at runtime:
 
@@ -186,11 +227,10 @@ The following MIX files must be present in the same directory as `CNC.TOS`. Thes
 - `SCORES.MIX`     — music tracks (in .AUD format)
 - `SOUNDS.MIX`     — sound effects (.AUD and .V00)
 - `SPEECH.MIX`     — EVA speech lines
-- Theater asset MIX files:  
-  - `TEMPERAT.MIX` — temperate theater graphics
-  - `SNOW.MIX`     — snow theater graphics
-  - `WINTER.MIX`   — winter theater graphics
-  - `DESERT.MIX`   — desert theater graphics
+- Theater asset MIX files (terrain iconsets use `.TEM`, `.WIN`, or `.DES` inside these archives):
+  - `TEMPERAT.MIX` — temperate theater
+  - `WINTER.MIX` — winter theater
+  - `DESERT.MIX` — desert theater
 
 Additional .MIX files may be loaded based on mission or expansion content, but the ones above are the minimum required for the core campaign.
 

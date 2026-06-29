@@ -14,6 +14,8 @@ int st_tests_register_mixes_once(void)
 	static MFCD *s_conquer = NULL;
 	static MFCD *s_local = NULL;
 	static MFCD *s_temperat = NULL;
+	static MFCD *s_winter = NULL;
+	static MFCD *s_desert = NULL;
 	static MFCD *s_general = NULL;
 	static MFCD *s_speech = NULL;
 	static MFCD *s_sounds = NULL;
@@ -50,6 +52,18 @@ int st_tests_register_mixes_once(void)
 	}
 
 	/* EVA / scores / SFX archives (disk extract + optional MFCD::Retrieve). */
+	if (CCFileClass("WINTER.MIX").Is_Available()) {
+		s_winter = new (std::nothrow) MFCD("WINTER.MIX");
+		if (!s_winter || !s_winter->Cache()) {
+			printf("StMixReg: WARN cannot cache WINTER.MIX\n");
+		}
+	}
+	if (CCFileClass("DESERT.MIX").Is_Available()) {
+		s_desert = new (std::nothrow) MFCD("DESERT.MIX");
+		if (!s_desert || !s_desert->Cache()) {
+			printf("StMixReg: WARN cannot cache DESERT.MIX\n");
+		}
+	}
 	if (CCFileClass("SPEECH.MIX").Is_Available()) {
 		s_speech = new (std::nothrow) MFCD("SPEECH.MIX");
 	}

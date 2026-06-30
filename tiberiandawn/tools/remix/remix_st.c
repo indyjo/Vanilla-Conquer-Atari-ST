@@ -4,6 +4,7 @@
 
 #include "remix.h"
 #include "remix_print.h"
+#include "remix_st16.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -52,6 +53,7 @@ static int remix_cwd(void)
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.ui = REMIX_UI_ST;
 	cfg.fallback_copy_on_convert_fail = 1;
+	cfg.convert_st16_iconsets = 1;
 
 	if (access(REMIX_TEMP_MXX, F_OK) == 0 && !prompt_temp_mxx())
 		return 1;
@@ -71,6 +73,8 @@ static int remix_cwd(void)
 
 		if (!has_mix_extension(ent->d_name))
 			continue;
+
+		cfg.mix_basename = ent->d_name;
 
 		printf("\n");
 		rc = remix_mix_file_inplace(ent->d_name, REMIX_TEMP_MXX, &cfg, &stats);

@@ -115,6 +115,31 @@ body {
   border-color: color-mix(in srgb, var(--color-cnc-gold) 35%, transparent);
 }
 
+.cnc-select {
+  display: block;
+  width: 100%;
+  border-radius: 0.375rem;
+  border: 1px solid color-mix(in srgb, var(--color-cnc-bronze) 70%, transparent);
+  background: color-mix(in srgb, var(--color-cnc-olive) 80%, black);
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  color: #d8e6c8;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23c9a227' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+}
+
+.cnc-select:hover {
+  border-color: color-mix(in srgb, var(--color-cnc-gold) 35%, transparent);
+}
+
+.cnc-select:focus {
+  outline: none;
+  border-color: var(--color-cnc-gold);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-cnc-gold) 25%, transparent);
+}
+
 .cnc-link {
   color: var(--color-cnc-gold);
   text-decoration: underline;

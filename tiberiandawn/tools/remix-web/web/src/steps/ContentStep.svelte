@@ -1,32 +1,110 @@
 <script lang="ts">
-  import type { ContentOptions } from '../lib/types';
+  import type { ContentOptions, TargetVersion, TargetVersionState } from '../lib/types';
+  import {
+    defaultSt16ForVersion,
+    st16IncompatibilityWarning,
+    TARGET_VERSION_OPTIONS,
+  } from '../lib/target-version';
 
   interface Props {
     options: ContentOptions;
+    targetVersion: TargetVersionState;
     onChange: (options: ContentOptions) => void;
+    onTargetVersionChange: (state: TargetVersionState) => void;
     onBack: () => void;
     onNext: () => void;
   }
 
-  let { options = $bindable(), onChange, onBack, onNext }: Props = $props();
+  let {
+    options = $bindable(),
+    targetVersion = $bindable(),
+    onChange,
+    onTargetVersionChange,
+    onBack,
+    onNext,
+  }: Props = $props();
+
+  let st16Touched = $state(false);
 
   function toggle(key: keyof ContentOptions, value: boolean) {
     if (key === 'movieSequences') return;
+    if (key === 'convertSt16Iconsets') st16Touched = true;
     const next = { ...options, [key]: value };
     options = next;
     onChange(next);
   }
+
+  function setTargetVersion(version: TargetVersion) {
+    const next: TargetVersionState = { version, source: 'manual' };
+    targetVersion = next;
+    onTargetVersionChange(next);
+    if (!st16Touched) {
+      const nextOptions = {
+        ...options,
+        convertSt16Iconsets: defaultSt16ForVersion(version),
+      };
+      options = nextOptions;
+      onChange(nextOptions);
+    }
+  }
+
+  const st16Warning = $derived(
+    st16IncompatibilityWarning(targetVersion.version, options.convertSt16Iconsets),
+  );
 </script>
 
 <section class="space-y-6">
   <div>
     <h2 class="cnc-step-title">2. Customize content</h2>
     <p class="mt-2 text-sm text-stone-400">
-      Choose optional MIX archives to include. Core game data is always extracted when present.
+      Choose optional MIX archives and remix options. Core game data is always extracted when
+      present.
     </p>
   </div>
 
+  <div class="cnc-panel space-y-3">
+    <p class="text-sm font-medium text-stone-200">Target C&C4ST version</p>
+    <p class="text-xs text-stone-500">
+      {#if targetVersion.source === 'release'}
+        Pre-filled from release ZIP readme when available.
+      {:else}
+        Choose the port version you plan to run.
+      {/if}
+    </p>
+    <select
+      class="cnc-select mt-1 max-w-md text-sm"
+      value={targetVersion.version}
+      onchange={(e) => setTargetVersion(e.currentTarget.value as TargetVersion)}
+      aria-label="Target C&C4ST version"
+    >
+      {#each TARGET_VERSION_OPTIONS as opt (opt.value)}
+        <option value={opt.value}>{opt.label}</option>
+      {/each}
+    </select>
+  </div>
+
   <div class="space-y-3">
+    <label class="cnc-field flex items-start gap-3">
+      <input
+        type="checkbox"
+        checked={options.convertSt16Iconsets}
+        onchange={(e) => toggle('convertSt16Iconsets', e.currentTarget.checked)}
+        class="mt-1"
+      />
+      <span>
+        <span class="font-medium">Convert terrain iconsets to ST16</span>
+        <span class="block text-xs text-stone-400"
+          >TEMPERAT, DESERT, WINTER MIX — requires matching *.W16 from release ZIP</span
+        >
+      </span>
+    </label>
+
+    {#if st16Warning}
+      <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+        {st16Warning}
+      </p>
+    {/if}
+
     <label class="cnc-field flex items-start gap-3">
       <input
         type="checkbox"
@@ -53,9 +131,7 @@
       </span>
     </label>
 
-    <label
-      class="cnc-field flex items-start gap-3 opacity-60"
-    >
+    <label class="cnc-field flex items-start gap-3 opacity-60">
       <input type="checkbox" checked={false} disabled class="mt-1" />
       <span>
         <span class="font-medium">Movie sequences</span>

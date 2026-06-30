@@ -41,7 +41,8 @@
       {:else}
         Download the repacked MIX files and copy them next to <code class="text-cnc-gold">cnc.tos</code
         >
-        on your Atari ST drive — or go back and add the itch.io release ZIP on step 1.
+        on your Atari ST drive — add the recommended itch.io release ZIP on step 1 for ST16 terrain
+        conversion and a one-step ready folder.
       {/if}
     </p>
   </div>
@@ -56,11 +57,6 @@
           — {mixCount} MIX + {releaseCount} from release
         {/if}
       </p>
-      <ul class="max-h-48 overflow-y-auto text-xs font-mono text-stone-400 list-disc pl-5 cnc-scroll">
-        {#each outputNames as name}
-          <li>{name}</li>
-        {/each}
-      </ul>
       <button type="button" onclick={download} class="cnc-btn-primary">Download ZIP</button>
     </div>
   {/if}
@@ -82,14 +78,15 @@
 
   {#if !release}
     <p class="text-xs text-stone-500">
-      Tip: on step 1 you can attach the
+      Tip: attach the recommended
       <a
         class="text-cnc-gold underline"
         href="https://indyjo.itch.io/commandconquer"
         target="_blank"
         rel="noreferrer">itch.io release ZIP</a
       >
-      to bundle <code>cnc.tos</code> and <code>*.w16</code> files automatically.
+      on step 1 for <code>cnc.tos</code>, <code>*.w16</code> weights, and native ST16 terrain
+      iconsets in your MIX files.
     </p>
   {/if}
 

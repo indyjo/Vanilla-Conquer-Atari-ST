@@ -1,6 +1,6 @@
 <script lang="ts">
   import { runPipeline } from '../lib/pipeline';
-  import type { ContentOptions, DiscSelection, CheckoutPayload, ProcessLogLine, ProcessProgress, ReleaseSelection } from '../lib/types';
+  import type { ContentOptions, DiscSelection, CheckoutPayload, ProcessLogLine, ProcessProgress, ReleaseSelection, TargetVersionState } from '../lib/types';
   import ProcessLog from './ProcessLog.svelte';
 
   interface Props {
@@ -8,11 +8,12 @@
     nod: DiscSelection;
     release: ReleaseSelection | null;
     contentOptions: ContentOptions;
+    targetVersion: TargetVersionState;
     onBack: () => void;
     onContinue: (payload: CheckoutPayload) => void;
   }
 
-  let { gdi, nod, release, contentOptions, onBack, onContinue }: Props = $props();
+  let { gdi, nod, release, contentOptions, targetVersion, onBack, onContinue }: Props = $props();
 
   let progress = $state<ProcessProgress>({
     phase: 'idle',
@@ -49,6 +50,7 @@
           nod,
           release,
           contentOptions,
+          targetVersion: targetVersion.version,
           wasmBaseUrl: import.meta.env.BASE_URL,
         },
         (p) => {

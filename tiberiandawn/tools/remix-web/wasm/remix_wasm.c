@@ -3,6 +3,7 @@
  */
 
 #include "remix.h"
+#include "remix_st16.h"
 
 #include <emscripten.h>
 #include <stdio.h>
@@ -16,6 +17,9 @@
 static RemixEntry *g_wasm_entries = NULL;
 static unsigned g_wasm_entry_count;
 static unsigned g_wasm_entry_cap;
+static int g_wasm_convert_st16 = 1;
+static char g_wasm_mix_basename[256];
+static const char g_wasm_w16_dir[] = ".";
 
 static int write_file(const char *path, const uint8_t *data, size_t len)
 {
@@ -94,8 +98,35 @@ static void wasm_config_init(RemixConfig *cfg)
 	memset(cfg, 0, sizeof(*cfg));
 	cfg->ui = REMIX_UI_WASM;
 	cfg->fallback_copy_on_convert_fail = 1;
+	cfg->convert_st16_iconsets = g_wasm_convert_st16;
+	cfg->mix_basename = g_wasm_mix_basename[0] ? g_wasm_mix_basename : NULL;
+	cfg->w16_dir = g_wasm_convert_st16 ? g_wasm_w16_dir : NULL;
 	cfg->entry_report = wasm_entry_report;
 	cfg->entry_report_ctx = NULL;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void remix_wasm_set_st16_enabled(int enabled)
+{
+	g_wasm_convert_st16 = enabled ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void remix_wasm_set_mix_basename(const char *basename)
+{
+	if (!basename) {
+		g_wasm_mix_basename[0] = '\0';
+		return;
+	}
+	snprintf(g_wasm_mix_basename, sizeof(g_wasm_mix_basename), "%s", basename);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int remix_wasm_install_w16(const uint8_t *data, int len)
+{
+	if (!data || len <= 0)
+		return 0;
+	return remix_st16_install_weights_from_buffer(data, (size_t)len);
 }
 
 EMSCRIPTEN_KEEPALIVE

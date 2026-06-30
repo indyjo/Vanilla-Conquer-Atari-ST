@@ -1,15 +1,24 @@
 export type DiscLabel = 'GDI' | 'NOD';
 
+export type TargetVersion = '0.1.x' | '0.2.x';
+
+export interface TargetVersionState {
+  version: TargetVersion;
+  source: 'release' | 'manual';
+}
+
 export interface ContentOptions {
   speechAndSfx: boolean;
   musicScores: boolean;
   movieSequences: boolean;
+  convertSt16Iconsets: boolean;
 }
 
 export const DEFAULT_CONTENT_OPTIONS: ContentOptions = {
   speechAndSfx: true,
   musicScores: false,
   movieSequences: false,
+  convertSt16Iconsets: true,
 };
 
 export interface IsoFileEntry {
@@ -58,7 +67,7 @@ export interface DiscSelection {
   sourceZip?: string;
 }
 
-/** Optional itch.io / Atari ST release ZIP (cnc.tos + *.W16). */
+/** itch.io / Atari ST release ZIP (cnc.tos + *.W16) — recommended for ST16 terrain conversion. */
 export interface ReleaseSelection {
   file: File;
   /** Basenames that will be copied into the output ZIP. */

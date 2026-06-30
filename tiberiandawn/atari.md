@@ -156,6 +156,8 @@ ST16: done, Icons=0x2c, Size=<n> (freed <n> bytes)
 
 Runtime conversion reads the original LE Westwood blob, then writes back an ST16 blob whose numeric fields are **BE** (`ST16_Native_Swap_Header` during `ST16_Convert_InPlace`). Offline ST16 repack should emit the same BE layout directly. Unconverted blobs in MIX remain LE until converted.
 
+**Offline repack:** the `remix` tool (host CLI, `remix.tos`, and [remix-web](../tools/remix-web/)) can convert standard iconsets in theater MIX files to ST16 during MIX repack when matching `*.W16` weights are available. This avoids mission-start conversion and reduces MIX size. See [tools/remix/spec.md](../tools/remix/spec.md).
+
 `Buffer_Draw_Stamp` resolves the iconset (converting once if needed), then blits planar data via `ST16_Blit_Stamp`. Unmasked terrain prefers the **hardware blitter** when `HardwareFills=1` in `CONQUER.INI`; otherwise (or if the blit fails) it falls back to a **CPU planar copy**. Masked ST16 stamps still require `HardwareFills`. The old per-tile planar LRU atlas cache has been removed.
 
 Implementation helpers: `atarilib/st16_iconset.h`, `atarilib/st16_draw.h`, `atarilib/st16_convert.h`.
@@ -239,7 +241,8 @@ Additional .MIX files may be loaded based on mission or expansion content, but t
 Use **[Remix Web](tools/remix-web/)** — a browser wizard that extracts MIX archives from your own GDI and NOD install discs, merges `GENERAL.MIX`, and repacks with [REMIX](tools/remix/) (11025 Hz audio, even byte offsets).
 
 ```bash
-make remix-web   # from tiberiandawn/
+make remix-web          # from tiberiandawn/
+# or: cd tools/remix-web && make
 ```
 
 Open `tools/remix-web/web/dist/index.html` via a local static server, or run `npm run dev` in `tools/remix-web/web/` during development. You need both GDI and NOD install disc images (ISO or a ZIP containing one ISO each; volume labels must read `GDI` and `NOD`). Optionally attach the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) to bundle `cnc.tos` and `*.W16` palette weights.

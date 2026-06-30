@@ -4,6 +4,7 @@
 
 #include "remix.h"
 #include "remix_print.h"
+#include "remix_st16.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -106,29 +107,30 @@ static void usage(const char *prog)
 	    "  - convert audio to 11025 Hz 8-bit mono PCM .AUD\n"
 	    "  - pad payloads so each begins at an even offset from the MIX start\n"
 	    "\n"
+	    "  - convert terrain iconsets in theater MIX files to ST16 (requires *.W16 in cwd)\n"
+	    "\n"
 	    "Multiple inputs merge index entries (same CRC + size: keep first) then repack.\n"
 	    "\n"
 	    "Options:\n"
-	    "  -o, --output PATH   output MIX file, or output directory with -d\n"
-	    "  -d, --directory DIR remix all .mix/.MIX files in DIR (non-recursive)\n"
-	    "  -h, --help          show this help\n",
+	    "  -o, --output PATH       output MIX file, or output directory with -d\n"
+	    "  -d, --directory DIR     remix all .mix/.MIX files in DIR (non-recursive)\n"
+	    "  --w16-dir PATH          directory containing TEMPERAT.W16 etc. (default: cwd)\n"
+	    "  --no-st16-iconsets      skip ST16 iconset conversion in theater MIX files\n"
+	    "  -h, --help              show this help\n",
 	    prog, prog, prog);
 }
 
-static int remix_directory(const char *dir, const char *out_dir)
+static int remix_directory(const char *dir, const char *out_dir, RemixConfig *cfg)
 {
 	DIR *dp;
 	struct dirent *ent;
 	char in_path[PATH_MAX];
 	char out_path[PATH_MAX];
-	RemixConfig cfg;
 	RemixStats stats;
 	unsigned count = 0;
 	unsigned ok = 0;
 
 	remix_stats_init(&stats);
-	memset(&cfg, 0, sizeof(cfg));
-	cfg.ui = REMIX_UI_HOST;
 
 	dp = opendir(dir);
 	if (!dp) {
@@ -146,11 +148,12 @@ static int remix_directory(const char *dir, const char *out_dir)
 
 		++count;
 		printf("=== %s ===\n", ent->d_name);
+		cfg->mix_basename = ent->d_name;
 
 		if (out_dir) {
 			if (!path_join(out_path, sizeof(out_path), out_dir, ent->d_name))
 				continue;
-			rc = remix_mix_file(in_path, out_path, &cfg, &stats);
+			rc = remix_mix_file(in_path, out_path, cfg, &stats);
 		} else {
 			char tmp[PATH_MAX];
 			if (!make_temp_path(tmp, sizeof(tmp), in_path)) {
@@ -158,7 +161,7 @@ static int remix_directory(const char *dir, const char *out_dir)
 				closedir(dp);
 				return 0;
 			}
-			rc = remix_mix_file(in_path, tmp, &cfg, &stats);
+			rc = remix_mix_file(in_path, tmp, cfg, &stats);
 			if (rc > 0 && rename(tmp, in_path) != 0) {
 				fprintf(stderr, "error: cannot replace %s\n", in_path);
 				unlink(tmp);
@@ -201,8 +204,10 @@ int main(int argc, char **argv)
 	unsigned input_count = 0;
 	const char *out_path = NULL;
 	const char *in_dir = NULL;
+	const char *w16_dir = NULL;
 	RemixConfig cfg;
 	RemixStats stats;
+	char mix_base[256];
 	int argi;
 	int rc;
 	unsigned i;
@@ -211,6 +216,7 @@ int main(int argc, char **argv)
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.ui = REMIX_UI_HOST;
 	cfg.fallback_copy_on_convert_fail = 1;
+	cfg.convert_st16_iconsets = 1;
 
 	for (argi = 1; argi < argc; ++argi) {
 		if (!strcmp(argv[argi], "-o") || !strcmp(argv[argi], "--output")) {
@@ -225,6 +231,14 @@ int main(int argc, char **argv)
 				return 1;
 			}
 			in_dir = argv[++argi];
+		} else if (!strcmp(argv[argi], "--w16-dir")) {
+			if (argi + 1 >= argc) {
+				fprintf(stderr, "error: %s requires a path\n", argv[argi]);
+				return 1;
+			}
+			w16_dir = argv[++argi];
+		} else if (!strcmp(argv[argi], "--no-st16-iconsets")) {
+			cfg.convert_st16_iconsets = 0;
 		} else if (!strcmp(argv[argi], "-h") || !strcmp(argv[argi], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -255,7 +269,8 @@ int main(int argc, char **argv)
 			fprintf(stderr, "error: %s is not a directory (expected output directory with -d)\n", out_path);
 			return 1;
 		}
-		return remix_directory(in_dir, out_path) ? 0 : 1;
+		cfg.w16_dir = w16_dir;
+		return remix_directory(in_dir, out_path, &cfg) ? 0 : 1;
 	}
 
 	if (input_count == 0 || !out_path) {
@@ -269,6 +284,10 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
+
+	cfg.w16_dir = w16_dir;
+	remix_path_basename(out_path, mix_base, sizeof(mix_base));
+	cfg.mix_basename = mix_base;
 
 	rc = remix_mix_merge_and_repack(out_path, inputs, input_count, &cfg, &stats);
 	if (rc < 0) {

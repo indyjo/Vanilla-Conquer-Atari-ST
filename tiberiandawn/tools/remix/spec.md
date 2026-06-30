@@ -14,8 +14,9 @@ For build and usage, see `readme.md`.
 ### In scope
 
 - Plain MIX files: 6-byte header + `count × 12`-byte index + data section.
-- Per-payload type sniffing (AUD, PCX, SHP, …).
+- Per-payload type sniffing (AUD, PCX, SHP, ICN, ST16, …).
 - Audio conversion to **11025 Hz, 8-bit mono, PCM** (compression type 0).
+- **ST16 iconset conversion** in theater MIX files (optional, default on host/MiNT).
 - Even-byte payload alignment from the start of the MIX data section.
 - Host CLI (`remix`) and MiNT front end (`remix.tos`).
 
@@ -361,6 +362,53 @@ remix -o output.mix input.mix                            # repack only
 `remix_mix_file_ex()` is the full repack entry point. Set `entry_report` to receive
 each `RemixEntry` after processing (CRC, sizes, `type_in` / `type_out`). Used by
 [remix-web](../remix-web/) WASM glue (`remix_wasm.c`).
+
+---
+
+## ST16 iconset conversion (theater MIX files)
+
+When `RemixConfig.convert_st16_iconsets` is enabled (default on host CLI and
+`remix.tos`), remix converts standard 8bpp iconsets in these MIX basenames:
+
+| MIX | W16 stem | Icon extensions |
+|-----|----------|-----------------|
+| `TEMPERAT.MIX` | `TEMPERAT` | `.TEM` |
+| `DESERT.MIX` | `DESERT` | `.DES` |
+| `WINTER.MIX`, `SNOW.MIX` | `WINTER` | `.WIN` |
+| `JUNGLE.MIX` | `JUNGLE` | `.JUN` |
+
+Before processing entries, remix loads `<stem>.W16` from `RemixConfig.w16_dir`
+(NULL = current working directory) and installs C2P weights via the same path as
+the game (`ST16_Convert_InPlace` in `atarilib/st16_convert.cpp`).
+
+### Detection (`type_in`)
+
+| Type | Condition |
+|------|-----------|
+| `st16` | Native ST16 blob (chunk at `0x20`, `Icons ≥ 0x2c`, BE header) |
+| `icn` | Standard convertible iconset (`Icons = 0x20`, valid IControl tail) |
+| (other) | Existing heuristics unchanged |
+
+Non-iconset payloads in theater MIX files are copied unchanged.
+
+### Failure policy
+
+Unlike audio, ST16 conversion **does not** fall back to copying the original
+payload. If the required `.W16` is missing or conversion fails, the entire MIX
+repack fails.
+
+### Host CLI flags
+
+| Flag | Meaning |
+|------|---------|
+| (default) | ST16 conversion enabled |
+| `--no-st16-iconsets` | Skip ST16 conversion |
+| `--w16-dir PATH` | Directory containing `TEMPERAT.W16`, etc. |
+
+### Stats
+
+`RemixStats` adds: `iconset_files`, `iconset_converted`, `iconset_already_st16`,
+`iconset_errors`.
 
 ---
 

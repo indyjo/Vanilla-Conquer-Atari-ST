@@ -2,6 +2,7 @@
 
 #include "remix.h"
 #include "remix_aud.h"
+#include "remix_st16.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -217,6 +218,28 @@ static int looks_like_map(uint32_t file_size, char *type_out, size_t type_out_le
 	return 0;
 }
 
+static int looks_like_st16(
+    const unsigned char *data, size_t probe_len, uint32_t file_size, char *type_out, size_t type_out_len)
+{
+	(void)probe_len;
+	if (remix_st16_is_native(data, file_size)) {
+		snprintf(type_out, type_out_len, "st16");
+		return 1;
+	}
+	return 0;
+}
+
+static int looks_like_icn(
+    const unsigned char *data, size_t probe_len, uint32_t file_size, char *type_out, size_t type_out_len)
+{
+	(void)probe_len;
+	if (remix_st16_should_convert(data, file_size)) {
+		snprintf(type_out, type_out_len, "icn");
+		return 1;
+	}
+	return 0;
+}
+
 static int looks_like_shp(const unsigned char *data, size_t len, char *type_out, size_t type_out_len)
 {
 	uint16_t count;
@@ -247,6 +270,10 @@ void remix_detect_file_type(
 	if (looks_like_vqa(data, probe_len, type_out, type_out_len))
 		return;
 	if (looks_like_pcx(data, probe_len, type_out, type_out_len))
+		return;
+	if (looks_like_st16(data, probe_len, file_size, type_out, type_out_len))
+		return;
+	if (looks_like_icn(data, probe_len, file_size, type_out, type_out_len))
 		return;
 	if (looks_like_shp(data, probe_len, type_out, type_out_len))
 		return;

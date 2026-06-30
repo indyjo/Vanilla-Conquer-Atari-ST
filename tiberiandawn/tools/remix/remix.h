@@ -47,6 +47,10 @@ typedef struct RemixStats {
 	unsigned audio_converted;
 	unsigned audio_already_ok;
 	unsigned payload_errors;
+	unsigned iconset_files;
+	unsigned iconset_converted;
+	unsigned iconset_already_st16;
+	unsigned iconset_errors;
 } RemixStats;
 
 typedef enum RemixUi {
@@ -60,6 +64,9 @@ typedef void (*RemixEntryReportFn)(const RemixEntry *entry, void *user_data);
 typedef struct RemixConfig {
 	RemixUi ui;
 	int fallback_copy_on_convert_fail;
+	int convert_st16_iconsets;
+	const char *w16_dir;
+	const char *mix_basename;
 	RemixEntryReportFn entry_report;
 	void *entry_report_ctx;
 } RemixConfig;

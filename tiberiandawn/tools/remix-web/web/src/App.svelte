@@ -4,12 +4,14 @@
   import ProcessStep from './steps/ProcessStep.svelte';
   import DeployStep from './steps/DeployStep.svelte';
   import { DEFAULT_CONTENT_OPTIONS } from './lib/content-options';
+  import { defaultTargetVersionState } from './lib/target-version';
   import type {
     CheckoutPayload,
     ContentOptions,
     DiscSelection,
     ProcessLogLine,
     ReleaseSelection,
+    TargetVersionState,
     WizardStep,
   } from './lib/types';
 
@@ -17,6 +19,7 @@
   let gdi = $state<DiscSelection | null>(null);
   let nod = $state<DiscSelection | null>(null);
   let release = $state<ReleaseSelection | null>(null);
+  let targetVersion = $state<TargetVersionState>(defaultTargetVersionState());
   let contentOptions = $state<ContentOptions>({ ...DEFAULT_CONTENT_OPTIONS });
   let zipBlob = $state<Blob | null>(null);
   let outputFiles = $state<Map<string, Uint8Array> | null>(null);
@@ -37,6 +40,7 @@
     gdi = null;
     nod = null;
     release = null;
+    targetVersion = defaultTargetVersionState();
     contentOptions = { ...DEFAULT_CONTENT_OPTIONS };
     zipBlob = null;
     outputFiles = null;
@@ -71,13 +75,24 @@
         {release}
         onGdi={(d) => (gdi = d)}
         onNod={(d) => (nod = d)}
-        onRelease={(d) => (release = d)}
+        onRelease={(d) => {
+          release = d;
+        }}
+        onTargetVersionFromRelease={(state) => {
+          targetVersion = state;
+          contentOptions = {
+            ...contentOptions,
+            convertSt16Iconsets: state.version === '0.2.x',
+          };
+        }}
         onNext={() => (step = 'customize')}
       />
     {:else if step === 'customize'}
       <ContentStep
         bind:options={contentOptions}
+        bind:targetVersion
         onChange={(o) => (contentOptions = o)}
+        onTargetVersionChange={(v) => (targetVersion = v)}
         onBack={() => (step = 'discs')}
         onNext={() => (step = 'process')}
       />
@@ -87,6 +102,7 @@
         {nod}
         {release}
         {contentOptions}
+        {targetVersion}
         onBack={() => (step = 'customize')}
         onContinue={(payload: CheckoutPayload) => {
           zipBlob = payload.zipBlob;

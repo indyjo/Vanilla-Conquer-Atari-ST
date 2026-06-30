@@ -804,30 +804,10 @@ endif
 #=============================================================================
 
 remix-web:
-	@set -e; \
-	SAVED_PATH="$$PATH"; \
-	if [ -f "$$HOME/emsdk/emsdk_env.sh" ]; then \
-		. "$$HOME/emsdk/emsdk_env.sh"; \
-	else \
-		echo "error: ~/emsdk/emsdk_env.sh not found" >&2; \
-		exit 1; \
-	fi; \
-	$(MAKE) -C tools/remix-web/wasm; \
-	cd tools/remix-web/web && PATH="$$SAVED_PATH" npm ci && PATH="$$SAVED_PATH" npm run build; \
-	echo "remix-web built: tools/remix-web/web/dist/"
+	$(MAKE) -C tools/remix-web
 
-REMIX_WEB_ITCH_ZIP = tools/remix-web/dist/remix-web-itch.zip
-
-remix-web-itch: remix-web
-	@set -e; \
-	if [ ! -f tools/remix-web/web/dist/index.html ]; then \
-		echo "error: tools/remix-web/web/dist/index.html not found" >&2; \
-		exit 1; \
-	fi; \
-	mkdir -p tools/remix-web/dist; \
-	rm -f "$(REMIX_WEB_ITCH_ZIP)"; \
-	( cd tools/remix-web/web/dist && zip -q -r "../../dist/remix-web-itch.zip" . ); \
-	echo "Created $(REMIX_WEB_ITCH_ZIP) (upload to itch.io as HTML)"
+remix-web-itch:
+	$(MAKE) -C tools/remix-web itch
 
 .PHONY: remix-web remix-web-itch
 

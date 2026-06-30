@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DiscLabel, DiscSelection, ReleaseSelection } from '../lib/types';
+  import type { DiscLabel, DiscSelection, ReleaseSelection, TargetVersionState } from '../lib/types';
   import { DISC_PICKER_ACCEPT, resolveDiscFile } from '../lib/disc-zip';
 
   interface Props {
@@ -9,10 +9,12 @@
     onGdi: (disc: DiscSelection | null) => void;
     onNod: (disc: DiscSelection | null) => void;
     onRelease: (release: ReleaseSelection | null) => void;
+    onTargetVersionFromRelease: (state: TargetVersionState) => void;
     onNext: () => void;
   }
 
-  let { gdi, nod, release, onGdi, onNod, onRelease, onNext }: Props = $props();
+  let { gdi, nod, release, onGdi, onNod, onRelease, onTargetVersionFromRelease, onNext }: Props =
+    $props();
 
   let gdiError = $state('');
   let nodError = $state('');
@@ -65,12 +67,22 @@
     releaseError = '';
 
     try {
-      const { extractReleaseAssets, describeReleaseAssets } = await import('../lib/release-zip');
+      const { extractReleaseAssets, describeReleaseAssets, readReleaseReadme } = await import(
+        '../lib/release-zip'
+      );
+      const { parseTargetVersionFromReadme } = await import('../lib/target-version');
       const assets = await extractReleaseAssets(file);
       onRelease({
         file,
         assetNames: describeReleaseAssets(assets),
       });
+      const readme = await readReleaseReadme(file);
+      if (readme) {
+        const parsed = parseTargetVersionFromReadme(readme);
+        if (parsed) {
+          onTargetVersionFromRelease({ version: parsed, source: 'release' });
+        }
+      }
     } catch (err) {
       releaseError = err instanceof Error ? err.message : String(err);
       onRelease(null);
@@ -139,7 +151,7 @@
   </div>
 
   <div class="cnc-field space-y-3">
-    <p class="text-sm font-medium">C&amp;C Atari ST release ZIP (optional)</p>
+    <p class="text-sm font-medium">C&amp;C Atari ST release ZIP (recommended)</p>
     <p class="text-xs text-stone-500">
       Download from
       <a
@@ -148,8 +160,9 @@
         target="_blank"
         rel="noreferrer">itch.io</a
       >
-      — adds <code class="text-stone-400">cnc.tos</code> and
-      <code class="text-stone-400">*.w16</code> palette files to your output ZIP.
+      — includes <code class="text-stone-400">cnc.tos</code>,
+      <code class="text-stone-400">*.w16</code> palette weights, and everything needed to convert
+      terrain iconsets to native ST16 format during remix.
     </p>
     <input
       id="release-zip"
@@ -165,11 +178,6 @@
         (cnc.tos + {release.assetNames.filter((n) => n.toLowerCase().endsWith('.w16')).length}×
         .w16)
       </p>
-      <ul class="max-h-24 overflow-y-auto text-xs font-mono text-stone-500 list-disc pl-5">
-        {#each release.assetNames as name}
-          <li>{name}</li>
-        {/each}
-      </ul>
       <button
         type="button"
         onclick={clearRelease}
@@ -180,6 +188,11 @@
     {/if}
     {#if releaseError}
       <p class="text-sm text-red-400">{releaseError}</p>
+    {:else if !release}
+      <p class="text-xs text-amber-200/90">
+        Without the release ZIP, terrain iconsets stay in standard 8bpp form — ST16 conversion
+        during remix is not available.
+      </p>
     {/if}
   </div>
 

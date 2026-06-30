@@ -4,8 +4,10 @@ Repack C&C MIX archives for the Atari ST port.
 
 For each embedded file the tool autodetects the asset type, converts audio to
 11025 Hz 8-bit mono PCM `.AUD` where needed (IMA99, Westwood compression type 1,
-PCM stereo/16-bit/other rates), and pads payloads so every file starts at an even
-byte offset from the beginning of the MIX.
+PCM stereo/16-bit/other rates), optionally converts terrain iconsets in theater
+MIX files to **ST16** planar format (requires matching `*.W16` C2P weights),
+and pads payloads so every file starts at an even byte offset from the beginning
+of the MIX.
 
 Plain TD-style MIX files only (no encrypted or extended headers).
 
@@ -16,6 +18,12 @@ Host utility:
 ```bash
 cd tiberiandawn/tools/remix
 make
+```
+
+Smoke test (ST16 conversion with `../../atari-assets/temperat.w16`):
+
+```bash
+make test-st16
 ```
 
 MiNT `remix.tos` (cross-compiler):
@@ -35,6 +43,9 @@ includes it in the release zip next to `cnc.tos`.
 ./remix -o output.mix input.mix
 ```
 
+Place `TEMPERAT.W16`, `DESERT.W16`, etc. in the current directory (or pass
+`--w16-dir`) when repacking theater MIX files. ST16 conversion is **on by default**.
+
 **Directory** (non-recursive; `.mix` / `.MIX`):
 
 ```bash
@@ -44,8 +55,8 @@ includes it in the release zip next to `cnc.tos`.
 ## MiNT usage (`remix.tos`)
 
 No arguments. Place `remix.tos` in the game folder with the `.mix` files and
-run once before `cnc.tos`. The tool writes `temp.mxx` while working on each
-archive, then replaces the source `.mix` in place.
+matching `*.W16` files, then run once before `cnc.tos`. The tool writes
+`temp.mxx` while working on each archive, then replaces the source `.mix` in place.
 
 ## Options (host only)
 
@@ -53,4 +64,8 @@ archive, then replaces the source `.mix` in place.
 |--------|---------|
 | `-o`, `--output PATH` | Output MIX file, or output directory with `-d` |
 | `-d`, `--directory DIR` | Process all MIX files in `DIR` |
+| `--w16-dir PATH` | Directory containing `TEMPERAT.W16` etc. (default: cwd) |
+| `--no-st16-iconsets` | Skip ST16 iconset conversion in theater MIX files |
 | `-h`, `--help` | Show help |
+
+See [spec.md](spec.md) for ST16 scope, detection types (`icn` / `st16`), and failure policy.

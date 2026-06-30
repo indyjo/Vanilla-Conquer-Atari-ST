@@ -3,6 +3,7 @@
 #include "remix_audio.h"
 #include "remix_detect.h"
 #include "remix_print.h"
+#include "remix_st16.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -201,6 +202,92 @@ static int copy_payload(
 	return 1;
 }
 
+static int write_payload_buffer(
+    FILE *out, const unsigned char *payload, uint32_t payload_size, RemixProgressFn progress,
+    void *progress_ctx)
+{
+	size_t done = 0;
+	size_t left = payload_size;
+	const unsigned char *p = payload;
+
+	while (left > 0) {
+		size_t n = left > REMIX_COPY_CHUNK ? REMIX_COPY_CHUNK : left;
+		if (fwrite(p, 1, n, out) != n)
+			return 0;
+		done += n;
+		p += n;
+		left -= n;
+		if (progress)
+			progress(progress_ctx, "CONVERT", (unsigned)done, (unsigned)payload_size);
+	}
+	return 1;
+}
+
+static int process_iconset_payload(
+    FILE *in, FILE *out, long in_pos, const unsigned char *probe, size_t probe_len,
+    uint32_t payload_size, RemixEntry *e, RemixStats *stats, RemixProgressFn progress,
+    void *progress_ctx, int *out_converted)
+{
+	unsigned char *payload = NULL;
+	size_t new_size;
+	int is_native;
+	int should_convert;
+
+	(void)probe_len;
+	*out_converted = 0;
+
+	if (stats)
+		++stats->iconset_files;
+
+	is_native = remix_st16_is_native(probe, payload_size);
+	should_convert = !is_native && remix_st16_should_convert(probe, payload_size);
+
+	if (!is_native && !should_convert)
+		return -1;
+
+	payload = (unsigned char *)malloc(payload_size);
+	if (!payload)
+		return 0;
+
+	if (fseek(in, in_pos, SEEK_SET) != 0)
+		goto fail;
+	if (fread(payload, 1, payload_size, in) != payload_size)
+		goto fail;
+
+	if (is_native) {
+		if (stats)
+			++stats->iconset_already_st16;
+		snprintf(e->type_out, sizeof(e->type_out), "st16");
+		if (!write_payload_buffer(out, payload, payload_size, progress, progress_ctx))
+			goto fail;
+		e->new_size = payload_size;
+		free(payload);
+		return 1;
+	}
+
+	new_size = payload_size;
+	if (!remix_st16_convert_payload(payload, &new_size)) {
+		if (stats)
+			++stats->iconset_errors;
+		free(payload);
+		return 0;
+	}
+
+	snprintf(e->type_out, sizeof(e->type_out), "st16");
+	if (!write_payload_buffer(out, payload, (uint32_t)new_size, progress, progress_ctx))
+		goto fail;
+	e->new_size = (uint32_t)new_size;
+	*out_converted = 1;
+	if (stats)
+		++stats->iconset_converted;
+	free(payload);
+	return 1;
+
+fail:
+	free(payload);
+	return 0;
+}
+
 static int process_entry(
     FILE *in, FILE *out, RemixMix *mix, unsigned index, uint32_t *body_pos,
     const RemixConfig *cfg, RemixStats *stats)
@@ -212,7 +299,9 @@ static int process_entry(
 	long out_payload_start;
 	int is_audio;
 	int needs_convert;
-	int converted = 0;
+	int iconset_rc;
+	int iconset_converted = 0;
+	int try_iconset = 0;
 	ProgressCtx progress;
 
 	e->new_offset = 0;
@@ -239,6 +328,8 @@ static int process_entry(
 
 	is_audio = remix_is_audio_payload(probe, probe_len, e->old_size);
 	needs_convert = is_audio && remix_aud_needs_convert(probe, probe_len, e->old_size);
+	try_iconset = cfg && cfg->convert_st16_iconsets && cfg->mix_basename
+	    && remix_st16_is_theater_mix(cfg->mix_basename) && !needs_convert;
 
 	if (stats) {
 		++stats->payload_files;
@@ -273,7 +364,16 @@ static int process_entry(
 		remix_print_st_progress(needs_convert ? "CONVERT" : "COPY", 0, total);
 	}
 
-	if (needs_convert) {
+	iconset_rc = -1;
+	if (try_iconset) {
+		iconset_rc = process_iconset_payload(
+		    in, out, in_pos, probe, probe_len, e->old_size, e, stats, mix_progress,
+		    &progress, &iconset_converted);
+		if (iconset_rc == 0)
+			return 0;
+	}
+
+	if (iconset_rc <= 0 && needs_convert) {
 		uint32_t out_payload = 0;
 		int ok;
 
@@ -283,7 +383,6 @@ static int process_entry(
 		if (ok) {
 			e->new_size = out_payload;
 			remix_format_aud_pcm_target(e->type_out, sizeof(e->type_out));
-			converted = 1;
 			if (stats)
 				++stats->audio_converted;
 		} else if (cfg->fallback_copy_on_convert_fail) {
@@ -313,7 +412,7 @@ static int process_entry(
 		} else {
 			return 0;
 		}
-	} else {
+	} else if (iconset_rc <= 0) {
 		if (!copy_payload(in, out, probe, probe_len, e->old_size, mix_progress, &progress))
 			return 0;
 		e->new_size = e->old_size;
@@ -327,7 +426,7 @@ static int process_entry(
 	if (cfg->entry_report)
 		cfg->entry_report(e, cfg->entry_report_ctx);
 
-	(void)converted;
+	(void)iconset_converted;
 	return 1;
 }
 
@@ -336,10 +435,23 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 	FILE *in = NULL;
 	FILE *out = NULL;
 	RemixMix mix;
+	RemixConfig active_cfg;
+	char mix_base[256];
 	uint32_t body_pos = 0;
 	unsigned i;
+	const RemixConfig *use_cfg = cfg;
 
 	memset(&mix, 0, sizeof(mix));
+
+	if (cfg) {
+		active_cfg = *cfg;
+	} else {
+		memset(&active_cfg, 0, sizeof(active_cfg));
+	}
+	remix_path_basename(in_path, mix_base, sizeof(mix_base));
+	if (!active_cfg.mix_basename)
+		active_cfg.mix_basename = mix_base;
+	use_cfg = &active_cfg;
 
 	in = fopen(in_path, "rb");
 	if (!in)
@@ -361,16 +473,20 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 	if (!write_placeholder_header(out, &mix))
 		goto fail;
 
-	if (cfg->ui == REMIX_UI_ST)
+	if (!remix_st16_prepare_theater_mix(
+		use_cfg->convert_st16_iconsets, use_cfg->mix_basename, use_cfg->w16_dir))
+		goto fail;
+
+	if (use_cfg->ui == REMIX_UI_ST)
 		remix_print_st_mix_header(in_path, mix.count);
-	else if (cfg->ui == REMIX_UI_HOST)
+	else if (use_cfg->ui == REMIX_UI_HOST)
 		remix_print_host_banner(in_path, out_path, mix.count, mix.data_start);
 
-	if (cfg->ui == REMIX_UI_HOST)
+	if (use_cfg->ui == REMIX_UI_HOST)
 		remix_print_host_table_header();
 
 	for (i = 0; i < mix.count; ++i) {
-		if (!process_entry(in, out, &mix, i, &body_pos, cfg, stats))
+		if (!process_entry(in, out, &mix, i, &body_pos, use_cfg, stats))
 			goto fail;
 	}
 
@@ -381,9 +497,9 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 	fclose(in);
 	fclose(out);
 
-	if (cfg->ui == REMIX_UI_ST)
+	if (use_cfg->ui == REMIX_UI_ST)
 		remix_print_st_mix_done(in_path, mix.count, mix.data_size);
-	else if (cfg->ui == REMIX_UI_HOST)
+	else if (use_cfg->ui == REMIX_UI_HOST)
 		remix_print_host_mix_done(out_path, mix.count, mix.data_size);
 
 	free_mix(&mix);

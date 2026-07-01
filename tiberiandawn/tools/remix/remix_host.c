@@ -4,6 +4,7 @@
 
 #include "remix.h"
 #include "remix_print.h"
+#include "remix_shpx.h"
 #include "remix_st16.h"
 
 #include <dirent.h>
@@ -103,19 +104,22 @@ static void usage(const char *prog)
 	    "  %s -d input_dir [-o output_dir]\n"
 	    "\n"
 	    "Repack C&C MIX archive(s):\n"
-	    "  - autodetect embedded file types\n"
+	    "  - autodetect file types\n"
 	    "  - convert audio to 11025 Hz 8-bit mono PCM .AUD\n"
-	    "  - pad payloads so each begins at an even offset from the MIX start\n"
+	    "  - convert theater terrain iconsets to ST16 (needs *.W16 in cwd)\n"
+	    "  - convert KeyFrame SHPs to SHPX + poolnnnn.bin sidecar (--shpx)\n"
+	    "  - pad payloads to even byte offsets from MIX start\n"
 	    "\n"
-	    "  - convert terrain iconsets in theater MIX files to ST16 (requires *.W16 in cwd)\n"
-	    "\n"
-	    "Multiple inputs merge index entries (same CRC + size: keep first) then repack.\n"
+	    "Multiple inputs: merge by CRC+size (keep first), then repack.\n"
 	    "\n"
 	    "Options:\n"
 	    "  -o, --output PATH       output MIX file, or output directory with -d\n"
 	    "  -d, --directory DIR     remix all .mix/.MIX files in DIR (non-recursive)\n"
 	    "  --w16-dir PATH          directory containing TEMPERAT.W16 etc. (default: cwd)\n"
-	    "  --no-st16-iconsets      skip ST16 iconset conversion in theater MIX files\n"
+	    "  --no-st16-iconsets      skip ST16 iconset conversion\n"
+	    "  --shpx                  convert KeyFrame SHPs to SHPX\n"
+	    "  --shpx-verbose          per-shape SHPX/clip details on stderr (requires --shpx)\n"
+	    "  --pool-id ID            SHPX pool id (default 1; requires --shpx)\n"
 	    "  -h, --help              show this help\n",
 	    prog, prog, prog);
 }
@@ -211,12 +215,14 @@ int main(int argc, char **argv)
 	int argi;
 	int rc;
 	unsigned i;
+	int pool_id_set = 0;
 
 	remix_stats_init(&stats);
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.ui = REMIX_UI_HOST;
 	cfg.fallback_copy_on_convert_fail = 1;
 	cfg.convert_st16_iconsets = 1;
+	cfg.shpx_pool_id = REMIX_SHPX_POOL_ID_DEFAULT;
 
 	for (argi = 1; argi < argc; ++argi) {
 		if (!strcmp(argv[argi], "-o") || !strcmp(argv[argi], "--output")) {
@@ -239,6 +245,25 @@ int main(int argc, char **argv)
 			w16_dir = argv[++argi];
 		} else if (!strcmp(argv[argi], "--no-st16-iconsets")) {
 			cfg.convert_st16_iconsets = 0;
+		} else if (!strcmp(argv[argi], "--shpx")) {
+			cfg.convert_shpx = 1;
+		} else if (!strcmp(argv[argi], "--shpx-verbose")) {
+			cfg.shpx_verbose = 1;
+		} else if (!strcmp(argv[argi], "--pool-id")) {
+			unsigned long id;
+			char *end;
+
+			if (argi + 1 >= argc) {
+				fprintf(stderr, "error: %s requires a value\n", argv[argi]);
+				return 1;
+			}
+			id = strtoul(argv[++argi], &end, 0);
+			if (!argv[argi][0] || (end && *end != '\0') || id == 0 || id > 0xFFFFu) {
+				fprintf(stderr, "error: %s must be 1..65535\n", "--pool-id");
+				return 1;
+			}
+			cfg.shpx_pool_id = (uint16_t)id;
+			pool_id_set = 1;
 		} else if (!strcmp(argv[argi], "-h") || !strcmp(argv[argi], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -257,6 +282,16 @@ int main(int argc, char **argv)
 
 	if (in_dir && input_count > 0) {
 		fprintf(stderr, "error: use either -d or input MIX file(s), not both\n");
+		return 1;
+	}
+
+	if (pool_id_set && !cfg.convert_shpx) {
+		fprintf(stderr, "error: --pool-id requires --shpx\n");
+		return 1;
+	}
+
+	if (cfg.shpx_verbose && !cfg.convert_shpx) {
+		fprintf(stderr, "error: --shpx-verbose requires --shpx\n");
 		return 1;
 	}
 
@@ -286,7 +321,10 @@ int main(int argc, char **argv)
 	}
 
 	cfg.w16_dir = w16_dir;
-	remix_path_basename(out_path, mix_base, sizeof(mix_base));
+	if (input_count == 1)
+		remix_path_basename(inputs[0], mix_base, sizeof(mix_base));
+	else
+		remix_path_basename(out_path, mix_base, sizeof(mix_base));
 	cfg.mix_basename = mix_base;
 
 	rc = remix_mix_merge_and_repack(out_path, inputs, input_count, &cfg, &stats);

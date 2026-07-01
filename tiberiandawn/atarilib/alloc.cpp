@@ -173,21 +173,17 @@ void Stram_Free(void *pointer)
 
 void ST_Log_Free_Memory(const char *label)
 {
-	char msg[192];
 	long const st_largest = Ram_Free(MEM_NORMAL);
 	long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
 	const char *tag = (label != NULL && label[0] != '\0') ? label : "free memory";
 
-	snprintf(msg,
-		sizeof(msg),
-		"C&C ST - %s: largest free ST-RAM block %ld bytes (~%ld KiB); "
-		"largest TT-RAM block %ld bytes (~%ld KiB).\n",
-		tag,
-		st_largest,
-		(st_largest > 0L) ? (st_largest / 1024L) : 0L,
-		tt_largest,
-		(tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
-	printf("%s", msg);
+	printf("C&C ST - %s:\n", tag);
+	printf("ST-RAM %ld b (~%ld KiB)\n",
+	    st_largest,
+	    (st_largest > 0L) ? (st_largest / 1024L) : 0L);
+	printf("TT-RAM %ld b (~%ld KiB)\n",
+	    tt_largest,
+	    (tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
 	fflush(stdout);
 }
 

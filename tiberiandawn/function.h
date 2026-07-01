@@ -533,7 +533,12 @@ void* Conquer_Build_Translucent_Table(void const* palette, TLucentType const* co
 **
 **	identity_key folds full-frame geometry in the planar LRU; viewport clip is not part of the key.
 */
-typedef unsigned long (*Bftp_Lazy_Frame_FillFn)(void* user_ctx);
+#ifdef __cplusplus
+class IDecodeContext;
+typedef unsigned long (*Bftp_Lazy_Frame_FillFn)(void* user_ctx, IDecodeContext* decode_ctx);
+#else
+typedef unsigned long (*Bftp_Lazy_Frame_FillFn)(void* user_ctx, void* decode_ctx);
+#endif
 
 typedef struct Bftp_ExArgs {
     const unsigned char* ghost_table;

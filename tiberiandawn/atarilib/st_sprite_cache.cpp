@@ -4,7 +4,10 @@
 
 #include "st_sprite_cache.h"
 
+#include "st_decode_context.h"
+
 #include "c2p.h"
+#include "memflag.h"
 #include "st_blitter_blit.h"
 #include "st_frame_meter.h"
 
@@ -14,7 +17,6 @@
 #include "lrucache.h"
 
 #include <stdint.h>
-
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -41,12 +43,12 @@ enum { SPRITE_CACHE_D16 = 16, SPRITE_CACHE_D32 = 32, SPRITE_CACHE_D64 = 64, SPRI
 enum { SPRITE_CACHE_ROW_BUF_MAX = 320 };
 
 /*
- * Run lazy_frame_fill (Build_Frame) at most once per planar composite; only LRU miss triggers fill.
+ * One-shot decode gate for miss-time lazy frame build.
  */
-/* One-shot decode gate for miss-time lazy frame build. */
 struct SpriteCacheLazyGate {
-	unsigned long (*fill)(void *ctx);
+	unsigned long (*fill)(void *ctx, IDecodeContext *decode_ctx);
 	void *ctx;
+	ClipBounds clip_bounds;
 	unsigned char decoded; /* 1 after first successful fill */
 };
 
@@ -112,7 +114,7 @@ struct SpriteCacheTier {
 	SpriteCacheSlotMeta *slot_meta = nullptr;
 };
 
-/* Per-tier runtime counters used by debug stats hotkey dump. */
+/* Per-tier runtime counters used by Alt+D stats dump. */
 struct SpriteCacheTierStats {
 	unsigned long hits;
 	unsigned long misses;
@@ -303,7 +305,6 @@ static int sprite_cache_pick_tier_index_for_crop(int crop_w, int crop_h)
 	return best_i;
 }
 
-/* Resets runtime stats counters without touching cache contents. */
 static void sprite_cache_reset_stats(void)
 {
 	std::memset(g_sprite_cache_stats, 0, sizeof(g_sprite_cache_stats));
@@ -528,7 +529,7 @@ static void sprite_cache_shutdown(void)
 		tr.planar_slot_sz = 0;
 		tr.mask_slot_sz = 0;
 	}
-	std::free(g_sprite_cache_slab);
+	Free(g_sprite_cache_slab);
 	g_sprite_cache_slab = nullptr;
 	g_sprite_cache_inited = false;
 	sprite_cache_reset_stats();
@@ -559,9 +560,11 @@ static void sprite_cache_maybe_init(void)
 	if (total == 0)
 		return;
 
-	g_sprite_cache_slab = (uint8_t *)std::malloc(total);
-	if (!g_sprite_cache_slab)
+	g_sprite_cache_slab = (uint8_t *)Alloc((unsigned long)total, MEM_NORMAL);
+	if (!g_sprite_cache_slab) {
+		/* Alloc already invoked Memory_Error; do not continue without a slab. */
 		return;
+	}
 
 	uint8_t *walk = g_sprite_cache_slab;
 	for (int t = 0; t < 4; ++t) {
@@ -927,7 +930,9 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 
 	if (!cache_hit) {
 		if (lazy_gate != nullptr && lazy_gate->fill != nullptr && lazy_gate->decoded == 0) {
-			unsigned long const built = lazy_gate->fill(lazy_gate->ctx);
+			lazy_gate->clip_bounds.reset();
+			IDecodeContext decode_iface = IDecodeContext::bind(&lazy_gate->clip_bounds);
+			unsigned long const built = lazy_gate->fill(lazy_gate->ctx, &decode_iface);
 			if (built == 0UL) {
 				return -1;
 			}
@@ -941,13 +946,19 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		int crop_y = 0;
 		int crop_w = full_w;
 		int crop_h = full_h;
-		sprite_cache_scan_crop_bounds(
-		    raster_base, full_w, full_h, src_stride, trans, &crop_x, &crop_y, &crop_w, &crop_h);
+		if (lazy_gate != nullptr && lazy_gate->clip_bounds.valid) {
+			crop_x = lazy_gate->clip_bounds.x;
+			crop_y = lazy_gate->clip_bounds.y;
+			crop_w = lazy_gate->clip_bounds.w;
+			crop_h = lazy_gate->clip_bounds.h;
+		} else {
+			sprite_cache_scan_crop_bounds(
+			    raster_base, full_w, full_h, src_stride, trans, &crop_x, &crop_y, &crop_w, &crop_h);
+		}
 
 		const int tier_ix = sprite_cache_pick_tier_index_for_crop(crop_w, crop_h);
-		if (tier_ix < 0) {
+		if (tier_ix < 0)
 			return -1;
-		}
 
 		tr = sprite_cache_tier_from_index(tier_ix);
 		if (!tr || !tr->lru || !tr->slot_meta) {
@@ -1139,7 +1150,7 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	int full_w,
 	int full_h,
 	long identity_key,
-	unsigned long (*lazy_decode_miss)(void *user_ctx),
+	unsigned long (*lazy_decode_miss)(void *user_ctx, IDecodeContext *decode_ctx),
 	void *lazy_decode_ctx)
 {
 	sprite_cache_maybe_init();

@@ -543,13 +543,13 @@ bool Init_Game(int, char*[])
      * MiNT free-memory snapshot after mandatory MIX payloads are cached (theater MIX loads later).
      */
     {
-        char st_mix_ram_msg[192];
         long const st_largest = Ram_Free(MEM_NORMAL);
         long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
-        snprintf(st_mix_ram_msg,
-                 sizeof(st_mix_ram_msg),
-                 "C&C ST - After MIX cache: largest free ST-RAM block %ld bytes (~%ld KiB); "
-                 "largest TT-RAM block %ld bytes (~%ld KiB).\n",
+        char st_mix_ram_msg[128];
+        snprintf(st_mix_ram_msg, sizeof(st_mix_ram_msg),
+                 "C&C ST - After MIX cache:\n"
+                 "ST-RAM %ld b (~%ld KiB)\n"
+                 "TT-RAM %ld b (~%ld KiB)\n",
                  st_largest,
                  (st_largest > 0L) ? (st_largest / 1024L) : 0L,
                  tt_largest,

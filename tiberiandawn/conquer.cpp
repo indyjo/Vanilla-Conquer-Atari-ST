@@ -75,6 +75,8 @@
 #ifdef ATARI_ST
 #include "atarilib/drawbuff.h"
 #include "atarilib/memflag.h"
+#include "atarilib/shpx.h"
+#include "atarilib/st_decode_context.h"
 #include "atarilib/st_screen.h"
 #include "st_sprite_cache.h"
 #include <limits.h>
@@ -2689,7 +2691,7 @@ struct CC_Draw_Shape_Lazy_Ctx {
     int shapenum;
 };
 
-static unsigned long CC_Draw_Shape_Lazy_Frame_Fill(void* user_ctx)
+static unsigned long CC_Draw_Shape_Lazy_Frame_Fill(void* user_ctx, IDecodeContext* decode_ctx)
 {
     CC_Draw_Shape_Lazy_Ctx* const cx = reinterpret_cast<CC_Draw_Shape_Lazy_Ctx*>(user_ctx);
 
@@ -2701,6 +2703,19 @@ static unsigned long CC_Draw_Shape_Lazy_Frame_Fill(void* user_ctx)
                     _ShapeBufferSize);
         Keyboard->Get();
     }
+
+    if (decode_ctx != nullptr && cx->shapefile != nullptr && SHPX_Is_Meta(cx->shapefile) && cx->shapenum >= 0) {
+        uint16_t clip_x = 0;
+        uint16_t clip_y = 0;
+        uint16_t clip_w = 0;
+        uint16_t clip_h = 0;
+        if (SHPX_Get_Frame_Clip(cx->shapefile, (unsigned)cx->shapenum, &clip_x, &clip_y, &clip_w, &clip_h)) {
+            decode_ctx->set_clip_bounds((int)clip_x, (int)clip_y, (int)clip_w, (int)clip_h);
+        } else {
+            decode_ctx->set_clip_bounds(0, 0, 0, 0);
+        }
+    }
+
     return shape_ret;
 }
 #endif

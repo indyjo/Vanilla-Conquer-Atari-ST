@@ -6,8 +6,8 @@ For each embedded file the tool autodetects the asset type, converts audio to
 11025 Hz 8-bit mono PCM `.AUD` where needed (IMA99, Westwood compression type 1,
 PCM stereo/16-bit/other rates), optionally converts terrain iconsets in theater
 MIX files to **ST16** planar format (requires matching `*.W16` C2P weights),
-and pads payloads so every file starts at an even byte offset from the beginning
-of the MIX.
+optionally convert KeyFrame SHPs to **SHPX** (`--shpx`),
+and pad payloads to even byte offsets from the MIX start.
 
 Plain TD-style MIX files only (no encrypted or extended headers).
 
@@ -66,6 +66,9 @@ matching `*.W16` files, then run once before `cnc.tos`. The tool writes
 | `-d`, `--directory DIR` | Process all MIX files in `DIR` |
 | `--w16-dir PATH` | Directory containing `TEMPERAT.W16` etc. (default: cwd) |
 | `--no-st16-iconsets` | Skip ST16 iconset conversion in theater MIX files |
+| `--shpx` | Convert KeyFrame SHPs to SHPX + `poolnnnn.bin` sidecar |
+| `--shpx-verbose` | Per-shape SHPX/clip log on stderr (requires `--shpx`) |
+| `--pool-id ID` | SHPX pool id (default `1`; requires `--shpx`) |
 | `-h`, `--help` | Show help |
 
 See [spec.md](spec.md) for ST16 scope, detection types (`icn` / `st16`), and failure policy.

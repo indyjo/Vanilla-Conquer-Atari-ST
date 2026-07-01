@@ -162,6 +162,197 @@ Runtime conversion reads the original LE Westwood blob, then writes back an ST16
 
 Implementation helpers: `atarilib/st16_iconset.h`, `atarilib/st16_draw.h`, `atarilib/st16_convert.h`.
 
+## SHPX external-pool KeyFrame SHP format
+
+Westwood **KeyFrame SHP** blobs (`E1.SHP`, `HTNK.SHP`, `RADAR.GDI`, etc.) pack animation metadata, a per-frame offset table, and **compressed 8bpp** payload (LCW keyframes, XOR delta chains) into one MIX entry. The Atari port defines **SHPX** as a metadata-only variant: the SHPX entry holds the KeyFrame header, **table offsets**, the **KeyFrame frame table** (big-endian), and auxiliary tables; **compressed pixel bytes live in an external pool** referenced by a 16-bit pool identifier.
+
+This is **not** the classic per-shape `ShapeBlock_Type` format used by `MOUSE.SHP`.
+
+**Goals:**
+
+- Keep **compressed** payload on disk and in RAM (no 4bpp planar in the pool — planar expansion stays in a dynamic decode/C2P cache).
+- **Retain** the original overlapping frame table and XOR delta chain semantics (`Build_Frame` in `keyframe.cpp`); only endianness and payload addressing change.
+- Declare a **`pool_data_begin` / `pool_data_size`** span so the runtime can load and **cache each animation’s pool slice** in RAM (or the whole MIX sidecar once per `pool_id`).
+- Store **precomputed clip rectangles** in a separate table; planar row stride and mask layout are derived at runtime in the sprite cache.
+
+**Detection:** the first four bytes are the magic **`SHPX`** (bytes `0x53 0x48 0x50 0x58`). On the 68000, read a single **native longword** at offset `0` and compare to **`SHPX_MAGIC_NATIVE`** (`0x53485058`); the magic is not endian-swapped. Do not use `memcmp`. Host tools reading LE file bytes may compare against `SHPX_MAGIC` (`0x58504853`). Run this check before monolithic KeyFrame SHP heuristics (which look at `frames` + in-blob offsets).
+
+### SHPX blob layout (v1)
+
+```text
++0x00  magic 'SHPX'                         (4 bytes, literal — not endian-swapped)
++0x04  KeyFrame header                      (14 bytes, numeric fields BE)
++0x12  pool_id                              (u16 BE)
++0x14  reserved                             (u16 BE, must be 0)
++0x16  frame_table_offset                   (u32 BE — byte offset from blob start)
++0x1A  clip_table_offset                    (u32 BE)
++0x1E  pool_data_begin                      (u32 BE — byte offset in external pool)
++0x22  pool_data_size                       (u32 BE — bytes in cacheable span)
++…     tables and padding (offsets may point anywhere within the blob)
+       (no embedded palette, no in-blob compressed payload)
+```
+
+Fixed SHPX prefix: **38 bytes** (`0x26`). Tables are usually packed contiguously after the prefix but may be reordered; only the offset fields are authoritative.
+
+### KeyFrame header (14 bytes at `0x04`)
+
+Same fields as `KeyFrameHeaderType` in `keyframe.cpp` / `common/keyframe.h`. All multi-byte values are **big-endian (BE)** — 68000 native order on disk.
+
+
+| Offset | Size | Field                 | Notes                                                          |
+| ------ | ---- | --------------------- | -------------------------------------------------------------- |
+| +0     | 2    | `frames`              | Number of animation frames                                     |
+| +2     | 2    | `x`                   | Hotspot X (draw anchor in logical frame space)                 |
+| +4     | 2    | `y`                   | Hotspot Y                                                      |
+| +6     | 2    | `width`               | Logical frame width (pixels); same for every frame               |
+| +8     | 2    | `height`              | Logical frame height                                           |
+| +10    | 2    | `largest_frame_size`  | Max LCW/XOR decompress workspace (same meaning as monolithic KeyFrame SHP)  |
+| +12    | 2    | `flags`               | v1: **no embedded palette** — bit 0 must be 0; other bits reserved |
+
+
+Monolithic KeyFrame SHPs store these fields **little-endian** and omit the `SHPX` magic. The frame table always starts at byte **14** immediately after the header.
+
+### Pool reference (`0x12`)
+
+
+| Offset | Size | Field     | Notes                                                                 |
+| ------ | ---- | --------- | --------------------------------------------------------------------- |
+| +0     | 2    | `pool_id` | **Shared by all SHPX entries from the same MIX** (BE). `0` is reserved / invalid. |
+| +2     | 2    | `reserved`| Must be **0** on write; ignore on read.                               |
+
+
+**`pool_id` assignment (repack, v1):** fixed **`0x0001`** for `CONQUER.MIX`. `0` is reserved / invalid. Future MIX files may get other ids when the repack scope expands; all SHPX entries in the same MIX share one id.
+
+**Sidecar pool file:** one binary pool beside the MIX, named from that id:
+
+```text
+pool%04x.bin    (lowercase hex, 8.3-friendly — v1 CONQUER.MIX → pool0001.bin)
+```
+
+The sidecar lives in the **same directory** as the MIX (not inside the MIX). v1 repack targets **`CONQUER.MIX` only**; other MIX files keep monolithic KeyFrame SHPs until extended.
+
+All SHPX entries converted from the same MIX share the **same** `pool_id` and the **same** sidecar file. Each entry has its own **`pool_data_begin` / `pool_data_size`** slice within that file.
+
+### Pool data span (`0x1E`)
+
+Describes the **contiguous byte range** within the MIX sidecar pool that **this animation** uses. The runtime may cache **`pool_data_size` bytes at `pool_data_begin`** per shape, or map/cache the **entire** sidecar once per `pool_id` (implementation choice).
+
+
+| Offset | Field             | Notes |
+| ------ | ----------------- | ----- |
+| `0x1E` | `pool_data_begin` | Byte offset from the **start of the sidecar pool file** (BE). **Must be even.** Each SHP’s slice starts at an even offset in the shared pool. |
+| `0x22` | `pool_data_size`  | Length of this animation’s payload span (BE). Covers every LCW/XOR byte referenced by its frame table (payload tail copy, offsets rebased to `0` within the slice). **`0`** is reserved / invalid. Padding bytes between slices are **not** included in `pool_data_size`. |
+
+
+**Payload addressing:** every **24-bit value** in the frame table that points into compressed data is relative to **`pool_data_begin`**, not pool byte `0` and not the SHPX blob:
+
+```text
+payload_ptr = pool_cache_base + (offset & 0xFFFFFF)
+```
+
+where `pool_cache_base` is the in-RAM copy of `pool[pool_data_begin … pool_data_begin + pool_data_size)`.
+
+Monolithic KeyFrame SHPs used the same numeric offsets but **absolute from byte 0 of the SHP blob** (`dataptr + offset` in `Build_Frame`). Repack copies each shape’s payload tail into the shared sidecar at **`pool_data_begin`** and rewrites frame-table offsets as **`source_offset − tail_start`** within that slice.
+
+### Table offsets (`0x16`)
+
+All offsets are **byte positions from the start of the SHPX blob** (include the `SHPX` magic). Each value is a **u32 BE**.
+
+
+| Offset | Field                   | Points to |
+| ------ | ----------------------- | --------- |
+| `0x16` | `frame_table_offset`    | KeyFrame frame table (see below) |
+| `0x1A` | `clip_table_offset`     | Clip table (see below) |
+
+
+### Frame table (KeyFrame layout, big-endian)
+
+The frame table is **byte-for-byte the same structure** as the monolithic KeyFrame SHP frame table: **`8 × frames` bytes** at `frame_table_offset`.
+
+Each frame slot occupies **8 bytes** on disk, but `Build_Frame` reads **three u32 values** (12 bytes) starting at `frame_table_offset + N×8`, so the third longword **overlaps** the next frame’s slot:
+
+```text
+Frame 0:  [AAAA][BBBB]
+Frame 1:       [BBBB][CCCC]
+Frame 2:            [CCCC][DDDD]
+          …
+```
+
+Each u32 is stored **big-endian** (opposite of the original little-endian monolithic format). Bit layout per longword is unchanged:
+
+```text
+ 31      24 23                    0
+┌──────────┬──────────────────────┐
+│ KF flags │ 24-bit value         │
+└──────────┴──────────────────────┘
+```
+
+- **High byte:** `KF_KEYFRAME`, `KF_KEYDELTA`, `KF_DELTA`, … (`KeyFrameType` in `common/keyframe.h`) on the **first** longword of each 8-byte slot.
+- **Low 24 bits:** offset into the **cacheable pool span** (LCW data or XOR patch), **relative to `pool_data_begin`**, or a **reference frame index** for `KF_DELTA` rows (same rules as `Build_Frame` — frame indices are not pool offsets).
+
+`Build_Frame` delta-chain walking (reload up to seven longwords from overlapping rows, `SUBFRAMEOFFS = 7`) applies unchanged; the table base is `frame_table_offset`, longwords are **BE**, and payload pointers use the cached pool slice as described above.
+
+### Clip table
+
+**`8 × frames` bytes** at `clip_table_offset`. One row per frame, independent of the overlapping frame table:
+
+
+| Offset | Size | Field    | Notes |
+| ------ | ---- | -------- | ----- |
+| +0     | 2    | `clip_x` | BE u16; logical `width × height` coordinates |
+| +2     | 2    | `clip_y` | BE u16 |
+| +4     | 2    | `clip_w` | BE u16; **`0` = empty frame** |
+| +6     | 2    | `clip_h` | BE u16 |
+
+
+**Clip semantics:** minimal axis-aligned bounds of non-transparent pixels after decode, with palette index **0** as transparent (same as `st_sprite_cache` crop scan). Header `width` / `height` remain the full logical frame size.
+
+### External pool (sidecar, compressed payload)
+
+The sidecar holds the **same compressed byte streams** that previously lived after each shape’s frame table inside monolithic KeyFrame SHPs — LCW keyframes, XOR delta data, unchanged encoding. It does **not** hold decoded 8bpp pixels or 4bpp planar data.
+
+**Repack (v1, `remix` CLI, `CONQUER.MIX` only):**
+
+1. Detect **KeyFrame** SHPs (`flags` / frame table heuristics; skip classic `ShapeBlock` / `MOUSE.SHP`).
+2. For each shape, take the **payload tail** (bytes after the frame table, rebased so the slice starts at logical offset `0` inside that tail).
+3. Append each tail contiguously into the MIX’s single sidecar **`pool0001.bin`** (`pool_id = 0x0001`).
+4. Record **`pool_data_begin`** (even file offset) and **`pool_data_size`** in the SHPX header; rewrite frame-table 24-bit offsets as **`source_offset − tail_start`** (big-endian).
+5. Replace the MIX entry **in place** (same name, e.g. `E1.SHP`, payload is SHPX metadata).
+6. Build **clip table** offline (`Build_Frame` + tight bbox, index `0` transparent).
+
+**Even alignment in the sidecar:** if a shape’s payload size is **odd**, append one **`0x00` pad byte** after it in the pool file before placing the next shape’s payload, so **no payload starts on an odd file offset**. (Helps hosts that mmap the pool at even addresses; TOS loaders may still copy into ST-RAM.) Pad bytes are **not** part of any shape’s `pool_data_size` and must not be referenced by frame tables.
+
+XOR delta chains stay as-is inside each slice; pointers remain **within that shape’s slice**, never cross-shape.
+
+SHPX does not define a magic header on the sidecar file — it is a raw concatenation of payload slices and optional pad bytes.
+
+### Runtime
+
+1. Read native longword at offset 0 and compare to **`SHPX_MAGIC_NATIVE`** (`0x53485058`).
+2. Cast to **`ShpxPrefix`** and read header/table fields with native **`uint16_t` / `uint32_t`** access (68000 big-endian matches on-disk layout).
+3. On each **`Build_Frame`** for an SHPX shape: **`Alloc`** a buffer of **`pool_data_size`**, **`SHPX_Pool_Read_Slice`** loads that span from **`pool%04x.bin`** at **`pool_data_begin`**, decode runs from the slice + metadata, then **`Free`** the buffer.
+4. Clip table is available via `SHPX_Get_Frame_Clip`; the planar sprite cache uses it on LRU miss (no transparent-pixel crop scan for SHPX).
+
+No whole-pool RAM cache at startup — payload is read per decode. Sidecar must stay on disk beside `CONQUER.MIX` for the session.
+
+Implementation: `atarilib/shpx.cpp` (`SHPX_Pool_Read_Slice`), `keyframe.cpp` (`Build_Frame` SHPX dispatch).
+
+### KeyFrame SHP vs SHPX
+
+
+| Aspect              | KeyFrame SHP (monolithic)        | SHPX v1                                      |
+| ------------------- | -------------------------------- | -------------------------------------------- |
+| Magic               | None                             | `'SHPX'` at offset 0                         |
+| Header endianness   | LE                               | BE                                           |
+| Frame table         | 8 bytes/frame, overlapping u32 reads at +14 | Same layout at `frame_table_offset`, BE |
+| Payload offsets     | Absolute from **SHP blob** byte 0 | Relative to **`pool_data_begin`** in cached pool slice |
+| Delta / XOR chains  | Yes                              | Yes (same `Build_Frame` logic)               |
+| Payload             | In same blob after table         | Sidecar `pool0001.bin` beside `CONQUER.MIX` (`pool_id = 0x0001`) |
+| Cacheable span      | Implicit (whole MIX entry)       | Per-shape **`pool_data_begin` + `pool_data_size`** in shared sidecar |
+| Clip metadata       | None (runtime scan)              | Separate clip table                          |
+| Embedded palette    | Optional (`flags & 1`)           | Not supported in v1                          |
+| Planar stride/mask  | N/A                              | Runtime cache only                           |
+
 ### W16 Weightset Format
 
 `*.W16` files are **4116-byte** bundles matching `C2P_WeightSet` in `ATARILIB/c2p.h`:
@@ -224,8 +415,9 @@ Ship regenerated `.W16` files from `atari-assets/` next to `cnc.tos` (see `atari
 Put these mix files next to the CNC.TOS executable:
 The following MIX files must be present in the same directory as `CNC.TOS`. These are loaded by the game at runtime:
 
-- `CONQUER.MIX`    — base game assets (maps, graphics, palette)
-- `GENERAL.MIX`    — support assets (sidebar icons, overlays, etc)
+- `CONQUER.MIX`    — game sprites and shapes (units, buildings, sidebar icons, effects; KeyFrame SHPs → SHPX v1)
+- `pool0001.bin`   — SHPX compressed payload pool for `CONQUER.MIX` (required when using repacked SHPX `CONQUER.MIX`)
+- `GENERAL.MIX`    — cutscenes, mission data, title screens (WSA, CPS, INI, BIN)
 - `SCORES.MIX`     — music tracks (in .AUD format)
 - `SOUNDS.MIX`     — sound effects (.AUD and .V00)
 - `SPEECH.MIX`     — EVA speech lines

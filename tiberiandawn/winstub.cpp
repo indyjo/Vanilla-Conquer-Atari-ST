@@ -523,7 +523,7 @@ long Buffer_Frame_To_Page_Ex(int x,
 
     void* raster_base = Buffer;
     if (ex->lazy_frame_fill != nullptr && !planar_decode_on_miss) {
-        unsigned long const built = (*ex->lazy_frame_fill)(ex->lazy_frame_ctx);
+        unsigned long const built = (*ex->lazy_frame_fill)(ex->lazy_frame_ctx, nullptr);
         if (built == 0UL) {
             return 0;
         }
@@ -563,7 +563,7 @@ long Buffer_Frame_To_Page_Ex(int x,
                                                               w,
                                                               h,
                                                               ex->identity_key,
-                                                              (unsigned long (*)(void*))lazy_miss_fn,
+                                                              lazy_miss_fn,
                                                               lazy_miss_ctx);
         if (drew >= 0) {
             return drew;
@@ -574,7 +574,7 @@ long Buffer_Frame_To_Page_Ex(int x,
          * Decode on demand and use the pre-LRU C2P path, or per-pixel remap when ghost/fade.
          */
         if (planar_decode_on_miss && ex->lazy_frame_fill != nullptr && ex->lru_scratch_root != nullptr) {
-            unsigned long const built = (*ex->lazy_frame_fill)(ex->lazy_frame_ctx);
+            unsigned long const built = (*ex->lazy_frame_fill)(ex->lazy_frame_ctx, nullptr);
             if (built == 0UL
                 || (const uint8_t*)(uintptr_t)built != (const uint8_t*)ex->lru_scratch_root) {
                 return 0;

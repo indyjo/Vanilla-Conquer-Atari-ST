@@ -38,13 +38,26 @@
 
 
 #include "function.h"
-#ifdef ATARI_ST
-#include "atarilib/shpx.h"
-#include <string.h>
-#endif
-extern "C" unsigned long LCW_Uncompress(void *source, void *dest, unsigned long length);
-#ifdef DEBUG
+#include "keyframe.h"
 #include <stdio.h>
+#include <string.h>
+
+#define REMIX_BUILD 1
+
+#ifdef ATARI_ST
+extern "C" unsigned long LCW_Uncompress(void *source, void *dest, unsigned long length);
+extern "C" unsigned int Apply_XOR_Delta(char *target, char *delta, unsigned int frame_bytes);
+#endif
+
+extern void Memory_Error_Handler(void);
+
+#ifndef Frame
+static int Frame;
+#endif
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
 #endif
 
 #define SUBFRAMEOFFS			7	// 3 1/2 frame offsets loaded (2 offsets/frame)
@@ -109,81 +122,6 @@ static inline unsigned long ReadLE32(const unsigned char* ptr) {
 	return ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
 }
 
-#ifdef ATARI_ST
-/*
- * Per-call decode context for Build_Frame on Atari ST.
- *
- * Monolithic KeyFrame blobs keep frame tables and LCW/XOR payload in one MIX buffer
- * (meta == pay). SHPX splits metadata in the MIX entry from compressed payload in
- * pool%04x.bin; the slice lives in the global SHPX pool buffer for the duration of the call.
- */
-typedef struct {
-	void const *meta;          /* Frame table + clip table (SHPX prefix in MIX, or whole blob) */
-	ShpxPrefix const *pfx;     /* SHPX prefix view of meta; NULL when !is_shpx */
-	void const *pay;           /* LCW/XOR payload: meta for monolithic, pool slice for SHPX */
-	size_t meta_lim;           /* Byte limit for reads from meta (frame table, etc.) */
-	size_t pay_lim;            /* Byte limit for reads from pay (pool slice or blob tail) */
-	unsigned long table_base;  /* Frame table offset: sizeof(KeyFrameHeaderType) or SHPX ft_off */
-	int is_shpx;               /* Non-zero when meta is an SHPX external-pool shape */
-} KfBuildEnv;
-
-static void KfBuildEnv_Done(KfBuildEnv *e)
-{
-	(void)e;
-}
-
-/* Frame-table u32: native BE read for SHPX, LE for legacy monolithic blobs. */
-static unsigned long KfReadU32(const KfBuildEnv *e, const unsigned char *p)
-{
-	if (e->is_shpx) {
-		uint32_t v;
-		memcpy(&v, p, sizeof(v));
-		return (unsigned long)v;
-	}
-	return ReadLE32(p);
-}
-
-/*
- * Fill KfBuildEnv for one Build_Frame invocation.
- * Returns 1 on success; 0 if SHPX pool slice load fails.
- * Non-SHPX shapes leave is_shpx clear and use dataptr for both meta and pay.
- */
-static int KfBuildEnv_Init(void const *dataptr, size_t blob_size, KfBuildEnv *e)
-{
-	memset(e, 0, sizeof(*e));
-	e->meta = dataptr;
-	e->pay = dataptr;
-	e->table_base = (unsigned long)sizeof(KeyFrameHeaderType);
-	e->meta_lim = blob_size;
-	e->pay_lim = blob_size;
-
-	if (!SHPX_Is_Meta(dataptr))
-		return 1;
-
-	e->is_shpx = 1;
-	e->pfx = SHPX_As_Prefix(dataptr);
-	e->table_base = e->pfx->frame_table_offset;
-	if (e->pfx->pool_data_size == 0u
-	    || e->pfx->pool_data_size > SHPX_POOL_SLICE_MAX) {
-		return 0;
-	}
-	e->pay = SHPX_Pool_Read_Slice(
-	    e->pfx->pool_id,
-	    e->pfx->pool_data_begin,
-	    e->pfx->pool_data_size);
-	if (!e->pay) {
-		return 0;
-	}
-	e->pay_lim = (size_t)e->pfx->pool_data_size;
-	if (blob_size > 0) {
-		e->meta_lim = blob_size;
-	} else {
-		e->meta_lim = (size_t)e->pfx->clip_table_offset + (size_t)e->pfx->kf.frames * 8u;
-	}
-	return 1;
-}
-#endif
-
 void *Get_Shape_Header_Data(void *ptr)
 {
 	if (UseBigShapeBuffer){
@@ -221,16 +159,12 @@ void Reset_Theater_Shapes (void)
 
 void Reallocate_Big_Shape_Buffer(void)
 {
+#ifndef REMIX_BUILD
 	if (ReallocShapeBufferFlag){
-		BigShapeBufferLength += 200 * 1024;							//Extra 2 Mb of uncompressed shape space
 		BigShapeBufferPtr -= (unsigned)BigShapeBufferStart;
 		Memory_Error = NULL;
 		BigShapeBufferStart = (char*)Resize_Alloc(BigShapeBufferStart, BigShapeBufferLength);
 		Memory_Error = &Memory_Error_Handler;
-		/*
-		** If we have run out of memory then disable the uncompressed shapes
-		** It may still be possible to continue with compressed shapes
-		*/
 		if (!BigShapeBufferStart){
 			UseBigShapeBuffer = false;
 			return;
@@ -238,6 +172,7 @@ void Reallocate_Big_Shape_Buffer(void)
 		BigShapeBufferPtr += (unsigned)BigShapeBufferStart;
 		ReallocShapeBufferFlag = FALSE;
 	}
+#endif
 }
 
 
@@ -347,33 +282,6 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		return(0);
 	}
 
-#ifdef ATARI_ST
-	KfBuildEnv kf;
-	if (!KfBuildEnv_Init(dataptr, blob_size, &kf)) {
-		return (0);
-	}
-#define KF_META kf.meta
-#define KF_PAY kf.pay
-#define KF_META_LIM kf.meta_lim
-#define KF_PAY_LIM kf.pay_lim
-#define KF_TABLE kf.table_base
-#define KF_U32(p) KfReadU32(&kf, (p))
-#define KF_RETURN(v) \
-	do { \
-		unsigned long _kf_r = (unsigned long)(v); \
-		KfBuildEnv_Done(&kf); \
-		return _kf_r; \
-	} while (0)
-#else
-#define KF_META dataptr
-#define KF_PAY dataptr
-#define KF_META_LIM blob_size
-#define KF_PAY_LIM blob_size
-#define KF_TABLE ((unsigned long)sizeof(KeyFrameHeaderType))
-#define KF_U32(p) ReadLE32((p))
-#define KF_RETURN(v) return (unsigned long)(v)
-#endif
-
 	//
 	// look at header then check that frame to build is not greater
 	// than total frames
@@ -381,21 +289,19 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 	unsigned short total_frames = Get_Build_Frame_Count(dataptr);
 	
 	if ( framenumber >= total_frames ) {
-		KF_RETURN(0);
+		return(0);
 	}
 
-	if (KF_META_LIM > 0) {
-		size_t table_bytes = (size_t)KF_TABLE + ((size_t)total_frames << 3u);
-		if (table_bytes > KF_META_LIM) {
-			KF_RETURN(0);
+	if (blob_size > 0) {
+		size_t table_bytes =
+				(size_t)sizeof(KeyFrameHeaderType) + ((size_t)total_frames << 3u);
+		if (table_bytes > blob_size) {
+			return (0);
 		}
 	}
 
-	if (UseBigShapeBuffer
-#ifdef ATARI_ST
-	    && !kf.is_shpx
-#endif
-	){
+#ifndef REMIX_BUILD
+	if (UseBigShapeBuffer){
 		/*
 		** If we havnt yet allocated memory for uncompressed shapes then do so now.
 		**
@@ -466,75 +372,60 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		unsigned short keyfr_y = Get_Build_Frame_Y(dataptr);
 		if (*(KeyFrameSlots[keyfr_y]+framenumber)){
 			if (IsTheaterShape){
-				KF_RETURN((unsigned long)TheaterShapeBufferStart + (unsigned long)*(KeyFrameSlots[keyfr_y]+framenumber));
+				return ((unsigned long)TheaterShapeBufferStart + (unsigned long)*(KeyFrameSlots[keyfr_y]+framenumber));
 			}else{
-				KF_RETURN((unsigned long)BigShapeBufferStart + (unsigned long)*(KeyFrameSlots[keyfr_y]+framenumber));
+				return ((unsigned long)BigShapeBufferStart + (unsigned long)*(KeyFrameSlots[keyfr_y]+framenumber));
 			}
 		}
 	}
+#endif
 
 	// Linear frame bytes: width*height; TD SHP DeltaSize can be larger (decompress workspace).
 	unsigned short width = Get_Build_Frame_Width(dataptr);
 	unsigned short height = Get_Build_Frame_Height(dataptr);
 	unsigned long wh = (unsigned long)width * (unsigned long)height;
-	unsigned long lfs;
-#ifdef ATARI_ST
-	if (kf.is_shpx) {
-		lfs = (unsigned long)kf.pfx->kf.largest_frame_size;
-	} else
-#endif
-	{
-		const unsigned char *hdrbytes = (const unsigned char *)KF_META;
-		lfs = (unsigned long)ReadLE16(
-		    hdrbytes + offsetof(KeyFrameHeaderType, largest_frame_size));
-	}
+	const unsigned char* hdrbytes = (const unsigned char*)dataptr;
+	unsigned long lfs = (unsigned long)ReadLE16(
+		hdrbytes + offsetof(KeyFrameHeaderType, largest_frame_size));
 	/* DeltaSize / largest_frame_size is max decompress buffer; XOR can index up to that. */
 	buffsize = wh > lfs ? wh : lfs;
 	if (buffsize > (unsigned long)(4 * 1024 * 1024)) {
-		KF_RETURN(0);
+		return (0);
 	}
 
 	// get offset into data
-	unsigned long frame_offset = (((unsigned long)framenumber << 3) + KF_TABLE);
+	unsigned long frame_offset = (((unsigned long)framenumber << 3) + sizeof(KeyFrameHeaderType));
 
-	if (KF_META_LIM > 0 && (size_t)frame_offset + 12u > KF_META_LIM) {
-		KF_RETURN(0);
+	if (blob_size > 0 && (size_t)frame_offset + 12u > blob_size) {
+		return (0);
 	}
 
-	ptr = (char *)Add_Long_To_Pointer( KF_META, frame_offset );
+	ptr = (char *)Add_Long_To_Pointer( dataptr, frame_offset );
 	
-	// Read 12 bytes (3 unsigned longs) from potentially unaligned ptr
+	// Read 12 bytes (3 unsigned longs) as little-endian from potentially unaligned ptr
 	const unsigned char* offset_bytes = (const unsigned char*)ptr;
-	offset[0] = KF_U32(offset_bytes);
-	offset[1] = KF_U32(offset_bytes + 4);
-	offset[2] = KF_U32(offset_bytes + 8);
+	offset[0] = ReadLE32(offset_bytes);
+	offset[1] = ReadLE32(offset_bytes + 4);
+	offset[2] = ReadLE32(offset_bytes + 8);
 	
 	frameflags = (char)(offset[0] >> 24);
 
-	short flags;
-#ifdef ATARI_ST
-	if (kf.is_shpx) {
-		flags = kf.pfx->kf.flags;
-	} else
-#endif
-	{
-		const unsigned char *flags_bytes =
-		    (const unsigned char *)KF_META + offsetof(KeyFrameHeaderType, flags);
-		flags = (short)ReadLE16(flags_bytes);
-	}
+	// Read flags safely (little-endian)
+	const unsigned char* flags_bytes = (const unsigned char*)dataptr + offsetof(KeyFrameHeaderType, flags);
+	short flags = (short)ReadLE16(flags_bytes);
 
 	if ( (frameflags & KF_KEYFRAME) ) {
 		unsigned long data_offset = (offset[0] & 0x00FFFFFFL);
 
-		if (KF_PAY_LIM > 0 && data_offset >= (unsigned long)KF_PAY_LIM) {
-			KF_RETURN(0);
+		if (blob_size > 0 && data_offset >= blob_size) {
+			return (0);
 		}
 
-		ptr = (char *)Add_Long_To_Pointer( KF_PAY, data_offset );
+		ptr = (char *)Add_Long_To_Pointer( dataptr, data_offset );
 
 		if (flags & 1 ) {
-			if (KF_PAY_LIM > 0 && data_offset + 768u > (unsigned long)KF_PAY_LIM) {
-				KF_RETURN(0);
+			if (blob_size > 0 && data_offset + 768u > blob_size) {
+				return (0);
 			}
 			ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 		}
@@ -545,23 +436,25 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			/* Reference is frame index in low 24 bits (high byte is ReferenceFormat, not part of index). */
 			unsigned long ref_frame = (unsigned long)(offset[1] & 0x00FFFFFFUL);
 			if (ref_frame >= (unsigned long)total_frames) {
-				KF_RETURN(0);
+				return (0);
 			}
 			currframe = (unsigned short)ref_frame;
 
 			{
-				unsigned long row_off = (((unsigned long)currframe << 3) + KF_TABLE);
-				if (KF_META_LIM > 0
+				unsigned long row_off =
+						(((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType));
+				if (blob_size > 0
 						&& (size_t)row_off + (size_t)(SUBFRAMEOFFS * sizeof(unsigned long))
-								> KF_META_LIM) {
-					KF_RETURN(0);
+								> blob_size) {
+					return (0);
 				}
 			}
 
-			ptr = (char *)Add_Long_To_Pointer( KF_META, (((unsigned long)currframe << 3) + KF_TABLE) );
+			ptr = (char *)Add_Long_To_Pointer( dataptr, (((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)) );
+			// Read subframe offsets as little-endian
 			const unsigned char* offset_bytes = (const unsigned char*)ptr;
 			for (int i = 0; i < SUBFRAMEOFFS; i++) {
-				offset[i] = KF_U32(offset_bytes + i * 4);
+				offset[i] = ReadLE32(offset_bytes + i * 4);
 			}
 		}
 
@@ -571,15 +464,15 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		// key delta
 		offdiff = (offset[0] & 0x00FFFFFFL) - offcurr;
 
-		if (KF_PAY_LIM > 0 && offcurr >= (unsigned long)KF_PAY_LIM) {
-			KF_RETURN(0);
+		if (blob_size > 0 && offcurr >= blob_size) {
+			return (0);
 		}
 
-		ptr = (char *)Add_Long_To_Pointer( KF_PAY, offcurr );
+		ptr = (char *)Add_Long_To_Pointer( dataptr, offcurr );
 
 		if (flags & 1 ) {
-			if (KF_PAY_LIM > 0 && offcurr + 768u > (unsigned long)KF_PAY_LIM) {
-				KF_RETURN(0);
+			if (blob_size > 0 && offcurr + 768u > blob_size) {
+				return (0);
 			}
 			ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 		}
@@ -590,7 +483,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		length = LCW_Uncompress( ptr, buffptr, buffsize );
 
 		if (length > buffsize) {
-			KF_RETURN(0);
+			return(0);
 		}
 
 #ifndef FIXIT_SCORE_CRASH
@@ -620,9 +513,9 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			Add_Long_To_Pointer(ptr, offdiff), (unsigned)total_frames);
 		fflush(stdout);
 #endif
-		if (!Build_Frame_SrcRangeOk(KF_PAY, KF_PAY_LIM,
+		if (!Build_Frame_SrcRangeOk(dataptr, blob_size,
 					Add_Long_To_Pointer(ptr, offdiff), (size_t)buffsize)) {
-			KF_RETURN(0);
+			return (0);
 		}
 		Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff), buffsize);
 
@@ -662,10 +555,10 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 							Add_Long_To_Pointer(ptr, offdiff));
 						fflush(stdout);
 #endif
-						if (!Build_Frame_SrcRangeOk(KF_PAY, KF_PAY_LIM,
+						if (!Build_Frame_SrcRangeOk(dataptr, blob_size,
 									Add_Long_To_Pointer(ptr, offdiff),
 									(size_t)buffsize)) {
-							KF_RETURN(0);
+							return (0);
 						}
 						Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),
 							buffsize);
@@ -684,15 +577,16 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 					** and corrupt offset[] / ptr.
 					*/
 					{
+						const unsigned long hdr_sz = (unsigned long)sizeof(KeyFrameHeaderType);
 						const unsigned long copy_len =
 							(unsigned long)(SUBFRAMEOFFS * sizeof(unsigned long));
 						const unsigned long copy_start =
-							KF_TABLE + ((unsigned long)currframe << 3);
+							hdr_sz + ((unsigned long)currframe << 3);
 						const unsigned long table_end =
-							KF_TABLE + ((unsigned long)total_frames << 3);
+							hdr_sz + ((unsigned long)total_frames << 3);
 						if (copy_start + copy_len > table_end
-								|| (KF_META_LIM > 0
-										&& (size_t)(copy_start + copy_len) > KF_META_LIM)) {
+								|| (blob_size > 0
+										&& (size_t)(copy_start + copy_len) > blob_size)) {
 #if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
 							fprintf(stderr,
 									"[Build_Frame] XOR chain: Mem_Copy would read past frame "
@@ -703,16 +597,16 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 									(unsigned long)table_end, dataptr);
 							fflush(stderr);
 #endif
-							KF_RETURN(0);
+							return (0);
 						}
 					}
 					{
 						const unsigned char *row_bytes =
 							(const unsigned char *)Add_Long_To_Pointer(
-								KF_META,
-								(((unsigned long)currframe << 3) + KF_TABLE));
+								dataptr,
+								(((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)));
 						for (int i = 0; i < SUBFRAMEOFFS; i++) {
-							offset[i] = KF_U32(row_bytes + i * 4);
+							offset[i] = ReadLE32(row_bytes + i * 4);
 						}
 					}
 					/*
@@ -731,13 +625,13 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 					** match that table's key segment or offdiff points outside the asset.
 					*/
 					offcurr = offset[1] & 0x00FFFFFFL;
-					if (KF_PAY_LIM > 0 && offcurr >= (unsigned long)KF_PAY_LIM) {
-						KF_RETURN(0);
+					if (blob_size > 0 && offcurr >= blob_size) {
+						return (0);
 					}
-					ptr = (char *)Add_Long_To_Pointer( KF_PAY, offcurr );
+					ptr = (char *)Add_Long_To_Pointer( dataptr, offcurr );
 					if (flags & 1 ) {
-						if (KF_PAY_LIM > 0 && offcurr + 768u > (unsigned long)KF_PAY_LIM) {
-							KF_RETURN(0);
+						if (blob_size > 0 && offcurr + 768u > blob_size) {
+							return (0);
 						}
 						ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 					}
@@ -746,6 +640,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		}
 	}
 
+#ifndef REMIX_BUILD
 	if (UseBigShapeBuffer){
 		/*
 		** Save the uncompressed shape data so we dont have to uncompress it
@@ -782,7 +677,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 				TheaterShapeBufferPtr = (char *)((unsigned)(TheaterShapeBufferPtr + 3) & 0xfffffffc);
 			}
 			Length = length;
-			KF_RETURN(return_value);
+			return (return_value);
 
 		}else{
 
@@ -808,19 +703,15 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 				BigShapeBufferPtr = (char *)((unsigned)(BigShapeBufferPtr + 3) & 0xfffffffc);
 			}
 			Length = length;
-			KF_RETURN(return_value);
+			return (return_value);
 		}
 
 	}else{
-		KF_RETURN((unsigned long)buffptr);
+		return ((unsigned long)buffptr);
 	}
-
-#undef KF_META
-#undef KF_PAY
-#undef KF_META_LIM
-#undef KF_PAY_LIM
-#undef KF_TABLE
-#undef KF_U32
+#else
+	return ((unsigned long)buffptr);
+#endif
 }
 
 unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void *buffptr)
@@ -832,15 +723,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 static inline unsigned short Get_Build_Frame_Field(void const *dataptr, size_t offset)
 {
 	if (!dataptr) return 0;
-	const unsigned char* bytes = (const unsigned char*)dataptr;
-#ifdef ATARI_ST
-	if (SHPX_Is_Meta(dataptr)) {
-		ShpxPrefix const *pfx = SHPX_As_Prefix(dataptr);
-		uint16_t const *field = (uint16_t const *)((char const *)&pfx->kf + offset);
-		return *field;
-	}
-#endif
-	return ReadLE16(bytes + offset);
+	const unsigned char* bytes = (const unsigned char*)dataptr + offset;
+	return ReadLE16(bytes);
 }
 
 /***********************************************************************************************
@@ -934,17 +818,9 @@ unsigned long Get_Build_Frame_BufferBytes(void const *dataptr)
 	unsigned short width = Get_Build_Frame_Width(dataptr);
 	unsigned short height = Get_Build_Frame_Height(dataptr);
 	unsigned long wh = (unsigned long)width * (unsigned long)height;
-	unsigned long lfs;
-#ifdef ATARI_ST
-	if (SHPX_Is_Meta(dataptr)) {
-		lfs = (unsigned long)SHPX_As_Prefix(dataptr)->kf.largest_frame_size;
-	} else
-#endif
-	{
-		const unsigned char *hdrbytes = (const unsigned char *)dataptr;
-		lfs = (unsigned long)ReadLE16(
-		    hdrbytes + offsetof(KeyFrameHeaderType, largest_frame_size));
-	}
+	const unsigned char *hdrbytes = (const unsigned char *)dataptr;
+	unsigned long lfs = (unsigned long)ReadLE16(
+			hdrbytes + offsetof(KeyFrameHeaderType, largest_frame_size));
 	unsigned long buffsize = wh > lfs ? wh : lfs;
 	if (buffsize > (unsigned long)(4 * 1024 * 1024))
 		return 0;
@@ -955,10 +831,6 @@ unsigned long Get_Build_Frame_BufferBytes(void const *dataptr)
 bool Get_Build_Frame_Palette(void const * dataptr, void * palette)
 {
 	if (!dataptr) return(false);
-#ifdef ATARI_ST
-	if (SHPX_Is_Meta(dataptr))
-		return false;
-#endif
 	
 	// Read flags as little-endian
 	const unsigned char* flags_bytes = (const unsigned char*)dataptr + offsetof(KeyFrameHeaderType, flags);
@@ -973,3 +845,7 @@ bool Get_Build_Frame_Palette(void const * dataptr, void * palette)
 	memcpy(palette, ptr, 768L);
 	return(true);
 }
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif

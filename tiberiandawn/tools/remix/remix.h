@@ -51,6 +51,10 @@ typedef struct RemixStats {
 	unsigned iconset_converted;
 	unsigned iconset_already_st16;
 	unsigned iconset_errors;
+	unsigned shpx_files;
+	unsigned shpx_converted;
+	unsigned shpx_skipped;
+	unsigned shpx_errors;
 } RemixStats;
 
 typedef enum RemixUi {
@@ -65,6 +69,9 @@ typedef struct RemixConfig {
 	RemixUi ui;
 	int fallback_copy_on_convert_fail;
 	int convert_st16_iconsets;
+	int convert_shpx;
+	int shpx_verbose;
+	uint16_t shpx_pool_id;
 	const char *w16_dir;
 	const char *mix_basename;
 	RemixEntryReportFn entry_report;

@@ -2,7 +2,9 @@
 
 #include "remix.h"
 #include "remix_aud.h"
+#include "remix_detect.h"
 #include "remix_st16.h"
+#include "remix_shpx.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -269,12 +271,14 @@ void remix_detect_file_type(
 		return;
 	if (looks_like_vqa(data, probe_len, type_out, type_out_len))
 		return;
-	if (looks_like_pcx(data, probe_len, type_out, type_out_len))
-		return;
 	if (looks_like_st16(data, probe_len, file_size, type_out, type_out_len))
 		return;
 	if (looks_like_icn(data, probe_len, file_size, type_out, type_out_len))
 		return;
+	if (remix_is_keyframe_shp(data, file_size)) {
+		snprintf(type_out, type_out_len, "kshp");
+		return;
+	}
 	if (looks_like_shp(data, probe_len, type_out, type_out_len))
 		return;
 	if (looks_like_pal(file_size, type_out, type_out_len))
@@ -282,6 +286,8 @@ void remix_detect_file_type(
 	if (looks_like_ini(data, probe_len, type_out, type_out_len))
 		return;
 	if (looks_like_map(file_size, type_out, type_out_len))
+		return;
+	if (looks_like_pcx(data, probe_len, type_out, type_out_len))
 		return;
 	snprintf(type_out, type_out_len, "binary");
 }

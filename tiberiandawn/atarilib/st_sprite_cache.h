@@ -8,48 +8,12 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
-extern "C" {
+#include "st_decode_context.h"
 #endif
 
-/*
- * Rasterize decoded shape bytes into an LRU pool planar scratch + composite with blitter.
- * Ghost approximates translucent drawing via checkerboard mask dither (fully cacheable).
- *
- * Blits that need more planar or mask bytes than the largest tier slot (same byte budget as a 96×96
- * reference tile) return -1 from the cache path and fall back to software C2P in Buffer_Frame_To_Page_Ex.
- *
- * LRU keys mix identity_key with render-variant fingerprints (fade/ghost/trans state).
- * Cache slots store a cropped (minimal non-transparent) representation plus insets; viewport clip
- * (raster_ox/oy, blit_w/h) is not part of the key. Each draw intersects the requested clip with the
- * cached crop and adjusts source/destination offsets so output matches the uncropped result.
- *
- * full_w/full_h — unclipped frame width/height (same as logical stride rows / Buffer_Frame_To_Page w,h).
- * lazy_decode_miss: when non-NULL, invokes once on LRU cache miss — return must equal raster_base.
- *
- * Return value: pixels composited (>= 0), including 0 when the viewport clip does not intersect the
- * cached crop. Returns -1 on hard failure (tier/blit/decode).
- */
-long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
-	int dst_row_bytes,
-	int dst_width_pixels,
-	int dst_height_pixels,
-	int ax0,
-	int ay0,
-	const uint8_t *src,
-	int blit_w,
-	int blit_h,
-	int src_stride,
-	int trans,
-	const uint8_t *ghost_table,
-	const uint8_t *fade_table,
-	const uint8_t *raster_base,
-	int raster_ox,
-	int raster_oy,
-	int full_w,
-	int full_h,
-	long identity_key,
-	unsigned long (*lazy_decode_miss)(void *user_ctx),
-	void *lazy_decode_ctx);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void ST_SPRITE_CACHE_Init(void);
 
@@ -79,6 +43,39 @@ void ST_Sprite_Cache_Stats_Debug_Service(void);
 
 #ifdef __cplusplus
 } /* extern "C" */
-#endif
+
+/*
+ * Rasterize decoded shape bytes into an LRU pool planar scratch + composite with blitter.
+ * Ghost approximates translucent drawing via checkerboard mask dither (fully cacheable).
+ *
+ * lazy_decode_miss: optional; runs at most once per call on LRU miss — return must equal raster_base.
+ *   The callback may call set_clip_bounds() on the supplied IDecodeContext to skip a raster scan.
+ *
+ * Return value: pixels composited (>= 0), including 0 when the viewport clip does not intersect the
+ * cached crop. Returns -1 on hard failure (tier/blit/decode).
+ */
+long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
+	int dst_row_bytes,
+	int dst_width_pixels,
+	int dst_height_pixels,
+	int ax0,
+	int ay0,
+	const uint8_t *src,
+	int blit_w,
+	int blit_h,
+	int src_stride,
+	int trans,
+	const uint8_t *ghost_table,
+	const uint8_t *fade_table,
+	const uint8_t *raster_base,
+	int raster_ox,
+	int raster_oy,
+	int full_w,
+	int full_h,
+	long identity_key,
+	unsigned long (*lazy_decode_miss)(void *user_ctx, IDecodeContext *decode_ctx),
+	void *lazy_decode_ctx);
+
+#endif /* __cplusplus */
 
 #endif /* ATARILIB_ST_SPRITE_CACHE_H_ */

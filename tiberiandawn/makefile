@@ -139,12 +139,20 @@ ifeq ($(FASTCALL),1)
 FASTCALL_FLAGS = -mfastcall
 endif
 
+# Keep frame pointer chain for Hatari profiler / backtraces (-O3 omits by default).
+FRAME_POINTERS ?= 0
+FRAME_POINTER_FLAGS :=
+ifeq ($(FRAME_POINTERS),1)
+FRAME_POINTER_FLAGS = -fno-omit-frame-pointer
+endif
+
 # Common compiler flags (GCC style)
 CXXFLAGS_COMMON = -Wall -Wextra -fno-exceptions
 CXXFLAGS_COMMON += $(INCLUDES)
 CXXFLAGS_COMMON += -Wno-unused-parameter -Wno-sign-compare -Wno-deprecated-declarations
 CXXFLAGS_COMMON += -std=c++17 -fpermissive
 CXXFLAGS_COMMON += $(FASTCALL_FLAGS)
+CXXFLAGS_COMMON += $(FRAME_POINTER_FLAGS)
 
 # Note: Windows-specific libraries may not be available for m68k target
 # You may need to provide alternatives or stub implementations
@@ -321,7 +329,7 @@ endif
 # ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp \
-	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st16_iconset.cpp $(PLATFORM_LIB)/st16_draw.cpp $(PLATFORM_LIB)/st16_convert.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_cache.cpp $(PLATFORM_LIB)/st_cache_ops.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st16_iconset.cpp $(PLATFORM_LIB)/st16_draw.cpp $(PLATFORM_LIB)/st16_convert.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blitter_blit.cpp $(PLATFORM_LIB)/st_cache.cpp $(PLATFORM_LIB)/st_cache_ops.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/shpx.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp $(PLATFORM_LIB)/ikbd.cpp \
 	$(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/wwkeyboard_st.cpp \
 	$(PLATFORM_LIB)/mouseww.cpp \
@@ -625,6 +633,7 @@ endif
 	@echo "  PROFILE_FRAME_BAR=0 - Atari-only: disable Hz200 profiler (default: 1, -DST_FRAME_BAR_PROFILE)"
 	@echo "  PROFILE_BORDER=0    - Atari-only: disable audio pen-0 border timing (default: 0)"
 	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"
+	@echo "  FRAME_POINTERS=1 - Keep A6 frame chain (-fno-omit-frame-pointer); default: 0"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
 	@echo "  FASTCALL=0       - Disable -mfastcall on compile and link (default: 1)"
 	@echo "  PLATFORM=Win32 - Target platform (default: Win32)"
@@ -644,7 +653,7 @@ endif
 	@echo "  make cleanall            - Clean everything"
 ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  make st-tests            - Build tstcnc(.d).tos (ST on-machine suite)"
-	@echo "  make USE_ATARILIB=1 CONFIG=release CXX_OPT_REL=-O3 WITH_SYMBOLS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/ -j4"
+	@echo "  make USE_ATARILIB=1 CONFIG=release CXX_OPT_REL=-O3 WITH_SYMBOLS=1 FRAME_POINTERS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/ -j4"
 	@echo "  make PROFILE_FRAME_BAR=0 - Atari build without tab-strip profiler (on by default)"
 	@echo "  make PROFILE_BORDER=0    - Audio VBL/IMA decode border timing (on by default)"
 	@echo "  make itch-release        - dist/itch/cncst-x.y.z.zip + cncst-sym-x.y.z.zip"
@@ -684,7 +693,7 @@ ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
 endif
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
-	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/iconset_ATARILIB.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o \
+	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/iconset_ATARILIB.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blitter_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/shpx.o \
 	$(INTDIR)/st_planar_draw.o $(INTDIR)/st_hw_probe.o $(INTDIR)/st_cache.o $(INTDIR)/st_cache_ops.o \
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/link.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/rawfile.o $(INTDIR)/font.o \

@@ -139,6 +139,8 @@ ifeq ($(FASTCALL),1)
 FASTCALL_FLAGS = -mfastcall
 endif
 
+LIBC_RUNTIME ?= libcmini
+
 # Keep frame pointer chain for Hatari profiler / backtraces (-O3 omits by default).
 FRAME_POINTERS ?= 0
 FRAME_POINTER_FLAGS :=
@@ -169,10 +171,63 @@ else
 PLATFORM_LIBS = $(WINDOWS_LIBS)
 endif
 
+ifeq ($(PLATFORM_LIB),ATARILIB)
+LIBCMINI_PREFIX ?= $(HOME)/opt/cross-mint/m68k-atari-mint/sys-root/usr
+LIBCMINI_BASE_DIR ?= $(LIBCMINI_PREFIX)/lib
+LIBCMINI_LIB_DIR ?= $(LIBCMINI_BASE_DIR)
+LIBCMINI_CRT0 ?= $(LIBCMINI_BASE_DIR)/crt0.o
+# Resolve compiler runtime library dirs with the same ABI flags used at link time.
+# Without FASTCALL_FLAGS here, -lgcc/-lstdc++/-lsupc++ come from the cdecl tree while
+# libcmini is mfastcall, and early libsupc++ ctors call getenv() with the wrong convention.
+GCC_LIB_DIR := $(dir $(shell "$(CXX)" $(FASTCALL_FLAGS) -print-file-name=libstdc++.a))
+SYSROOT_LIB_DIR := $(dir $(shell "$(CXX)" $(FASTCALL_FLAGS) -print-file-name=crt0.o))
+
+ifeq ($(FASTCALL),1)
+LIBC_RUNTIME_SUBDIR = mfastcall
+else
+LIBC_RUNTIME_SUBDIR =
+endif
+
+ifneq ($(strip $(LIBC_RUNTIME_SUBDIR)),)
+ifneq ($(wildcard $(LIBCMINI_BASE_DIR)/$(LIBC_RUNTIME_SUBDIR)/libcmini.a),)
+override LIBCMINI_LIB_DIR := $(LIBCMINI_BASE_DIR)/$(LIBC_RUNTIME_SUBDIR)
+endif
+ifneq ($(wildcard $(SYSROOT_LIB_DIR)$(LIBC_RUNTIME_SUBDIR)/libc.a),)
+SYSROOT_LIB_DIR := $(SYSROOT_LIB_DIR)$(LIBC_RUNTIME_SUBDIR)/
+endif
+endif
+
+LIBCMINI_FOUND := 0
+ifneq ($(wildcard $(LIBCMINI_LIB_DIR)/libcmini.a),)
+ifneq ($(wildcard $(LIBCMINI_CRT0)),)
+LIBCMINI_FOUND := 1
+endif
+endif
+
+USE_LIBCMINI := 0
+ifeq ($(LIBC_RUNTIME),libcmini)
+ifeq ($(LIBCMINI_FOUND),1)
+USE_LIBCMINI := 1
+endif
+endif
+ifeq ($(LIBC_RUNTIME),auto)
+ifeq ($(LIBCMINI_FOUND),1)
+USE_LIBCMINI := 1
+endif
+endif
+
+ifeq ($(USE_LIBCMINI),1)
+DEFINES += LIBCMINI
+endif
+endif
+
 # Debug configuration
 ifeq ($(CONFIG),Debug)
 DEFINES += _DEBUG
-CXXFLAGS = $(CXXFLAGS_COMMON) -O0 -g -DDEBUG
+# -O2 keeps libstdc++ iostream dead-strippable under --gc-sections; -O0 leaves
+# references that pull MiNT-only POSIX symbols (writev, poll, …) from libstdc++.a.
+CXXFLAGS = $(CXXFLAGS_COMMON) -O2 -g -DDEBUG
+CXXFLAGS += -ffunction-sections -fdata-sections
 LDFLAGS = -g
 LIBS = $(PLATFORM_LIBS)
 else
@@ -182,6 +237,8 @@ DEFINES += NDEBUG
 CXX_OPT_REL ?= -O3
 WITH_SYMBOLS ?= 1
 CXXFLAGS = $(CXXFLAGS_COMMON) $(CXX_OPT_REL) -DNDEBUG
+CXXFLAGS += -ffunction-sections -fdata-sections
+CXXFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 LDFLAGS = -s
 # Optional: keep debug info and do not strip (nm / addr2line / gdb on host tooling).
 # Frame-bar profiler: PROFILE_FRAME_BAR defaults to 1 for ATARILIB (-DST_FRAME_BAR_PROFILE).
@@ -224,15 +281,30 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 # Note: -nostdlib removed - we need standard library for TOS executables
 # Entry point will be main() from startup.cpp
 # No special entry point needed - standard C++ main() is fine
+ifeq ($(USE_LIBCMINI),1)
+RUNTIME_LINKFLAGS += -nostdlib
+RUNTIME_LINKFLAGS += -L$(LIBCMINI_LIB_DIR)
+RUNTIME_LINKFLAGS += -L$(SYSROOT_LIB_DIR)
+RUNTIME_LINKFLAGS += -L$(GCC_LIB_DIR)
+LIBS += -Wl,--start-group -lgcc -lsupc++ -lstdc++ -lcmini -lm -lgcc -Wl,--end-group
+LINK_PRE_OBJS += $(LIBCMINI_CRT0)
+else
+ifeq ($(filter help clean cleanall remix-web remix-web-itch,$(MAKECMDGOALS)),)
+ifeq ($(LIBC_RUNTIME),libcmini)
+$(error LIBC_RUNTIME=libcmini requested, but libcmini was not found. Expected $(LIBCMINI_CRT0) and $(LIBCMINI_LIB_DIR)/libcmini.a)
+endif
+endif
+endif
+RUNTIME_LINKFLAGS += -Wl,--gc-sections
 else
 # Windows: Build as DLL
 LDFLAGS += -shared
 LDFLAGS += -Wl,-soname,$(TARGET_NAME).dll
 endif
 
-# Link driver flags: LDFLAGS plus ABI flags. Appended here (not via LDFLAGS +=) because
-# Release WITH_SYMBOLS uses "override LDFLAGS :=" which drops a later LDFLAGS +=.
-LINKFLAGS = $(LDFLAGS) $(FASTCALL_FLAGS)
+# Link driver flags: LDFLAGS plus ABI/runtime flags. Runtime flags are kept separate because
+# Release WITH_SYMBOLS uses "override LDFLAGS :=" which intentionally clears strip flags.
+LINKFLAGS = $(LDFLAGS) $(RUNTIME_LINKFLAGS) $(FASTCALL_FLAGS)
 
 # Generate import library (may not be supported on all targets)
 # Will be handled separately if needed
@@ -247,6 +319,14 @@ COMMONLIB_CPP_SOURCES = \
 
 # Vanilla Conquer common/ sources (replacing removed tiberiandawn/*.cpp on ATARI_ST)
 ifeq ($(PLATFORM_LIB),ATARILIB)
+ifeq ($(USE_LIBCMINI),1)
+PATHS_IMPL_CPP = paths_tos.cpp
+PATHS_IMPL_OBJ = $(INTDIR)/paths_tos.o
+else
+PATHS_IMPL_CPP = paths_posix.cpp
+PATHS_IMPL_OBJ = $(INTDIR)/paths_posix.o
+endif
+
 VC_COMMON_CPP_SOURCES = \
 	../common/b64pipe.cpp ../common/b64straw.cpp ../common/base64.cpp \
 	../common/bfiofile.cpp ../common/blowfish.cpp ../common/blowpipe.cpp \
@@ -260,7 +340,7 @@ VC_COMMON_CPP_SOURCES = \
 	../common/link.cpp ../common/load.cpp ../common/misc.cpp \
 	../common/dipthong.cpp ../common/_diptabl.cpp ../common/face.cpp ../common/irandom.cpp ../common/newdel.cpp \
 	../common/mixfile.cpp ../common/mp.cpp ../common/palettec.cpp ../common/paths.cpp \
-	../common/paths_posix.cpp ../common/pipe.cpp ../common/pk.cpp \
+	../common/$(PATHS_IMPL_CPP) ../common/pipe.cpp ../common/pk.cpp \
 	../common/pkpipe.cpp ../common/pkstraw.cpp ../common/random.cpp \
 	../common/rawfile.cpp ../common/readline.cpp ../common/rgb.cpp \
 	../common/rndstraw.cpp ../common/settings.cpp ../common/sha.cpp \
@@ -340,13 +420,16 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/libcmini_posix_shim.cpp,)
 
 # Assembly sources (platform-specific)
 # Root directory files use uppercase .ASM, ATARILIB files use lowercase .asm (as tracked in git)
 ASM_SOURCES = \
 	IPXPROT.ASM IPXREAL.ASM KEYFBUFF.ASM MMX.ASM PAGFAULT.ASM \
 	SUPPORT.ASM TXTPRNT.ASM WINASM.ASM
+ifeq ($(PLATFORM_LIB),ATARILIB)
+ASM_SOURCES += $(PLATFORM_LIB)/linea_shim.s
+endif
 
 # Resource files
 RC_SOURCES = \
@@ -375,7 +458,7 @@ PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/iconset.o,$(INTDIR)/iconset_$(PLATFOR
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/misc.o,$(INTDIR)/misc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 # gadget.cpp exists in ../common/ (VC_COMMON) and root GADGET.CPP — root excluded on ST
 CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(VC_COMMON_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
-ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.ASM,%.o,$(patsubst %.asm,%.o,$(ASM_SOURCES)))))
+ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.ASM,%.o,$(patsubst %.asm,%.o,$(patsubst %.s,%.o,$(ASM_SOURCES))))))
 # Filter out truncated x86 assembly object files for ATARILIB (they can't be assembled for m68k)
 ifeq ($(PLATFORM_LIB),ATARILIB)
 ASM_OBJECTS := $(filter-out $(INTDIR)/IPXPROT.o $(INTDIR)/IPXREAL.o $(INTDIR)/KEYFBUFF.o $(INTDIR)/MMX.o $(INTDIR)/PAGFAULT.o $(INTDIR)/SUPPORT.o $(INTDIR)/TXTPRNT.o $(INTDIR)/WINASM.o,$(ASM_OBJECTS))
@@ -420,7 +503,7 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 # Atari ST: Build TOS executable
 $(TARGET_EXE): $(ALL_OBJECTS) | $(OUTDIR) $(INTDIR)
 	@echo "Linking $(TARGET_EXE)..."
-	$(CXX) $(LINKFLAGS) -o $(TARGET_EXE) $(ALL_OBJECTS) $(LIBS)
+	$(CXX) $(LINKFLAGS) -o $(TARGET_EXE) $(LINK_PRE_OBJS) $(ALL_OBJECTS) $(LIBS)
 	@echo "TOS executable created: $(TARGET_EXE)"
 else
 # Windows: Build DLL
@@ -545,6 +628,17 @@ $(INTDIR)/%.o: %.ASM | $(INTDIR)
 # Assembly compilation rules for platform library files
 # Handle both .asm and .ASM extensions (case-insensitive filesystem)
 # ATARILIB uses lowercase .asm, WIN32LIB uses uppercase .ASM
+$(INTDIR)/%.o: $(PLATFORM_LIB)/%.s | $(INTDIR)
+	@echo "Assembling $<..."
+	@mkdir -p $(INTDIR)
+	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \
+		$(ASM) $(ASMFLAGS) -o $@ $<; \
+	else \
+		echo "WARNING: x86 assembly on m68k target"; \
+		echo "Error: x86 assembly files cannot be assembled for m68k target"; \
+		echo "Skipping $< - you may need to convert or rewrite in C/C++"; \
+		touch $@; \
+	fi
 $(INTDIR)/%.o: $(PLATFORM_LIB)/%.asm | $(INTDIR)
 	@echo "Assembling $<..."
 	@mkdir -p $(INTDIR)
@@ -636,6 +730,9 @@ endif
 	@echo "  FRAME_POINTERS=1 - Keep A6 frame chain (-fno-omit-frame-pointer); default: 0"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
 	@echo "  FASTCALL=0       - Disable -mfastcall on compile and link (default: 1)"
+	@echo "  LIBC_RUNTIME=libcmini|mintlib|auto - Atari-only C runtime (default: libcmini)"
+	@echo "    mintlib: paths_posix.cpp; libcmini: paths_tos.cpp (-DLIBCMINI)"
+	@echo "  LIBCMINI_PREFIX  - Atari-only libcmini install prefix ending in /usr"
 	@echo "  PLATFORM=Win32 - Target platform (default: Win32)"
 	@echo "  CROSS_PREFIX   - Cross-compiler path (default: \$$HOME/opt/cross-mint/bin)"
 	@echo "  USE_ATARILIB   - Force use of ATARILIB (default: auto-detect)"
@@ -654,6 +751,8 @@ endif
 ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  make st-tests            - Build tstcnc(.d).tos (ST on-machine suite)"
 	@echo "  make USE_ATARILIB=1 CONFIG=release CXX_OPT_REL=-O3 WITH_SYMBOLS=1 FRAME_POINTERS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/ -j4"
+	@echo "  make LIBC_RUNTIME=mintlib -j4"
+	@echo "  make LIBC_RUNTIME=libcmini LIBCMINI_PREFIX=/path/to/libcmini/usr -j4"
 	@echo "  make PROFILE_FRAME_BAR=0 - Atari build without tab-strip profiler (on by default)"
 	@echo "  make PROFILE_BORDER=0    - Audio VBL/IMA decode border timing (on by default)"
 	@echo "  make itch-release        - dist/itch/cncst-x.y.z.zip + cncst-sym-x.y.z.zip"
@@ -672,7 +771,11 @@ endif
 		echo "  - Using ATARILIB for Atari ST platform"; \
 		echo "  - Building TOS executable (.tos file)"; \
 		echo "  - Assembly files (.asm) should be m68k-compatible"; \
-		echo "  - Linking with MiNT libraries (-lm -lc)"; \
+		if [ "$(USE_LIBCMINI)" = "1" ]; then \
+			echo "  - Linking against libcmini from $(LIBCMINI_LIB_DIR)"; \
+		else \
+			echo "  - Linking with default MiNT runtime"; \
+		fi; \
 	else \
 		echo "  - Using WIN32LIB for Windows platform"; \
 		echo "  - Building Windows DLL (.dll file)"; \
@@ -703,7 +806,7 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTD
 	$(INTDIR)/st_load_uncompress.o \
 	$(INTDIR)/buff.o $(INTDIR)/bfiofile.o $(INTDIR)/blwstraw.o $(INTDIR)/blowfish.o \
 	$(INTDIR)/crc.o $(INTDIR)/fading.o $(INTDIR)/file.o $(INTDIR)/file_posix.o \
-	$(INTDIR)/paths.o $(INTDIR)/paths_posix.o $(INTDIR)/debugstring.o \
+	$(INTDIR)/paths.o $(PATHS_IMPL_OBJ) $(INTDIR)/debugstring.o \
 	$(INTDIR)/pk.o $(INTDIR)/pkstraw.o $(INTDIR)/rndstraw.o $(INTDIR)/sha.o $(INTDIR)/shastraw.o \
 	$(INTDIR)/straw.o $(INTDIR)/xstraw.o $(INTDIR)/wwkeyboard.o \
 	$(INTDIR)/misc.o $(INTDIR)/random.o $(INTDIR)/int.o $(INTDIR)/mp.o

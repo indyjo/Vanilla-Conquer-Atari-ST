@@ -30,9 +30,20 @@ void PathsClass::Init(const char* suffix, const char* ini_name, const char* data
         Suffix = suffix;
     }
 
-#ifdef ATARI_ST
+#ifdef LIBCMINI
     /*
-    **	Portable floppy/disk layout: read and write config next to MIX files in CWD.
+    **	libcmini / bare TOS: config and data live in the GEMDOS current directory.
+    **	Use "." so file search does not build "C:\CNC\file" paths for fopen().
+    */
+    UserPath = ".";
+    DataPath = ".";
+    Program_Path();
+    DBG_INFO("Read only data directory is set to '%s'", DataPath.c_str());
+    DBG_INFO("Read/Write user data directory is set to '%s'", UserPath.c_str());
+    return;
+#elif defined(ATARI_ST)
+    /*
+    **	MiNT / mintlib: portable layout next to MIX files; cwd is a real POSIX path.
     */
     {
         char cwd[128];

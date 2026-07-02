@@ -3690,12 +3690,22 @@ static bool Change_Local_Dir(int cd)
 {
     static bool _initialised = false;
     static unsigned _detected = 0;
+#ifdef ATARI_ST
+    static const char* _vol_labels[CD_COUNT] = {"gdi", "nod", "covertop", "."};
+#else
     static const char* _vol_labels[CD_COUNT] = {"gdi", "nod", "covertops", "."};
+#endif
     std::string paths[3] = {Paths.User_Path(), Paths.Data_Path(), Paths.Program_Path()};
 
     // Detect which if any of the discs have had their data copied to an appropriate local folder.
     if (!_initialised) {
         for (int i = 0; i < CD_COUNT; ++i) {
+#ifdef ATARI_ST
+            /* CWD is already on the search list via Refresh_Search_Drives. */
+            if (i == CD_DATADIR) {
+                continue;
+            }
+#endif
             for (int j = 0; j < 3; ++j) {
                 std::string path = Paths.Concatenate_Paths(paths[j].c_str(), _vol_labels[i]);
                 RawFileClass vol(path.c_str());
@@ -3704,7 +3714,7 @@ static bool Change_Local_Dir(int cd)
                     CDFileClass::Refresh_Search_Drives();
                     path += PathsClass::SEP;
                     CDFileClass::Add_Search_Drive(path.c_str());
-                    CCFileClass fc("GENERAL.MIX");
+                    CDFileClass fc("GENERAL.MIX");
 
                     // Populate _detected as a bitfield for which discs we found a local copy of.
                     if (fc.Is_Available()) {
@@ -3721,6 +3731,11 @@ static bool Change_Local_Dir(int cd)
 
     // No local folders with cd data dectected so we can't load any.
     if (_detected == 0) {
+#ifdef ATARI_ST
+        if (CDFileClass("CONQUER.MIX").Is_Available() || CDFileClass("GENERAL.MIX").Is_Available()) {
+            return true;
+        }
+#endif
         return false;
     }
 
@@ -3763,7 +3778,7 @@ static bool Change_Local_Dir(int cd)
                 CDFileClass::Add_Search_Drive(path.c_str());
 
                 // The file should be available if we reached this point.
-                assert(CCFileClass("GENERAL.MIX").Is_Available());
+                assert(CDFileClass("GENERAL.MIX").Is_Available());
 
                 LastCD = cd;
                 Theme.Stop();
@@ -3864,42 +3879,21 @@ bool Force_CD_Available(int cd)
     int open_failed;
     int file;
 #endif
-    static char _palette[768];
-    static char _hold[256];
-    static void* font;
-    static const char* _volid[] = {"GDI", "NOD", "COVERT"};
+    static bool in_progress = false;
 
-    int drive;
+    if (in_progress) {
+        return (cd == CD_LOCAL);
+    }
 
-    char volume_name[100];
-    unsigned filename_length;
-    unsigned misc_dword;
-    int new_cd_drive = 0;
-    int cd_index;
-    char buffer[128];
-    int cd_drive;
-    int current_drive;
-    int drive_search_timeout;
-    bool old_in_main_loop;
-
-    ThemeType theme_playing = THEME_NONE;
-
-    /*
-    ** If the required CD is set to -2 then it means that the file is present
-    ** on the local hard drive and we shouldn't have to worry about it.
-    */
     if (cd == CD_LOCAL) {
         return (true);
     }
 
-    /*
-    ** Search for the data in local folder first.
-    */
-    if (Change_Local_Dir(cd)) {
-        return (true);
-    }
+    in_progress = true;
+    bool result = Change_Local_Dir(cd);
+    in_progress = false;
+    return result;
 
-    return (false);
 #endif
 }
 

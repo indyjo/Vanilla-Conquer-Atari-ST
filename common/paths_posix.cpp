@@ -15,7 +15,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <errno.h>
+#ifndef ATARI_ST
 #include <pwd.h>
+#endif
 #include <stdexcept>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -44,6 +46,7 @@
 
 namespace
 {
+#ifndef ATARI_ST
     const std::string& User_Home()
     {
         static std::string _path;
@@ -110,8 +113,9 @@ namespace
 
         return User_Home() + "/" + relative_path;
     }
+#endif
 
-#ifdef ATARI_ST
+#if defined(ATARI_ST) && !defined(LIBCMINI)
     const std::string& Working_Directory()
     {
         static std::string _path;
@@ -197,7 +201,7 @@ const char* PathsClass::Program_Path()
 const char* PathsClass::Data_Path()
 {
     if (DataPath.empty()) {
-#ifdef ATARI_ST
+#if defined(ATARI_ST) && !defined(LIBCMINI)
         DataPath = Working_Directory();
 #else
         if (ProgramPath.empty()) {
@@ -219,7 +223,7 @@ const char* PathsClass::Data_Path()
 const char* PathsClass::User_Path()
 {
     if (UserPath.empty()) {
-#ifdef ATARI_ST
+#if defined(ATARI_ST) && !defined(LIBCMINI)
         UserPath = Working_Directory();
 #else
 #ifdef __APPLE__

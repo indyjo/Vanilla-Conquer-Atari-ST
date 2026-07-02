@@ -70,6 +70,27 @@
 
 #include <sys/stat.h>
 
+/*
+**	Libcmini FILE is 24 bytes; mintlib stdio.h at -O2 inlines ferror/feof/clearerr
+**	macros using the 84-byte MiNT FILE layout. Undef so we call libcmini functions.
+*/
+#if defined(LIBCMINI)
+#ifdef ferror
+#undef ferror
+#endif
+#ifdef feof
+#undef feof
+#endif
+#ifdef clearerr
+#undef clearerr
+#endif
+extern "C" {
+int ferror(FILE* stream);
+int feof(FILE* stream);
+void clearerr(FILE* stream);
+}
+#endif
+
 /***********************************************************************************************
  * RawFileClass::Error -- Handles displaying a file error message.                             *
  *                                                                                             *

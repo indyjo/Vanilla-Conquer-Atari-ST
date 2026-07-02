@@ -73,8 +73,9 @@ void ST_Init_Await_Keypress(void)
 	printf("\nPress enter to exit.");
 	fflush(stdout);
 	for (;;) {
-		int const ch = fgetc(stdin);
-		if (ch == '\r' || ch == '\n' || ch == EOF) {
+		long const w = Crawcin();
+		int const ch = (int)(w & 0xff);
+		if (ch == '\r' || ch == '\n') {
 			break;
 		}
 	}
@@ -499,7 +500,7 @@ void Print_Error_End_Exit(char *string)
 	} else if (Keyboard) {
 		Keyboard->Get();
 	} else {
-		getchar();
+		(void)Crawcin();
 	}
 	Prog_End(string, true);
 	printf( "%s\n", string );

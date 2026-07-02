@@ -304,6 +304,10 @@ bool Init_Game(int, char*[])
     CCFileClass palfile("TEMPERAT.PAL");
     palfile.Read(GamePalette, 768L);
 
+#ifdef ATARI_ST
+    Set_Palette(GamePalette);
+#endif
+
     if (!MouseInstalled) {
         char buffer[255];
         Set_Palette(GamePalette);

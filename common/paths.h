@@ -44,6 +44,8 @@ public:
 
 #ifdef _WIN32
     constexpr static char SEP = '\\';
+#elif defined(LIBCMINI)
+    constexpr static char SEP = '\\';
 #else
     constexpr static char SEP = '/';
 #endif

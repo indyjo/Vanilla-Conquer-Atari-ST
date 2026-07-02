@@ -38,7 +38,7 @@
 #include <stdarg.h>
 #include "common/filepcx.h"
 #include <stdio.h>
-#ifndef POSIX
+#ifdef _WIN32
 #include <io.h>
 #endif
 #ifdef CHEAT_KEYS

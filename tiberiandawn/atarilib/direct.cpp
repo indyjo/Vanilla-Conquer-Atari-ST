@@ -22,9 +22,15 @@ void _makepath(char *path, const char *drive, const char *dir, const char *fname
 	if (dir && dir[0]) {
 		strcat(path, dir);
 		/* Ensure trailing slash */
-		if (path[strlen(path)-1] != '/' && path[strlen(path)-1] != '\\') {
+#ifdef LIBCMINI
+		if (path[strlen(path)-1] != '\\') {
+			strcat(path, "\\");
+		}
+#else
+		if (path[strlen(path)-1] != '/') {
 			strcat(path, "/");
 		}
+#endif
 	}
 	
 	/* Filename */

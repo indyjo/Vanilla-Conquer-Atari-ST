@@ -1,5 +1,5 @@
 /*
- * SHPX conversion for CONQUER.MIX KeyFrame SHPs (host remix only).
+ * SHPX conversion for CONQUER.MIX KeyFrame SHPs (host remix + remix-web WASM).
  */
 
 #include "remix_shpx.h"
@@ -20,7 +20,8 @@ enum {
 	SHPX_KF_HEADER_SIZE = 14,
 	SHPX_PREFIX_SIZE = 38,
 	SHPX_FRAME_SLOT_SIZE = 8,
-	KF_HEADER_SIZE = 14
+	KF_HEADER_SIZE = 14,
+	SHPX_KF_DELTA_FLAG = 0x20u
 };
 
 static uint16_t read_le16(const unsigned char *p)
@@ -179,7 +180,7 @@ static int table_word_needs_rebase(
 
 	if ((byte_off - slot_base) == 4) {
 		w0 = read_le32(blob + slot_base);
-		if ((w0 >> 24) & KF_DELTA)
+		if ((w0 >> 24) & SHPX_KF_DELTA_FLAG)
 			return 0;
 	}
 	return 1;
@@ -257,10 +258,13 @@ static int build_clips(
 	unsigned short height = Get_Build_Frame_Height(blob);
 	unsigned long buf_bytes = Get_Build_Frame_BufferBytes(blob);
 	unsigned char *buf;
+	const unsigned char *frame_blob = blob;
+	size_t frame_blob_len = blob_len;
 	unsigned empty = 0;
 	unsigned decode_fail = 0;
 	uint16_t max_cw = 0;
 	uint16_t max_ch = 0;
+	int rc = 0;
 
 	if (width == 0 || height == 0 || buf_bytes == 0)
 		return 0;
@@ -282,7 +286,7 @@ static int build_clips(
 		unsigned char *row = clip_out + (size_t)f * 8u;
 		int decoded;
 
-		if (!Build_Frame(blob, f, buf, blob_len)) {
+		if (!Build_Frame(frame_blob, f, buf, frame_blob_len)) {
 			cx = cy = cw = ch = 0;
 			decoded = 0;
 			++decode_fail;
@@ -320,8 +324,9 @@ static int build_clips(
 		    (unsigned)opts->entry_crc, empty, decode_fail, (unsigned)max_cw, (unsigned)max_ch);
 	}
 
+	rc = 1;
 	free(buf);
-	return 1;
+	return rc;
 }
 
 static void write_kf_header_be(unsigned char *dst, const unsigned char *src)
@@ -348,11 +353,17 @@ int remix_shpx_convert(
 	size_t frame_off;
 	size_t clip_off;
 
-	*out_buf = NULL;
-	*out_len = 0;
+	if (!in)
+		return 0;
 
 	if (!remix_is_keyframe_shp(in, in_len))
 		return -1;
+
+	if (!pool || !out_buf || !out_len)
+		return 0;
+
+	*out_buf = NULL;
+	*out_len = 0;
 
 	frames = read_le16(in);
 	flags = (int16_t)read_le16(in + 12);

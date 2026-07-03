@@ -3,6 +3,7 @@
  */
 
 #include "remix.h"
+#include "remix_shpx.h"
 #include "remix_st16.h"
 
 #include <emscripten.h>
@@ -13,11 +14,15 @@
 #define WASM_IN_PATH "/in.mix"
 #define WASM_IN_B_PATH "/in_b.mix"
 #define WASM_OUT_PATH "/out.mix"
+#define WASM_MERGE_TMP_PATH "/out.mix.merge.tmp"
+/** Input already written to MEMFS by JS (see remix_wasm_memfs_input()). */
+#define WASM_MEMFS_INPUT (-1)
 
 static RemixEntry *g_wasm_entries = NULL;
 static unsigned g_wasm_entry_count;
 static unsigned g_wasm_entry_cap;
 static int g_wasm_convert_st16 = 1;
+static int g_wasm_convert_shpx = 0;
 static char g_wasm_mix_basename[256];
 static const char g_wasm_w16_dir[] = ".";
 
@@ -69,9 +74,26 @@ static uint8_t *read_file(const char *path, size_t *out_len)
 	return buf;
 }
 
+static void wasm_workfiles_cleanup(void)
+{
+	remove(WASM_IN_PATH);
+	remove(WASM_IN_B_PATH);
+	remove(WASM_OUT_PATH);
+	remove(WASM_MERGE_TMP_PATH);
+}
+
+static void wasm_prepare_outputs(void)
+{
+	remove(WASM_OUT_PATH);
+	remove(WASM_MERGE_TMP_PATH);
+}
+
 static void wasm_entries_reset(void)
 {
+	free(g_wasm_entries);
+	g_wasm_entries = NULL;
 	g_wasm_entry_count = 0;
+	g_wasm_entry_cap = 0;
 }
 
 static void wasm_entry_report(const RemixEntry *entry, void *ctx)
@@ -99,16 +121,40 @@ static void wasm_config_init(RemixConfig *cfg)
 	cfg->ui = REMIX_UI_WASM;
 	cfg->fallback_copy_on_convert_fail = 1;
 	cfg->convert_st16_iconsets = g_wasm_convert_st16;
+	cfg->convert_shpx = g_wasm_convert_shpx;
+	cfg->shpx_pool_id = REMIX_SHPX_POOL_ID_DEFAULT;
 	cfg->mix_basename = g_wasm_mix_basename[0] ? g_wasm_mix_basename : NULL;
 	cfg->w16_dir = g_wasm_convert_st16 ? g_wasm_w16_dir : NULL;
 	cfg->entry_report = wasm_entry_report;
 	cfg->entry_report_ctx = NULL;
 }
 
+static int wasm_stage_input(const uint8_t *in_data, int in_len, const char *path)
+{
+	if (in_len == WASM_MEMFS_INPUT)
+		return 1;
+	if (!in_data || in_len <= 0)
+		return 0;
+	remove(path);
+	return write_file(path, in_data, (size_t)in_len);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int remix_wasm_memfs_input(void)
+{
+	return WASM_MEMFS_INPUT;
+}
+
 EMSCRIPTEN_KEEPALIVE
 void remix_wasm_set_st16_enabled(int enabled)
 {
 	g_wasm_convert_st16 = enabled ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void remix_wasm_set_shpx_enabled(int enabled)
+{
+	g_wasm_convert_shpx = enabled ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -148,28 +194,27 @@ int remix_wasm_process_mix(
 	RemixConfig cfg;
 	int rc;
 
-	if (!in_data || in_len <= 0 || !out_data || !out_len)
-		return 0;
-
 	wasm_config_init(&cfg);
 	wasm_entries_reset();
 
 	if (stats)
 		remix_stats_init(stats);
 
-	remove(WASM_OUT_PATH);
-	if (!write_file(WASM_IN_PATH, in_data, (size_t)in_len))
+	wasm_prepare_outputs();
+	if (!wasm_stage_input(in_data, in_len, WASM_IN_PATH))
 		return 0;
 
 	rc = remix_mix_file_ex(WASM_IN_PATH, WASM_OUT_PATH, &cfg, stats);
 	if (rc <= 0)
 		return rc;
 
-	*out_data = read_file(WASM_OUT_PATH, (size_t *)out_len);
-	if (!*out_data)
-		return 0;
-	if (*out_len <= 0)
-		return 0;
+	if (out_data && out_len) {
+		*out_data = read_file(WASM_OUT_PATH, (size_t *)out_len);
+		if (!*out_data)
+			return 0;
+		if (*out_len <= 0)
+			return 0;
+	}
 	return 1;
 }
 
@@ -182,21 +227,16 @@ int remix_wasm_merge_and_process_mix(
 	const char *paths[2];
 	int rc;
 
-	if (!in_a || len_a <= 0 || !in_b || len_b <= 0 || !out_data || !out_len)
-		return 0;
-
 	wasm_config_init(&cfg);
 	wasm_entries_reset();
 
 	if (stats)
 		remix_stats_init(stats);
 
-	remove(WASM_OUT_PATH);
-	remove(WASM_IN_PATH);
-	remove(WASM_IN_B_PATH);
-	if (!write_file(WASM_IN_PATH, in_a, (size_t)len_a))
+	wasm_prepare_outputs();
+	if (!wasm_stage_input(in_a, len_a, WASM_IN_PATH))
 		return 0;
-	if (!write_file(WASM_IN_B_PATH, in_b, (size_t)len_b))
+	if (!wasm_stage_input(in_b, len_b, WASM_IN_B_PATH))
 		return 0;
 
 	paths[0] = WASM_IN_PATH;
@@ -205,12 +245,20 @@ int remix_wasm_merge_and_process_mix(
 	if (rc <= 0)
 		return rc;
 
-	*out_data = read_file(WASM_OUT_PATH, (size_t *)out_len);
-	if (!*out_data)
-		return 0;
-	if (*out_len <= 0)
-		return 0;
+	if (out_data && out_len) {
+		*out_data = read_file(WASM_OUT_PATH, (size_t *)out_len);
+		if (!*out_data)
+			return 0;
+		if (*out_len <= 0)
+			return 0;
+	}
 	return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void remix_wasm_cleanup_workfiles(void)
+{
+	wasm_workfiles_cleanup();
 }
 
 EMSCRIPTEN_KEEPALIVE

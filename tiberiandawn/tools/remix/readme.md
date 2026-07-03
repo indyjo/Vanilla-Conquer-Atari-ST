@@ -26,6 +26,18 @@ Smoke test (ST16 conversion with `../../atari-assets/temperat.w16`):
 make test-st16
 ```
 
+SHPX / KeyFrame decode regression (curated shapes under `testdata/shapes/`):
+
+```bash
+make test-shpx
+```
+
+Regenerate test blobs from an unmodified `CONQUER.MIX`:
+
+```bash
+python3 testdata/extract_shapes.py /path/to/conquer.mix
+```
+
 MiNT `remix.tos` (cross-compiler):
 
 ```bash

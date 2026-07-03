@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { ContentOptions, TargetVersion, TargetVersionState } from '../lib/types';
   import {
+    defaultShpxForVersion,
     defaultSt16ForVersion,
+    shpxIncompatibilityWarning,
     st16IncompatibilityWarning,
     TARGET_VERSION_OPTIONS,
   } from '../lib/target-version';
@@ -25,10 +27,12 @@
   }: Props = $props();
 
   let st16Touched = $state(false);
+  let shpxTouched = $state(false);
 
   function toggle(key: keyof ContentOptions, value: boolean) {
     if (key === 'movieSequences') return;
     if (key === 'convertSt16Iconsets') st16Touched = true;
+    if (key === 'convertShpx') shpxTouched = true;
     const next = { ...options, [key]: value };
     options = next;
     onChange(next);
@@ -38,10 +42,11 @@
     const next: TargetVersionState = { version, source: 'manual' };
     targetVersion = next;
     onTargetVersionChange(next);
-    if (!st16Touched) {
+    if (!st16Touched || !shpxTouched) {
       const nextOptions = {
         ...options,
-        convertSt16Iconsets: defaultSt16ForVersion(version),
+        ...(!st16Touched ? { convertSt16Iconsets: defaultSt16ForVersion(version) } : {}),
+        ...(!shpxTouched ? { convertShpx: defaultShpxForVersion(version) } : {}),
       };
       options = nextOptions;
       onChange(nextOptions);
@@ -50,6 +55,9 @@
 
   const st16Warning = $derived(
     st16IncompatibilityWarning(targetVersion.version, options.convertSt16Iconsets),
+  );
+  const shpxWarning = $derived(
+    shpxIncompatibilityWarning(targetVersion.version, options.convertShpx),
   );
 </script>
 
@@ -102,6 +110,28 @@
     {#if st16Warning}
       <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
         {st16Warning}
+      </p>
+    {/if}
+
+    <label class="cnc-field flex items-start gap-3">
+      <input
+        type="checkbox"
+        checked={options.convertShpx}
+        onchange={(e) => toggle('convertShpx', e.currentTarget.checked)}
+        class="mt-1"
+      />
+      <span>
+        <span class="font-medium">Convert shapes to SHPX</span>
+        <span class="block text-xs text-stone-400"
+          >CONQUER.MIX — external shape pool; saves RAM; mandatory on 4&nbsp;MB Atari STs.
+          Experimental; requires C&amp;C4ST 0.2.x.</span
+        >
+      </span>
+    </label>
+
+    {#if shpxWarning}
+      <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+        {shpxWarning}
       </p>
     {/if}
 

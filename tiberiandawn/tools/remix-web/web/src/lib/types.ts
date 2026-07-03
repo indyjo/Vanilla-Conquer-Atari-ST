@@ -12,6 +12,7 @@ export interface ContentOptions {
   musicScores: boolean;
   movieSequences: boolean;
   convertSt16Iconsets: boolean;
+  convertShpx: boolean;
 }
 
 export const DEFAULT_CONTENT_OPTIONS: ContentOptions = {
@@ -19,6 +20,7 @@ export const DEFAULT_CONTENT_OPTIONS: ContentOptions = {
   musicScores: false,
   movieSequences: false,
   convertSt16Iconsets: true,
+  convertShpx: true,
 };
 
 export interface IsoFileEntry {

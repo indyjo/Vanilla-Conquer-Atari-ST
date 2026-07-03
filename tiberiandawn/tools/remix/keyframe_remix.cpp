@@ -63,9 +63,61 @@ static int Frame;
 #define SUBFRAMEOFFS			7	// 3 1/2 frame offsets loaded (2 offsets/frame)
 /* Optional: with DEBUG, also define BUILD_FRAME_XOR_TRACE for per-frame XOR printf spam. */
 
+#ifdef REMIX_BUILD
+#include "remix_decode.h"
 
+static int Remix_Apply_Delta_Safe(
+    void *buffer, const void *delta, unsigned long bufsize, const void *blob_base, size_t blob_size)
+{
+	const unsigned char *db = (const unsigned char *)delta;
+	const unsigned char *bb = (const unsigned char *)blob_base;
+	size_t delta_off;
+
+	if (!buffer || !delta || bufsize == 0 || !blob_base || blob_size == 0)
+		return 0;
+	if (db < bb)
+		return 0;
+	delta_off = (size_t)(db - bb);
+	if (delta_off >= blob_size)
+		return 0;
+	return remix_xor_delta_apply(buffer, (size_t)bufsize, delta, blob_size - delta_off);
+}
+
+#define Apply_Delta(buffer, delta, bufsize) \
+	do { \
+		if (!Remix_Apply_Delta_Safe( \
+		        (buffer), (delta), (unsigned long)(bufsize), (dataptr), (blob_size))) \
+			return (0); \
+	} while (0)
+
+static unsigned long Remix_LCW_Uncompress_Safe(
+    const void *ptr, const void *blob_base, size_t blob_size, void *buffptr, unsigned long buffsize)
+{
+	size_t src_off;
+	size_t src_len;
+	int rc;
+
+	if (!ptr || !buffptr || buffsize == 0 || !blob_base || blob_size == 0)
+		return 0;
+	src_off = (size_t)((const unsigned char *)ptr - (const unsigned char *)blob_base);
+	if (src_off >= blob_size)
+		return 0;
+	src_len = blob_size - src_off;
+	rc = remix_lcw_uncompress(ptr, src_len, buffptr, (unsigned)buffsize);
+	if (rc < 0)
+		return 0;
+	return (unsigned long)rc;
+}
+
+#define LCW_Uncompress(ptr, buffptr, buffsize) \
+	Remix_LCW_Uncompress_Safe((ptr), (dataptr), (blob_size), (buffptr), (unsigned long)(buffsize))
+#elif defined(ATARI_ST)
 #define	Apply_Delta(buffer, delta, bufsize)	\
 	Apply_XOR_Delta((char*)(buffer), (char*)(delta), (unsigned int)(bufsize))
+#else
+#define	Apply_Delta(buffer, delta, bufsize)	\
+	Apply_XOR_Delta((char*)(buffer), (char*)(delta), (unsigned int)(bufsize))
+#endif
 
 typedef struct {
 	unsigned short frames;
@@ -242,18 +294,16 @@ void Enable_Uncompressed_Shapes (void)
 #define FIXIT_SCORE_CRASH
 
 /* When blob_size > 0, dataptr is exactly that many bytes (e.g. MIX extract); reject bad offsets. */
-static bool Build_Frame_SrcRangeOk(void const *base, size_t blob, void const *src, size_t nbytes)
+/* XOR delta streams are variable-length; only require the start pointer to lie in-blob. */
+static bool Build_Frame_DeltaPtrOk(void const *base, size_t blob, void const *src)
 {
-	if (blob == 0 || nbytes == 0)
+	if (blob == 0)
 		return true;
 	const unsigned char *b = (const unsigned char *)base;
 	const unsigned char *s = (const unsigned char *)src;
 	if (s < b)
 		return false;
-	size_t off = (size_t)(s - b);
-	if (off > blob || nbytes > blob - off)
-		return false;
-	return true;
+	return (size_t)(s - b) < blob;
 }
 
 unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void *buffptr,
@@ -430,6 +480,9 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 		}
 		length = LCW_Uncompress( ptr, buffptr, buffsize );
+		if (length > buffsize) {
+			return (0);
+		}
 	} else {	// key delta or delta
 
 		if ( (frameflags & KF_DELTA) ) {
@@ -513,8 +566,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			Add_Long_To_Pointer(ptr, offdiff), (unsigned)total_frames);
 		fflush(stdout);
 #endif
-		if (!Build_Frame_SrcRangeOk(dataptr, blob_size,
-					Add_Long_To_Pointer(ptr, offdiff), (size_t)buffsize)) {
+		if (!Build_Frame_DeltaPtrOk(dataptr, blob_size, Add_Long_To_Pointer(ptr, offdiff))) {
 			return (0);
 		}
 		Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff), buffsize);
@@ -555,9 +607,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 							Add_Long_To_Pointer(ptr, offdiff));
 						fflush(stdout);
 #endif
-						if (!Build_Frame_SrcRangeOk(dataptr, blob_size,
-									Add_Long_To_Pointer(ptr, offdiff),
-									(size_t)buffsize)) {
+						if (!Build_Frame_DeltaPtrOk(dataptr, blob_size,
+									Add_Long_To_Pointer(ptr, offdiff))) {
 							return (0);
 						}
 						Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),

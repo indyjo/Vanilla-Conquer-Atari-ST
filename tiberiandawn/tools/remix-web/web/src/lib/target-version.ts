@@ -4,6 +4,10 @@ export function defaultSt16ForVersion(version: TargetVersion): boolean {
   return version === '0.2.x';
 }
 
+export function defaultShpxForVersion(version: TargetVersion): boolean {
+  return version === '0.2.x';
+}
+
 export function defaultTargetVersionState(): TargetVersionState {
   return { version: '0.2.x', source: 'manual' };
 }
@@ -26,6 +30,13 @@ export function st16IncompatibilityWarning(version: TargetVersion, enabled: bool
   }
   if (version === '0.2.x' && !enabled) {
     return 'Leaving iconsets unconverted moves ST16 work to mission start (slower load, higher RAM use on the next release).';
+  }
+  return null;
+}
+
+export function shpxIncompatibilityWarning(version: TargetVersion, enabled: boolean): string | null {
+  if (version === '0.1.x' && enabled) {
+    return 'SHPX repacked CONQUER.MIX is incompatible with the 0.1.x line of C&C4ST. Use standard KeyFrame SHPs or target 0.2.x.';
   }
   return null;
 }

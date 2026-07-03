@@ -4,6 +4,7 @@ import { buildZip, lowercaseFileMap } from './zip';
 import { extractReleaseAssets } from './release-zip';
 import { remixMergeMixBytes, remixMixBytes, type RemixEntry, type RemixMixOptions } from './wasm-bridge';
 import { entrySummary, notableEntryLines } from './entry-log';
+import { isConquerMix, shpxPoolBasename } from './shpx';
 import { isTheaterMix, requiredW16Stems, w16StemForTheaterMix } from './theater-st16';
 import type { ContentOptions, DiscSelection, PipelineResult, ProcessProgress, ReleaseSelection, TargetVersion } from './types';
 
@@ -74,11 +75,15 @@ function remixLogLine(
     audio_converted: number;
     iconset_converted: number;
     iconset_already_st16: number;
+    shpx_converted: number;
   },
 ): string {
   let line = `Remixed ${base}: ${entrySummary(entries)} (${stats.audio_converted} audio converted`;
   if (stats.iconset_converted > 0 || stats.iconset_already_st16 > 0) {
     line += `, ${stats.iconset_converted} iconset ST16, ${stats.iconset_already_st16} already ST16`;
+  }
+  if (stats.shpx_converted > 0) {
+    line += `, ${stats.shpx_converted} shape SHPX`;
   }
   line += ')';
   return line;
@@ -113,13 +118,14 @@ function w16BytesForMix(
 
 function remixOptionsForMix(
   mixBasename: string,
-  convertSt16: boolean,
+  contentOptions: ContentOptions,
   releaseFiles: Map<string, Uint8Array> | null,
 ): RemixMixOptions {
   const theater = isTheaterMix(mixBasename);
-  const enabled = convertSt16 && theater;
+  const st16Enabled = contentOptions.convertSt16Iconsets && theater;
+  const shpxEnabled = contentOptions.convertShpx && isConquerMix(mixBasename);
   let w16Bytes: Uint8Array | undefined;
-  if (enabled) {
+  if (st16Enabled) {
     if (!releaseFiles) {
       throw new Error(
         'ST16 iconset conversion requires the itch.io release ZIP with matching *.W16 files',
@@ -128,10 +134,19 @@ function remixOptionsForMix(
     w16Bytes = w16BytesForMix(mixBasename, releaseFiles);
   }
   return {
-    convertSt16Iconsets: enabled,
+    convertSt16Iconsets: st16Enabled,
+    convertShpx: shpxEnabled,
     mixBasename,
     w16Bytes,
   };
+}
+
+function storeShpxPool(
+  outputFiles: Map<string, Uint8Array>,
+  pool: Uint8Array | undefined,
+): void {
+  if (!pool) return;
+  outputFiles.set(shpxPoolBasename(), pool);
 }
 
 export async function runPipeline(
@@ -218,6 +233,12 @@ export async function runPipeline(
     }
   }
 
+  if (req.contentOptions.convertShpx && selected.some(isConquerMix)) {
+    progress = logLine(progress, 'info', 'SHPX: will convert KeyFrame shapes in CONQUER.MIX');
+    onProgress(progress);
+    await tick();
+  }
+
   const outputFiles = new Map<string, Uint8Array>();
 
   for (const base of selected) {
@@ -247,9 +268,9 @@ export async function runPipeline(
       onProgress(progress);
       await tick();
 
-      const remixOpts = remixOptionsForMix(base, req.contentOptions.convertSt16Iconsets, releaseFiles);
+      const remixOpts = remixOptionsForMix(base, req.contentOptions, releaseFiles);
       const inputBytes = Math.max(rawGdi.length, rawNod.length);
-      const { output, stats, entries } = await remixMergeMixBytes(
+      const { output, stats, entries, shpxPool } = await remixMergeMixBytes(
         rawGdi,
         rawNod,
         req.wasmBaseUrl,
@@ -261,6 +282,14 @@ export async function runPipeline(
       }
       progress = logLine(progress, 'info', savedLogLine(base, inputBytes, output.length));
       outputFiles.set(base, output);
+      storeShpxPool(outputFiles, shpxPool);
+      if (shpxPool) {
+        progress = logLine(
+          progress,
+          'info',
+          `Wrote ${shpxPoolBasename()} (${shpxPool.length} bytes)`,
+        );
+      }
     } else {
       const loc = gdiMap.get(base) ?? nodMap.get(base);
       if (!loc) {
@@ -285,14 +314,22 @@ export async function runPipeline(
       onProgress(progress);
       await tick();
 
-      const remixOpts = remixOptionsForMix(base, req.contentOptions.convertSt16Iconsets, releaseFiles);
-      const { output, stats, entries } = await remixMixBytes(raw, req.wasmBaseUrl, remixOpts);
+      const remixOpts = remixOptionsForMix(base, req.contentOptions, releaseFiles);
+      const { output, stats, entries, shpxPool } = await remixMixBytes(raw, req.wasmBaseUrl, remixOpts);
       progress = logLine(progress, 'info', remixLogLine(base, entries, stats));
       for (const line of notableEntryLines(entries)) {
         progress = logLine(progress, 'info', line);
       }
       progress = logLine(progress, 'info', savedLogLine(base, raw.length, output.length));
       outputFiles.set(base, output);
+      storeShpxPool(outputFiles, shpxPool);
+      if (shpxPool) {
+        progress = logLine(
+          progress,
+          'info',
+          `Wrote ${shpxPoolBasename()} (${shpxPool.length} bytes)`,
+        );
+      }
     }
 
     progress = { ...progress, done: progress.done + 1 };

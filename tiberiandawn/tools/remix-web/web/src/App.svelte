@@ -83,6 +83,7 @@
           contentOptions = {
             ...contentOptions,
             convertSt16Iconsets: state.version === '0.2.x',
+            convertShpx: state.version === '0.2.x',
           };
         }}
         onNext={() => (step = 'customize')}

@@ -11,6 +11,7 @@ export class ReleaseZipError extends Error {
 function isReleaseAsset(basename: string): boolean {
   const lower = basename.toLowerCase();
   if (lower === 'cnc.tos') return true;
+  if (lower === 'record.bin') return true;
   if (lower.endsWith('.w16')) return true;
   if (lower === 'readme.txt' || lower === 'readme.md') return true;
   return false;

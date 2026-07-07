@@ -26,10 +26,10 @@ export function parseTargetVersionFromReadme(text: string): TargetVersion | null
 
 export function st16IncompatibilityWarning(version: TargetVersion, enabled: boolean): string | null {
   if (version === '0.1.x' && enabled) {
-    return 'Pre-converted ST16 iconsets require the next release. The first public beta expects standard 8bpp iconsets in theater MIX files.';
+    return 'Pre-converted ST16 iconsets require the current release. The first public beta expects standard 8bpp iconsets in theater MIX files.';
   }
   if (version === '0.2.x' && !enabled) {
-    return 'Leaving iconsets unconverted moves ST16 work to mission start (slower load, higher RAM use on the next release).';
+    return 'Leaving iconsets unconverted moves ST16 work to mission start (slower load, higher RAM use on the current release).';
   }
   return null;
 }
@@ -43,5 +43,5 @@ export function shpxIncompatibilityWarning(version: TargetVersion, enabled: bool
 
 export const TARGET_VERSION_OPTIONS: { value: TargetVersion; label: string }[] = [
   { value: '0.1.x', label: 'First public beta (0.1.x)' },
-  { value: '0.2.x', label: 'Next release (0.2.x)' },
+  { value: '0.2.x', label: 'Current release (0.2.x)' },
 ];

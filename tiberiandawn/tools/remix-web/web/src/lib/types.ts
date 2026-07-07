@@ -69,7 +69,7 @@ export interface DiscSelection {
   sourceZip?: string;
 }
 
-/** itch.io / Atari ST release ZIP (cnc.tos + *.W16) — recommended for ST16 terrain conversion. */
+/** itch.io / Atari ST release ZIP (cnc.tos + record.bin + *.W16) — recommended for ST16 terrain conversion. */
 export interface ReleaseSelection {
   file: File;
   /** Basenames that will be copied into the output ZIP. */

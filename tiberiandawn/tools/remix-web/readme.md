@@ -73,12 +73,12 @@ Open the URL printed by Vite. Place `remix.js` / `remix.wasm` in `web/public/` (
 
 ## Usage
 
-1. **Discs** — pick **both** GDI and NOD install media (ISO or ZIP with one disc image); optionally the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) for `cnc.tos` + `*.w16`
+1. **Discs** — pick **both** GDI and NOD install media (ISO or ZIP with one disc image); optionally the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) for `cnc.tos` + `record.bin` + `*.w16`
 2. **Customize** — target C&C4ST version (0.1.x / 0.2.x), optional ST16 iconset conversion for theater MIX files, optional SHPX shape conversion for CONQUER.MIX, speech/SFX and music toggles
 3. **Process** — streaming ISO extract → merge `GENERAL.MIX` when dual-disc → REMIX each MIX → bundle release files if provided
 4. **Checkout** — download ZIP (MIX-only, or full ready-to-play folder if release ZIP was attached)
 
-Copy the ZIP contents to a folder on your Atari ST drive. If you skipped the release ZIP, add `cnc.tos` and `*.W16` from itch.io manually.
+Copy the ZIP contents to a folder on your Atari ST drive. If you skipped the release ZIP, add `cnc.tos`, `record.bin`, and `*.W16` from itch.io manually.
 
 ### ST16 iconsets (0.2.x)
 
@@ -86,7 +86,7 @@ When **Convert terrain iconsets to ST16** is enabled (default for target **0.2.x
 
 ### SHPX shapes (0.2.x)
 
-When **Convert shapes to SHPX** is enabled (default for target **0.2.x**), remix-web converts KeyFrame SHPs in `CONQUER.MIX` to the external-pool SHPX format and writes `pool0001.bin` into the output ZIP. This saves RAM on the Atari ST and is mandatory on 4 MB machines. The feature is experimental and incompatible with the **0.1.x** line of C&C4ST.
+When **Convert shapes to SHPX** is enabled (default for target **0.2.x**), remix-web converts KeyFrame SHPs in `CONQUER.MIX` to the external-pool SHPX format and writes `pool0001.bin` into the output ZIP. This saves RAM on the Atari ST and is mandatory on 4 MB machines. It is incompatible with the **0.1.x** line of C&C4ST.
 
 ## Legal
 

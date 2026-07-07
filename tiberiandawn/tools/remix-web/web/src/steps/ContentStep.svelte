@@ -123,8 +123,7 @@
       <span>
         <span class="font-medium">Convert shapes to SHPX</span>
         <span class="block text-xs text-stone-400"
-          >CONQUER.MIX — external shape pool; saves RAM; mandatory on 4&nbsp;MB Atari STs.
-          Experimental; requires C&amp;C4ST 0.2.x.</span
+          >CONQUER.MIX — external shape pool; saves RAM; mandatory on 4&nbsp;MB Atari STs.</span
         >
       </span>
     </label>

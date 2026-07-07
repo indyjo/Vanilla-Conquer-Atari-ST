@@ -15,6 +15,26 @@
 extern "C" {
 #endif
 
+typedef struct __attribute__((packed)) ST_Blitter {
+	uint16_t src_x_inc;
+	uint16_t src_y_inc;
+	void *src_addr;
+	uint16_t endmask1;
+	uint16_t endmask2;
+	uint16_t endmask3;
+	uint16_t dst_x_inc;
+	uint16_t dst_y_inc;
+	void *dst_addr;
+	uint16_t x_count;
+	uint16_t y_count;
+	uint8_t hop;
+	uint8_t op;
+	uint8_t ctrl;
+	uint8_t skew;
+} ST_Blitter;
+
+void ST_Blitter_Await(void);
+
 /**
  * Copy a rectangle in the ST low-res planar framebuffer using the blitter (all four planes).
  * Typical use: same buffer for src and dst (overlap-safe scroll). Coordinates are absolute

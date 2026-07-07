@@ -9,6 +9,26 @@
 #include "st_frame_meter.h"
 #include <stddef.h>
 
+static_assert(sizeof(void *) == 4, "ST_Blitter address fields require 32-bit pointers");
+static_assert(sizeof(ST_Blitter) == 30, "ST_Blitter must match $FF8A20..$FF8A3D");
+static_assert(offsetof(ST_Blitter, src_x_inc) == 0, "ST_Blitter src_x_inc offset");
+static_assert(offsetof(ST_Blitter, src_y_inc) == 2, "ST_Blitter src_y_inc offset");
+static_assert(offsetof(ST_Blitter, src_addr) == 4, "ST_Blitter src_addr offset");
+static_assert(offsetof(ST_Blitter, endmask1) == 8, "ST_Blitter endmask1 offset");
+static_assert(offsetof(ST_Blitter, endmask2) == 10, "ST_Blitter endmask2 offset");
+static_assert(offsetof(ST_Blitter, endmask3) == 12, "ST_Blitter endmask3 offset");
+static_assert(offsetof(ST_Blitter, dst_x_inc) == 14, "ST_Blitter dst_x_inc offset");
+static_assert(offsetof(ST_Blitter, dst_y_inc) == 16, "ST_Blitter dst_y_inc offset");
+static_assert(offsetof(ST_Blitter, dst_addr) == 18, "ST_Blitter dst_addr offset");
+static_assert(offsetof(ST_Blitter, x_count) == 22, "ST_Blitter x_count offset");
+static_assert(offsetof(ST_Blitter, y_count) == 24, "ST_Blitter y_count offset");
+static_assert(offsetof(ST_Blitter, hop) == 26, "ST_Blitter hop offset");
+static_assert(offsetof(ST_Blitter, op) == 27, "ST_Blitter op offset");
+static_assert(offsetof(ST_Blitter, ctrl) == 28, "ST_Blitter ctrl offset");
+static_assert(offsetof(ST_Blitter, skew) == 29, "ST_Blitter skew offset");
+
+#define g_Blitter (*(volatile ST_Blitter *)0xFFFF8A20UL)
+
 static void ST_Blit_Cache_Rect_Span(
 	const uint8_t *base, int row_bytes, int y_abs, int pixel_height,
 	const void **out_start, size_t *out_len)
@@ -49,15 +69,9 @@ static void ST_Blit_Sync_Cache_After(
 	}
 }
 
-static inline volatile unsigned short *ST_BLT_REG(unsigned long addr)
+void ST_Blitter_Await(void)
 {
-	return (volatile unsigned short *)addr;
-}
-
-static void ST_Blit_Wait_Idle(void)
-{
-	volatile unsigned char *ctrl = (volatile unsigned char *)0xFFFF8A3CUL;
-	while ((*ctrl & 0x80u) != 0) {
+	while ((g_Blitter.ctrl & 0x80u) != 0) {
 	}
 }
 
@@ -107,75 +121,63 @@ static BOOL ST_Blit_Should_Use_Hog(int pixel_width, int pixel_height, BOOL same_
 }
 
 typedef struct {
-	short dst_words;
-	short src_words;
-	unsigned char skew_reg;
-	unsigned short endmask1;
-	unsigned short endmask2;
-	unsigned short endmask3;
-	BOOL reverse_x;
-	BOOL reverse_y;
-} ST_Blit_BLIT_iT_Plan;
+	const uint8_t *src_plane0;
+	uint8_t *dst_plane0;
+	BOOL src_addr_per_plane;
+} ST_Blit_Job;
 
-/*
- * BLIT_iT endmask/skew/X_Count setup (Appendix A). reverse_x/reverse_y are set
- * by the caller for same-surface overlap scroll (manual §Overlap).
- */
-static BOOL ST_Blit_Compute_BLIT_iT(
+static BOOL ST_Blitter_Prepare_Impl(
+	volatile ST_Blitter *blitter,
+	ST_Blit_Job *job,
+	const uint8_t *src_base,
+	uint8_t *dst_base,
+	short src_row_bytes,
+	short dst_row_bytes,
 	int sx_abs,
 	int dx_abs,
 	int pixel_width,
+	int pixel_height,
+	short src_x_inc,
+	short dst_x_inc,
+	short src_word_bytes,
+	short dst_word_bytes,
 	BOOL reverse_x,
 	BOOL reverse_y,
-	ST_Blit_BLIT_iT_Plan *plan)
+	BOOL src_addr_per_plane)
 {
-	if (!plan || pixel_width <= 0) {
+	if (!blitter || !job || !src_base || !dst_base || pixel_width <= 0 || pixel_height <= 0) {
 		return FALSE;
 	}
 
-	/* Compute the number of source and destination words that will be blitted. */
 	const short dst_words = (short)(((dx_abs + pixel_width - 1) >> 4) - (dx_abs >> 4) + 1);
 	const short src_words = (short)(((sx_abs + pixel_width - 1) >> 4) - (sx_abs >> 4) + 1);
 	if (dst_words <= 0 || src_words <= 0) {
 		return FALSE;
 	}
 
-	// Source and destination pixel modulo 16.
 	const unsigned char sm = (unsigned char)(sx_abs & 15u);
 	const unsigned char dm = (unsigned char)(dx_abs & 15u);
-	// How many pixels to skew the source to the destination.
 	const unsigned char skew_low =
 		(unsigned char)(((unsigned)dm + 16u - (unsigned)sm) % 16u);
 
-	// Compose the skew index out of three components:
-	// 1. Is the skew going to the left (which means fxsr is needed).
 	short skew_idx = (sm > dm) ? 1 : 0;
-	// 2. Do source and destination have the same number of words.
 	if (src_words == dst_words) {
 		skew_idx += 2;
 	}
-	// 3. Is the destination a single word (which means endmasks collapse).
 	if (dst_words == 1) {
 		skew_idx += 4;
 	}
-
-	plan->reverse_x = reverse_x;
-	plan->reverse_y = reverse_y;
 	if (reverse_x && sm != dm) {
 		skew_idx ^= 1;
 	}
-	// Clear all other bits.
 	skew_idx &= 7;
 
-	/* lf_endmask / rt_endmask equivalent (BLIT_iT tables). */
 	unsigned short endmask1 = (unsigned short)(0xFFFFu >> dm);
 	unsigned short endmask3 = (unsigned short)(0xFFFFu << (15 - ((dx_abs + pixel_width - 1) & 15)));
 	if (dst_words == 1) {
-		// Collapse endmasks if the destination is a single word.
 		endmask1 = (unsigned short)(endmask1 & endmask3);
 		endmask3 = endmask1;
-	} else if (plan->reverse_x) {
-		// Swap endmasks if we are reversing the x direction.
+	} else if (reverse_x) {
 		const unsigned short t = endmask1;
 		endmask1 = endmask3;
 		endmask3 = t;
@@ -183,120 +185,158 @@ static BOOL ST_Blit_Compute_BLIT_iT(
 
 	const unsigned char skew_reg =
 		(unsigned char)(skew_low | k_skew_fxsr_nfsr[skew_idx]);
-	/* One word per line + skew: FXSR primes the shift latch; Src_Xinc must be 0
-	 * (set in Build_Hw_Setup) so the prefetch re-reads the same word, not word+1. */
 	const unsigned char skew_out =
 		(src_words == 1 && dst_words == 1 && skew_low != 0)
 		? (unsigned char)(skew_low | ST_BLIT_SKEW_FXSR)
 		: skew_reg;
 
-	plan->dst_words = dst_words;
-	plan->src_words = src_words;
-	plan->skew_reg = skew_out;
-	plan->endmask1 = endmask1;
-	plan->endmask2 = 0xFFFFu;
-	plan->endmask3 = endmask3;
-	if (dst_words == 1) {
-		plan->endmask2 = endmask1;
-	}
-	return TRUE;
-}
-
-static void ST_Blit_Set_Src_Addr(const uint8_t *src)
-{
-	size_t sa = (size_t)src;
-	*ST_BLT_REG(0xFFFF8A24UL) = (unsigned short)(sa >> 16);
-	*ST_BLT_REG(0xFFFF8A26UL) = (unsigned short)(sa & 0xFFFFu);
-}
-
-static void ST_Blit_Set_Dst_Addr(const uint8_t *dst)
-{
-	size_t da = (size_t)dst;
-	*ST_BLT_REG(0xFFFF8A32UL) = (unsigned short)(da >> 16);
-	*ST_BLT_REG(0xFFFF8A34UL) = (unsigned short)(da & 0xFFFFu);
-}
-
-typedef struct {
-	short src_x_inc;
-	short src_y_inc;
-	short dst_x_inc;
-	short dst_y_inc;
-	const uint8_t *src_word0;
-	uint8_t *dst_word0;
-	unsigned char ctrl_byte;
-	unsigned char blit_op;
-	BOOL src_addr_per_plane;
-} ST_Blit_Hw_Setup;
-
-static BOOL ST_Blit_Build_Hw_Setup(
-	const uint8_t *src_base, uint8_t *dst_base,
-	short src_row_bytes, short dst_row_bytes,
-	short src_x_inc, short dst_x_inc,
-	short src_word_bytes, short dst_word_bytes,
-	const ST_Blit_BLIT_iT_Plan *plan,
-	short lines,
-	unsigned char blit_op,
-	BOOL hog_mode,
-	BOOL src_addr_per_plane,
-	ST_Blit_Hw_Setup *hw)
-{
-	const short dst_words = plan->dst_words;
-	const short src_words = plan->src_words;
-	if (!src_base || !dst_base || !hw || dst_words <= 0 || src_words <= 0 || lines <= 0) {
-		return FALSE;
-	}
-
-	if (plan->reverse_x) {
+	if (reverse_x) {
 		src_x_inc = (short)-src_x_inc;
 		dst_x_inc = (short)-dst_x_inc;
 	}
-
-	if (dst_words == 1 && src_words == 1 && (plan->skew_reg & 0x0Fu) != 0u) {
+	if (dst_words == 1 && src_words == 1 && (skew_out & 0x0Fu) != 0u) {
 		src_x_inc = 0;
 		dst_x_inc = 0;
 	}
 
-	const short src_row = plan->reverse_y ? (short)-src_row_bytes : src_row_bytes;
-	const short dst_row = plan->reverse_y ? (short)-dst_row_bytes : dst_row_bytes;
+	const short src_row = reverse_y ? (short)-src_row_bytes : src_row_bytes;
+	const short dst_row = reverse_y ? (short)-dst_row_bytes : dst_row_bytes;
 
-	hw->src_x_inc = src_x_inc;
-	hw->src_y_inc = (short)(src_row - (src_words - 1) * src_x_inc);
-	hw->dst_x_inc = dst_x_inc;
-	hw->dst_y_inc = (short)(dst_row - (dst_words - 1) * dst_x_inc);
-	hw->src_word0 = src_base
-		+ (plan->reverse_y ? (size_t)(lines - 1) * (size_t)src_row_bytes : 0u)
-		+ (plan->reverse_x ? (size_t)(src_words - 1) * (size_t)src_word_bytes : 0u);
-	hw->dst_word0 = dst_base
-		+ (plan->reverse_y ? (size_t)(lines - 1) * (size_t)dst_row_bytes : 0u)
-		+ (plan->reverse_x ? (size_t)(dst_words - 1) * (size_t)dst_word_bytes : 0u);
-	hw->ctrl_byte = hog_mode ? ST_BLIT_CTRL_START_HOG : ST_BLIT_CTRL_START;
-	hw->blit_op = blit_op;
-	hw->src_addr_per_plane = src_addr_per_plane;
+	blitter->src_x_inc = (uint16_t)src_x_inc;
+	blitter->src_y_inc = (uint16_t)(src_row - (src_words - 1) * src_x_inc);
+	blitter->endmask1 = endmask1;
+	blitter->endmask2 = (dst_words == 1) ? endmask1 : 0xFFFFu;
+	blitter->endmask3 = endmask3;
+	blitter->dst_x_inc = (uint16_t)dst_x_inc;
+	blitter->dst_y_inc = (uint16_t)(dst_row - (dst_words - 1) * dst_x_inc);
+	blitter->x_count = (uint16_t)dst_words;
+	blitter->skew = skew_out;
+
+	const uint8_t *src_plane0 = src_base
+		+ (reverse_y ? (size_t)(pixel_height - 1) * (size_t)src_row_bytes : 0u)
+		+ (reverse_x ? (size_t)(src_words - 1) * (size_t)src_word_bytes : 0u);
+	uint8_t *dst_plane0 = dst_base
+		+ (reverse_y ? (size_t)(pixel_height - 1) * (size_t)dst_row_bytes : 0u)
+		+ (reverse_x ? (size_t)(dst_words - 1) * (size_t)dst_word_bytes : 0u);
+	blitter->src_addr = (void *)src_plane0;
+	blitter->dst_addr = dst_plane0;
+
+	job->src_plane0 = src_plane0;
+	job->dst_plane0 = dst_plane0;
+	job->src_addr_per_plane = src_addr_per_plane;
 	return TRUE;
 }
 
-/* Increments, endmasks, skew, HOP, OP, X_Count — unchanged across interleaved plane passes. */
-static void ST_Blit_Program_Fixed_Regs(
-	const ST_Blit_Hw_Setup *hw,
-	const ST_Blit_BLIT_iT_Plan *plan,
-	short dst_words)
+static BOOL ST_Blitter_Prepare_88(
+	volatile ST_Blitter *blitter,
+	ST_Blit_Job *job,
+	const uint8_t *src_base,
+	uint8_t *dst_base,
+	short src_row_bytes,
+	short dst_row_bytes,
+	int sx_abs,
+	int dx_abs,
+	int pixel_width,
+	int pixel_height)
 {
-	*ST_BLT_REG(0xFFFF8A20UL) = (unsigned short)hw->src_x_inc;
-	*ST_BLT_REG(0xFFFF8A22UL) = (unsigned short)hw->src_y_inc;
-	*ST_BLT_REG(0xFFFF8A28UL) = plan->endmask1;
-	*ST_BLT_REG(0xFFFF8A2AUL) = plan->endmask2;
-	*ST_BLT_REG(0xFFFF8A2CUL) = plan->endmask3;
-	*ST_BLT_REG(0xFFFF8A2EUL) = (unsigned short)hw->dst_x_inc;
-	*ST_BLT_REG(0xFFFF8A30UL) = (unsigned short)hw->dst_y_inc;
-	*ST_BLT_REG(0xFFFF8A36UL) = (unsigned short)dst_words;
-	*(volatile unsigned char *)0xFFFF8A3AUL = 2;
-	*(volatile unsigned char *)0xFFFF8A3BUL = hw->blit_op;
-	*(volatile unsigned char *)0xFFFF8A3DUL = plan->skew_reg;
+	return ST_Blitter_Prepare_Impl(
+		blitter,
+		job,
+		src_base,
+		dst_base,
+		src_row_bytes,
+		dst_row_bytes,
+		sx_abs,
+		dx_abs,
+		pixel_width,
+		pixel_height,
+		8,
+		8,
+		8,
+		8,
+		FALSE,
+		FALSE,
+		TRUE);
 }
 
-static void ST_Blit_Set_Y_Count(short lines)
+static BOOL ST_Blitter_Prepare_88_Scroll(
+	volatile ST_Blitter *blitter,
+	ST_Blit_Job *job,
+	const uint8_t *src_base,
+	uint8_t *dst_base,
+	short src_row_bytes,
+	short dst_row_bytes,
+	int sx_abs,
+	int sy_abs,
+	int dx_abs,
+	int dy_abs,
+	int pixel_width,
+	int pixel_height)
 {
-	*ST_BLT_REG(0xFFFF8A38UL) = (unsigned short)lines;
+	const BOOL reverse_x = (dx_abs > sx_abs);
+	const BOOL reverse_y = (dy_abs > sy_abs);
+	return ST_Blitter_Prepare_Impl(
+		blitter,
+		job,
+		src_base,
+		dst_base,
+		src_row_bytes,
+		dst_row_bytes,
+		sx_abs,
+		dx_abs,
+		pixel_width,
+		pixel_height,
+		8,
+		8,
+		8,
+		8,
+		reverse_x,
+		reverse_y,
+		TRUE);
+}
+
+static BOOL ST_Blitter_Prepare_28(
+	volatile ST_Blitter *blitter,
+	ST_Blit_Job *job,
+	const uint8_t *src_base,
+	uint8_t *dst_base,
+	short src_row_bytes,
+	short dst_row_bytes,
+	int sx_abs,
+	int dx_abs,
+	int pixel_width,
+	int pixel_height)
+{
+	return ST_Blitter_Prepare_Impl(
+		blitter,
+		job,
+		src_base,
+		dst_base,
+		src_row_bytes,
+		dst_row_bytes,
+		sx_abs,
+		dx_abs,
+		pixel_width,
+		pixel_height,
+		2,
+		8,
+		2,
+		8,
+		FALSE,
+		FALSE,
+		FALSE);
+}
+
+static void ST_Blitter_Execute(
+	volatile ST_Blitter *blitter,
+	short lines,
+	unsigned char blit_op,
+	BOOL hog_mode)
+{
+	blitter->y_count = (uint16_t)lines;
+	blitter->hop = 2;
+	blitter->op = blit_op;
+	blitter->ctrl = hog_mode ? ST_BLIT_CTRL_START_HOG : ST_BLIT_CTRL_START;
 }
 
 /*
@@ -306,40 +346,24 @@ static void ST_Blit_Set_Y_Count(short lines)
  * Wait before and after every kick (required for mask AND correctness).
  */
 static void ST_Blit_Run_4_Planes(
-	const uint8_t *src_base, uint8_t *dst_base,
-	short src_row_bytes, short dst_row_bytes,
-	short src_x_inc, short dst_x_inc,
-	short src_word_bytes, short dst_word_bytes,
-	const ST_Blit_BLIT_iT_Plan *plan,
+	volatile ST_Blitter *blitter,
+	const ST_Blit_Job *job,
 	short lines,
 	unsigned char blit_op,
-	BOOL hog_mode,
-	BOOL src_addr_per_plane)
+	BOOL hog_mode)
 {
-	ST_Blit_Hw_Setup hw;
-	if (!ST_Blit_Build_Hw_Setup(
-			src_base, dst_base,
-			src_row_bytes, dst_row_bytes,
-			src_x_inc, dst_x_inc,
-			src_word_bytes, dst_word_bytes,
-			plan, lines, blit_op, hog_mode, src_addr_per_plane, &hw)) {
+	if (!blitter || !job || lines <= 0) {
 		return;
 	}
 
-	const short dst_words = plan->dst_words;
-
-	ST_Blit_Wait_Idle();
-	ST_Blit_Program_Fixed_Regs(&hw, plan, dst_words);
-
 	for (short pl = 0; pl < 4; ++pl) {
-		ST_Blit_Wait_Idle();
-		ST_Blit_Set_Src_Addr(hw.src_word0
-			+ (hw.src_addr_per_plane ? (size_t)pl * 2u : 0u));
-		ST_Blit_Set_Dst_Addr(hw.dst_word0 + (size_t)pl * 2u);
-		ST_Blit_Set_Y_Count(lines);
-		*(volatile unsigned char *)0xFFFF8A3CUL = hw.ctrl_byte;
-		ST_Blit_Wait_Idle();
+		ST_Blitter_Await();
+		blitter->src_addr = (void *)(job->src_plane0
+			+ (job->src_addr_per_plane ? (size_t)pl * 2u : 0u));
+		blitter->dst_addr = job->dst_plane0 + (size_t)pl * 2u;
+		ST_Blitter_Execute(blitter, lines, blit_op, hog_mode);
 	}
+	ST_Blitter_Await();
 }
 
 BOOL ST_Blitter_Planar_Screen_Rect_Blit(
@@ -391,43 +415,52 @@ static BOOL ST_Blitter_Planar_Rect_Blit_With_Op(
 
 	const BOOL same_surface = (src_root == dst_root);
 	const BOOL hog_mode = ST_Blit_Should_Use_Hog(pixel_width, pixel_height, same_surface);
-	const BOOL reverse_x = same_surface && (dx_abs > sx_abs);
-	const BOOL reverse_y = same_surface && (dy_abs > sy_abs);
-	ST_Blit_BLIT_iT_Plan plan;
-	if (!ST_Blit_Compute_BLIT_iT(
-			sx_abs,
-			dx_abs,
-			pixel_width,
-			reverse_x,
-			reverse_y,
-			&plan)) {
-		return FALSE;
-	}
-
-	// Compute address of top-left source and destination words.
 	const uint8_t *src = src_root + (size_t)sy_abs * (size_t)src_row_bytes
 		+ (size_t)(sx_abs >> 4) * 8;
 	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
 		+ (size_t)(dx_abs >> 4) * 8;
+	ST_Blit_Job job;
 
 	ST_Blit_Sync_Cache_Before(
 		src_root, src_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
+	ST_Blitter_Await();
+	const BOOL prepared = same_surface
+		? ST_Blitter_Prepare_88_Scroll(
+			&g_Blitter,
+			&job,
+			src,
+			dst,
+			(short)src_row_bytes,
+			(short)dst_row_bytes,
+			sx_abs,
+			sy_abs,
+			dx_abs,
+			dy_abs,
+			pixel_width,
+			(short)pixel_height)
+		: ST_Blitter_Prepare_88(
+			&g_Blitter,
+			&job,
+			src,
+			dst,
+			(short)src_row_bytes,
+			(short)dst_row_bytes,
+			sx_abs,
+			dx_abs,
+			pixel_width,
+			(short)pixel_height);
+	if (!prepared) {
+		ST_FRAME_BAR_BLIT_END();
+		return FALSE;
+	}
 	ST_Blit_Run_4_Planes(
-		src,
-		dst,
-		(short)src_row_bytes,
-		(short)dst_row_bytes,
-		8,
-		8,
-		8,
-		8,
-		&plan,
+		&g_Blitter,
+		&job,
 		(short)pixel_height,
 		blit_op,
-		hog_mode,
-		TRUE);
+		hog_mode);
 	ST_FRAME_BAR_BLIT_END();
 	ST_Blit_Sync_Cache_After(
 		src_root, src_row_bytes, sy_abs, pixel_height,
@@ -499,42 +532,39 @@ static BOOL ST_Blitter_Mask_And_Planar_Rect_With_Op(
 
 	const BOOL hog_mode = ST_Blit_Should_Use_Hog(pixel_width, pixel_height, FALSE);
 
-	ST_Blit_BLIT_iT_Plan plan;
-	if (!ST_Blit_Compute_BLIT_iT(
-			sx_abs,
-			dx_abs,
-			pixel_width,
-			FALSE,
-			FALSE,
-			&plan)) {
-		return FALSE;
-	}
-
 	const short src_word_left = (short)(sx_abs & ~15);
 	const short dst_word_left = (short)(dx_abs & ~15);
 	const uint8_t *src = mask_root + (size_t)sy_abs * (size_t)mask_row_bytes
 		+ (size_t)((src_word_left >> 4) * 2);
 	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
 		+ (size_t)((dst_word_left >> 4) * 8);
+	ST_Blit_Job job;
 
 	ST_Blit_Sync_Cache_Before(
 		mask_root, mask_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
+	ST_Blitter_Await();
+	if (!ST_Blitter_Prepare_28(
+			&g_Blitter,
+			&job,
+			src,
+			dst,
+			(short)mask_row_bytes,
+			(short)dst_row_bytes,
+			sx_abs,
+			dx_abs,
+			pixel_width,
+			(short)pixel_height)) {
+		ST_FRAME_BAR_BLIT_END();
+		return FALSE;
+	}
 	ST_Blit_Run_4_Planes(
-		src,
-		dst,
-		(short)mask_row_bytes,
-		(short)dst_row_bytes,
-		2,
-		8,
-		2,
-		8,
-		&plan,
+		&g_Blitter,
+		&job,
 		(short)pixel_height,
 		1,
-		hog_mode,
-		FALSE);
+		hog_mode);
 	ST_FRAME_BAR_BLIT_END();
 	ST_Blit_Sync_Cache_After(
 		mask_root, mask_row_bytes, sy_abs, pixel_height,

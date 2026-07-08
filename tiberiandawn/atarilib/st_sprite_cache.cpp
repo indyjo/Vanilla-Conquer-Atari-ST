@@ -8,7 +8,7 @@
 
 #include "c2p.h"
 #include "memflag.h"
-#include "st_blitter_blit.h"
+#include "st_blit.h"
 #include "st_frame_meter.h"
 
 #include "ikbd.h"
@@ -669,7 +669,7 @@ static BOOL sprite_cache_do_blitter(
 	int blit_h)
 {
 	if (use_trans_merge) {
-		if (!ST_Blitter_Mask_And_Planar_Rect(
+		if (!ST_Blit_Mask_And_Planar_Rect(
 			maskbm,
 			mask_rowb,
 			sx_abs,
@@ -681,7 +681,7 @@ static BOOL sprite_cache_do_blitter(
 			blit_w,
 			blit_h))
 			return FALSE;
-		if (!ST_Blitter_Planar_Rect_Blit_Or(planar,
+		if (!ST_Blit_Planar_Rect_Blit_Or(planar,
 				planar_rowb,
 				sx_abs,
 				sy_abs,
@@ -694,7 +694,7 @@ static BOOL sprite_cache_do_blitter(
 			return FALSE;
 		return TRUE;
 	}
-	return ST_Blitter_Planar_Rect_Blit(planar,
+	return ST_Blit_Planar_Rect_Blit(planar,
 		   planar_rowb,
 		   sx_abs,
 		   sy_abs,

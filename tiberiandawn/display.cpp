@@ -81,7 +81,7 @@
 #include "atarilib/st_frame_meter.h"
 
 #ifdef ATARI_ST
-#include "st_blitter_blit.h"
+#include "st_blit.h"
 #include "c2p.h"
 #include "st16_convert.h"
 
@@ -325,7 +325,7 @@ namespace {
 			return false;
 		}
 
-		return ST_Blitter_Mask_And_Planar_Rect(
+		return ST_Blit_Mask_And_Planar_Rect(
 			ST_Shadow_Cache_Slot(slot),
 			ST_SHADOW_MASK_ROW_BYTES,
 			ST_SHADOW_MASK_PAD_X + src_x,

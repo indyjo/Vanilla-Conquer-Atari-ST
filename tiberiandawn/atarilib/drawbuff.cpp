@@ -9,7 +9,7 @@
 #include "font.h"
 #include "c2p.h"
 #include "function.h"
-#include "st_blitter_blit.h"
+#include "st_blit.h"
 #include "st_sprite_cache.h"
 #include "st_planar_draw.h"
 #include "st16_draw.h"
@@ -534,20 +534,18 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 	}
 
 	/*
-	** ST planar self-blit fast path: hardware blitter with skew/masks
-	** (see st_blitter_blit.cpp).
+	** ST planar self-blit fast path (HW or SW via ST_Blit).
 	*/
 	if (src_planar && dst_planar && !trans
 		&& src_gb == dest_gb
-		&& src_root && dst_root
-		&& AllowHardwareBlitFills) {
+		&& src_root && dst_root) {
 		const int sx_abs = src_vp->Get_XPos() + x_pixel;
 		const int sy_abs = src_vp->Get_YPos() + y_pixel;
 		const int dx_abs = dest_vp->Get_XPos() + dx_pixel;
 		const int dy_abs = dest_vp->Get_YPos() + dy_pixel;
 		const int src_bpl = GB_ST_Planar_Row_Bytes(src_gb);
 		const int dst_bpl = GB_ST_Planar_Row_Bytes(dest_gb);
-		if (ST_Blitter_Planar_Rect_Blit(
+		if (ST_Blit_Planar_Rect_Blit(
 				src_root,
 				src_bpl,
 				sx_abs,

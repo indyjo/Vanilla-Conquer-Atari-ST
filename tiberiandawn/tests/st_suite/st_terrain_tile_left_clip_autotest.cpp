@@ -4,7 +4,7 @@
  * Mirrors ST16_Blit_Stamp / drawbuff.cpp production path:
  *   - each icon is a 32x24 planar slab (384 bytes), not a shared atlas
  *   - left clip: clip_src_x, reduced width
- *   - ST_Blitter_Planar_Rect_Blit from icon planar (clip_src_x into slab)
+ *   - ST_Blit_Planar_Rect_Blit from icon planar (clip_src_x into slab)
  *
  * Reference: CPU readback from the same planar icon sub-rectangle.
  * Requires real ST hardware BLiTTER (on-machine st-tests binary).
@@ -15,7 +15,7 @@
 #include "c2p.h"
 #include "palette.h"
 #include "st16_iconset.h"
-#include "st_blitter_blit.h"
+#include "st_blit.h"
 #include "st_temperat_palette.h"
 #include "st_text.h"
 
@@ -162,7 +162,7 @@ int st_run_terrain_tile_left_clip_autotest_ex(int verbose, int *out_mismatches)
 				memcpy(screen_hw, checker_bg, ST_PLANAR_FRAME_BYTES);
 				memcpy(screen_ref, checker_bg, ST_PLANAR_FRAME_BYTES);
 
-				if (!ST_Blitter_Planar_Rect_Blit(
+				if (!ST_Blit_Planar_Rect_Blit(
 						planar,
 						ST_TILE_PLANAR_ROW,
 						clip_src_x,

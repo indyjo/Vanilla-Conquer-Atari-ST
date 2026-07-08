@@ -13,7 +13,7 @@ extern WWKeyboardClass* Keyboard;
 #include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
 #include "c2p.h"       // ST_PLANAR_BYTES_PER_LINE
 #include "shape.h"     // Get_Shape_Width, Get_Shape_Height, Decode_Shape_To_Buffer
-#include "st_blitter_blit.h"
+#include "st_blit.h"
 #include <mint/linea.h>  // GCURX, GCURY, MOUSE_BT (LINE-A)
 #include <stdint.h>
 #include <string.h>     // memset
@@ -88,7 +88,7 @@ static BOOL Mouse_Blit_Masked_Cursor(
 	int blit_w,
 	int blit_h)
 {
-	if (!ST_Blitter_Mask_And_Planar_Rect(
+	if (!ST_Blit_Mask_And_Planar_Rect(
 			maskbm,
 			mask_rowb,
 			sx_abs,
@@ -100,7 +100,7 @@ static BOOL Mouse_Blit_Masked_Cursor(
 			blit_w,
 			blit_h))
 		return FALSE;
-	return ST_Blitter_Planar_Rect_Blit_Or(planar,
+	return ST_Blit_Planar_Rect_Blit_Or(planar,
 		planar_rowb,
 		sx_abs,
 		sy_abs,

@@ -81,15 +81,22 @@ void ST_Init_Await_Keypress(void)
 	}
 }
 
-static BOOL Require_ST_Blitter(void)
+static void Probe_ST_Blitter(void)
 {
 	short cfg = Blitmode(-1);
 	if ((cfg & 0x0002) == 0) {
-		return FALSE;
+		AllowHardwareBlitFills = FALSE;
+		printf("C&C - Atari BLiTTER chip not available.\nUsing software fallback.\n");
+		return;
 	}
-	/* Force hardware blitter mode globally. */
-	Blitmode(BLIT_HARD);
-	return TRUE;
+	printf("C&C - Atari BLiTTER chip available.\n");
+	/* Only force hardware mode when hardware blits are enabled in config. */
+	if (AllowHardwareBlitFills) {
+		Blitmode(BLIT_HARD);
+		printf("Using hardware blits.\n");
+	} else {
+		printf("Using software blits due to config.\n");
+	}
 }
 
 // Local function declarations (not in headers)
@@ -260,12 +267,7 @@ int main(int argc, char *argv[])
 			ST_Init_Await_Keypress();
 			return (EXIT_FAILURE);
 		}
-		if (!Require_ST_Blitter()) {
-			printf("C&C - Atari BLiTTER chip not available. This build requires BLiTTER hardware.\n");
-			if (Palette) delete [] Palette;
-			ST_Init_Await_Keypress();
-			return (EXIT_FAILURE);
-		}
+		Probe_ST_Blitter();
 		ST_Cache_Init();
 
 		printf("C&C - Initialising video surfaces.\n");

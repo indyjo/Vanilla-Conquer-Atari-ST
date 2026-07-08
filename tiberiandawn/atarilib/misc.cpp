@@ -276,7 +276,11 @@ int Confine_Rect(int *x, int *y, int dw, int dh, int width, int height)
 }
 
 // Global variable: Can video driver blit overlapped regions?
+#ifdef ATARI_ST
+BOOL OverlappedVideoBlits = TRUE;
+#else
 BOOL OverlappedVideoBlits = FALSE;
+#endif
 
 // Global variables for icon caching statistics
 int CachedIconsDrawn = 0;

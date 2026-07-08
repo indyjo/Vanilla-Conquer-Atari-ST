@@ -1,163 +1,17 @@
 /*
- * st16_draw.cpp - ST16 iconset stamp blit (HW when enabled, CPU fallback)
+ * st16_draw.cpp - ST16 iconset stamp blit (ST_Blit dispatch: HW or SW)
  */
 
 #include "st16_draw.h"
 
 #include "st16_iconset.h"
-#include "st_blitter_blit.h"
+#include "st_blit.h"
 
 #include <stdint.h>
-
-static uint8_t ST16_CPU_Get_Pixel(
-	const uint8_t *base,
-	uint16_t row_bytes,
-	uint16_t width_px,
-	uint16_t height_px,
-	int16_t x,
-	int16_t y)
-{
-	if (!base || x < 0 || y < 0 || x >= width_px || y >= height_px || row_bytes == 0) {
-		return 0;
-	}
-
-	const uint8_t *p = base + (uint16_t)y * row_bytes + (uint16_t)((x >> 4) * 8 + ((x >> 3) & 1));
-	const int bitnum = 7 - (x & 7);
-	const uint8_t mask = (uint8_t)(1u << bitnum);
-	uint8_t c = 0;
-
-	for (int pl = 0; pl < 4; ++pl) {
-		if (p[pl * 2] & mask) {
-			c |= (uint8_t)(1u << pl);
-		}
-	}
-	return c;
-}
-
-static void ST16_CPU_Put_Pixel(
-	uint8_t *base,
-	uint16_t row_bytes,
-	uint16_t width_px,
-	uint16_t height_px,
-	int16_t x,
-	int16_t y,
-	uint8_t color4)
-{
-	if (!base || x < 0 || y < 0 || x >= width_px || y >= height_px || row_bytes == 0) {
-		return;
-	}
-
-	uint8_t *p = base + (uint16_t)y * row_bytes + (uint16_t)((x >> 4) * 8 + ((x >> 3) & 1));
-	const int bitnum = 7 - (x & 7);
-	const uint8_t mask = (uint8_t)(1u << bitnum);
-	const uint8_t c = (uint8_t)(color4 & 15u);
-
-	for (int pl = 0; pl < 4; ++pl) {
-		uint8_t *pb = p + pl * 2;
-		if (c & (uint8_t)(1u << pl)) {
-			*pb |= mask;
-		} else {
-			*pb &= (uint8_t)~mask;
-		}
-	}
-}
-
-static BOOL ST16_CPU_Blit_Planar_Rect(
-	const uint8_t *src,
-	uint16_t src_row_bytes,
-	uint16_t src_width_px,
-	uint16_t src_height_px,
-	int16_t src_x,
-	int16_t src_y,
-	uint8_t *dst,
-	uint16_t dst_row_bytes,
-	uint16_t dst_width_px,
-	uint16_t dst_height_px,
-	int16_t dst_x,
-	int16_t dst_y,
-	uint16_t blit_w,
-	uint16_t blit_h)
-{
-	if (!src || !dst || src_row_bytes == 0 || dst_row_bytes == 0) {
-		return FALSE;
-	}
-	if (blit_w == 0 || blit_h == 0) {
-		return TRUE;
-	}
-
-	for (uint16_t yy = 0; yy < blit_h; ++yy) {
-		const int16_t sy = src_y + (int16_t)yy;
-		const int16_t dy = dst_y + (int16_t)yy;
-		for (uint16_t xx = 0; xx < blit_w; ++xx) {
-			const int16_t sx = src_x + (int16_t)xx;
-			const int16_t dx = dst_x + (int16_t)xx;
-			const uint8_t c =
-				ST16_CPU_Get_Pixel(src, src_row_bytes, src_width_px, src_height_px, sx, sy);
-			ST16_CPU_Put_Pixel(dst, dst_row_bytes, dst_width_px, dst_height_px, dx, dy, c);
-		}
-	}
-	return TRUE;
-}
-
-static BOOL ST16_CPU_Mask_Preserve(const uint8_t *mask_row, int16_t x)
-{
-	const uint16_t word_ix = (uint16_t)(x >> 4);
-	const int bit = 15 - (x & 15);
-	const uint16_t word = *(const uint16_t *)(mask_row + word_ix * 2);
-
-	return (word >> bit) & 1;
-}
-
-static BOOL ST16_CPU_Blit_Masked_Planar_Rect(
-	const uint8_t *planar,
-	uint16_t planar_row_bytes,
-	uint16_t planar_width_px,
-	uint16_t planar_height_px,
-	const uint8_t *mask,
-	uint16_t mask_row_bytes,
-	int16_t src_x,
-	int16_t src_y,
-	uint8_t *dst,
-	uint16_t dst_row_bytes,
-	uint16_t dst_width_px,
-	uint16_t dst_height_px,
-	int16_t dst_x,
-	int16_t dst_y,
-	uint16_t blit_w,
-	uint16_t blit_h)
-{
-	if (!planar || !mask || !dst || planar_row_bytes == 0 || mask_row_bytes == 0 || dst_row_bytes == 0) {
-		return FALSE;
-	}
-	if (blit_w == 0 || blit_h == 0) {
-		return TRUE;
-	}
-
-	for (uint16_t yy = 0; yy < blit_h; ++yy) {
-		const int16_t sy = src_y + (int16_t)yy;
-		const int16_t dy = dst_y + (int16_t)yy;
-		const uint8_t *mask_row = mask + (uint16_t)sy * mask_row_bytes;
-
-		for (uint16_t xx = 0; xx < blit_w; ++xx) {
-			const int16_t sx = src_x + (int16_t)xx;
-			const int16_t dx = dst_x + (int16_t)xx;
-
-			if (ST16_CPU_Mask_Preserve(mask_row, sx)) {
-				continue;
-			}
-			const uint8_t c =
-				ST16_CPU_Get_Pixel(planar, planar_row_bytes, planar_width_px, planar_height_px, sx, sy);
-			ST16_CPU_Put_Pixel(dst, dst_row_bytes, dst_width_px, dst_height_px, dx, dy, c);
-		}
-	}
-	return TRUE;
-}
 
 static BOOL ST16_Blit_Planar_Rect(
 	const uint8_t *planar,
 	uint16_t planar_row_bytes,
-	uint16_t planar_width_px,
-	uint16_t planar_height_px,
 	const uint8_t *mask,
 	uint16_t mask_row_bytes,
 	BOOL has_mask,
@@ -165,8 +19,6 @@ static BOOL ST16_Blit_Planar_Rect(
 	int16_t src_y,
 	uint8_t *dst_root,
 	uint16_t dst_row_bytes,
-	uint16_t dst_width_px,
-	uint16_t dst_height_px,
 	int16_t dst_x,
 	int16_t dst_y,
 	uint16_t blit_w,
@@ -180,53 +32,7 @@ static BOOL ST16_Blit_Planar_Rect(
 	}
 
 	if (!has_mask) {
-		if (AllowHardwareBlitFills
-			&& ST_Blitter_Planar_Rect_Blit(
-				planar,
-				(int)planar_row_bytes,
-				(int)src_x,
-				(int)src_y,
-				dst_root,
-				(int)dst_row_bytes,
-				(int)dst_x,
-				(int)dst_y,
-				(int)blit_w,
-				(int)blit_h)) {
-			return TRUE;
-		}
-		return ST16_CPU_Blit_Planar_Rect(
-			planar,
-			planar_row_bytes,
-			planar_width_px,
-			planar_height_px,
-			src_x,
-			src_y,
-			dst_root,
-			dst_row_bytes,
-			dst_width_px,
-			dst_height_px,
-			dst_x,
-			dst_y,
-			blit_w,
-			blit_h);
-	}
-
-	if (!mask || mask_row_bytes == 0) {
-		return FALSE;
-	}
-	if (AllowHardwareBlitFills
-		&& ST_Blitter_Mask_And_Planar_Rect(
-			mask,
-			(int)mask_row_bytes,
-			(int)src_x,
-			(int)src_y,
-			dst_root,
-			(int)dst_row_bytes,
-			(int)dst_x,
-			(int)dst_y,
-			(int)blit_w,
-			(int)blit_h)
-		&& ST_Blitter_Planar_Rect_Blit_Or(
+		return ST_Blit_Planar_Rect_Blit(
 			planar,
 			(int)planar_row_bytes,
 			(int)src_x,
@@ -236,26 +42,36 @@ static BOOL ST16_Blit_Planar_Rect(
 			(int)dst_x,
 			(int)dst_y,
 			(int)blit_w,
-			(int)blit_h)) {
-		return TRUE;
+			(int)blit_h);
 	}
-	return ST16_CPU_Blit_Masked_Planar_Rect(
+
+	if (!mask || mask_row_bytes == 0) {
+		return FALSE;
+	}
+	if (!ST_Blit_Mask_And_Planar_Rect(
+			mask,
+			(int)mask_row_bytes,
+			(int)src_x,
+			(int)src_y,
+			dst_root,
+			(int)dst_row_bytes,
+			(int)dst_x,
+			(int)dst_y,
+			(int)blit_w,
+			(int)blit_h)) {
+		return FALSE;
+	}
+	return ST_Blit_Planar_Rect_Blit_Or(
 		planar,
-		planar_row_bytes,
-		planar_width_px,
-		planar_height_px,
-		mask,
-		mask_row_bytes,
-		src_x,
-		src_y,
+		(int)planar_row_bytes,
+		(int)src_x,
+		(int)src_y,
 		dst_root,
-		dst_row_bytes,
-		dst_width_px,
-		dst_height_px,
-		dst_x,
-		dst_y,
-		blit_w,
-		blit_h);
+		(int)dst_row_bytes,
+		(int)dst_x,
+		(int)dst_y,
+		(int)blit_w,
+		(int)blit_h);
 }
 
 BOOL ST16_Blit_Stamp(
@@ -296,6 +112,8 @@ BOOL ST16_Blit_Stamp(
 	int16_t vp_w;
 	int16_t vp_h;
 	int16_t trim;
+
+	(void)total_size;
 
 	// Fast path for 24x24 tiles.
 	if (tile_w == ST16_TILE_W && tile_h == ST16_TILE_H) {
@@ -407,8 +225,6 @@ BOOL ST16_Blit_Stamp(
 	return ST16_Blit_Planar_Rect(
 		planar,
 		(uint16_t)layout.planar_row_bytes,
-		(uint16_t)layout.planar_w,
-		(uint16_t)layout.planar_h,
 		mask,
 		(uint16_t)layout.mask_row_bytes,
 		has_mask,
@@ -416,8 +232,6 @@ BOOL ST16_Blit_Stamp(
 		(int16_t)clip_src_y,
 		dst_root,
 		dst_bpl,
-		dst_pw,
-		dst_ph,
 		dx_abs,
 		dy_abs,
 		clip_blit_w,

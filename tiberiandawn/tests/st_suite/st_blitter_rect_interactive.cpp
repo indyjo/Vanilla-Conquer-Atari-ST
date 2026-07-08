@@ -14,7 +14,7 @@
 #include "gbuffer.h"
 #include "palette.h"
 #include "st_audio_asset_autotest.h"
-#include "st_blitter_blit.h"
+#include "st_blit.h"
 #include "st_temperat_palette.h"
 #include "st_test_linkage.h"
 
@@ -320,7 +320,7 @@ static BOOL st_redraw_blit(
 {
 	Vsync();
 	memcpy(screen, checker_bg, (size_t)ST_PLANAR_FRAME_BYTES);
-	const BOOL ok = ST_Blitter_Planar_Rect_Blit(
+	const BOOL ok = ST_Blit_Planar_Rect_Blit(
 		src,
 		ST_PLANAR_BYTES_PER_LINE,
 		p->sx,

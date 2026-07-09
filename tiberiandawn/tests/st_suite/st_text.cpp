@@ -8,6 +8,12 @@
 
 #include <stdio.h>
 
+void st_console_echo_char(int ch)
+{
+	fputc(ch, stdout);
+	fflush(stdout);
+}
+
 void st_wrap_puts(const char *paragraph, int maxcol)
 {
 	if (!paragraph || maxcol < 8)
@@ -21,7 +27,7 @@ void st_wrap_puts(const char *paragraph, int maxcol)
 			return;
 
 		if (*s == '\n') {
-			putchar('\n');
+			fputc('\n', stdout);
 			s++;
 			continue;
 		}

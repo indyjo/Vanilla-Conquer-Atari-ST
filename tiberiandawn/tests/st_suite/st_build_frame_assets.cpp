@@ -457,8 +457,7 @@ static int st_read_index_line(char *buf, int cap)
 		}
 		if (ch >= ' ' && n + 1 < cap) {
 			buf[n++] = (char)ch;
-			putchar((int)ch);
-			fflush(stdout);
+			st_console_echo_char((int)ch);
 		}
 	}
 	buf[n] = '\0';

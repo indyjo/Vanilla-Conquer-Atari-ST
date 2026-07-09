@@ -14,6 +14,9 @@ extern "C" {
 /** Print paragraph with word-wrap; lines never exceed maxcol characters. */
 void st_wrap_puts(const char *paragraph, int maxcol);
 
+/** Echo one character to stdout (libcmini-safe; do not use putchar() in st-tests). */
+void st_console_echo_char(int ch);
+
 /** Wait for one keypress, no prompt, always returns 1. */
 int st_read_yes_no(void);
 

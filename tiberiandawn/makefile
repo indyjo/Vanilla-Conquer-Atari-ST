@@ -806,7 +806,7 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTD
 	$(INTDIR)/st_load_uncompress.o \
 	$(INTDIR)/buff.o $(INTDIR)/bfiofile.o $(INTDIR)/blwstraw.o $(INTDIR)/blowfish.o \
 	$(INTDIR)/crc.o $(INTDIR)/fading.o $(INTDIR)/file.o $(INTDIR)/file_posix.o \
-	$(INTDIR)/paths.o $(PATHS_IMPL_OBJ) $(INTDIR)/debugstring.o \
+	$(INTDIR)/paths.o $(PATHS_IMPL_OBJ) $(INTDIR)/libcmini_posix_shim.o $(INTDIR)/debugstring.o \
 	$(INTDIR)/pk.o $(INTDIR)/pkstraw.o $(INTDIR)/rndstraw.o $(INTDIR)/sha.o $(INTDIR)/shastraw.o \
 	$(INTDIR)/straw.o $(INTDIR)/xstraw.o $(INTDIR)/wwkeyboard.o \
 	$(INTDIR)/misc.o $(INTDIR)/random.o $(INTDIR)/int.o $(INTDIR)/mp.o
@@ -816,7 +816,7 @@ st-tests: $(ST_TEST_EXE)
 
 $(ST_TEST_EXE): $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) | $(OUTDIR) $(INTDIR)
 	@echo "Linking $(ST_TEST_EXE)..."
-	$(CXX) $(LINKFLAGS) -o $(ST_TEST_EXE) $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) $(LIBS)
+	$(CXX) $(LINKFLAGS) -o $(ST_TEST_EXE) $(LINK_PRE_OBJS) $(ST_TEST_OBJS) $(ST_TEST_LINK_OBJS) $(LIBS)
 
 $(INTDIR)/st_tests_main.o: $(ST_SUITE_DIR)/st_tests_main.cpp | $(INTDIR)
 	@echo "Compiling $<..."

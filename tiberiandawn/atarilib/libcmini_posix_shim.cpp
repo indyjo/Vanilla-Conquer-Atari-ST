@@ -11,12 +11,26 @@
 #include <errno.h>
 #include <limits.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 extern "C" {
+
+/*
+ * Mintlib stdio.h inlines putchar() through __flshfp when the stream buffer is
+ * full. libcmini does not ship that helper, so provide a small bridge.
+ */
+int __flshfp(FILE *stream, int c)
+{
+	if (!stream) {
+		return EOF;
+	}
+	fflush(stream);
+	return fputc(c, stream);
+}
 
 static int st_fnmatch_char_eq(char a, char b, int flags)
 {

@@ -306,19 +306,16 @@ void Enable_Uncompressed_Shapes (void)
 
 #define FIXIT_SCORE_CRASH
 
-/* When blob_size > 0, dataptr is exactly that many bytes (e.g. MIX extract); reject bad offsets. */
-static bool Build_Frame_SrcRangeOk(void const *base, size_t blob, void const *src, size_t nbytes)
+/* XOR delta streams are variable-length; only require the start pointer to lie in-blob. */
+static bool Build_Frame_DeltaPtrOk(void const *base, size_t blob, void const *src)
 {
-	if (blob == 0 || nbytes == 0)
+	if (blob == 0)
 		return true;
 	const unsigned char *b = (const unsigned char *)base;
 	const unsigned char *s = (const unsigned char *)src;
 	if (s < b)
 		return false;
-	size_t off = (size_t)(s - b);
-	if (off > blob || nbytes > blob - off)
-		return false;
-	return true;
+	return (size_t)(s - b) < blob;
 }
 
 unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void *buffptr,
@@ -620,8 +617,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			Add_Long_To_Pointer(ptr, offdiff), (unsigned)total_frames);
 		fflush(stdout);
 #endif
-		if (!Build_Frame_SrcRangeOk(KF_PAY, KF_PAY_LIM,
-					Add_Long_To_Pointer(ptr, offdiff), (size_t)buffsize)) {
+		if (!Build_Frame_DeltaPtrOk(KF_PAY, KF_PAY_LIM,
+					Add_Long_To_Pointer(ptr, offdiff))) {
 			KF_RETURN(0);
 		}
 		Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff), buffsize);
@@ -662,9 +659,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 							Add_Long_To_Pointer(ptr, offdiff));
 						fflush(stdout);
 #endif
-						if (!Build_Frame_SrcRangeOk(KF_PAY, KF_PAY_LIM,
-									Add_Long_To_Pointer(ptr, offdiff),
-									(size_t)buffsize)) {
+						if (!Build_Frame_DeltaPtrOk(KF_PAY, KF_PAY_LIM,
+									Add_Long_To_Pointer(ptr, offdiff))) {
 							KF_RETURN(0);
 						}
 						Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),

@@ -182,6 +182,32 @@ static int KfBuildEnv_Init(void const *dataptr, size_t blob_size, KfBuildEnv *e)
 	}
 	return 1;
 }
+
+/*
+ * Reload SUBFRAMEOFFS frame-table dwords for a chain step.
+ * Monolithic blobs follow vanilla: read the full 28-byte window even past the
+ * frame table into LCW payload. SHPX meta stops at clip_table_offset so clip
+ * bytes are not mistaken for frame offsets (NUKE.SHP frame 8).
+ */
+static void KfReloadOffsetWindow(KfBuildEnv const *e, unsigned short currframe,
+		unsigned long offset[SUBFRAMEOFFS])
+{
+	const unsigned char *row_bytes =
+	    (const unsigned char *)Add_Long_To_Pointer(
+	        e->meta, (((unsigned long)currframe << 3) + e->table_base));
+	size_t row_off = (size_t)(((unsigned long)currframe << 3) + e->table_base);
+	size_t table_end = 0;
+
+	if (e->is_shpx && e->pfx)
+		table_end = (size_t)e->pfx->clip_table_offset;
+
+	for (int i = 0; i < SUBFRAMEOFFS; i++) {
+		if (table_end != 0 && row_off + (size_t)(i + 1) * 4u > table_end)
+			offset[i] = 0;
+		else
+			offset[i] = KfReadU32(e, row_bytes + i * 4);
+	}
+}
 #endif
 
 void *Get_Shape_Header_Data(void *ptr)
@@ -546,20 +572,15 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			}
 			currframe = (unsigned short)ref_frame;
 
-			{
-				unsigned long row_off = (((unsigned long)currframe << 3) + KF_TABLE);
-				if (KF_META_LIM > 0
-						&& (size_t)row_off + (size_t)(SUBFRAMEOFFS * sizeof(unsigned long))
-								> KF_META_LIM) {
-					KF_RETURN(0);
-				}
-			}
-
+#ifdef ATARI_ST
+			KfReloadOffsetWindow(&kf, currframe, offset);
+#else
 			ptr = (char *)Add_Long_To_Pointer( KF_META, (((unsigned long)currframe << 3) + KF_TABLE) );
 			const unsigned char* offset_bytes = (const unsigned char*)ptr;
 			for (int i = 0; i < SUBFRAMEOFFS; i++) {
 				offset[i] = KF_U32(offset_bytes + i * 4);
 			}
+#endif
 		}
 
 		// key frame
@@ -644,99 +665,41 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 #endif
 
 				length = buffsize;
-				{
-					unsigned long abs_sub =
-						(unsigned long)(offset[subframe] & 0x00FFFFFFUL);
-					if ( abs_sub >= offcurr ) {
 #if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
-						fprintf(stdout,
-							"[Build_Frame] chain XOR: shape=%p fr=%u curr=%u sub=%u "
-							"buffsize=%lu offcurr=%lX offdiff=%lX buff=%p delta=%p\n",
-							dataptr, (unsigned)framenumber, (unsigned)currframe,
-							(unsigned)subframe, (unsigned long)buffsize,
-							(unsigned long)offcurr, (unsigned long)offdiff,
-							buffptr,
-							Add_Long_To_Pointer(ptr, offdiff));
-						fflush(stdout);
+				fprintf(stdout,
+					"[Build_Frame] chain XOR: shape=%p fr=%u curr=%u sub=%u "
+					"buffsize=%lu offcurr=%lX offdiff=%lX buff=%p delta=%p\n",
+					dataptr, (unsigned)framenumber, (unsigned)currframe,
+					(unsigned)subframe, (unsigned long)buffsize,
+					(unsigned long)offcurr, (unsigned long)offdiff,
+					buffptr,
+					Add_Long_To_Pointer(ptr, offdiff));
+				fflush(stdout);
 #endif
-						if (!Build_Frame_DeltaPtrOk(KF_PAY, KF_PAY_LIM,
-									Add_Long_To_Pointer(ptr, offdiff))) {
-							KF_RETURN(0);
-						}
-						Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),
-							buffsize);
-					}
+				if (!Build_Frame_DeltaPtrOk(KF_PAY, KF_PAY_LIM,
+							Add_Long_To_Pointer(ptr, offdiff))) {
+					KF_RETURN(0);
 				}
+				Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),
+					buffsize);
 
 				currframe++;
 				subframe += 2;
 
 				if ( subframe >= (SUBFRAMEOFFS - 1) &&
 					currframe <= framenumber ) {
-					/*
-					** Reload seven dwords from the per-frame offset table. Each frame slot is
-					** only 8 bytes; reading 28 bytes from row `currframe` needs room for 3.5
-					** more rows — otherwise we read past the table (e.g. TREX.SHP high frames)
-					** and corrupt offset[] / ptr.
-					*/
-					{
-						const unsigned long copy_len =
-							(unsigned long)(SUBFRAMEOFFS * sizeof(unsigned long));
-						const unsigned long copy_start =
-							KF_TABLE + ((unsigned long)currframe << 3);
-						const unsigned long table_end =
-							KF_TABLE + ((unsigned long)total_frames << 3);
-						if (copy_start + copy_len > table_end
-								|| (KF_META_LIM > 0
-										&& (size_t)(copy_start + copy_len) > KF_META_LIM)) {
-#if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
-							fprintf(stderr,
-									"[Build_Frame] XOR chain: Mem_Copy would read past frame "
-									"table (curr=%u total=%u need_end=%lx table_end=%lx) "
-									"shape=%p\n",
-									(unsigned)currframe, (unsigned)total_frames,
-									(unsigned long)(copy_start + copy_len),
-									(unsigned long)table_end, dataptr);
-							fflush(stderr);
+#ifdef ATARI_ST
+					KfReloadOffsetWindow(&kf, currframe, offset);
+#else
+					const unsigned char *row_bytes =
+						(const unsigned char *)Add_Long_To_Pointer(
+							KF_META,
+							(((unsigned long)currframe << 3) + KF_TABLE));
+					for (int i = 0; i < SUBFRAMEOFFS; i++) {
+						offset[i] = KF_U32(row_bytes + i * 4);
+					}
 #endif
-							KF_RETURN(0);
-						}
-					}
-					{
-						const unsigned char *row_bytes =
-							(const unsigned char *)Add_Long_To_Pointer(
-								KF_META,
-								(((unsigned long)currframe << 3) + KF_TABLE));
-						for (int i = 0; i < SUBFRAMEOFFS; i++) {
-							offset[i] = KF_U32(row_bytes + i * 4);
-						}
-					}
-					/*
-					** After reload, offset[0] is this row's DataOffset. Usually the next
-					** chain patch uses offset[2],offset[4],... (same as mid-window steps).
-					** When currframe == framenumber, offset[2] is already the *next* frame's
-					** row — wrong for finishing this frame; use offset[0] instead.
-					*/
-					if ( currframe == framenumber ) {
-						subframe = 0;
-					} else {
-						subframe = 2;
-					}
-					/*
-					** offset[] was replaced with another frame's table; offcurr/ptr must
-					** match that table's key segment or offdiff points outside the asset.
-					*/
-					offcurr = offset[1] & 0x00FFFFFFL;
-					if (KF_PAY_LIM > 0 && offcurr >= (unsigned long)KF_PAY_LIM) {
-						KF_RETURN(0);
-					}
-					ptr = (char *)Add_Long_To_Pointer( KF_PAY, offcurr );
-					if (flags & 1 ) {
-						if (KF_PAY_LIM > 0 && offcurr + 768u > (unsigned long)KF_PAY_LIM) {
-							KF_RETURN(0);
-						}
-						ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
-					}
+					subframe = 0;
 				}
 			}
 		}

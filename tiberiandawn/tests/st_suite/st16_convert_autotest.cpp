@@ -9,7 +9,7 @@
 #include "palette.h"
 #include "st16_convert.h"
 #include "st16_iconset.h"
-#include "st_mix_minimal.h"
+#include "st16_w2_tem_embed.h"
 #include "st_temperat_palette.h"
 #include "tile.h"
 
@@ -428,17 +428,19 @@ static int st16_simulate_read_binary_icon_check(void const *iconset, int icon_sl
 static int st16_run_w2_real_asset_check(void)
 {
 	unsigned char *blob = NULL;
-	size_t blob_size = 0;
+	size_t const blob_size = (size_t)ST16_W2_TEM_EMBED_SIZE;
 	uint8_t scratch[ST_TILE_CHUNKY];
 	size_t new_size;
 	int fails = 0;
 	int i;
 	int image_index;
 
-	if (st_mix_extract_file("TEMPERAT.MIX", "W2.TEM", &blob, &blob_size) != 0) {
-		printf("  ST16 convert W2.TEM: SKIP (no TEMPERAT.MIX/W2.TEM)\n");
-		return 0;
+	blob = (unsigned char *)malloc(blob_size);
+	if (!blob) {
+		printf("  ST16 convert W2.TEM: FAIL (alloc)\n");
+		return 1;
 	}
+	memcpy(blob, k_st16_w2_tem_embed, blob_size);
 
 	if (!ST16_Iconset_Should_Convert(blob, blob_size)) {
 		fails++;

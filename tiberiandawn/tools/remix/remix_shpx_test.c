@@ -23,6 +23,7 @@ typedef struct {
 	const unsigned short *spot_frames;
 	int n_spot;
 	int expect_shpx;
+	int verify_tail_clip;
 } ShpxTestCase;
 
 static const unsigned short k_spot_minigun[] = { 0, 1, 2, 3, 4, 5 };
@@ -30,6 +31,7 @@ static const unsigned short k_spot_options[] = { 0, 2, 3 };
 static const unsigned short k_spot_e4[] = { 0, 1, 15, 31, 63, 127, 255, 511 };
 static const unsigned short k_spot_radar[] = { 0, 1, 2, 3, 4, 5, 30, 31, 32, 40, 41, 42 };
 static const unsigned short k_spot_trex[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+static const unsigned short k_spot_nuke[] = { 7, 8 };
 
 static const ShpxTestCase k_cases[] = {
 	{ "50CAL.SHP", 1, 1, NULL, 0, 1 },
@@ -40,6 +42,7 @@ static const ShpxTestCase k_cases[] = {
 	{ "SMOKE_M.SHP", 1, 1, NULL, 0, 1 },
 	{ "RADAR.GDI", 1, 0, k_spot_radar, (int)(sizeof(k_spot_radar) / sizeof(k_spot_radar[0])), 1 },
 	{ "TREX.SHP", 1, 0, k_spot_trex, (int)(sizeof(k_spot_trex) / sizeof(k_spot_trex[0])), 1 },
+	{ "NUKE.SHP", 1, 0, k_spot_nuke, (int)(sizeof(k_spot_nuke) / sizeof(k_spot_nuke[0])), 1, 1 },
 	{ "E4.SHP", 1, 0, k_spot_e4, (int)(sizeof(k_spot_e4) / sizeof(k_spot_e4[0])), 1 },
 	{ "TRANS.ICN", 0, 0, NULL, 0, 0 },
 };
@@ -139,7 +142,17 @@ static int test_decode_frames(
 	return failures;
 }
 
-static int test_shpx_convert(const char *label, const unsigned char *data, size_t len)
+static uint16_t read_be16(const unsigned char *p)
+{
+	return (uint16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
+}
+
+static uint32_t read_be32(const unsigned char *p)
+{
+	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static int test_shpx_convert(const char *label, const unsigned char *data, size_t len, int verify_tail_clip)
 {
 	RemixShpxPool pool;
 	unsigned char *out = NULL;
@@ -162,6 +175,22 @@ static int test_shpx_convert(const char *label, const unsigned char *data, size_
 		fprintf(stderr, "FAIL %s: empty SHPX pool\n", label);
 		++failures;
 	}
+
+	{
+		uint16_t frames = read_be16(out + 4);
+		uint32_t clip_off = read_be32(out + 26);
+		if (verify_tail_clip && frames > 0 && clip_off + (size_t)frames * 8u <= out_len) {
+			const unsigned char *tail = out + clip_off + ((size_t)frames - 1u) * 8u;
+			uint16_t cw = read_be16(tail + 4);
+			uint16_t ch = read_be16(tail + 6);
+			if (cw == 0 || ch == 0) {
+				fprintf(stderr, "FAIL %s: last frame clip is empty (%ux%u)\n", label,
+				    (unsigned)cw, (unsigned)ch);
+				++failures;
+			}
+		}
+	}
+
 	free(out);
 	remix_shpx_pool_free(&pool);
 	return failures;
@@ -205,7 +234,7 @@ int main(int argc, char **argv)
 			failures += test_decode_frames(tc->filename, data, len, tc->decode_all_frames,
 			    tc->spot_frames, tc->n_spot);
 			if (tc->expect_shpx)
-				failures += test_shpx_convert(tc->filename, data, len);
+				failures += test_shpx_convert(tc->filename, data, len, tc->verify_tail_clip);
 		} else if (remix_is_keyframe_shp(data, len)) {
 			fprintf(stderr, "FAIL %s: non-KeyFrame blob flagged as KeyFrame\n", tc->filename);
 			++failures;

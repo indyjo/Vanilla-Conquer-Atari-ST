@@ -29,9 +29,11 @@ SHPX_OBJS = remix_shpx_host.o remix_shpx_stubs.o keyframe_remix.o remix_lcw.o re
 MINT_ST16_OBJS = remix_st16_host_mint.o remix_st16_stubs_mint.o st16_convert_mint.o st16_iconset_mint.o c2p_mint.o
 MINT_SHPX_OBJS = remix_shpx_host_mint.o remix_shpx_stubs_mint.o keyframe_remix_mint.o remix_lcw_mint.o remix_xordelta_mint.o
 
-.PHONY: all clean host mint test-st16 test-shpx
+.PHONY: all clean host mint test test-st16 test-shpx
 
 all: host
+
+test: test-st16 test-shpx
 
 test-st16: remix_st16_test
 	./remix_st16_test

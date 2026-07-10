@@ -493,16 +493,6 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			}
 			currframe = (unsigned short)ref_frame;
 
-			{
-				unsigned long row_off =
-						(((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType));
-				if (blob_size > 0
-						&& (size_t)row_off + (size_t)(SUBFRAMEOFFS * sizeof(unsigned long))
-								> blob_size) {
-					return (0);
-				}
-			}
-
 			ptr = (char *)Add_Long_To_Pointer( dataptr, (((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)) );
 			// Read subframe offsets as little-endian
 			const unsigned char* offset_bytes = (const unsigned char*)ptr;
@@ -592,100 +582,37 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 #endif
 
 				length = buffsize;
-				{
-					unsigned long abs_sub =
-						(unsigned long)(offset[subframe] & 0x00FFFFFFUL);
-					if ( abs_sub >= offcurr ) {
 #if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
-						fprintf(stdout,
-							"[Build_Frame] chain XOR: shape=%p fr=%u curr=%u sub=%u "
-							"buffsize=%lu offcurr=%lX offdiff=%lX buff=%p delta=%p\n",
-							dataptr, (unsigned)framenumber, (unsigned)currframe,
-							(unsigned)subframe, (unsigned long)buffsize,
-							(unsigned long)offcurr, (unsigned long)offdiff,
-							buffptr,
-							Add_Long_To_Pointer(ptr, offdiff));
-						fflush(stdout);
+				fprintf(stdout,
+					"[Build_Frame] chain XOR: shape=%p fr=%u curr=%u sub=%u "
+					"buffsize=%lu offcurr=%lX offdiff=%lX buff=%p delta=%p\n",
+					dataptr, (unsigned)framenumber, (unsigned)currframe,
+					(unsigned)subframe, (unsigned long)buffsize,
+					(unsigned long)offcurr, (unsigned long)offdiff,
+					buffptr,
+					Add_Long_To_Pointer(ptr, offdiff));
+				fflush(stdout);
 #endif
-						if (!Build_Frame_DeltaPtrOk(dataptr, blob_size,
-									Add_Long_To_Pointer(ptr, offdiff))) {
-							return (0);
-						}
-						Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),
-							buffsize);
-					}
+				if (!Build_Frame_DeltaPtrOk(dataptr, blob_size,
+							Add_Long_To_Pointer(ptr, offdiff))) {
+					return (0);
 				}
+				Apply_Delta(buffptr, Add_Long_To_Pointer(ptr, offdiff),
+					buffsize);
 
 				currframe++;
 				subframe += 2;
 
 				if ( subframe >= (SUBFRAMEOFFS - 1) &&
 					currframe <= framenumber ) {
-					/*
-					** Reload seven dwords from the per-frame offset table. Each frame slot is
-					** only 8 bytes; reading 28 bytes from row `currframe` needs room for 3.5
-					** more rows — otherwise we read past the table (e.g. TREX.SHP high frames)
-					** and corrupt offset[] / ptr.
-					*/
-					{
-						const unsigned long hdr_sz = (unsigned long)sizeof(KeyFrameHeaderType);
-						const unsigned long copy_len =
-							(unsigned long)(SUBFRAMEOFFS * sizeof(unsigned long));
-						const unsigned long copy_start =
-							hdr_sz + ((unsigned long)currframe << 3);
-						const unsigned long table_end =
-							hdr_sz + ((unsigned long)total_frames << 3);
-						if (copy_start + copy_len > table_end
-								|| (blob_size > 0
-										&& (size_t)(copy_start + copy_len) > blob_size)) {
-#if defined(DEBUG) && defined(BUILD_FRAME_XOR_TRACE)
-							fprintf(stderr,
-									"[Build_Frame] XOR chain: Mem_Copy would read past frame "
-									"table (curr=%u total=%u need_end=%lx table_end=%lx) "
-									"shape=%p\n",
-									(unsigned)currframe, (unsigned)total_frames,
-									(unsigned long)(copy_start + copy_len),
-									(unsigned long)table_end, dataptr);
-							fflush(stderr);
-#endif
-							return (0);
-						}
+					const unsigned char *row_bytes =
+						(const unsigned char *)Add_Long_To_Pointer(
+							dataptr,
+							(((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)));
+					for (int i = 0; i < SUBFRAMEOFFS; i++) {
+						offset[i] = ReadLE32(row_bytes + i * 4);
 					}
-					{
-						const unsigned char *row_bytes =
-							(const unsigned char *)Add_Long_To_Pointer(
-								dataptr,
-								(((unsigned long)currframe << 3) + sizeof(KeyFrameHeaderType)));
-						for (int i = 0; i < SUBFRAMEOFFS; i++) {
-							offset[i] = ReadLE32(row_bytes + i * 4);
-						}
-					}
-					/*
-					** After reload, offset[0] is this row's DataOffset. Usually the next
-					** chain patch uses offset[2],offset[4],... (same as mid-window steps).
-					** When currframe == framenumber, offset[2] is already the *next* frame's
-					** row — wrong for finishing this frame; use offset[0] instead.
-					*/
-					if ( currframe == framenumber ) {
-						subframe = 0;
-					} else {
-						subframe = 2;
-					}
-					/*
-					** offset[] was replaced with another frame's table; offcurr/ptr must
-					** match that table's key segment or offdiff points outside the asset.
-					*/
-					offcurr = offset[1] & 0x00FFFFFFL;
-					if (blob_size > 0 && offcurr >= blob_size) {
-						return (0);
-					}
-					ptr = (char *)Add_Long_To_Pointer( dataptr, offcurr );
-					if (flags & 1 ) {
-						if (blob_size > 0 && offcurr + 768u > blob_size) {
-							return (0);
-						}
-						ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
-					}
+					subframe = 0;
 				}
 			}
 		}

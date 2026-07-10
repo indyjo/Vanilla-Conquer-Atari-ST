@@ -1,6 +1,7 @@
 /*
  * Interactive (test 7): pick a KeyFrame SHP from menu (1–9, 0=tenth), Build_Frame every frame,
- * tile them on a checker (CONQUER.MIX). Video preview has no printed text; Y/N is silent.
+ * tile them on a checker (CONQUER.MIX). SHPX shapes also get red corner marks just outside
+ * each baked clip rectangle (same crop the game uses). Video preview has no printed text.
  *
  * Automated (test 8): Build_Frame spot-checks a fixed SHP list (includes XOR-heavy paths).
  *
@@ -19,7 +20,9 @@
 #include "fading.h"
 
 #include "c2p.h"
+#include "shpx.h"
 #include "st_temperat_palette.h"
+#include "wwstd.h"
 
 #include <mint/osbind.h>
 
@@ -35,6 +38,8 @@
 /* Logical palette indices (TEMPERAT.PAL): 4x4 checker behind tiles (colors 3 and 4). */
 #define ST_CHK_A ((unsigned char)3)
 #define ST_CHK_B ((unsigned char)4)
+/* SHPX clip bounds overlay in test 7 (outside each baked clip rect). */
+#define ST_BF7_CLIP_MARK ((unsigned char)RED)
 
 /* Same layout as DisplayClass::UnitShadow / SHAPE_GHOST in KEYFBUFF.ASM (Single_Line_Ghost_Trans). */
 #define ST_BF7_UNSHADOW_BYTES (((1) + 1) * 256) /* USHADOW_COL_COUNT + 1 */
@@ -56,6 +61,54 @@ static void st_build_unit_shadow_table(const unsigned char pal768[768], unsigned
 		Build_Fading_Table(pal768, table, ucols[index].DestColor, ucols[index].Fading);
 		table += 256;
 	}
+}
+
+static void st_bf7_plot_px(unsigned char *screen, int scr_w, int scr_h, int x, int y,
+		unsigned char color)
+{
+	if (x < 0 || y < 0 || x >= scr_w || y >= scr_h)
+		return;
+	screen[y * scr_w + x] = color;
+}
+
+/*
+ * Draw small L-shaped marks just outside the SHPX clip rectangle (tile-local clip coords).
+ * Empty clips (0x0) get a four-pixel cross around the anchor so bad bakes stand out.
+ */
+static void st_bf7_draw_clip_corners(unsigned char *screen, int scr_w, int scr_h, int tile_x,
+		int tile_y, uint16_t clip_x, uint16_t clip_y, uint16_t clip_w, uint16_t clip_h)
+{
+	const unsigned char mark = ST_BF7_CLIP_MARK;
+	const int left = tile_x + (int)clip_x;
+	const int top = tile_y + (int)clip_y;
+
+	if (clip_w == 0 || clip_h == 0) {
+		st_bf7_plot_px(screen, scr_w, scr_h, left - 1, top - 1, mark);
+		st_bf7_plot_px(screen, scr_w, scr_h, left + 1, top - 1, mark);
+		st_bf7_plot_px(screen, scr_w, scr_h, left - 1, top + 1, mark);
+		st_bf7_plot_px(screen, scr_w, scr_h, left + 1, top + 1, mark);
+		return;
+	}
+
+	const int right = left + (int)clip_w - 1;
+	const int bottom = top + (int)clip_h - 1;
+
+	/* Top-left */
+	st_bf7_plot_px(screen, scr_w, scr_h, left - 1, top - 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, left - 2, top - 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, left - 1, top - 2, mark);
+	/* Top-right */
+	st_bf7_plot_px(screen, scr_w, scr_h, right + 1, top - 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, right + 2, top - 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, right + 1, top - 2, mark);
+	/* Bottom-left */
+	st_bf7_plot_px(screen, scr_w, scr_h, left - 1, bottom + 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, left - 2, bottom + 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, left - 1, bottom + 2, mark);
+	/* Bottom-right */
+	st_bf7_plot_px(screen, scr_w, scr_h, right + 1, bottom + 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, right + 2, bottom + 1, mark);
+	st_bf7_plot_px(screen, scr_w, scr_h, right + 1, bottom + 2, mark);
 }
 
 /*
@@ -713,6 +766,17 @@ static void st_blit_frame_page_on_checker(unsigned char *chunky, void *raw, size
 			continue;
 
 		st_blit_tile_ghost(chunky, cx, cy, ST_SCR_W, buf, tw, th, tw, unit_shadow, remap);
+
+		if (SHPX_Is_Meta(raw)) {
+			uint16_t clip_x = 0;
+			uint16_t clip_y = 0;
+			uint16_t clip_w = 0;
+			uint16_t clip_h = 0;
+			if (SHPX_Get_Frame_Clip(raw, (unsigned)fr, &clip_x, &clip_y, &clip_w, &clip_h)) {
+				st_bf7_draw_clip_corners(
+				    chunky, ST_SCR_W, ST_SCR_H, cx, cy, clip_x, clip_y, clip_w, clip_h);
+			}
+		}
 	}
 
 	free(buf);

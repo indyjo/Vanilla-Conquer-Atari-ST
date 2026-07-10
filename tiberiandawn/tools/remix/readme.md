@@ -32,6 +32,12 @@ SHPX / KeyFrame decode regression (curated shapes under `testdata/shapes/`):
 make test-shpx
 ```
 
+Run both host regression suites:
+
+```bash
+make test
+```
+
 Regenerate test blobs from an unmodified `CONQUER.MIX`:
 
 ```bash

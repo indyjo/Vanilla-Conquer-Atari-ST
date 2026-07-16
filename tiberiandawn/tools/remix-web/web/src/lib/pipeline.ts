@@ -4,7 +4,7 @@ import { buildZip, lowercaseFileMap } from './zip';
 import { extractReleaseAssets } from './release-zip';
 import { remixMergeMixBytes, remixMixBytes, type RemixEntry, type RemixMixOptions } from './wasm-bridge';
 import { entrySummary, notableEntryLines } from './entry-log';
-import { isConquerMix, shpxPoolBasename } from './shpx';
+import { isShpxEligibleMix, shpxPoolBasename, shpxPoolIdForMix } from './shpx';
 import { isTheaterMix, requiredW16Stems, w16StemForTheaterMix } from './theater-st16';
 import type { ContentOptions, DiscSelection, PipelineResult, ProcessProgress, ReleaseSelection, TargetVersion } from './types';
 
@@ -123,7 +123,8 @@ function remixOptionsForMix(
 ): RemixMixOptions {
   const theater = isTheaterMix(mixBasename);
   const st16Enabled = contentOptions.convertSt16Iconsets && theater;
-  const shpxEnabled = contentOptions.convertShpx && isConquerMix(mixBasename);
+  const shpxPoolId = shpxPoolIdForMix(mixBasename);
+  const shpxEnabled = contentOptions.convertShpx && shpxPoolId !== null;
   let w16Bytes: Uint8Array | undefined;
   if (st16Enabled) {
     if (!releaseFiles) {
@@ -137,6 +138,7 @@ function remixOptionsForMix(
     convertSt16Iconsets: st16Enabled,
     convertShpx: shpxEnabled,
     mixBasename,
+    shpxPoolId: shpxPoolId ?? undefined,
     w16Bytes,
   };
 }
@@ -144,9 +146,10 @@ function remixOptionsForMix(
 function storeShpxPool(
   outputFiles: Map<string, Uint8Array>,
   pool: Uint8Array | undefined,
+  poolId: number,
 ): void {
   if (!pool) return;
-  outputFiles.set(shpxPoolBasename(), pool);
+  outputFiles.set(shpxPoolBasename(poolId), pool);
 }
 
 export async function runPipeline(
@@ -233,10 +236,17 @@ export async function runPipeline(
     }
   }
 
-  if (req.contentOptions.convertShpx && selected.some(isConquerMix)) {
-    progress = logLine(progress, 'info', 'SHPX: will convert KeyFrame shapes in CONQUER.MIX');
-    onProgress(progress);
-    await tick();
+  if (req.contentOptions.convertShpx) {
+    const shpxMixes = selected.filter(isShpxEligibleMix);
+    if (shpxMixes.length > 0) {
+      progress = logLine(
+        progress,
+        'info',
+        `SHPX: will convert KeyFrame shapes in ${shpxMixes.join(', ')}`,
+      );
+      onProgress(progress);
+      await tick();
+    }
   }
 
   const outputFiles = new Map<string, Uint8Array>();
@@ -282,12 +292,13 @@ export async function runPipeline(
       }
       progress = logLine(progress, 'info', savedLogLine(base, inputBytes, output.length));
       outputFiles.set(base, output);
-      storeShpxPool(outputFiles, shpxPool);
+      const poolId = remixOpts.shpxPoolId ?? 1;
+      storeShpxPool(outputFiles, shpxPool, poolId);
       if (shpxPool) {
         progress = logLine(
           progress,
           'info',
-          `Wrote ${shpxPoolBasename()} (${shpxPool.length} bytes)`,
+          `Wrote ${shpxPoolBasename(poolId)} (${shpxPool.length} bytes)`,
         );
       }
     } else {
@@ -322,12 +333,13 @@ export async function runPipeline(
       }
       progress = logLine(progress, 'info', savedLogLine(base, raw.length, output.length));
       outputFiles.set(base, output);
-      storeShpxPool(outputFiles, shpxPool);
+      const poolId = remixOpts.shpxPoolId ?? 1;
+      storeShpxPool(outputFiles, shpxPool, poolId);
       if (shpxPool) {
         progress = logLine(
           progress,
           'info',
-          `Wrote ${shpxPoolBasename()} (${shpxPool.length} bytes)`,
+          `Wrote ${shpxPoolBasename(poolId)} (${shpxPool.length} bytes)`,
         );
       }
     }

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { w16StemForTheaterMix } from './theater-st16';
-import { shpxPoolBasename } from './shpx';
+import { shpxPoolBasename, shpxPoolIdForMix } from './shpx';
 
 export interface RemixStats {
   mix_files_ok: number;
@@ -37,6 +37,8 @@ export interface RemixMixOptions {
   convertSt16Iconsets?: boolean;
   convertShpx?: boolean;
   mixBasename?: string;
+  /** SHPX pool id; defaults from mixBasename when omitted. */
+  shpxPoolId?: number;
   w16Bytes?: Uint8Array;
 }
 
@@ -186,7 +188,16 @@ function readMemfsFile(mod: RemixModule, path: string): Uint8Array {
   return requireMemfs(mod).readFile(path);
 }
 
-function clearShpxPool(mod: RemixModule, poolId = 1): void {
+function resolveShpxPoolId(options?: RemixMixOptions): number {
+  if (options?.shpxPoolId && options.shpxPoolId > 0) return options.shpxPoolId;
+  if (options?.mixBasename) {
+    const fromName = shpxPoolIdForMix(options.mixBasename);
+    if (fromName) return fromName;
+  }
+  return 1;
+}
+
+function clearShpxPool(mod: RemixModule, poolId: number): void {
   if (!mod.FS) return;
   try {
     mod.FS.unlink(shpxPoolBasename(poolId));
@@ -195,7 +206,7 @@ function clearShpxPool(mod: RemixModule, poolId = 1): void {
   }
 }
 
-function readShpxPool(mod: RemixModule, poolId = 1): Uint8Array | undefined {
+function readShpxPool(mod: RemixModule, poolId: number): Uint8Array | undefined {
   if (!mod.FS) return undefined;
   try {
     const data = mod.FS.readFile(shpxPoolBasename(poolId));
@@ -208,6 +219,7 @@ function readShpxPool(mod: RemixModule, poolId = 1): Uint8Array | undefined {
 function configureRemixModule(mod: RemixModule, options?: RemixMixOptions): void {
   const wantSt16 = Boolean(options?.convertSt16Iconsets);
   const wantShpx = Boolean(options?.convertShpx);
+  const shpxPoolId = resolveShpxPoolId(options);
   if (typeof mod._remix_wasm_set_st16_enabled !== 'function') {
     if (wantSt16) {
       throw new Error(
@@ -227,7 +239,7 @@ function configureRemixModule(mod: RemixModule, options?: RemixMixOptions): void
   } else {
     mod._remix_wasm_set_shpx_enabled(wantShpx ? 1 : 0);
     if (wantShpx) {
-      clearShpxPool(mod);
+      clearShpxPool(mod, shpxPoolId);
     }
   }
 
@@ -382,7 +394,9 @@ export async function remixMixBytes(
     }
 
     const output = readOutput(mod);
-    const shpxPool = options?.convertShpx ? readShpxPool(mod) : undefined;
+    const shpxPool = options?.convertShpx
+      ? readShpxPool(mod, resolveShpxPoolId(options))
+      : undefined;
     return { output, stats, entries, shpxPool };
   } finally {
     mod._free(statsPtr);
@@ -423,7 +437,9 @@ export async function remixMergeMixBytes(
     }
 
     const output = readOutput(mod);
-    const shpxPool = options?.convertShpx ? readShpxPool(mod) : undefined;
+    const shpxPool = options?.convertShpx
+      ? readShpxPool(mod, resolveShpxPoolId(options))
+      : undefined;
     return { output, stats, entries, shpxPool };
   } finally {
     mod._free(statsPtr);

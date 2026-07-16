@@ -10,8 +10,14 @@ extern "C" {
 
 #define REMIX_SHPX_POOL_ID_DEFAULT 0x0001u
 
-/** TRUE for CONQUER.MIX basename (case-insensitive). */
-int remix_shpx_is_conquer_mix(const char *mix_basename);
+/**
+ * Default pool_id for an eligible MIX basename (case-insensitive):
+ * CONQUER=1, TEMPERAT=2, DESERT=3, WINTER=4. Returns 0 if not eligible.
+ */
+uint16_t remix_shpx_default_pool_id(const char *mix_basename);
+
+/** TRUE when basename is eligible for SHPX KeyFrame conversion. */
+int remix_shpx_is_eligible(const char *mix_basename);
 
 /** Format sidecar name pool%04x.bin into out (cap bytes). Returns 1 ok, 0 fail. */
 int remix_shpx_format_pool_name(uint16_t pool_id, char *out, size_t out_cap);

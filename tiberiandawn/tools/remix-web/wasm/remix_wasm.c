@@ -122,7 +122,8 @@ static void wasm_config_init(RemixConfig *cfg)
 	cfg->fallback_copy_on_convert_fail = 1;
 	cfg->convert_st16_iconsets = g_wasm_convert_st16;
 	cfg->convert_shpx = g_wasm_convert_shpx;
-	cfg->shpx_pool_id = REMIX_SHPX_POOL_ID_DEFAULT;
+	/* shpx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
+	cfg->shpx_pool_id = 0;
 	cfg->mix_basename = g_wasm_mix_basename[0] ? g_wasm_mix_basename : NULL;
 	cfg->w16_dir = g_wasm_convert_st16 ? g_wasm_w16_dir : NULL;
 	cfg->entry_report = wasm_entry_report;

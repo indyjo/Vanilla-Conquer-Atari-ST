@@ -36,7 +36,7 @@ export function st16IncompatibilityWarning(version: TargetVersion, enabled: bool
 
 export function shpxIncompatibilityWarning(version: TargetVersion, enabled: boolean): string | null {
   if (version === '0.1.x' && enabled) {
-    return 'SHPX repacked CONQUER.MIX is incompatible with the 0.1.x line of C&C4ST. Use standard KeyFrame SHPs or target 0.2.x.';
+    return 'SHPX repacked MIX files are incompatible with the 0.1.x line of C&C4ST. Use standard KeyFrame SHPs or target 0.2.x.';
   }
   return null;
 }

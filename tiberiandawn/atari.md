@@ -221,15 +221,22 @@ Monolithic KeyFrame SHPs store these fields **little-endian** and omit the `SHPX
 | +2     | 2    | `reserved`| Must be **0** on write; ignore on read.                               |
 
 
-**`pool_id` assignment (repack, v1):** fixed **`0x0001`** for `CONQUER.MIX`. `0` is reserved / invalid. Future MIX files may get other ids when the repack scope expands; all SHPX entries in the same MIX share one id.
+**`pool_id` assignment (repack):** one id per eligible MIX; all SHPX entries in that MIX share it. `0` is reserved / invalid.
+
+| MIX | `pool_id` | Sidecar |
+|-----|-----------|---------|
+| `CONQUER.MIX` | `0x0001` | `pool0001.bin` |
+| `TEMPERAT.MIX` | `0x0002` | `pool0002.bin` |
+| `DESERT.MIX` | `0x0003` | `pool0003.bin` |
+| `WINTER.MIX` | `0x0004` | `pool0004.bin` |
 
 **Sidecar pool file:** one binary pool beside the MIX, named from that id:
 
 ```text
-pool%04x.bin    (lowercase hex, 8.3-friendly — v1 CONQUER.MIX → pool0001.bin)
+pool%04x.bin    (lowercase hex, 8.3-friendly)
 ```
 
-The sidecar lives in the **same directory** as the MIX (not inside the MIX). v1 repack targets **`CONQUER.MIX` only**; other MIX files keep monolithic KeyFrame SHPs until extended.
+The sidecar lives in the **same directory** as the MIX (not inside the MIX). Other MIX files keep monolithic KeyFrame SHPs.
 
 All SHPX entries converted from the same MIX share the **same** `pool_id` and the **same** sidecar file. Each entry has its own **`pool_data_begin` / `pool_data_size`** slice within that file.
 
@@ -311,11 +318,11 @@ Each u32 is stored **big-endian** (opposite of the original little-endian monoli
 
 The sidecar holds the **same compressed byte streams** that previously lived after each shape’s frame table inside monolithic KeyFrame SHPs — LCW keyframes, XOR delta data, unchanged encoding. It does **not** hold decoded 8bpp pixels or 4bpp planar data.
 
-**Repack (v1, `remix` CLI, `CONQUER.MIX` only):**
+**Repack (`remix` CLI / remix-web; CONQUER / TEMPERAT / DESERT / WINTER):**
 
 1. Detect **KeyFrame** SHPs (`flags` / frame table heuristics; skip classic `ShapeBlock` / `MOUSE.SHP`).
 2. For each shape, take the **payload tail** (bytes after the frame table, rebased so the slice starts at logical offset `0` inside that tail).
-3. Append each tail contiguously into the MIX’s single sidecar **`pool0001.bin`** (`pool_id = 0x0001`).
+3. Append each tail contiguously into that MIX’s sidecar (`pool0001.bin` … `pool0004.bin` per the table above).
 4. Record **`pool_data_begin`** (even file offset) and **`pool_data_size`** in the SHPX header; rewrite frame-table 24-bit offsets as **`source_offset − tail_start`** (big-endian).
 5. Replace the MIX entry **in place** (same name, e.g. `E1.SHP`, payload is SHPX metadata).
 6. Build **clip table** offline (`Build_Frame` + tight bbox, index `0` transparent).
@@ -333,7 +340,7 @@ SHPX does not define a magic header on the sidecar file — it is a raw concaten
 3. On each **`Build_Frame`** for an SHPX shape: **`Alloc`** a buffer of **`pool_data_size`**, **`SHPX_Pool_Read_Slice`** loads that span from **`pool%04x.bin`** at **`pool_data_begin`**, decode runs from the slice + metadata, then **`Free`** the buffer.
 4. Clip table is available via `SHPX_Get_Frame_Clip`; the planar sprite cache uses it on LRU miss (no transparent-pixel crop scan for SHPX).
 
-No whole-pool RAM cache at startup — payload is read per decode. Sidecar must stay on disk beside `CONQUER.MIX` for the session.
+No whole-pool RAM cache at startup — payload is read per decode. Sidecars must stay on disk beside their MIX files for the session.
 
 Implementation: `atarilib/shpx.cpp` (`SHPX_Pool_Read_Slice`), `keyframe.cpp` (`Build_Frame` SHPX dispatch).
 
@@ -347,7 +354,7 @@ Implementation: `atarilib/shpx.cpp` (`SHPX_Pool_Read_Slice`), `keyframe.cpp` (`B
 | Frame table         | 8 bytes/frame, overlapping u32 reads at +14 | Same layout at `frame_table_offset`, BE |
 | Payload offsets     | Absolute from **SHP blob** byte 0 | Relative to **`pool_data_begin`** in cached pool slice |
 | Delta / XOR chains  | Yes                              | Yes (same `Build_Frame` logic)               |
-| Payload             | In same blob after table         | Sidecar `pool0001.bin` beside `CONQUER.MIX` (`pool_id = 0x0001`) |
+| Payload             | In same blob after table         | Sidecar `pool%04x.bin` beside the source MIX |
 | Cacheable span      | Implicit (whole MIX entry)       | Per-shape **`pool_data_begin` + `pool_data_size`** in shared sidecar |
 | Clip metadata       | None (runtime scan)              | Separate clip table                          |
 | Embedded palette    | Optional (`flags & 1`)           | Not supported in v1                          |
@@ -415,13 +422,16 @@ Ship regenerated `.W16` files from `atari-assets/` next to `cnc.tos` (see `atari
 Put these mix files next to the CNC.TOS executable:
 The following MIX files must be present in the same directory as `CNC.TOS`. These are loaded by the game at runtime:
 
-- `CONQUER.MIX`    — game sprites and shapes (units, buildings, sidebar icons, effects; KeyFrame SHPs → SHPX v1)
-- `pool0001.bin`   — SHPX compressed payload pool for `CONQUER.MIX` (required when using repacked SHPX `CONQUER.MIX`)
+- `CONQUER.MIX`    — game sprites and shapes (units, buildings, sidebar icons, effects; KeyFrame SHPs → SHPX)
+- `pool0001.bin`   — SHPX pool for `CONQUER.MIX` (required when using repacked SHPX `CONQUER.MIX`)
+- `pool0002.bin`   — SHPX pool for `TEMPERAT.MIX` (when using repacked SHPX theater MIX)
+- `pool0003.bin`   — SHPX pool for `DESERT.MIX`
+- `pool0004.bin`   — SHPX pool for `WINTER.MIX`
 - `GENERAL.MIX`    — cutscenes, mission data, title screens (WSA, CPS, INI, BIN)
 - `SCORES.MIX`     — music tracks (in .AUD format)
 - `SOUNDS.MIX`     — sound effects (.AUD and .V00)
 - `SPEECH.MIX`     — EVA speech lines
-- Theater asset MIX files (terrain iconsets use `.TEM`, `.WIN`, or `.DES` inside these archives):
+- Theater asset MIX files (terrain iconsets use `.TEM`, `.WIN`, or `.DES` inside these archives; KeyFrame SHPs → SHPX when repacked):
   - `TEMPERAT.MIX` — temperate theater
   - `WINTER.MIX` — winter theater
   - `DESERT.MIX` — desert theater

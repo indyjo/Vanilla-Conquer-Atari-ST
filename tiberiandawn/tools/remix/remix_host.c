@@ -117,9 +117,9 @@ static void usage(const char *prog)
 	    "  -d, --directory DIR     remix all .mix/.MIX files in DIR (non-recursive)\n"
 	    "  --w16-dir PATH          directory containing TEMPERAT.W16 etc. (default: cwd)\n"
 	    "  --no-st16-iconsets      skip ST16 iconset conversion\n"
-	    "  --shpx                  convert KeyFrame SHPs to SHPX\n"
+	    "  --shpx                  convert KeyFrame SHPs to SHPX (CONQUER/TEMPERAT/DESERT/WINTER)\n"
 	    "  --shpx-verbose          per-shape SHPX/clip details on stderr (requires --shpx)\n"
-	    "  --pool-id ID            SHPX pool id (default 1; requires --shpx)\n"
+	    "  --pool-id ID            SHPX pool id (default from MIX name; requires --shpx)\n"
 	    "  -h, --help              show this help\n",
 	    prog, prog, prog);
 }
@@ -222,7 +222,7 @@ int main(int argc, char **argv)
 	cfg.ui = REMIX_UI_HOST;
 	cfg.fallback_copy_on_convert_fail = 1;
 	cfg.convert_st16_iconsets = 1;
-	cfg.shpx_pool_id = REMIX_SHPX_POOL_ID_DEFAULT;
+	/* shpx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
 
 	for (argi = 1; argi < argc; ++argi) {
 		if (!strcmp(argv[argi], "-o") || !strcmp(argv[argi], "--output")) {

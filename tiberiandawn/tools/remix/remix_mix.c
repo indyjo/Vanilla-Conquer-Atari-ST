@@ -399,8 +399,9 @@ static int process_entry(
 	needs_convert = is_audio && remix_aud_needs_convert(probe, probe_len, e->old_size);
 	try_iconset = cfg && cfg->convert_st16_iconsets && cfg->mix_basename
 	    && remix_st16_is_theater_mix(cfg->mix_basename) && !needs_convert;
+	/* Iconset and SHPX may both apply in theater MIXes; try_shpx after iconset_rc. */
 	try_shpx = cfg && cfg->convert_shpx && cfg->mix_basename
-	    && remix_shpx_is_conquer_mix(cfg->mix_basename) && !needs_convert && !try_iconset;
+	    && remix_shpx_is_eligible(cfg->mix_basename) && !needs_convert;
 
 	if (stats) {
 		++stats->payload_files;
@@ -559,11 +560,14 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 	} else {
 		memset(&active_cfg, 0, sizeof(active_cfg));
 	}
-	if (active_cfg.shpx_pool_id == 0)
-		active_cfg.shpx_pool_id = REMIX_SHPX_POOL_ID_DEFAULT;
 	remix_path_basename(in_path, mix_base, sizeof(mix_base));
 	if (!active_cfg.mix_basename)
 		active_cfg.mix_basename = mix_base;
+	if (active_cfg.shpx_pool_id == 0) {
+		uint16_t from_name = remix_shpx_default_pool_id(active_cfg.mix_basename);
+
+		active_cfg.shpx_pool_id = from_name ? from_name : REMIX_SHPX_POOL_ID_DEFAULT;
+	}
 	use_cfg = &active_cfg;
 
 	remix_shpx_pool_init(&shpx_pool, use_cfg->shpx_pool_id);

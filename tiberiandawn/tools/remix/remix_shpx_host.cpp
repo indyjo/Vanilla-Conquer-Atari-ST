@@ -1,5 +1,6 @@
 /*
- * SHPX conversion for CONQUER.MIX KeyFrame SHPs (host remix + remix-web WASM).
+ * SHPX conversion for eligible MIX KeyFrame SHPs (host remix + remix-web WASM).
+ * Eligible: CONQUER.MIX, TEMPERAT.MIX, DESERT.MIX, WINTER.MIX.
  */
 
 #include "remix_shpx.h"
@@ -66,11 +67,24 @@ static int looks_like_shapeblock(const unsigned char *data, size_t len)
 	return 1;
 }
 
-int remix_shpx_is_conquer_mix(const char *mix_basename)
+uint16_t remix_shpx_default_pool_id(const char *mix_basename)
 {
 	if (!mix_basename)
 		return 0;
-	return strcasecmp(mix_basename, "CONQUER.MIX") == 0;
+	if (strcasecmp(mix_basename, "CONQUER.MIX") == 0)
+		return 0x0001u;
+	if (strcasecmp(mix_basename, "TEMPERAT.MIX") == 0)
+		return 0x0002u;
+	if (strcasecmp(mix_basename, "DESERT.MIX") == 0)
+		return 0x0003u;
+	if (strcasecmp(mix_basename, "WINTER.MIX") == 0)
+		return 0x0004u;
+	return 0;
+}
+
+int remix_shpx_is_eligible(const char *mix_basename)
+{
+	return remix_shpx_default_pool_id(mix_basename) != 0;
 }
 
 int remix_shpx_format_pool_name(uint16_t pool_id, char *out, size_t out_cap)

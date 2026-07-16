@@ -84,9 +84,9 @@ matching `*.W16` files, then run once before `cnc.tos`. The tool writes
 | `-d`, `--directory DIR` | Process all MIX files in `DIR` |
 | `--w16-dir PATH` | Directory containing `TEMPERAT.W16` etc. (default: cwd) |
 | `--no-st16-iconsets` | Skip ST16 iconset conversion in theater MIX files |
-| `--shpx` | Convert KeyFrame SHPs to SHPX + `poolnnnn.bin` sidecar |
+| `--shpx` | Convert KeyFrame SHPs to SHPX + `poolnnnn.bin` sidecar (CONQUER / TEMPERAT / DESERT / WINTER) |
 | `--shpx-verbose` | Per-shape SHPX/clip log on stderr (requires `--shpx`) |
-| `--pool-id ID` | SHPX pool id (default `1`; requires `--shpx`) |
+| `--pool-id ID` | SHPX pool id (default from MIX name: 1–4; requires `--shpx`) |
 | `-h`, `--help` | Show help |
 
 See [spec.md](spec.md) for ST16 scope, detection types (`icn` / `st16`), and failure policy.

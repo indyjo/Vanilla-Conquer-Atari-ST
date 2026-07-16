@@ -6,8 +6,8 @@
 #define ATARILIB_ST_DECODE_CONTEXT_H_
 
 /*
- * Clip bounds registered by a lazy frame-fill callback. Owned by the sprite cache (or other
- * decode orchestrator); not passed through Bftp_ExArgs.
+ * Clip bounds for a decoded frame's non-transparent crop. May be supplied up front via
+ * Bftp_ExArgs, or registered by a lazy frame-fill callback during a cache miss.
  */
 struct ClipBounds {
 	bool valid = false;

@@ -48,6 +48,8 @@
 #include "common/framelimit.h"
 #ifdef ATARI_ST
 #include <stdio.h>
+#include "atarilib/st_sprite_cache.h"
+#include "atarilib/memflag.h"
 #endif
 
 extern int PreserveVQAScreen;
@@ -570,9 +572,16 @@ void Do_Win(void)
 
 #ifdef ATARI_ST
                 printf("[Scenario] Do_Win after Score.Presentation, Scenario=%d calling Map_Selection\n", Scen.Scenario);
+                ST_Log_Free_Memory("Do_Win before Map_Selection");
 #endif
                 Map_Selection();
 #ifdef ATARI_ST
+                /*
+                ** Map_Selection (and early returns) leave the post-score minimal sprite cache;
+                ** restore gameplay defaults before the next scenario load.
+                */
+                ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
+                ST_Log_Free_Memory("Do_Win after Map_Selection");
                 printf("[Scenario] Do_Win Map_Selection returned\n");
 #endif
             }

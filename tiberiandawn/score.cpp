@@ -51,6 +51,7 @@
 #include <cstdio>
 #ifdef ATARI_ST
 #include "st_sprite_cache.h"
+#include "memflag.h"
 #endif
 #include	"function.h"
 #include "EXTERNS.H"
@@ -1035,7 +1036,11 @@ void ScoreClass::Presentation(void)
 	Fade_Palette_To(BlackPalette, FADE_PALETTE_FAST, NULL);
 	VisiblePage.Clear();
 	#ifdef ATARI_ST
-	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
+	/*
+	** Keep a minimal sprite cache through Map_Selection (next in Do_Win). Restoring the
+	** full ~125 KiB slab here was starving the four WSA opens that follow.
+	*/
+	ST_SPRITE_CACHE_Reconfigure_TierCapacities(8, 0, 0, 0);
 	if (c2p_saved) {
 		C2P_RestoreContext(c2p_saved);
 		C2P_FreeContext(c2p_saved);
@@ -1058,7 +1063,11 @@ void ScoreClass::Presentation(void)
 	TextPrintBuffer = NULL;
 	BlitList.Clear();
 	Enable_Uncompressed_Shapes();
+#ifdef ATARI_ST
+	ST_Log_Free_Memory("End of ScoreClass:Presentation");
+#else
 	printf("End of ScoreClass:Presentation\n");
+#endif
 }
 
 // ST = 12/17/2018 5:44PM

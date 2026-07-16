@@ -37,6 +37,10 @@
 
 #include	"function.h"
 #include	"textblit.h"
+#ifdef ATARI_ST
+#include "st_sprite_cache.h"
+#include "memflag.h"
+#endif
 
 #ifndef DEMO
 
@@ -247,7 +251,11 @@ void Map_Selection(void)
 	unsigned char *progresspalette = new unsigned char[768];
 
 #ifdef ATARI_ST
-	WSAOpenType const mapsel_wsa_flags = (WSAOpenType)(WSA_OPEN_FROM_MEM | WSA_OPEN_TO_PAGE | WSA_DEFERRED_C2P_WEIGHTSET);
+	/*
+	** Disk-based WSAs only: FROM_MEM would try to pin ~130–430 KiB per file while the
+	** previous mission is still resident. Open one anim at a time below.
+	*/
+	WSAOpenType const mapsel_wsa_flags = (WSAOpenType)(WSA_OPEN_FROM_DISK | WSA_OPEN_TO_PAGE | WSA_DEFERRED_C2P_WEIGHTSET);
 #else
 	WSAOpenType const mapsel_wsa_flags = (WSAOpenType)(WSA_OPEN_FROM_MEM | WSA_OPEN_TO_PAGE);
 #endif
@@ -284,6 +292,7 @@ void Map_Selection(void)
 	*/
 	PseudoSeenBuff = SeenBuff.Get_Graphic_Buffer();
 	TextPrintBuffer = SeenBuff.Get_Graphic_Buffer();
+	ST_Log_Free_Memory("Map_Selection start");
 #else
 	PseudoSeenBuff = new GraphicBufferClass(320,200,(void*)NULL);
 
@@ -299,28 +308,24 @@ void Map_Selection(void)
 	** Now start the process where we fade the gray earth in.
 	*/
 	greyearth  = Open_Animation("GREYERTH.WSA", NULL, 0, mapsel_wsa_flags, localpalette);
+#ifndef ATARI_ST
 	greyearth2 = Open_Animation("E-BWTOCL.WSA", NULL, 0, mapsel_wsa_flags, grey2palette);
 
 	/*
 	** Load the spinning-globe anim
 	*/
 	if (house == HOUSE_GOOD) {
-#ifdef ATARI_ST
-		anim     = Open_Animation("EARTH_E.WSA", NULL,0,mapsel_wsa_flags,Palette);
-		progress = Open_Animation(lastscenario ? "BOSNIA.WSA" : "EUROPE.WSA",NULL,0,mapsel_wsa_flags,progresspalette);
-#else
 		anim     = Open_Animation("HEARTH_E.WSA", NULL,0,mapsel_wsa_flags,Palette);
 		progress = Open_Animation(lastscenario ? "HBOSNIA.WSA" : "EUROPE.WSA",NULL,0,mapsel_wsa_flags,progresspalette);
-#endif
 	} else {
-#ifdef ATARI_ST
-		anim     = Open_Animation("EARTH_A.WSA", NULL,0,mapsel_wsa_flags,Palette);
-		progress = Open_Animation(lastscenario ? "S_AFRICA.WSA" : "AFRICA.WSA",NULL,0,mapsel_wsa_flags,progresspalette);
-#else
 		anim     = Open_Animation("HEARTH_A.WSA", NULL,0,mapsel_wsa_flags,Palette);
 		progress = Open_Animation(lastscenario ? "HSAFRICA.WSA" : "AFRICA.WSA",NULL,0,mapsel_wsa_flags,progresspalette);
-#endif
 	}
+#else
+	greyearth2 = NULL;
+	anim = NULL;
+	progress = NULL;
+#endif
 
 	void const * appear1 = MFCD::Retrieve("APPEAR1.AUD");
 	void const * sfx4 = MFCD::Retrieve("SFX4.AUD");
@@ -377,10 +382,14 @@ void Map_Selection(void)
 #endif
 	}
 	Close_Animation(greyearth);
+	greyearth = NULL;
 #ifndef ATARI_ST
 	Write_Interpolation_Palette("MAP_LOCL.PAL");
 #endif
 	Call_Back_Delay(4);
+#ifdef ATARI_ST
+	greyearth2 = Open_Animation("E-BWTOCL.WSA", NULL, 0, mapsel_wsa_flags, grey2palette);
+#endif
 	SysMemPage.Clear();
 	Animate_Frame(greyearth2,SysMemPage,0);
 	InterpolationPaletteChanged = TRUE;
@@ -402,20 +411,26 @@ void Map_Selection(void)
 		Call_Back_Delay(4);
 	}
 	Close_Animation(greyearth2);
+	greyearth2 = NULL;
 	Write_Interpolation_Palette("MAP_GRY2.PAL");
 
 	/*
 	** Copy the first frame up to the seenpage (while screen is black)
 	*/
-	SysMemPage.Clear();
-	Animate_Frame(anim,SysMemPage,1);
 #ifdef ATARI_ST
 	/*
 	** Keep GREYERTH C2P weights + grey2 STE pens through EARTH_A / EARTH_E.
 	** Globe blits over leftover E-BWTOCL on SeenBuff; per-clip weight/palette
 	** switches would mis-map mixed pixels. Palettes are close enough.
-	 */
+	*/
+	if (house == HOUSE_GOOD) {
+		anim = Open_Animation("EARTH_E.WSA", NULL, 0, mapsel_wsa_flags, Palette);
+	} else {
+		anim = Open_Animation("EARTH_A.WSA", NULL, 0, mapsel_wsa_flags, Palette);
+	}
 #endif
+	SysMemPage.Clear();
+	Animate_Frame(anim,SysMemPage,1);
 	SysMemPage.Blit(*PseudoSeenBuff);
 #ifndef ATARI_ST
 	Interpolate_2X_Scale(PseudoSeenBuff, &SeenBuff ,NULL, Settings.Video.InterpolationMode);
@@ -514,6 +529,7 @@ void Map_Selection(void)
 	Call_Back_Delay (1);
 
 	Close_Animation(anim);
+	anim = NULL;
 
 	Keyboard->Clear();
 	BlitList.Clear();
@@ -521,6 +537,13 @@ void Map_Selection(void)
 	/*
 	** Freeze on the map of Europe or Africa
 	*/
+#ifdef ATARI_ST
+	if (house == HOUSE_GOOD) {
+		progress = Open_Animation(lastscenario ? "BOSNIA.WSA" : "EUROPE.WSA", NULL, 0, mapsel_wsa_flags, progresspalette);
+	} else {
+		progress = Open_Animation(lastscenario ? "S_AFRICA.WSA" : "AFRICA.WSA", NULL, 0, mapsel_wsa_flags, progresspalette);
+	}
+#endif
 
 	SysMemPage.Clear();
 	Animate_Frame(progress,SysMemPage,0);
@@ -534,8 +557,20 @@ void Map_Selection(void)
 	Increase_Palette_Luminance(InterpolationPalette , 30,30,30,63);
 	Read_Interpolation_Palette("MAP_PROG.PAL");
 
+#ifdef ATARI_ST
+	/*
+	** Snapshot the base map into HidPage (PseudoSeenBuff is SeenBuff). Skip on the
+	** last-scenario path — europe is unused there, and that path touches HidPage.
+	*/
+	GraphicBufferClass *europe = NULL;
+	if (!lastscenario) {
+		europe = HidPage.Get_Graphic_Buffer();
+		SysMemPage.Blit(*europe);
+	}
+#else
 	GraphicBufferClass *europe = new GraphicBufferClass(SysMemPage.Get_Width(),SysMemPage.Get_Height(),(GBC_Enum)0);
 	SysMemPage.Blit(*europe);
+#endif
 
 	/*
 	** Now show territories as they existed last scenario
@@ -837,6 +872,11 @@ void Map_Selection(void)
 
 	if (!lastscenario) {
 		Close_Animation(progress);
+		progress = NULL;
+#ifdef ATARI_ST
+		/* Country shape blit needs a normal-sized planar cache; WSAs are closed. */
+		ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
+#endif
 
 		/*
 		** Now it's time to highlight the country we're going to.
@@ -920,13 +960,19 @@ void Map_Selection(void)
 #endif
 		Set_Palette(localpalette);
 		Close_Animation(progress);
+		progress = NULL;
+#ifdef ATARI_ST
+		ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
+#endif
 		PseudoSeenBuff->Blit(SysMemPage);
 		Print_Statistics(20, 160, house == HOUSE_GOOD ? 0 : 160);
 	}
 
 	Theme.Queue_Song(THEME_NONE);
 	Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, NULL);
+#ifndef ATARI_ST
 	delete europe;
+#endif
 	delete progresspalette;
 	delete grey2palette;
 #ifndef ATARI_ST
@@ -934,6 +980,9 @@ void Map_Selection(void)
 #endif
 	TextPrintBuffer = NULL;
 	BlitList.Clear();
+#ifdef ATARI_ST
+	ST_Log_Free_Memory("Map_Selection end");
+#endif
 }
 
 

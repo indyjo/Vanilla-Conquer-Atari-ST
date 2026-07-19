@@ -32,12 +32,6 @@ int ST_SPRITE_CACHE_Reconfigure_TierCapacities(int cap_16, int cap_32, int cap_6
 /* Restore compile-time default tier capacities (purges the cache). */
 void ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults(void);
 
-/*
- * Opaque identity for Bftp_ExArgs.identity_key: fingerprints shape/icon blob root + frame index
- * so planar cache rows do not alias different tiles that share clip geometry (e.g. map stamps).
- */
-long ST_SPRITE_CACHE_Frame_Identity_Key(void const *blobs_root, int frame_index);
-
 /* Alt+D: print per-tier sprite cache stats to stdout, then reset counters. */
 void ST_Sprite_Cache_Stats_Debug_Service(void);
 
@@ -73,7 +67,8 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
 	int raster_oy,
 	int full_w,
 	int full_h,
-	long identity_key,
+	void const *identity_root,
+	int identity_frame,
 	unsigned long (*lazy_decode_miss)(void *user_ctx, IDecodeContext *decode_ctx),
 	void *lazy_decode_ctx);
 

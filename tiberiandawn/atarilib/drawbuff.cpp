@@ -1664,7 +1664,6 @@ static void Buffer_Draw_Stamp_8bpp(
 	long icon_size;
 	const unsigned char *icon_ptr;
 	unsigned long icon_end;
-	unsigned long stamp_identity_key;
 
 	if (!_ShapeBuffer || _ShapeBufferSize <= 0 || !ic) {
 		return;
@@ -1708,10 +1707,10 @@ static void Buffer_Draw_Stamp_8bpp(
 	}
 
 	Mem_Copy(icon_ptr, _ShapeBuffer, (unsigned long)icon_size);
-	stamp_identity_key = ST_SPRITE_CACHE_Frame_Identity_Key(icondata, icon);
 	{
 		Bftp_ExArgs stamp_ex = { 0 };
-		stamp_ex.identity_key = stamp_identity_key;
+		stamp_ex.identity_root = icondata;
+		stamp_ex.identity_frame = icon;
 		Buffer_Frame_To_Page_Ex(
 			x_pixel,
 			y_pixel,

@@ -1,5 +1,10 @@
 /*
  * Ranked ring-cached planar + 1bpp mask sprite cache for Buffer_Frame_To_Page (Atari ST).
+ *
+ * Each RankCache directory node is (hash32, SpriteSlotHeader*). The slab slot layout is
+ * [header: full key + crop/mask_off | planar | 1bpp mask]. Key stores raw shape_id/frame (and
+ * remap table addresses); directory hash is a cheap xor/shift fold of those fields, then the
+ * header key is verified on match. Bubble/swaps only touch the tiny directory entries.
  */
 
 #include "st_sprite_cache.h"
@@ -24,7 +29,7 @@
 /*
  * Each tier is a set of independent RankCache rings ("shards") of fixed length.
  * Defaults: 16/4/2/1 shards × 8 slots → capacities 128/32/16/8 (dims 16/32/64/96).
- * Shard index comes only from sprite identity (src_key), never remap/fade/ghost.
+ * Shard index comes only from shape address + frame, never remap/fade/ghost.
  */
 #ifndef ST_SPRITE_CACHE_SHARD_SIZE
 #define ST_SPRITE_CACHE_SHARD_SIZE 8
@@ -84,61 +89,94 @@ struct SpriteCacheLazyGate {
  */
 enum { SPRITE_CACHE_GHOST_SYNTH_BACKDROP_IX = 12 };
 
-static inline uint32_t sprite_cache_mix32(uint32_t x);
-static inline uint32_t sprite_cache_mix32_pair(uint32_t a, uint32_t b);
-static inline uint32_t sprite_cache_rotl32(uint32_t x, unsigned r);
-
-/* Logical cache key: sprite identity plus render-variant discriminators. */
+/* Logical cache key: raw identity components plus render-variant discriminators. */
 struct SpriteCacheKey {
-	uint32_t src_key; /* shape/frame identity only; used for sharding (invariant under remaps) */
+	uint32_t shape_id; /* (uint32_t)(uintptr_t) blob root — not hashed */
+	uint16_t frame;
 	uint8_t mode_pack; /* 0 plain, 1 fade, 2 ghost */
-	bool trans_flag;
-	uint32_t fade_token; /* 0 none; else stable mix of remap table identity (not raw pointers) */
-	uint32_t ghost_token;
+	uint8_t trans_flag; /* 0/1 */
+	uint32_t fade_id; /* 0 none; else (uint32_t)(uintptr_t) fade table */
+	uint32_t ghost_id; /* 0 none; else (uint32_t)(uintptr_t) ghost table */
 
 	bool operator==(const SpriteCacheKey &o) const
 	{
-		return src_key == o.src_key && mode_pack == o.mode_pack && trans_flag == o.trans_flag
-		       && fade_token == o.fade_token && ghost_token == o.ghost_token;
+		return shape_id == o.shape_id && frame == o.frame && mode_pack == o.mode_pack
+		       && trans_flag == o.trans_flag && fade_id == o.fade_id && ghost_id == o.ghost_id;
 	}
 };
 
-/* Per-node slab handle + crop meta (lives in RankCache Value).
- * data points at a fixed max-size slot buffer; within it, used planar bytes are
- * followed immediately by the 1bpp mask (mask_off = planar byte count for this fill). */
-struct SpriteSlot {
-	uint8_t *data;
-	uint16_t mask_off;
+/*
+ * Per-slot slab header + payload:
+ *   [ SpriteSlotHeader | planar pixels | 1bpp mask ]
+ * RankCache directory stores only hash32 + pointer to this header.
+ * Vacant / never-filled slots keep crop_w = crop_h = 0.
+ */
+struct SpriteSlotHeader {
+	SpriteCacheKey key;
+	uint16_t mask_off; /* planar byte count for this fill; mask follows planar */
 	uint16_t crop_x;
 	uint16_t crop_y;
 	uint16_t crop_w;
 	uint16_t crop_h;
-	uint8_t occupied;
 };
 
-static inline uint8_t *sprite_slot_planar(SpriteSlot const *s)
+/* Directory: hashed key + slab pointer (full key lives in the header). */
+using SpriteRankCache = RankCache<uint32_t, SpriteSlotHeader *>;
+
+/* Word-align header so planar/mask rows stay even-addressed on 68000. */
+static inline size_t sprite_slot_hdr_bytes(void)
 {
-	return s->data;
+	return (sizeof(SpriteSlotHeader) + 1u) & ~1u;
 }
 
-static inline uint8_t *sprite_slot_mask(SpriteSlot const *s)
+static inline uint8_t *sprite_slot_planar(SpriteSlotHeader const *h)
 {
-	return s->data + (size_t)s->mask_off;
+	return (uint8_t *)(void *)h + sprite_slot_hdr_bytes();
 }
+
+static inline uint8_t *sprite_slot_mask(SpriteSlotHeader const *h)
+{
+	return sprite_slot_planar(h) + (size_t)h->mask_off;
+}
+
+/*
+ * Cheap directory hash for 68000: shifts/adds/xors only (no multiplies, no avalanche chain).
+ * Collision rate only needs to be tolerable inside an 8-entry shard (full key still verified).
+ */
+static inline uint32_t sprite_cache_key_hash(SpriteCacheKey const &k)
+{
+	uint32_t h = k.shape_id;
+	h += (uint32_t)k.frame;
+	h ^= (uint32_t)k.frame << 11;
+	h += ((uint32_t)k.mode_pack << 1) | (uint32_t)k.trans_flag;
+	h ^= k.fade_id;
+	h ^= k.ghost_id << 1;
+	return h;
+}
+
+/* Predicates for hash-directory lookup (reject collisions via full key in header). */
+struct SpriteSlotKeyMatch {
+	SpriteCacheKey const *want;
+	bool operator()(SpriteSlotHeader *h) const
+	{
+		return h != nullptr && h->key == *want;
+	}
+};
 
 /* One configured tier pool (fixed byte-capacity slots + sharded ranked rings). */
 struct SpriteCacheTier {
 	/*
-	 * Reference square side used only to size slot_sz (bytes for planar+mask of a dim×dim
-	 * sprite). Not a max width/height — long/thin crops are fine if need_p+need_m ≤ slot_sz.
+	 * Reference square side used only to size payload_sz (bytes for planar+mask of a dim×dim
+	 * sprite). Not a max width/height — long/thin crops are fine if need_p+need_m ≤ payload_sz.
 	 */
 	int dim = 0;
 	int capacity = 0; /* total slots across all shards */
 	int shard_count = 0; /* independent RankCache rings */
 	int shard_size = 0; /* slots per shard (normally ST_SPRITE_CACHE_SHARD_SIZE) */
 	uint8_t *slot_base = nullptr; /* capacity × slot_sz */
-	int slot_sz = 0; /* max packed planar+mask bytes per slot */
-	RankCache<SpriteCacheKey, SpriteSlot> **shards = nullptr; /* [shard_count] */
+	int payload_sz = 0; /* max packed planar+mask bytes per slot */
+	int slot_sz = 0; /* header + payload_sz */
+	SpriteRankCache **shards = nullptr; /* [shard_count] */
 };
 
 /* Per-tier runtime counters used by Alt+D stats dump. */
@@ -167,86 +205,19 @@ static const int g_sprite_cache_dims[SPRITE_CACHE_TIER_COUNT] = {
 	SPRITE_CACHE_D16, SPRITE_CACHE_D32, SPRITE_CACHE_D64, SPRITE_CACHE_D96
 };
 
-/* 32-bit rotate-left helper used by lightweight hash mixers. */
-static inline uint32_t sprite_cache_rotl32(uint32_t x, unsigned r)
-{
-	return (uint32_t)((x << r) | (x >> (32u - r)));
-}
-
-/* Cheap multiply-free 32-bit avalanche mix (small rotates/shifts only). */
-static inline uint32_t sprite_cache_mix32(uint32_t x)
-{
-	x ^= sprite_cache_rotl32(x, 3);
-	x += (x << 2);
-	x ^= (x >> 5);
-	x += sprite_cache_rotl32(x, 7);
-	x ^= (x >> 3);
-	return x;
-}
-
-/* Combines two words with small rotates and one avalanche step. */
-static inline uint32_t sprite_cache_mix32_pair(uint32_t a, uint32_t b)
-{
-	uint32_t h = a ^ sprite_cache_rotl32(b, 5);
-	h += sprite_cache_rotl32(a, 2);
-	h ^= (b >> 3);
-	return sprite_cache_mix32(h);
-}
-
 /*
- * 32-bit token for distinguishing objects by pointer identity without storing naked addresses in LRU keys.
- */
-static uint32_t sprite_cache_ptr_token(void const *p)
-{
-	if (p == nullptr) {
-		return 0;
-	}
-	uintptr_t const u = (uintptr_t)(void const *)p;
-	uint32_t h = sprite_cache_mix32((uint32_t)u);
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ >= 8
-	h = sprite_cache_mix32_pair(h, (uint32_t)(((unsigned long long)u) >> 32));
-#endif
-	return h;
-}
-
-extern "C" long ST_SPRITE_CACHE_Frame_Identity_Key(void const *blobs_root, int frame_index)
-{
-	if (!blobs_root || frame_index < 0) {
-		return 0L;
-	}
-	uint32_t h = sprite_cache_ptr_token(blobs_root);
-	h = sprite_cache_mix32_pair(h, ((uint32_t)(unsigned short)frame_index) ^ 419513369u);
-	return (long)(unsigned long)(unsigned)h;
-}
-
-/* Sprite identity only; geometry is stored as slot metadata after crop scan. */
-static uint32_t sprite_cache_lru_identity_hash(long identity_key)
-{
-	uint32_t h = 0x9e3779b9u;
-
-	if (identity_key != (long)0) {
-#if defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
-		h = sprite_cache_mix32_pair(h, (uint32_t)(unsigned long)identity_key);
-		h = sprite_cache_mix32_pair(h, (uint32_t)(((unsigned long)identity_key) >> 32));
-#else
-		h = sprite_cache_mix32_pair(h, (uint32_t)(unsigned long)identity_key);
-#endif
-	}
-	return h;
-}
-
-/*
- * Pick shard from identity-only src_key (shape address + frame via Frame_Identity_Key).
+ * Pick shard from shape address + frame only.
  * Remap / fade / ghost / trans must not affect this — variants of one sprite share a shard.
  */
-static inline unsigned sprite_cache_shard_index(uint32_t src_key, int shard_count)
+static inline unsigned sprite_cache_shard_index(uint32_t shape_id, uint16_t frame, int shard_count)
 {
 	if (shard_count <= 1)
 		return 0u;
+	const uint32_t bits = shape_id ^ (uint32_t)frame;
 	/* Default shard counts are powers of two (16/4/2/1). */
 	if ((shard_count & (shard_count - 1)) == 0)
-		return (unsigned)src_key & (unsigned)(shard_count - 1);
-	return (unsigned)(src_key % (uint32_t)shard_count);
+		return (unsigned)bits & (unsigned)(shard_count - 1);
+	return (unsigned)(bits % (uint32_t)shard_count);
 }
 
 /*
@@ -314,9 +285,9 @@ static int sprite_cache_pick_tier_index_for_crop(int crop_w, int crop_h)
 			SpriteCacheTier *tr = &g_sprite_cache_tiers[i];
 			if (tr->capacity <= 0)
 				continue;
-			if (best_i < 0 || tr->slot_sz < best_sz) {
+			if (best_i < 0 || tr->payload_sz < best_sz) {
 				best_i = (int)i;
-				best_sz = tr->slot_sz;
+				best_sz = tr->payload_sz;
 			}
 		}
 		return best_i;
@@ -333,11 +304,11 @@ static int sprite_cache_pick_tier_index_for_crop(int crop_w, int crop_h)
 		SpriteCacheTier *tr = &g_sprite_cache_tiers[i];
 		if (tr->capacity <= 0)
 			continue;
-		if (need > (size_t)tr->slot_sz)
+		if (need > (size_t)tr->payload_sz)
 			continue;
-		if (best_i < 0 || tr->slot_sz < best_sz) {
+		if (best_i < 0 || tr->payload_sz < best_sz) {
 			best_i = (int)i;
-			best_sz = tr->slot_sz;
+			best_sz = tr->payload_sz;
 		}
 	}
 	return best_i;
@@ -359,17 +330,17 @@ static void sprite_cache_dump_stats_and_reset(void)
 		SpriteCacheTier *const tr = &g_sprite_cache_tiers[ti];
 		if (tr->shards) {
 			for (int sh = 0; sh < tr->shard_count; ++sh) {
-				RankCache<SpriteCacheKey, SpriteSlot> *rank = tr->shards[sh];
+				SpriteRankCache *rank = tr->shards[sh];
 				if (!rank || !rank->nodes())
 					continue;
-				RankCache<SpriteCacheKey, SpriteSlot>::Node const *nodes = rank->nodes();
+				SpriteRankCache::Node const *nodes = rank->nodes();
 				const int n = (int)rank->capacity();
 				for (int si = 0; si < n; ++si) {
-					SpriteSlot const &sm = nodes[si].value;
-					if (!sm.occupied)
+					SpriteSlotHeader const *sm = nodes[si].value;
+					if (!sm || (sm->crop_w == 0 && sm->crop_h == 0))
 						continue;
 					cached_slots++;
-					cached_pixels_sum += (unsigned long)sm.crop_w * (unsigned long)sm.crop_h;
+					cached_pixels_sum += (unsigned long)sm->crop_w * (unsigned long)sm->crop_h;
 				}
 			}
 		}
@@ -520,7 +491,7 @@ static void sprite_cache_reseed_tier_rank(SpriteCacheTier &tr, int tier_index)
 
 	uint16_t global_i = 0;
 	for (int sh = 0; sh < tr.shard_count; ++sh) {
-		RankCache<SpriteCacheKey, SpriteSlot> *rank = tr.shards[sh];
+		SpriteRankCache *rank = tr.shards[sh];
 		if (!rank || !rank->valid())
 			continue;
 		rank->reset_head();
@@ -528,21 +499,22 @@ static void sprite_cache_reseed_tier_rank(SpriteCacheTier &tr, int tier_index)
 		for (uint16_t i = 0; i < n; ++i, ++global_i) {
 			SpriteCacheKey dk;
 			std::memset(&dk, 0, sizeof(dk));
-			dk.src_key = UINT32_MAX ^ ((((uint32_t)tier_index) << 20) ^ ((uint32_t)sh << 12) ^ (uint32_t)i);
+			dk.shape_id = UINT32_MAX ^ ((((uint32_t)tier_index) << 20) ^ ((uint32_t)sh << 12) ^ (uint32_t)i);
+			dk.frame = (uint16_t)(0xF000u + global_i);
 			dk.mode_pack = 0xFF;
-			dk.fade_token = (uint32_t)tier_index + 1u;
-			dk.ghost_token = 0x1000u + (uint32_t)global_i;
-			dk.trans_flag = false;
+			dk.trans_flag = 0;
+			dk.fade_id = (uint32_t)tier_index + 1u;
+			dk.ghost_id = 0x1000u + (uint32_t)global_i;
 
-			SpriteSlot slot;
-			slot.data = tr.slot_base + (size_t)global_i * (size_t)tr.slot_sz;
-			slot.mask_off = 0;
-			slot.crop_x = 0;
-			slot.crop_y = 0;
-			slot.crop_w = 0;
-			slot.crop_h = 0;
-			slot.occupied = 0;
-			rank->set(i, dk, slot);
+			SpriteSlotHeader *hdr =
+			    (SpriteSlotHeader *)(tr.slot_base + (size_t)global_i * (size_t)tr.slot_sz);
+			hdr->key = dk;
+			hdr->mask_off = 0;
+			hdr->crop_x = 0;
+			hdr->crop_y = 0;
+			hdr->crop_w = 0;
+			hdr->crop_h = 0;
+			rank->set(i, sprite_cache_key_hash(dk), hdr);
 		}
 	}
 }
@@ -583,6 +555,7 @@ static void sprite_cache_shutdown(void)
 		tr.shard_count = 0;
 		tr.shard_size = 0;
 		tr.dim = 0;
+		tr.payload_sz = 0;
 		tr.slot_sz = 0;
 	}
 	Free(g_sprite_cache_slab);
@@ -596,15 +569,18 @@ static void sprite_cache_maybe_init(void)
 	if (g_sprite_cache_inited)
 		return;
 
+	int payload_sz[SPRITE_CACHE_TIER_COUNT];
 	int slot_sz[SPRITE_CACHE_TIER_COUNT];
 	size_t total = 0;
+	const size_t hdr_bytes = sprite_slot_hdr_bytes();
 
 	for (int t = 0; t < SPRITE_CACHE_TIER_COUNT; ++t) {
 		const int d = g_sprite_cache_dims[t];
 		/* Byte budget from a d×d reference square (not a max width/height). */
 		const int planar_bpl = ((d + 15) >> 4) * 8;
 		const int mask_bpl = ((d + 15) >> 4) * 2;
-		slot_sz[t] = planar_bpl * d + mask_bpl * d;
+		payload_sz[t] = planar_bpl * d + mask_bpl * d;
+		slot_sz[t] = (int)hdr_bytes + payload_sz[t];
 		const int cap = g_sprite_cache_cap[t];
 		if (cap > 0)
 			total += (size_t)cap * (size_t)slot_sz[t];
@@ -624,6 +600,7 @@ static void sprite_cache_maybe_init(void)
 		SpriteCacheTier &tr = g_sprite_cache_tiers[t];
 		tr.dim = g_sprite_cache_dims[t];
 		tr.capacity = g_sprite_cache_cap[t];
+		tr.payload_sz = payload_sz[t];
 		tr.slot_sz = slot_sz[t];
 		tr.shards = nullptr;
 		tr.shard_count = 0;
@@ -646,15 +623,14 @@ static void sprite_cache_maybe_init(void)
 		tr.slot_base = walk;
 		walk += (size_t)tr.capacity * (size_t)tr.slot_sz;
 
-		tr.shards = new (std::nothrow) RankCache<SpriteCacheKey, SpriteSlot> *[tr.shard_count];
+		tr.shards = new (std::nothrow) SpriteRankCache *[tr.shard_count];
 		if (!tr.shards)
 			goto fail;
 		for (int sh = 0; sh < tr.shard_count; ++sh)
 			tr.shards[sh] = nullptr;
 
 		for (int sh = 0; sh < tr.shard_count; ++sh) {
-			tr.shards[sh] = new (std::nothrow)
-			    RankCache<SpriteCacheKey, SpriteSlot>((uint16_t)tr.shard_size);
+			tr.shards[sh] = new (std::nothrow) SpriteRankCache((uint16_t)tr.shard_size);
 			if (!tr.shards[sh] || !tr.shards[sh]->valid())
 				goto fail;
 		}
@@ -774,11 +750,11 @@ static BOOL sprite_cache_do_blitter(
 }
 
 /* Fills one cache slot from cropped source pixels and optional remaps.
- * Packs [planar | mask] tightly: mask begins at data + need_p.
+ * Packs [header | planar | mask] tightly: mask begins at planar + need_p.
  * Returns 1 = fast path (bulk C2P), 2 = slow path (row remap + bulk line C2P), 0 = failure. */
 static int sprite_cache_fill_slot_pixels(
 	SpriteCacheTier *tr,
-	SpriteSlot *slot,
+	SpriteSlotHeader *slot,
 	uint8_t *dst_root_fb,
 	const uint8_t *src,
 	int bw,
@@ -813,7 +789,7 @@ static int sprite_cache_fill_slot_pixels(
 		slot->mask_off = 0;
 		return 1;
 	}
-	if (need_p + need_m > (size_t)tr->slot_sz)
+	if (need_p + need_m > (size_t)tr->payload_sz)
 		return 0;
 	if (need_p > 0xffffu)
 		return 0;
@@ -964,7 +940,8 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 	const uint8_t *raster_base,
 	int clip_ox,
 	int clip_oy,
-	long identity_key,
+	void const *identity_root,
+	int identity_frame,
 	SpriteCacheLazyGate *lazy_gate)
 {
 	uint8_t mode_pack = 0;
@@ -976,13 +953,16 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		mode_pack = 0;
 
 	SpriteCacheKey want;
-	want.src_key = sprite_cache_lru_identity_hash(identity_key);
+	want.shape_id = (uint32_t)(uintptr_t)identity_root;
+	want.frame = (identity_frame < 0) ? (uint16_t)0xFFFFu : (uint16_t)identity_frame;
 	want.mode_pack = mode_pack;
-	want.trans_flag = trans != 0;
-	want.fade_token = sprite_cache_ptr_token((void const *)fade_tab);
-	want.ghost_token = sprite_cache_ptr_token((void const *)ghost_tab);
+	want.trans_flag = (uint8_t)(trans != 0);
+	want.fade_id = (uint32_t)(uintptr_t)fade_tab;
+	want.ghost_id = (uint32_t)(uintptr_t)ghost_tab;
+	const uint32_t want_hash = sprite_cache_key_hash(want);
+	const SpriteSlotKeyMatch key_match = { &want };
 
-	SpriteSlot *slot = nullptr;
+	SpriteSlotHeader *slot = nullptr;
 	SpriteCacheTier *tr = nullptr;
 	bool cache_hit = false;
 
@@ -1005,9 +985,9 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 
 		SpriteCacheTier *probe = &g_sprite_cache_tiers[known_tier];
 		if (probe->shards && probe->shard_count > 0) {
-			const unsigned sh = sprite_cache_shard_index(want.src_key, probe->shard_count);
-			RankCache<SpriteCacheKey, SpriteSlot> *rank = probe->shards[sh];
-			if (rank && rank->get(want, slot)) {
+			const unsigned sh = sprite_cache_shard_index(want.shape_id, want.frame, probe->shard_count);
+			SpriteRankCache *rank = probe->shards[sh];
+			if (rank && rank->get(want_hash, slot, key_match)) {
 				g_sprite_cache_stats[known_tier].hits++;
 				tr = probe;
 				cache_hit = true;
@@ -1021,11 +1001,11 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 			SpriteCacheTier *probe = &g_sprite_cache_tiers[ti];
 			if (!probe->shards || probe->shard_count <= 0)
 				continue;
-			const unsigned sh = sprite_cache_shard_index(want.src_key, probe->shard_count);
-			RankCache<SpriteCacheKey, SpriteSlot> *rank = probe->shards[sh];
+			const unsigned sh = sprite_cache_shard_index(want.shape_id, want.frame, probe->shard_count);
+			SpriteRankCache *rank = probe->shards[sh];
 			if (!rank)
 				continue;
-			if (rank->get(want, slot)) {
+			if (rank->get(want_hash, slot, key_match)) {
 				g_sprite_cache_stats[ti].hits++;
 				tr = probe;
 				cache_hit = true;
@@ -1077,18 +1057,20 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 			return -1;
 		}
 		{
-			const unsigned sh = sprite_cache_shard_index(want.src_key, tr->shard_count);
-			RankCache<SpriteCacheKey, SpriteSlot> *rank = tr->shards[sh];
-			if (!rank || !rank->retarget_oldest(want, slot) || slot == nullptr) {
+			const unsigned sh = sprite_cache_shard_index(want.shape_id, want.frame, tr->shard_count);
+			SpriteRankCache *rank = tr->shards[sh];
+			if (!rank || !rank->retarget_oldest(want_hash, slot, key_match) || slot == nullptr) {
 				return -1;
 			}
 		}
 
-		if (slot->occupied) {
+		if (slot->crop_w != 0 || slot->crop_h != 0) {
 			const int ti_stat = (int)(tr - g_sprite_cache_tiers);
 			if (ti_stat >= 0 && ti_stat < SPRITE_CACHE_TIER_COUNT)
 				g_sprite_cache_stats[ti_stat].evictions++;
 		}
+
+		slot->key = want;
 
 		const int fill_route = sprite_cache_fill_slot_pixels(
 			    tr,
@@ -1115,7 +1097,6 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 		slot->crop_y = (uint16_t)crop_y;
 		slot->crop_w = (uint16_t)crop_w;
 		slot->crop_h = (uint16_t)crop_h;
-		slot->occupied = 1;
 		for (int ti = 0; ti < SPRITE_CACHE_TIER_COUNT; ++ti) {
 			if (&g_sprite_cache_tiers[ti] == tr) {
 				if (fill_route == 1)
@@ -1226,7 +1207,8 @@ static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
 	const uint8_t *raster_base,
 	int raster_ox,
 	int raster_oy,
-	long identity_key,
+	void const *identity_root,
+	int identity_frame,
 	SpriteCacheLazyGate *lazy_gate)
 {
 	return sprite_cache_cached_tile_dispatch(dst_root_fb,
@@ -1246,7 +1228,8 @@ static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
 	    raster_base,
 	    raster_ox,
 	    raster_oy,
-	    identity_key,
+	    identity_root,
+	    identity_frame,
 	    lazy_gate);
 }
 
@@ -1268,7 +1251,8 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	int raster_oy,
 	int full_w,
 	int full_h,
-	long identity_key,
+	void const *identity_root,
+	int identity_frame,
 	unsigned long (*lazy_decode_miss)(void *user_ctx, IDecodeContext *decode_ctx),
 	void *lazy_decode_ctx)
 {
@@ -1323,6 +1307,7 @@ long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
 	    raster_base,
 	    raster_ox,
 	    raster_oy,
-	    identity_key,
+	    identity_root,
+	    identity_frame,
 	    gate_ptr);
 }

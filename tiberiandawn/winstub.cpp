@@ -447,7 +447,8 @@ extern "C" void Bftp_ExArgs_init_zero(Bftp_ExArgs* ex)
     ex->fade_table = nullptr;
     ex->fading_num = 0;
     ex->predoffset = 0;
-    ex->identity_key = 0L;
+    ex->identity_root = nullptr;
+    ex->identity_frame = 0;
     ex->lazy_frame_fill = nullptr;
     ex->lazy_frame_ctx = nullptr;
     ex->lru_scratch_root = nullptr;
@@ -562,7 +563,8 @@ long Buffer_Frame_To_Page_Ex(int x,
                                                               src_y,
                                                               w,
                                                               h,
-                                                              ex->identity_key,
+                                                              ex->identity_root,
+                                                              ex->identity_frame,
                                                               lazy_miss_fn,
                                                               lazy_miss_ctx);
         if (drew >= 0) {

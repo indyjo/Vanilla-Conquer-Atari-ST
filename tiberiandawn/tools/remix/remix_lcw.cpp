@@ -47,7 +47,13 @@ int remix_lcw_uncompress(
 			if (b < 0)
 				return -1;
 			back = (unsigned)b + (((unsigned)op_code & 0x0fu) << 8);
-			if (back >= (unsigned)(dest_ptr - (unsigned char *)dest))
+			/*
+			 * Relative short-copy: offset is distance back from dest_ptr.
+			 * back == bytes_written is valid (reference the first output byte).
+			 * Reject only back == 0 or back past the start of dest (same as common/lcw,
+			 * which does no check — we keep a bounds check without the off-by-one).
+			 */
+			if (back == 0 || back > (unsigned)(dest_ptr - (unsigned char *)dest))
 				return -1;
 			copy_ptr = dest_ptr - back;
 

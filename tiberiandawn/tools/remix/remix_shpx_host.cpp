@@ -300,6 +300,9 @@ static int build_clips(
 		unsigned char *row = clip_out + (size_t)f * 8u;
 		int decoded;
 
+		/* Always clear: a failed/partial LCW must not inherit prior frame pixels. */
+		memset(buf, 0, (size_t)buf_bytes);
+
 		if (!Build_Frame(frame_blob, f, buf, frame_blob_len)) {
 			cx = cy = cw = ch = 0;
 			decoded = 0;

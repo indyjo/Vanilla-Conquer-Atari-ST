@@ -480,7 +480,8 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			ptr = (char *)Add_Long_To_Pointer( ptr, 768L );
 		}
 		length = LCW_Uncompress( ptr, buffptr, buffsize );
-		if (length > buffsize) {
+		/* Remix Safe LCW returns 0 on hard failure; treat as decode fail. */
+		if (length == 0 || length > buffsize) {
 			return (0);
 		}
 	} else {	// key delta or delta
@@ -525,7 +526,7 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 #endif
 		length = LCW_Uncompress( ptr, buffptr, buffsize );
 
-		if (length > buffsize) {
+		if (length == 0 || length > buffsize) {
 			return(0);
 		}
 

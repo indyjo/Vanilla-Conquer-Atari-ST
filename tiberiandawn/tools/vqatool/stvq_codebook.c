@@ -1,0 +1,626 @@
+/*
+ * stvq_codebook.c - k-medoids-ish train + per-frame STCR.
+ */
+#include "stvq_codebook.h"
+#include "stvq_c2p.h"
+#include "stvq_metric.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+static uint64_t stvq_ns_now(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+int stvq_codebook_alloc(StvqCodebook *cb, unsigned entries)
+{
+	memset(cb, 0, sizeof(*cb));
+	cb->entries = entries;
+	cb->tiles = (uint8_t *)calloc(entries, 32u);
+	cb->pens = (uint8_t *)calloc(entries, 64u);
+	cb->feats = (float *)calloc(entries, STVQ_METRIC_MAX_COEFFS * sizeof(float));
+	cb->use_count = (uint32_t *)calloc(entries, sizeof(uint32_t));
+	cb->last_used = (uint32_t *)calloc(entries, sizeof(uint32_t));
+	if (!cb->tiles || !cb->pens || !cb->feats || !cb->use_count || !cb->last_used) {
+		stvq_codebook_free(cb);
+		return -1;
+	}
+	return 0;
+}
+
+void stvq_codebook_free(StvqCodebook *cb)
+{
+	free(cb->tiles);
+	free(cb->pens);
+	free(cb->feats);
+	free(cb->use_count);
+	free(cb->last_used);
+	memset(cb, 0, sizeof(*cb));
+}
+
+static void cb_set_tile(StvqCodebook *cb, unsigned i, const uint8_t tile[32])
+{
+	memcpy(cb->tiles + i * 32u, tile, 32);
+	stvq_unpack_tile_32(tile, cb->pens + i * 64u);
+	stvq_metric_feat_from_pens(cb->pens + i * 64u, cb->feats + i * STVQ_METRIC_MAX_COEFFS);
+}
+
+void stvq_codebook_recompute_feats(StvqCodebook *cb)
+{
+	unsigned i;
+	if (!cb || !cb->feats)
+		return;
+	for (i = 0; i < cb->entries; i++)
+		stvq_metric_feat_from_pens(cb->pens + i * 64u, cb->feats + i * STVQ_METRIC_MAX_COEFFS);
+}
+
+unsigned stvq_codebook_nearest(const StvqCodebook *cb, const uint8_t src_vga[64], unsigned *out_dist)
+{
+	float q[STVQ_METRIC_MAX_COEFFS];
+	unsigned best = 0, best_d = ~0u, i;
+	stvq_metric_feat_from_indices(src_vga, q);
+	for (i = 0; i < cb->entries; i++) {
+		unsigned d = stvq_metric_feat_dist_lim(q, cb->feats + i * STVQ_METRIC_MAX_COEFFS, best_d);
+		if (d < best_d) {
+			best_d = d;
+			best = i;
+			if (d == 0)
+				break;
+		}
+	}
+	if (out_dist)
+		*out_dist = best_d;
+	return best;
+}
+
+static void nearest_two_feat(const StvqCodebook *cb, const float *qfeat, unsigned *best_i, unsigned *best_d,
+    unsigned *second_i, unsigned *second_d)
+{
+	unsigned i;
+	*best_i = 0;
+	*best_d = ~0u;
+	*second_i = 0;
+	*second_d = ~0u;
+	for (i = 0; i < cb->entries; i++) {
+		unsigned d = stvq_metric_feat_dist_lim(qfeat, cb->feats + i * STVQ_METRIC_MAX_COEFFS, *second_d);
+		if (d < *best_d) {
+			*second_d = *best_d;
+			*second_i = *best_i;
+			*best_d = d;
+			*best_i = i;
+		} else if (d < *second_d) {
+			*second_d = d;
+			*second_i = i;
+		}
+	}
+}
+
+int stvq_codebook_train(StvqCodebook *cb, const uint8_t *const *frame_tiles,
+    const uint8_t *const *frame_src, unsigned nframes, unsigned tiles_per_frame, unsigned sample_stride)
+{
+	unsigned total = nframes * tiles_per_frame;
+	unsigned sample_n;
+	uint8_t *samples_tile;
+	uint8_t *samples_src;
+	unsigned *assign;
+	unsigned i, iter, f, t, si;
+	unsigned stride = sample_stride ? sample_stride : 1;
+
+	if (!cb->entries || !total || !frame_tiles || !frame_src)
+		return -1;
+
+	sample_n = (total + stride - 1u) / stride;
+	if (sample_n < cb->entries)
+		sample_n = total < cb->entries ? total : cb->entries;
+
+	samples_tile = (uint8_t *)malloc((size_t)sample_n * 32u);
+	samples_src = (uint8_t *)malloc((size_t)sample_n * 64u);
+	assign = (unsigned *)malloc((size_t)sample_n * sizeof(unsigned));
+	if (!samples_tile || !samples_src || !assign) {
+		free(samples_tile);
+		free(samples_src);
+		free(assign);
+		return -1;
+	}
+
+	si = 0;
+	for (f = 0; f < nframes && si < sample_n; f++) {
+		for (t = 0; t < tiles_per_frame && si < sample_n; t += stride) {
+			memcpy(samples_tile + si * 32u, frame_tiles[f] + t * 32u, 32);
+			memcpy(samples_src + si * 64u, frame_src[f] + t * 64u, 64);
+			si++;
+		}
+	}
+	sample_n = si;
+	if (sample_n == 0) {
+		free(samples_tile);
+		free(samples_src);
+		free(assign);
+		return -1;
+	}
+
+	for (i = 0; i < cb->entries; i++) {
+		unsigned src = (i * sample_n) / cb->entries;
+		if (src >= sample_n)
+			src = sample_n - 1;
+		cb_set_tile(cb, i, samples_tile + src * 32u);
+	}
+
+	for (iter = 0; iter < 4; iter++) {
+		unsigned *counts = (unsigned *)calloc(cb->entries, sizeof(unsigned));
+		unsigned *first = (unsigned *)malloc(cb->entries * sizeof(unsigned));
+		if (!counts || !first) {
+			free(counts);
+			free(first);
+			free(samples_tile);
+			free(samples_src);
+			free(assign);
+			return -1;
+		}
+		for (i = 0; i < cb->entries; i++)
+			first[i] = ~0u;
+		for (i = 0; i < sample_n; i++) {
+			unsigned d;
+			unsigned j = stvq_codebook_nearest(cb, samples_src + i * 64u, &d);
+			assign[i] = j;
+			if (first[j] == ~0u)
+				first[j] = i;
+			counts[j]++;
+		}
+		for (i = 0; i < cb->entries; i++) {
+			if (first[i] != ~0u)
+				cb_set_tile(cb, i, samples_tile + first[i] * 32u);
+		}
+		free(counts);
+		free(first);
+	}
+
+	free(samples_tile);
+	free(samples_src);
+	free(assign);
+	memset(cb->use_count, 0, cb->entries * sizeof(uint32_t));
+	memset(cb->last_used, 0, cb->entries * sizeof(uint32_t));
+	return 0;
+}
+
+typedef struct Residual {
+	unsigned tile;
+	unsigned dist;
+} Residual;
+
+typedef struct UtilCand {
+	unsigned tile;
+	long long util;
+} UtilCand;
+
+typedef struct WinTile {
+	const uint8_t *src; /* 64 VGA indices */
+	float feat[STVQ_METRIC_MAX_COEFFS];
+	unsigned nearest;
+	unsigned dist;
+	unsigned second;
+	unsigned second_dist;
+} WinTile;
+
+static int residual_cmp_desc(const void *a, const void *b)
+{
+	const Residual *ra = (const Residual *)a;
+	const Residual *rb = (const Residual *)b;
+	if (ra->dist < rb->dist)
+		return 1;
+	if (ra->dist > rb->dist)
+		return -1;
+	if (ra->tile < rb->tile)
+		return 1;
+	if (ra->tile > rb->tile)
+		return -1;
+	return 0;
+}
+
+static int util_cand_cmp_desc(const void *a, const void *b)
+{
+	const UtilCand *ua = (const UtilCand *)a;
+	const UtilCand *ub = (const UtilCand *)b;
+	if (ua->util < ub->util)
+		return 1;
+	if (ua->util > ub->util)
+		return -1;
+	if (ua->tile < ub->tile)
+		return 1;
+	if (ua->tile > ub->tile)
+		return -1;
+	return 0;
+}
+
+static uint32_t xorshift32(uint32_t *state)
+{
+	uint32_t x = *state;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	*state = x ? x : 0xA5A5A5A5u;
+	return *state;
+}
+
+static void refresh_window_assign(const StvqCodebook *cb, WinTile *win, unsigned win_n)
+{
+	unsigned i;
+	for (i = 0; i < win_n; i++) {
+		stvq_metric_feat_from_indices(win[i].src, win[i].feat);
+		nearest_two_feat(cb, win[i].feat, &win[i].nearest, &win[i].dist, &win[i].second,
+		    &win[i].second_dist);
+	}
+}
+
+static void update_window_after_replace(const StvqCodebook *cb, WinTile *win, unsigned win_n, unsigned victim,
+    const unsigned *d_new)
+{
+	unsigned i;
+	for (i = 0; i < win_n; i++) {
+		unsigned dT = d_new[i];
+		if (win[i].nearest == victim || win[i].second == victim) {
+			nearest_two_feat(cb, win[i].feat, &win[i].nearest, &win[i].dist, &win[i].second,
+			    &win[i].second_dist);
+			continue;
+		}
+		if (dT < win[i].dist) {
+			win[i].second = win[i].nearest;
+			win[i].second_dist = win[i].dist;
+			win[i].nearest = victim;
+			win[i].dist = dT;
+		} else if (dT < win[i].second_dist) {
+			win[i].second = victim;
+			win[i].second_dist = dT;
+		}
+	}
+}
+
+/* Benefit of adding new_tile as an extra CB option (ignore eviction). */
+static long long add_utility(const WinTile *win, unsigned win_n, const uint8_t *new_tile, unsigned *d_new,
+    StvqSelectProf *prof)
+{
+	float new_feat[STVQ_METRIC_MAX_COEFFS];
+	unsigned i;
+	long long util = 0;
+	uint64_t t0 = stvq_ns_now();
+
+	stvq_metric_feat_from_tile32(new_tile, new_feat);
+	for (i = 0; i < win_n; i++) {
+		unsigned d = stvq_metric_feat_dist(win[i].feat, new_feat);
+		d_new[i] = d;
+		if (d < win[i].dist)
+			util += (long long)(win[i].dist - d);
+	}
+	if (prof)
+		prof->ns_victim_dnew += stvq_ns_now() - t0;
+	return util;
+}
+
+/*
+ * Eviction cost of slot v: tiles that use v as nearest fall back to second.
+ * Ignores whatever would be installed in its place.
+ */
+static void accumulate_evict_damage(const WinTile *win, unsigned win_n, unsigned long long *damage, unsigned k)
+{
+	unsigned i;
+	memset(damage, 0, (size_t)k * sizeof(*damage));
+	for (i = 0; i < win_n; i++) {
+		unsigned v = win[i].nearest;
+		if (v < k && win[i].second_dist > win[i].dist)
+			damage[v] += (unsigned long long)(win[i].second_dist - win[i].dist);
+	}
+}
+
+/* Least-damage free slot; tie-break: colder (less use, then older). */
+static unsigned pick_least_damage_victim(const StvqCodebook *cb, const unsigned long long *damage,
+    const uint8_t *slot_taken, unsigned frame_index, StvqSelectProf *prof)
+{
+	unsigned v, best_v = 0;
+	unsigned long long best_d = ~0ull;
+	uint32_t best_use = ~0u;
+	unsigned best_age = 0;
+	int have = 0;
+	uint64_t t0 = stvq_ns_now();
+
+	for (v = 0; v < cb->entries; v++) {
+		unsigned long long d;
+		uint32_t use;
+		unsigned age;
+		if (slot_taken[v])
+			continue;
+		d = damage[v];
+		use = cb->use_count[v];
+		age = frame_index - cb->last_used[v];
+		if (!have || d < best_d ||
+		    (d == best_d && (use < best_use || (use == best_use && age > best_age)))) {
+			best_d = d;
+			best_v = v;
+			best_use = use;
+			best_age = age;
+			have = 1;
+		}
+	}
+	if (prof)
+		prof->ns_victim_scan += stvq_ns_now() - t0;
+	return have ? best_v : 0;
+}
+
+static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned tile, unsigned victim,
+    unsigned frame_index, WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken,
+    const unsigned *d_new, StvqReplace *out, unsigned *n)
+{
+	if (tile_taken[tile] || slot_taken[victim])
+		return 0;
+	slot_taken[victim] = 1;
+	tile_taken[tile] = 1;
+	cb_set_tile(cb, victim, tile32);
+	cb->use_count[victim] = 1;
+	cb->last_used[victim] = frame_index;
+	out[*n].index = (uint16_t)victim;
+	memcpy(out[*n].tile, tile32, 32);
+	(*n)++;
+	update_window_after_replace(cb, win, win_n, victim, d_new);
+	return 1;
+}
+
+/* Random accept: damage-only victim, then d_new for window update. */
+static int install_replace(StvqCodebook *cb, const uint8_t *cur_frame_tiles, unsigned tile, unsigned frame_index,
+    WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken, unsigned *d_new_scratch,
+    unsigned long long *damage, StvqReplace *out, unsigned *n, StvqSelectProf *prof)
+{
+	unsigned victim;
+	const uint8_t *tile32;
+	uint64_t t0;
+	if (tile_taken[tile])
+		return 0;
+	tile32 = cur_frame_tiles + tile * 32u;
+	t0 = stvq_ns_now();
+	accumulate_evict_damage(win, win_n, damage, cb->entries);
+	if (prof)
+		prof->ns_victim_scan += stvq_ns_now() - t0;
+	victim = pick_least_damage_victim(cb, damage, slot_taken, frame_index, prof);
+	(void)add_utility(win, win_n, tile32, d_new_scratch, prof);
+	return install_at_victim(cb, tile32, tile, victim, frame_index, win, win_n, slot_taken, tile_taken,
+	    d_new_scratch, out, n);
+}
+
+unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *frame_tiles,
+    const uint8_t *const *frame_src, unsigned nframes, unsigned frame_index, unsigned tiles_n,
+    unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
+    const uint8_t *recon_n1, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,
+    unsigned *out_dist)
+{
+	unsigned n = 0, t, i, f;
+	const unsigned thresh = (unsigned)(0.05f * STVQ_METRIC_SCALE + 0.5f);
+	Residual *res = NULL;
+	UtilCand *ucand = NULL;
+	uint8_t *slot_taken = NULL;
+	uint8_t *tile_taken = NULL;
+	uint8_t *in_shortlist = NULL;
+	unsigned *shortlist = NULL;
+	unsigned *victims = NULL;
+	WinTile *win = NULL;
+	unsigned *d_new = NULL;
+	unsigned *eff_dist = NULL;
+	unsigned long long *damage = NULL;
+	unsigned win_n = 0, f_end, shortlist_cap, n_sl = 0, n_rand, n_util;
+	uint32_t rng;
+	const uint8_t *cur_tiles;
+	const uint8_t *cur_src;
+	uint64_t t0, t1;
+
+	if (!max_replaces || !tiles_n || !frame_tiles || !frame_src || frame_index >= nframes)
+		return 0;
+	if (random_pct > 100u)
+		random_pct = 100u;
+
+	n_rand = (max_replaces * random_pct) / 100u;
+	n_util = max_replaces - n_rand;
+	shortlist_cap = max_replaces * 2u;
+	if (shortlist_cap > tiles_n)
+		shortlist_cap = tiles_n;
+	cur_tiles = frame_tiles[frame_index];
+	cur_src = frame_src[frame_index];
+
+	for (i = 0; i < cb->entries; i++)
+		cb->use_count[i] >>= 1;
+
+	f_end = frame_index + lookahead;
+	if (f_end >= nframes)
+		f_end = nframes - 1;
+	win_n = (f_end - frame_index + 1u) * tiles_n;
+
+	res = (Residual *)malloc((size_t)tiles_n * sizeof(Residual));
+	ucand = (UtilCand *)malloc((size_t)shortlist_cap * sizeof(UtilCand));
+	slot_taken = (uint8_t *)calloc(cb->entries, 1);
+	tile_taken = (uint8_t *)calloc(tiles_n, 1);
+	in_shortlist = (uint8_t *)calloc(tiles_n, 1);
+	shortlist = (unsigned *)malloc((size_t)shortlist_cap * sizeof(unsigned));
+	victims = (unsigned *)malloc((size_t)(n_util ? n_util : 1u) * sizeof(unsigned));
+	win = (WinTile *)malloc((size_t)win_n * sizeof(WinTile));
+	d_new = (unsigned *)malloc((size_t)win_n * sizeof(unsigned));
+	eff_dist = (unsigned *)malloc((size_t)tiles_n * sizeof(unsigned));
+	damage = (unsigned long long *)malloc((size_t)cb->entries * sizeof(*damage));
+	if (!res || !ucand || !slot_taken || !tile_taken || !in_shortlist || !shortlist || !victims || !win ||
+	    !d_new || !eff_dist || !damage) {
+		free(res);
+		free(ucand);
+		free(slot_taken);
+		free(tile_taken);
+		free(in_shortlist);
+		free(shortlist);
+		free(victims);
+		free(win);
+		free(d_new);
+		free(eff_dist);
+		free(damage);
+		return 0;
+	}
+
+	win_n = 0;
+	for (f = frame_index; f <= f_end; f++) {
+		for (t = 0; t < tiles_n; t++) {
+			win[win_n].src = frame_src[f] + t * 64u;
+			win_n++;
+		}
+	}
+	t0 = stvq_ns_now();
+	refresh_window_assign(cb, win, win_n);
+	t1 = stvq_ns_now();
+	if (prof)
+		prof->ns_refresh += t1 - t0;
+
+	/* Stage 1: residual-only shortlist of size 2R (stay-as-is aware). */
+	t0 = stvq_ns_now();
+	{
+		unsigned n_cand = 0;
+		for (t = 0; t < tiles_n; t++) {
+			unsigned dist = win[t].dist;
+			if (recon_n2 && recon_n1) {
+				const uint8_t *n2 = recon_n2 + t * 32u;
+				const uint8_t *n1 = recon_n1 + t * 32u;
+				if (memcmp(n2, n1, 32) == 0) {
+					unsigned dist_n2 = stvq_src_tile_error(cur_src + t * 64u, n2);
+					if (dist_n2 < dist)
+						dist = dist_n2;
+				}
+			}
+			eff_dist[t] = dist;
+			res[n_cand].tile = t;
+			res[n_cand].dist = dist;
+			n_cand++;
+		}
+		qsort(res, n_cand, sizeof(Residual), residual_cmp_desc);
+		for (i = 0; i < n_cand && n_sl < shortlist_cap; i++) {
+			t = res[i].tile;
+			if (res[i].dist <= thresh)
+				break;
+			in_shortlist[t] = 1;
+			shortlist[n_sl++] = t;
+		}
+		if (n_sl < shortlist_cap) {
+			n_cand = 0;
+			for (t = 0; t < tiles_n; t++) {
+				if (in_shortlist[t])
+					continue;
+				res[n_cand].tile = t;
+				res[n_cand].dist = eff_dist[t];
+				n_cand++;
+			}
+			qsort(res, n_cand, sizeof(Residual), residual_cmp_desc);
+			for (i = 0; i < n_cand && n_sl < shortlist_cap; i++) {
+				t = res[i].tile;
+				in_shortlist[t] = 1;
+				shortlist[n_sl++] = t;
+			}
+		}
+	}
+	t1 = stvq_ns_now();
+	if (prof)
+		prof->ns_residual += t1 - t0;
+
+	/*
+	 * Stage 2 (decoupled):
+	 * - Score shortlist by add-utility only (ignore eviction damage).
+	 * - Pick victims by eviction damage only (ignore which tile installs).
+	 * - Pair top utilities with least-damage victims and install.
+	 */
+	t0 = stvq_ns_now();
+	{
+		unsigned n_cand = 0, n_accept, vi;
+		uint64_t ts, te;
+
+		ts = stvq_ns_now();
+		for (i = 0; i < n_sl; i++) {
+			unsigned tile = shortlist[i];
+			long long util;
+			const uint8_t *tile32 = cur_tiles + tile * 32u;
+			util = add_utility(win, win_n, tile32, d_new, prof);
+			if (util <= 0)
+				continue;
+			ucand[n_cand].tile = tile;
+			ucand[n_cand].util = util;
+			n_cand++;
+		}
+		te = stvq_ns_now();
+		if (prof)
+			prof->ns_util_score += te - ts;
+		qsort(ucand, n_cand, sizeof(UtilCand), util_cand_cmp_desc);
+		n_accept = n_cand;
+		if (n_accept > n_util)
+			n_accept = n_util;
+
+		ts = stvq_ns_now();
+		accumulate_evict_damage(win, win_n, damage, cb->entries);
+		if (prof)
+			prof->ns_victim_scan += stvq_ns_now() - ts;
+
+		for (vi = 0; vi < n_accept; vi++) {
+			victims[vi] = pick_least_damage_victim(cb, damage, slot_taken, frame_index, prof);
+			slot_taken[victims[vi]] = 1;
+		}
+
+		/* Clear provisional marks; install_at_victim sets them for real. */
+		for (vi = 0; vi < n_accept; vi++)
+			slot_taken[victims[vi]] = 0;
+
+		ts = stvq_ns_now();
+		for (vi = 0; vi < n_accept; vi++) {
+			unsigned tile = ucand[vi].tile;
+			const uint8_t *tile32 = cur_tiles + tile * 32u;
+			(void)add_utility(win, win_n, tile32, d_new, prof);
+			if (!install_at_victim(cb, tile32, tile, victims[vi], frame_index, win, win_n, slot_taken,
+			        tile_taken, d_new, out, &n))
+				break;
+		}
+		te = stvq_ns_now();
+		if (prof)
+			prof->ns_util_install += te - ts;
+	}
+	t1 = stvq_ns_now();
+	if (prof)
+		prof->ns_utility += t1 - t0;
+
+	/* Stage 3: random tiles accepted directly (damage-only victim). */
+	t0 = stvq_ns_now();
+	rng = frame_index * 2654435761u + 0x9E3779B9u;
+	for (i = 0; i < n_rand && n < max_replaces; i++) {
+		unsigned tries;
+		for (tries = 0; tries < tiles_n; tries++) {
+			unsigned tile = xorshift32(&rng) % tiles_n;
+			if (install_replace(cb, cur_tiles, tile, frame_index, win, win_n, slot_taken, tile_taken,
+			        d_new, damage, out, &n, prof))
+				break;
+		}
+	}
+	t1 = stvq_ns_now();
+	if (prof)
+		prof->ns_random += t1 - t0;
+
+	for (t = 0; t < tiles_n; t++) {
+		cb->use_count[win[t].nearest]++;
+		cb->last_used[win[t].nearest] = frame_index;
+		if (out_nearest)
+			out_nearest[t] = win[t].nearest;
+		if (out_dist)
+			out_dist[t] = win[t].dist;
+	}
+
+	free(res);
+	free(ucand);
+	free(slot_taken);
+	free(tile_taken);
+	free(in_shortlist);
+	free(shortlist);
+	free(victims);
+	free(win);
+	free(d_new);
+	free(eff_dist);
+	free(damage);
+	return n;
+}

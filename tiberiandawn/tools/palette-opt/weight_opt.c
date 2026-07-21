@@ -16,7 +16,7 @@
 #include <math.h>
 #include <string.h>
 
-int palette_opt_weight_granularity = 1;
+int palette_opt_weight_granularity = PALETTE_OPT_WEIGHT_GRANULARITY_2X2_BAYER;
 
 static float dist_sq3(const float *a, const float *b)
 {

@@ -107,14 +107,14 @@ static void print_help(FILE *out, const char *prog)
 		"                Initial subset from a .W16 bundle (subset bytes after magic).\n"
 		"  --fix PEN,IDX   Fix pen PEN to palette index IDX (repeatable).\n"
 		"  --fix=PEN,IDX   Same; multiple pairs: --fix=0,0,5,217\n"
-		"  --lambda=L    Blend (1-L)*e1 + L*e2 per index (default 0.3).\n"
+		"  --lambda=L    Blend (1-L)*e1 + L*e2 per index (default 0.6).\n"
 		"  --hist FILE   Sparse histogram: lines \"index count\".\n"
-		"  --bayer=2|4   Weight granularity: 2 -> step 4 (2x2 tile), 4 -> step 1 (default).\n"
+		"  --bayer=2|4   Weight granularity: 2 -> step 4 (2x2 tile, default), 4 -> step 1.\n"
 		"  --weight-granularity=N\n"
-		"                Each pen weight is a multiple of N (N divides 16; default 1).\n"
+		"                Each pen weight is a multiple of N (N divides 16; default 4).\n"
 		"\n"
 		"Simulated annealing:\n"
-		"  --sa-iter=N       Max iterations (default 100; 0 = keep initial subset).\n"
+		"  --sa-iter=N       Max iterations (default 25000; 0 = keep initial subset).\n"
 		"  --sa-log-every=N  Progress line every N iters (default 10).\n"
 		"  --sa-seed=N       RNG seed (default: time).\n"
 		"  --sa-t0=F         Initial temperature (default: auto).\n"
@@ -124,12 +124,11 @@ static void print_help(FILE *out, const char *prog)
 		"  --export-json FILE\n"
 		"                Write optimization trace JSON for external visualization and tools.\n"
 		"  --export-every=N  One trace step every N iterations (default 25).\n"
-		"                Use --bayer=2 for 2x2-tile traces (matches ST C2P).\n"
 		"\n"
 		"Without -o, prints C-style weight rows for all 256 indices to stdout.\n"
 		"\n"
 		"Examples:\n"
-		"  %s -p TEMPERAT.PAL -o out.w16 --lambda=0.3\n"
+		"  %s -p TEMPERAT.PAL -o out.w16 --lambda=0.6\n"
 		"  %s -p TEMPERAT.PAL -o out.w16 -c --sa-iter=500\n"
 		"  %s -o SATSEL.W16 -p SATSEL.PAL --sa-iter=0\n"
 		"  %s -p TEMPERAT.PAL --sa-iter=0\n"
@@ -395,7 +394,7 @@ int main(int argc, const char **argv)
 	unsigned char loaded_pal[768];
 	unsigned char all_weights[256][16];
 	double alpha[PALETTE_OPT_NUM_COLORS];
-	float lambda = 0.3f;
+	float lambda = 0.6f;
 	PaletteSubsetOptParams sa_params;
 	PaletteSubsetFix subset_fix;
 	PaletteOptColorParams color_params;

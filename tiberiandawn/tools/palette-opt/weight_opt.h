@@ -2,7 +2,7 @@
  * weight_opt.h - Per-index integer dither weights (sum 16, <=4 nonzero pens).
  * Objective: (1-lambda)*e1 + lambda*e2 with Bayer tile (matches C2P MapDither).
  *
- * palette_opt_weight_granularity: each pen weight is a multiple of this value (default 1).
+ * palette_opt_weight_granularity: each pen weight is a multiple of this value (default 4).
  * Use 4 for 2x2 Bayer (four slots in the 16-weight encoding); 1 for full 4x4 resolution.
  */
 

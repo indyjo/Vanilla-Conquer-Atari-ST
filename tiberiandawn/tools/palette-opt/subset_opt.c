@@ -19,8 +19,8 @@ void palette_subset_opt_params_default(PaletteSubsetOptParams *p)
 {
 	if (!p)
 		return;
-	p->lambda = 0.3f;
-	p->sa_max_iter = 100;
+	p->lambda = 0.6f;
+	p->sa_max_iter = 25000;
 	p->sa_seed = 0;
 	p->sa_t0 = 0.0f;
 	p->sa_tmin = 1e-5f;

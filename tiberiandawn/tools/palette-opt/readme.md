@@ -82,11 +82,11 @@ YUV.
 Per index \(i\): \(c_i = (1-\lambda)\,e_1 + \lambda\,e_2\) (Bayer \(e_1\), centroid \(e_2\)).
 Global cost \(\sum_i \alpha_i c_i\); without `--hist`, \(\alpha_i = 1/256\).
 
-**Bayer tile / weight granularity:** rows always sum to **16**. Default granularity **1** (full 4×4). **`--bayer=2`** sets granularity **4** (2×2 tile: weights are multiples of 4). Override with **`--weight-granularity=N`** (`N` divides 16). Runtime C2P still uses 4×4 Bayer unless the port is updated separately.
+**Bayer tile / weight granularity:** rows always sum to **16**. Default is **`--bayer=2`** (granularity **4**, 2×2 tile: weights are multiples of 4). **`--bayer=4`** sets granularity **1** (full 4×4). Override with **`--weight-granularity=N`** (`N` divides 16).
 
 ```bash
-./palette-opt -p TEMPERAT.PAL -o temperat.w16 --lambda=0.3
-./palette-opt -o screen.w16 -p SCREEN.PAL --bayer=2
+./palette-opt -p TEMPERAT.PAL -o temperat.w16 --lambda=0.6
+./palette-opt -o screen.w16 -p SCREEN.PAL --bayer=4
 ./palette-opt -p TEMPERAT.PAL -o temperat.w16 --hist counts.txt --sa-iter=12000
 ./palette-opt -p TEMPERAT.PAL -o temperat.w16 --subset-from baseline.w16 --sa-iter=200
 ./palette-opt -p TEMPERAT.PAL -o temperat.w16 -c --sa-iter=500
@@ -95,17 +95,17 @@ Global cost \(\sum_i \alpha_i c_i\); without `--hist`, \(\alpha_i = 1/256\).
 
 | Flag | Default |
 |------|---------|
-| `--lambda` | `0.3` |
+| `--lambda` | `0.6` |
 | `--gamma` | `1.6` |
 | `--y-scale` | `2.0` |
 | metric | `YUV` (`--rgb` switches to RGB) |
-| `--sa-iter` | `100` (`0` = no SA steps) |
+| `--sa-iter` | `25000` (`0` = no SA steps) |
 | `--sa-log-every` | `10` |
 | `--sa-cool` | `0.9995` |
 | `--sa-t0` | auto |
 | `--sa-seed` | time-based |
-| `--bayer` | `4` (granularity 1) |
-| `--weight-granularity` | `1` |
+| `--bayer` | `2` (granularity 4) |
+| `--weight-granularity` | `4` |
 
 Build with OpenMP on Linux (`make OPENMP=1`).
 
@@ -124,12 +124,8 @@ Build with OpenMP on Linux (`make OPENMP=1`).
 disk** as optimization runs (unbuffered); each step includes `subset`, `weights`,
 `cost`, `best_cost`, `iter_since_best`, and related SA fields.
 
-Use **`--bayer=2`** (2×2 tile, weight granularity 4) for traces and quick tests —
-matches the current Atari ST C2P path:
-
 ```bash
-./palette-opt -p TEMPERAT.PAL -o temperat.w16 --bayer=2 \
-  --sa-iter=25000 --sa-seed=1 \
+./palette-opt -p TEMPERAT.PAL -o temperat.w16 --sa-seed=1 \
   --export-json temperat_trace.json --export-every=25
 ```
 

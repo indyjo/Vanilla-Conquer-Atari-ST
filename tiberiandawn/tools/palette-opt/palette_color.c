@@ -43,8 +43,9 @@ void palette_build_opt_colors_params(const unsigned char *pal768, float colors[7
 	if (params)
 		cfg = *params;
 
+	/* VGA DAC is 6-bit; mask junk in bits 6–7 (common in Westwood .PAL dumps). */
 	for (i = 0; i < 768; i++)
-		colors[i] = powf((float)pal768[i] / 63.0f, cfg.gamma);
+		colors[i] = powf((float)(pal768[i] & 63) / 63.0f, cfg.gamma);
 
 	if (!cfg.use_yuv)
 		return;

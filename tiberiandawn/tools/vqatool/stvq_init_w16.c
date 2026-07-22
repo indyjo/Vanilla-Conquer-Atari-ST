@@ -29,7 +29,7 @@ static int run_palette_opt(const char *palette_opt, const char *pal, const char 
 	}
 	if (pid == 0) {
 		execl(palette_opt, palette_opt, "-p", pal, "-o", w16, "--hist", hist, "--sa-iter=0",
-		    "--bayer=2", (char *)NULL);
+		    "--fix=0,0", (char *)NULL);
 		fprintf(stderr, "error: execl %s: %s\n", palette_opt, strerror(errno));
 		_exit(127);
 	}

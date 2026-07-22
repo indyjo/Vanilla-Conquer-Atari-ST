@@ -263,6 +263,8 @@ static int load_cpl0(DecodeCtx *d, uint32_t size)
 		return -1;
 	if (pad > want && vqa_reader_skip(&d->r, pad - want) != 0)
 		return -1;
+	/* Match game Set_Palette path: guns are 6-bit (& 63). */
+	vqa_sanitize_vga6_palette(d->pal);
 	d->have_pal = 1;
 	return 0;
 }

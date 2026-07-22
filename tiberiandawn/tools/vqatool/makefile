@@ -24,7 +24,8 @@ C_SRCS = \
 	stvq_play.c \
 	stvq_preview.c \
 	stvq_init_w16.c \
-	stvq_refine_w16.c
+	stvq_refine_w16.c \
+	stvq_fix_w16.c
 
 OBJS = $(C_SRCS:.c=.o) palette_color.o lcw.o vqa_lcw_bridge.o unvqbuff.o vqa_unvq_bridge.o
 

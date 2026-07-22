@@ -107,10 +107,11 @@ static int vqa_palette_from_cplz(VqaReader *r, uint32_t comp_size, unsigned char
 		return -1;
 	}
 	memset(out768, 0, VQA_PALETTE_BYTES);
-		if (vqa_lcw_uncompress(work + (sizeof(work) - padded), out768, VQA_PALETTE_BYTES) <= 0) {
+	if (vqa_lcw_uncompress(work + (sizeof(work) - padded), out768, VQA_PALETTE_BYTES) <= 0) {
 		fprintf(stderr, "error: LCW palette decompress failed\n");
 		return -1;
 	}
+	vqa_sanitize_vga6_palette(out768);
 	return 0;
 }
 
@@ -141,6 +142,7 @@ static int vqa_handle_palette_chunk(
 				return -1;
 			}
 		}
+		vqa_sanitize_vga6_palette(pal);
 	}
 
 	hash = vqa_hash_fnv1a(pal, VQA_PALETTE_BYTES);

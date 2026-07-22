@@ -131,7 +131,6 @@ static int decode_stvd(StvqPlayer *p, uint32_t size, uint8_t *out_tiles)
 	const unsigned char *rp;
 	unsigned col, rem;
 	uint8_t *prev;
-	unsigned top;
 
 	if (!body)
 		return -1;
@@ -145,7 +144,6 @@ static int decode_stvd(StvqPlayer *p, uint32_t size, uint8_t *out_tiles)
 	}
 
 	prev = (p->frame_index >= 2) ? p->tiles[1] : NULL;
-	top = p->tiles_y <= 16u ? 15u : (p->tiles_y - 1u);
 	rp = body;
 	rem = size;
 
@@ -164,9 +162,11 @@ static int decode_stvd(StvqPlayer *p, uint32_t size, uint8_t *out_tiles)
 		rem -= 4;
 
 		for (row = 0; row < p->tiles_y; row++) {
-			unsigned bit = top - row;
+			uint32_t sum = mask + mask;
+			int is_skip = (sum < mask);
 			uint8_t *dst = col_out + row * 32u;
-			if (mask & (1u << bit)) {
+			mask = sum;
+			if (is_skip) {
 				if (!col_prev) {
 					free(body);
 					return -1;

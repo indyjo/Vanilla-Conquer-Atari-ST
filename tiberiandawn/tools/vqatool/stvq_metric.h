@@ -1,5 +1,5 @@
 /*
- * stvq_metric.h - Weighted DCT tile metric (YUV → DCT → C coeffs).
+ * stvq_metric.h - Weighted DCT tile metric (YUV → DCT → feature L2).
  */
 #ifndef STVQ_METRIC_H
 #define STVQ_METRIC_H
@@ -13,32 +13,37 @@ extern "C" {
 /* Fixed-point scale for unsigned tile error: round(sum_sq * SCALE). */
 #define STVQ_METRIC_SCALE 65536.0f
 
+/* Feature vector capacity: Y + U + V zig-zag packs. */
 #define STVQ_METRIC_MAX_COEFFS 64
 #define STVQ_DEFAULT_DCT_ALPHA 0.2f
-#define STVQ_DEFAULT_DCT_COEFFS 15
+#define STVQ_DEFAULT_DCT_COEFFS 15        /* Y zig-zag count */
+#define STVQ_DEFAULT_DCT_CHROMA_COEFFS 7  /* U and V each (≈ half of Y) */
 #define STVQ_DEFAULT_GAMMA 0.77f
-#define STVQ_DEFAULT_Y_SCALE 2.0f
 
 /*
  * DCT coeff weight: w(u,v) = 1 / (1 + alpha*(u^2+v^2)).
  * Features store sqrt(w)*coeff so L2 matches weighted SSE.
+ * Layout: [Y₀..Y_{ny-1} | U₀..U_{nu-1} | V₀..V_{nv-1}], ny+2*nu ≤ MAX.
+ * Fewer chroma coeffs underweight U/V vs Y (chroma is smoother;
+ * U/V magnitudes are already smaller than Y).
  */
-void stvq_metric_set_dct(float alpha, unsigned ncoeffs);
+void stvq_metric_set_dct(float alpha, unsigned y_coeffs, unsigned chroma_coeffs);
 float stvq_metric_dct_alpha(void);
-unsigned stvq_metric_dct_coeffs(void);
+unsigned stvq_metric_dct_coeffs(void);        /* Y count */
+unsigned stvq_metric_dct_chroma_coeffs(void); /* U and V each */
+unsigned stvq_metric_feat_len(void);          /* ny + 2*nu */
 
-/* Palette-opt YUV transform params (applied on next set_palette). */
-void stvq_metric_set_color(float gamma, float y_scale);
+/* Palette-opt YUV gamma (applied on next set_palette). Y scale is fixed at 1. */
+void stvq_metric_set_gamma(float gamma);
 float stvq_metric_gamma(void);
-float stvq_metric_y_scale(void);
 
 /*
  * Build VGA YUV table + pen→VGA map from full VGA6 palette + W16 subset.
- * Uses current gamma / y_scale (defaults 0.77 / 2.0).
+ * Uses current gamma (default 0.77); Y unscaled.
  */
 void stvq_metric_set_palette_vga6(const uint8_t pal768[768], const uint8_t subset[16]);
 
-/* Y-plane zig-zag DCT features (ncoeffs). idx[64] = VGA or mapped pen colors. */
+/* YUV zig-zag DCT features (feat_len). idx[64] = VGA or mapped pen colors. */
 void stvq_metric_feat_from_indices(const uint8_t idx[64], float *out_feat);
 void stvq_metric_feat_from_pens(const uint8_t pens[64], float *out_feat);
 void stvq_metric_feat_from_tile32(const uint8_t tile32[32], float *out_feat);

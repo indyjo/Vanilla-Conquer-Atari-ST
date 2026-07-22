@@ -104,9 +104,9 @@ int stvq_build_stpl(const StvqWeightSet *w16, const unsigned char pal[768], uint
 	int i;
 	for (i = 0; i < 16; i++) {
 		unsigned idx = w16->subset[i];
-		uint8_t r = pal[idx * 3 + 0];
-		uint8_t g = pal[idx * 3 + 1];
-		uint8_t b = pal[idx * 3 + 2];
+		uint8_t r = (uint8_t)(pal[idx * 3 + 0] & 63u);
+		uint8_t g = (uint8_t)(pal[idx * 3 + 1] & 63u);
+		uint8_t b = (uint8_t)(pal[idx * 3 + 2] & 63u);
 		stpl_be[i] = stvq_vga6_to_ste(r, g, b);
 	}
 	return 0;
@@ -117,9 +117,9 @@ static void fill_pen_vga6(const StvqWeightSet *w16, const unsigned char pal[768]
 	int i;
 	for (i = 0; i < 16; i++) {
 		unsigned idx = w16->subset[i];
-		out[i * 3 + 0] = pal[idx * 3 + 0];
-		out[i * 3 + 1] = pal[idx * 3 + 1];
-		out[i * 3 + 2] = pal[idx * 3 + 2];
+		out[i * 3 + 0] = (uint8_t)(pal[idx * 3 + 0] & 63u);
+		out[i * 3 + 1] = (uint8_t)(pal[idx * 3 + 1] & 63u);
+		out[i * 3 + 2] = (uint8_t)(pal[idx * 3 + 2] & 63u);
 	}
 }
 

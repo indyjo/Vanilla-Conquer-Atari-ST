@@ -61,7 +61,7 @@ Reuse of Westwood IDs only where payload matches (`FORM`, `NAME`, `SND0` = raw P
 | 22 | u16 | reserved |
 | 24 | u32 | reserved |
 
-Tile grid: `tiles_x = ceil(width/8)`, `tiles_y = ceil(height/8)`. Encoded coverage may extend past the visible edge; pixels beyond `width`×`height` get no hist/codebook weight. Player crops to `width`×`height`; padding is pen 0.
+Tile grid: `tiles_x = ceil(width/8)`, `tiles_y = ceil(height/8)`. Encoded coverage may extend past the visible edge; pad samples clamp to the nearest covered pixel (edge extend). Player crops to `width`×`height`.
 
 ## `STPL`
 
@@ -113,17 +113,24 @@ for col in 0 .. tiles_x-1:
   uint16 index[k]       // k = number of non-skip tiles in this column
 ```
 
-**Skip mask:** bit 15 = top tile row, then bits 14, 13, … downward for `tiles_y` rows.  
-For `tiles_y > 16`, use the same rule with the topmost needed bit of the `uint32` (e.g. bit 24 when `tiles_y = 25`).
+**Skip mask:** bit 31 = top tile row (row 0), bit 30 = row 1, … downward.
+Unused low bits are 0 (`tiles_y` ≤ 32). Decode walks MSB→LSB with
+`add.l mask,mask` / branch on extend (or carry): set = skip (unchanged vs
+frame **N−2**), clear = draw next `uint16` codebook index.
 
-**Skip semantics:** set bit = unchanged vs frame **N−2** (ping-pong). Clear = draw `codebook[index]`.  
+Example (`tiles_y = 20`, skip rows 0,1,18,19): `mask = 0xC0000003`.
+
 Frames 0–1 are full draws (encoder). Later full draws are encoder policy.
 
 **Index stream:** only for clear bits, top → bottom within the column. Each `uint16` is a codebook entry index.
 
+**Alignment:** `size` is always even (`4*tiles_x + 2*indices`). Nested IFF padding keeps the payload word-aligned, so the player may load mask/indices with native big-endian `u32`/`u16` reads.
+
 ## `SND0`
 
-Raw PCM. Sample count = `size` (8-bit mono) or `size/(channels×bytes_per_sample)` generally. Length may vary per frame.
+Raw signed 8-bit mono PCM. `size` is the sample count and **must be even**
+(word-aligned payload; encoder rounds odd frame lengths up by one sample).
+Length may still vary per frame. Even `SND0` also keeps subsequent IFF chunks word-aligned.
 
 **Audio is the reference clock.** Video may jitter vs 50 Hz VBL; short lead/lag vs audio is normal. Do not require a fixed sample count per frame.
 

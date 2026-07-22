@@ -25,7 +25,9 @@ void stvq_unpack_tile_32(const uint8_t tile32[32], uint8_t chunky8x8[64]);
 
 /*
  * Rasterize one frame to planar 16-pen tiles (W16 dither) and/or raw VGA src tiles.
- * tiles_x/y = ceil dims; visible width/height; pad 0 outside visible.
+ * tiles_x/y = ceil dims; visible width/height.
+ * Pixels past the visible edge clamp to the nearest covered pixel (no black pad).
+ * Bayer phase still uses the absolute tile (x,y).
  * Layout: column-major (col major, row within col).
  * out_tiles: tiles_x * tiles_y * 32 (may be NULL).
  * out_src:   tiles_x * tiles_y * 64 VGA indices (may be NULL).

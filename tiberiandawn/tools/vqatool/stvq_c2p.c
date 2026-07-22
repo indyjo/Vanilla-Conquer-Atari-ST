@@ -94,6 +94,8 @@ int stvq_frame_to_tiles(const StvqC2P *c2p, const uint8_t *vga_pixels, unsigned 
     unsigned tiles_x, unsigned tiles_y, uint8_t *out_tiles, uint8_t *out_src)
 {
 	unsigned col, row;
+	if (!width || !height)
+		return -1;
 	for (col = 0; col < tiles_x; col++) {
 		for (row = 0; row < tiles_y; row++) {
 			uint8_t chunky_pen[64];
@@ -104,13 +106,13 @@ int stvq_frame_to_tiles(const StvqC2P *c2p, const uint8_t *vga_pixels, unsigned 
 				for (lx = 0; lx < 8; lx++) {
 					unsigned x = col * 8u + (unsigned)lx;
 					unsigned y = row * 8u + (unsigned)ly;
-					uint8_t src = 0;
+					/* Extend edge color into pad (avoid black fringe in half tiles). */
+					unsigned sx = x < width ? x : width - 1u;
+					unsigned sy = y < height ? y : height - 1u;
+					uint8_t src = vga_pixels[sy * width + sx];
 					uint8_t pen = 0;
-					if (x < width && y < height) {
-						src = vga_pixels[y * width + x];
-						if (c2p)
-							pen = stvq_c2p_map(c2p, (int)x, (int)y, src);
-					}
+					if (c2p)
+						pen = stvq_c2p_map(c2p, (int)x, (int)y, src);
 					chunky_src[ly * 8 + lx] = src;
 					chunky_pen[ly * 8 + lx] = pen;
 				}

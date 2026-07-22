@@ -57,3 +57,12 @@ void vqa_format_flags(uint16_t flags, char *buf, unsigned buf_len)
 		snprintf(buf, buf_len, "(none)");
 	}
 }
+
+void vqa_sanitize_vga6_palette(unsigned char pal[VQA_PALETTE_BYTES])
+{
+	unsigned i;
+	if (!pal)
+		return;
+	for (i = 0; i < VQA_PALETTE_BYTES; i++)
+		pal[i] = (unsigned char)(pal[i] & 63u);
+}

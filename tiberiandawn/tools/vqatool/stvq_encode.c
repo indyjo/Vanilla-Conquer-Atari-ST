@@ -125,7 +125,6 @@ static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t
 		const uint8_t *n2_col = recon_n2 ? recon_n2 + (size_t)col * tiles_y * 32u : NULL;
 		const uint8_t *n1_col = recon_n1 ? recon_n1 + (size_t)col * tiles_y * 32u : NULL;
 		uint8_t *out_col = out_recon + (size_t)col * tiles_y * 32u;
-		unsigned top = tiles_y <= 16u ? 15u : (tiles_y - 1u);
 		uint32_t mask = 0;
 
 		memset(skip, 0, tiles_y);
@@ -137,7 +136,8 @@ static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t
 			const uint8_t *n1 = n1_col ? n1_col + row * 32u : NULL;
 			if (tile_can_skip(src_vga, n2, n1, cb_nearest[ti], cb_dist[ti], &idx)) {
 				skip[row] = 1;
-				mask |= (1u << (top - row));
+				/* bit 31 = row 0, bit 30 = row 1, … (MSB-first for add/addx walk) */
+				mask |= (1u << (31u - row));
 			} else {
 				idxs[row] = (uint16_t)idx;
 			}
@@ -188,6 +188,9 @@ static void resample_frame_audio(const int16_t *pcm16, size_t pcm_n, unsigned sr
 	*out_n = 0;
 	if (!n)
 		return;
+	/* Even sample count keeps SND0 word-aligned (IFF + native BE16 STVD). */
+	if (n & 1u)
+		n++;
 	buf = (unsigned char *)malloc(n);
 	if (!buf)
 		return;
@@ -218,6 +221,9 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	StvqC2P *c2ps = NULL;
 	uint8_t **frame_tiles = NULL;
 	uint8_t **frame_src = NULL;
+	int *frame_seg = NULL;
+	const uint8_t **seg_pal768 = NULL;
+	const uint8_t **seg_subset = NULL;
 	uint8_t *recon[2] = {NULL, NULL};
 	uint8_t *recon_work = NULL;
 	unsigned *cb_nearest = NULL;
@@ -248,10 +254,10 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	{
 		float alpha = opts->dct_alpha >= 0.0f ? opts->dct_alpha : STVQ_DEFAULT_DCT_ALPHA;
 		unsigned nc = opts->dct_coeffs ? opts->dct_coeffs : STVQ_DEFAULT_DCT_COEFFS;
+		unsigned nch = opts->have_dct_chroma ? opts->dct_chroma_coeffs : STVQ_DEFAULT_DCT_CHROMA_COEFFS;
 		float gamma = opts->gamma >= 0.0f ? opts->gamma : STVQ_DEFAULT_GAMMA;
-		float ysc = opts->y_scale >= 0.0f ? opts->y_scale : STVQ_DEFAULT_Y_SCALE;
-		stvq_metric_set_dct(alpha, nc);
-		stvq_metric_set_color(gamma, ysc);
+		stvq_metric_set_dct(alpha, nc, nch);
+		stvq_metric_set_gamma(gamma);
 	}
 
 	fprintf(stderr, "decoding %s...\n", opts->vqa_path);
@@ -263,12 +269,17 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	tiles_x = stvq_tiles_x(dec.width);
 	tiles_y = stvq_tiles_y(dec.height);
 	tiles_n = tiles_x * tiles_y;
+	if (tiles_y > 32u) {
+		fprintf(stderr, "error: tiles_y=%u exceeds STVD mask width (32)\n", tiles_y);
+		goto done;
+	}
 
 	fprintf(stderr, "frames=%u size=%ux%u tiles=%ux%u segments=%u cb=%u R=%u shortlist=%u*%u random=%u%% "
-	                "lookahead=%u gamma=%.3g y-scale=%.3g dct-alpha=%.3g dct-coeffs=%u\n",
+	                "lookahead=%u gamma=%.3g dct-alpha=%.3g dct-coeffs=%u+%u+%u (feat=%u)\n",
 	    dec.frame_count, dec.width, dec.height, tiles_x, tiles_y, dec.segment_count, opts->cb_size,
 	    opts->cb_per_frame, 2u, opts->cb_per_frame, opts->cb_random_pct, opts->cb_lookahead,
-	    stvq_metric_gamma(), stvq_metric_y_scale(), stvq_metric_dct_alpha(), stvq_metric_dct_coeffs());
+	    stvq_metric_gamma(), stvq_metric_dct_alpha(), stvq_metric_dct_coeffs(),
+	    stvq_metric_dct_chroma_coeffs(), stvq_metric_dct_chroma_coeffs(), stvq_metric_feat_len());
 
 
 	if (opts->dry_run) {
@@ -292,14 +303,21 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	c2ps = (StvqC2P *)calloc(dec.segment_count, sizeof(*c2ps));
 	frame_tiles = (uint8_t **)calloc(dec.frame_count, sizeof(uint8_t *));
 	frame_src = (uint8_t **)calloc(dec.frame_count, sizeof(uint8_t *));
-	if (!segpal || !c2ps || !frame_tiles || !frame_src)
+	frame_seg = (int *)calloc(dec.frame_count, sizeof(int));
+	seg_pal768 = (const uint8_t **)calloc(dec.segment_count, sizeof(*seg_pal768));
+	seg_subset = (const uint8_t **)calloc(dec.segment_count, sizeof(*seg_subset));
+	if (!segpal || !c2ps || !frame_tiles || !frame_src || !frame_seg || !seg_pal768 || !seg_subset)
 		goto done;
 
 	for (s = 0; s < dec.segment_count; s++) {
 		if (stvq_load_segment_w16(opts->vqa_path, (int)s, &dec.segments[s], &segpal[s]) != 0)
 			goto done;
 		stvq_c2p_init(&c2ps[s], &segpal[s].w16);
+		seg_pal768[s] = dec.segments[s].pal;
+		seg_subset[s] = segpal[s].w16.subset;
 	}
+	for (f = 0; f < dec.frame_count; f++)
+		frame_seg[f] = dec.frames[f].segment;
 
 	fprintf(stderr, "rasterizing tiles...\n");
 	{
@@ -390,11 +408,18 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		int emit_stpl = 0;
 		uint64_t frame_t0 = enc_ns_now(), t0, t1;
 
+		/* New W16/palette → rebuild CB features; prior tiles become prime eviction. */
 		stvq_metric_set_palette_vga6(dec.segments[seg].pal, segpal[seg].w16.subset);
 		stvq_codebook_recompute_feats(&cb);
 
-		if (f > 0 && dec.frames[f].segment != dec.frames[f - 1].segment)
+		if (f > 0 && dec.frames[f].segment != dec.frames[f - 1].segment) {
 			emit_stpl = 1;
+			stvq_codebook_on_palette_change(&cb);
+			/* Pre-cut recon uses the old STPL; do not skip or stay-as-is. */
+			force_full = 1;
+			recon_n2 = NULL;
+			recon_n1 = NULL;
+		}
 
 		if (stvq_write_chunk_begin(&w, STVQ_CHUNK_STFR, &fr_pos) != 0)
 			goto done;
@@ -410,8 +435,8 @@ int stvq_encode(const StvqEncodeOpts *opts)
 				goto done;
 			nrep = stvq_codebook_select_replaces(&cb, (const uint8_t *const *)frame_tiles,
 			    (const uint8_t *const *)frame_src, dec.frame_count, f, tiles_n, opts->cb_per_frame,
-			    opts->cb_random_pct, opts->cb_lookahead, recon_n2, recon_n1, reps, &sel_prof,
-			    cb_nearest, cb_dist);
+			    opts->cb_random_pct, opts->cb_lookahead, recon_n2, recon_n1, frame_seg, seg_pal768,
+			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist);
 			if (write_stcr_chunk(&w, reps, nrep) != 0) {
 				free(reps);
 				goto done;
@@ -538,6 +563,9 @@ done:
 	free(recon_work);
 	free(cb_nearest);
 	free(cb_dist);
+	free(frame_seg);
+	free((void *)seg_pal768);
+	free((void *)seg_subset);
 	free(c2ps);
 	free(segpal);
 	vqa_decode_free(&dec);

@@ -1,11 +1,12 @@
 /*
- * stvq_refine_w16.c - Enumerate name.<N>.w16 and continue-refine with palette-opt.
+ * stvq_refine_w16.c - Refine name.<N>.w16 via palette-opt (one invoke per segment).
+ * Creates missing .pal/.hist; uses -c only when .w16 already exists.
  */
 #include "stvq_refine_w16.h"
 
 #include "stvq_palette.h"
+#include "vqa_decode.h"
 
-#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,103 +16,11 @@
 #include <unistd.h>
 
 #define MAX_EXTRA_ARGS 64
-#define MAX_SEGMENTS 256
-
-static void stem_from_vqa(const char *vqa_path, char *stem, size_t n)
-{
-	const char *base = strrchr(vqa_path, '/');
-	char *dot;
-	base = base ? base + 1 : vqa_path;
-	snprintf(stem, n, "%s", base);
-	dot = strrchr(stem, '.');
-	if (dot)
-		*dot = '\0';
-}
-
-static void dir_from_vqa(const char *vqa_path, char *dir, size_t n)
-{
-	const char *slash = strrchr(vqa_path, '/');
-	if (!slash) {
-		snprintf(dir, n, ".");
-		return;
-	}
-	{
-		size_t len = (size_t)(slash - vqa_path);
-		if (len >= n)
-			len = n - 1;
-		memcpy(dir, vqa_path, len);
-		dir[len] = '\0';
-	}
-}
 
 static int file_exists(const char *path)
 {
 	struct stat st;
 	return stat(path, &st) == 0 && S_ISREG(st.st_mode);
-}
-
-/* Parse "stem.N.w16" → N, or -1 if not a match. */
-static int parse_w16_seg(const char *name, const char *stem)
-{
-	size_t slen = strlen(stem);
-	const char *p;
-	char *end = NULL;
-	unsigned long v;
-	if (strncmp(name, stem, slen) != 0 || name[slen] != '.')
-		return -1;
-	p = name + slen + 1;
-	if (*p < '0' || *p > '9')
-		return -1;
-	v = strtoul(p, &end, 10);
-	if (!end || end == p || strcmp(end, ".w16") != 0 || v > 0x7ffffffful)
-		return -1;
-	return (int)v;
-}
-
-static int cmp_int(const void *a, const void *b)
-{
-	int ia = *(const int *)a;
-	int ib = *(const int *)b;
-	return (ia > ib) - (ia < ib);
-}
-
-static int collect_segments(const char *vqa_path, int *segs, int max_segs)
-{
-	char dir[512], stem[256];
-	DIR *dp;
-	struct dirent *de;
-	int n = 0;
-
-	dir_from_vqa(vqa_path, dir, sizeof(dir));
-	stem_from_vqa(vqa_path, stem, sizeof(stem));
-	dp = opendir(dir);
-	if (!dp) {
-		fprintf(stderr, "error: %s: %s\n", dir, strerror(errno));
-		return -1;
-	}
-	while ((de = readdir(dp)) != NULL) {
-		int seg = parse_w16_seg(de->d_name, stem);
-		int i, dup = 0;
-		if (seg < 0)
-			continue;
-		for (i = 0; i < n; i++) {
-			if (segs[i] == seg) {
-				dup = 1;
-				break;
-			}
-		}
-		if (dup)
-			continue;
-		if (n >= max_segs) {
-			fprintf(stderr, "error: too many W16 sidecars (>%d)\n", max_segs);
-			closedir(dp);
-			return -1;
-		}
-		segs[n++] = seg;
-	}
-	closedir(dp);
-	qsort(segs, (size_t)n, sizeof(int), cmp_int);
-	return n;
 }
 
 /* Split comma-separated list into argv pieces; mutates buf. Returns count. */
@@ -132,8 +41,8 @@ static int split_comma_args(char *buf, char **argv, int max_argv)
 	return n;
 }
 
-static int run_refine_one(const StvqRefineW16Opts *opts, const char *pal, const char *hist, const char *w16,
-    char **extra, int n_extra)
+static int run_palette_opt(const StvqRefineW16Opts *opts, int continue_mode, const char *pal, const char *hist,
+    const char *w16, char **extra, int n_extra)
 {
 	char *argv[16 + MAX_EXTRA_ARGS];
 	int argc = 0;
@@ -142,13 +51,15 @@ static int run_refine_one(const StvqRefineW16Opts *opts, const char *pal, const 
 	int status;
 
 	argv[argc++] = (char *)opts->palette_opt;
-	argv[argc++] = "-c";
+	if (continue_mode)
+		argv[argc++] = "-c";
 	argv[argc++] = "-p";
 	argv[argc++] = (char *)pal;
 	argv[argc++] = "-o";
 	argv[argc++] = (char *)w16;
 	argv[argc++] = "--hist";
 	argv[argc++] = (char *)hist;
+	argv[argc++] = "--fix=0,0";
 	if (opts->mode == STVQ_REFINE_NORMAL)
 		argv[argc++] = "--sa-t0=1e-4";
 	else if (opts->mode == STVQ_REFINE_QUICK)
@@ -185,14 +96,37 @@ static int run_refine_one(const StvqRefineW16Opts *opts, const char *pal, const 
 	return 0;
 }
 
+static int write_seg_pal_hist(const VqaDecode *dec, int seg, const char *pal_path, const char *hist_path)
+{
+	const VqaPalSegment *seginfo = &dec->segments[seg];
+	uint64_t counts[256];
+	unsigned f;
+
+	memset(counts, 0, sizeof(counts));
+	for (f = (unsigned)seginfo->start_frame; f <= (unsigned)seginfo->end_frame && f < dec->frame_count; f++) {
+		const unsigned char *px = dec->frames[f].pixels;
+		size_t n = (size_t)dec->width * dec->height;
+		size_t i;
+		for (i = 0; i < n; i++)
+			counts[px[i]]++;
+	}
+	if (stvq_write_pal(pal_path, seginfo->pal) != 0)
+		return -1;
+	if (stvq_write_hist(hist_path, counts) != 0)
+		return -1;
+	return 0;
+}
+
 int stvq_refine_w16(const StvqRefineW16Opts *opts)
 {
-	int segs[MAX_SEGMENTS];
-	int nsegs, s, n_extra = 0;
+	VqaDecode dec;
 	char *extra_buf = NULL;
 	char *extra[MAX_EXTRA_ARGS];
+	int n_extra = 0;
+	unsigned s;
 	int rc = -1;
 
+	memset(&dec, 0, sizeof(dec));
 	if (!opts || !opts->vqa_path || !opts->palette_opt || !opts->palette_opt[0]) {
 		fprintf(stderr, "error: refine-w16 requires VQA path and --palette-opt\n");
 		return -1;
@@ -203,49 +137,46 @@ int stvq_refine_w16(const StvqRefineW16Opts *opts)
 		if (!extra_buf)
 			return -1;
 		n_extra = split_comma_args(extra_buf, extra, MAX_EXTRA_ARGS);
-		if (n_extra >= MAX_EXTRA_ARGS && strchr(opts->palette_opt_args, ',')) {
-			/* hit cap with more commas possible — warn */
+		if (n_extra >= MAX_EXTRA_ARGS && strchr(opts->palette_opt_args, ','))
 			fprintf(stderr, "warning: --palette-opt-args truncated at %d tokens\n", MAX_EXTRA_ARGS);
-		}
 	}
 
-	nsegs = collect_segments(opts->vqa_path, segs, MAX_SEGMENTS);
-	if (nsegs < 0)
-		goto done;
-	if (nsegs == 0) {
-		char stem[256];
-		stem_from_vqa(opts->vqa_path, stem, sizeof(stem));
-		fprintf(stderr, "error: no %s.<N>.w16 sidecars found next to %s\n", stem, opts->vqa_path);
-		goto done;
+	fprintf(stderr, "decoding %s...\n", opts->vqa_path);
+	if (vqa_decode_file(opts->vqa_path, &dec) != 0) {
+		fprintf(stderr, "error: VQA decode failed\n");
+		free(extra_buf);
+		return -1;
 	}
 
-	fprintf(stderr, "refine-w16: %d segment(s), mode=%s\n", nsegs,
-	    opts->mode == STVQ_REFINE_QUICK     ? "quick"
+	fprintf(stderr, "refine-w16: %u segment(s), mode=%s%s\n", dec.segment_count,
+	    opts->mode == STVQ_REFINE_QUICK         ? "quick"
 	        : opts->mode == STVQ_REFINE_THOROUGH ? "thorough"
-	                                             : "normal");
+	                                             : "normal",
+	    opts->dry_run ? " (dry-run)" : "");
 
-	for (s = 0; s < nsegs; s++) {
+	for (s = 0; s < dec.segment_count; s++) {
 		char pal[768], hist[768], w16[768];
-		stvq_sidecar_paths(opts->vqa_path, segs[s], pal, hist, w16, sizeof(pal));
-		if (!file_exists(w16)) {
-			fprintf(stderr, "error: missing %s\n", w16);
-			goto done;
+		int cont;
+
+		stvq_sidecar_paths(opts->vqa_path, (int)s, pal, hist, w16, sizeof(pal));
+		cont = file_exists(w16);
+
+		if (opts->dry_run) {
+			fprintf(stderr, "  seg %u frames %d..%d → %s%s\n", s, dec.segments[s].start_frame,
+			    dec.segments[s].end_frame, w16, cont ? " (-c)" : " (new)");
+		} else {
+			if (write_seg_pal_hist(&dec, (int)s, pal, hist) != 0)
+				goto done;
 		}
-		if (!file_exists(pal)) {
-			fprintf(stderr, "error: missing %s (required for refine)\n", pal);
-			goto done;
-		}
-		if (!file_exists(hist)) {
-			fprintf(stderr, "error: missing %s (required for refine)\n", hist);
-			goto done;
-		}
-		fprintf(stderr, "  refining %s...\n", w16);
-		if (run_refine_one(opts, pal, hist, w16, extra, n_extra) != 0)
+
+		fprintf(stderr, "  %s %s...\n", cont ? "refining" : "creating", w16);
+		if (run_palette_opt(opts, cont, pal, hist, w16, extra, n_extra) != 0)
 			goto done;
 	}
 
 	rc = 0;
 done:
 	free(extra_buf);
+	vqa_decode_free(&dec);
 	return rc;
 }

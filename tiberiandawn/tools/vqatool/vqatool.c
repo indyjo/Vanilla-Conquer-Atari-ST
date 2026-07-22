@@ -2,6 +2,7 @@
  * vqatool.c - Host utility for Westwood VQA inspection and STVQ encode/preview.
  */
 #include "stvq_encode.h"
+#include "stvq_fix_w16.h"
 #include "stvq_format.h"
 #include "stvq_init_w16.h"
 #include "stvq_metric.h"
@@ -28,13 +29,16 @@ static void usage(const char *argv0)
 	    "  init-w16 <file.vqa>     write .pal/.hist; create missing .w16 via palette-opt\n"
 	    "    --palette-opt PATH    palette-opt binary (required)\n"
 	    "    --dry-run             print segment/sidecar plan only\n"
-	    "  refine-w16 <file.vqa>   continue-refine existing .w16 with palette-opt (-c)\n"
+	    "  refine-w16 <file.vqa>   refine .w16 with palette-opt (-c if exists; else create)\n"
 	    "    --palette-opt PATH    palette-opt binary (required)\n"
 	    "    --normal              SA with --sa-t0=1e-4 (default)\n"
 	    "    --quick               SA with --sa-t0=1.5e-5\n"
 	    "    --thorough            SA with palette-opt defaults\n"
 	    "    --palette-opt-args=a,b  extra palette-opt flags (comma-separated)\n"
 	    "    --dry-run             print palette-opt commands only\n"
+	    "  fix-w16 <file.vqa>      run w16fix on each name.<N>.w16 (in place)\n"
+	    "    --w16fix PATH       w16fix binary (required)\n"
+	    "    --dry-run             print w16fix commands only\n"
 	    "\n"
 	    "STVQ encode / preview:\n"
 	    "  encode <file.vqa>       encode to FORM 'STVQ' (.stv); requires .w16 sidecars\n"
@@ -43,9 +47,9 @@ static void usage(const char *argv0)
 	    "    --cb-random-pct N     %% of STCR slots accepted at random (default %u)\n"
 	    "    --cb-lookahead N      frames ahead for eviction/utility (default %u)\n"
 	    "    --gamma F             YUV gamma before DCT (default %.2g)\n"
-	    "    --y-scale F           Y channel scale before DCT (default %.2g)\n"
 	    "    --dct-alpha F         DCT weight alpha in 1/(1+a*(u^2+v^2)) (default %.2g)\n"
-	    "    --dct-coeffs N        Y zig-zag DCT coeffs kept (default %u, max %u)\n"
+	    "    --dct-coeffs N        Y zig-zag DCT coeffs (default %u)\n"
+	    "    --dct-chroma-coeffs N U and V zig-zag coeffs each (default %u; 0=Y-only)\n"
 	    "    -o, --output FILE     output .stv path\n"
 	    "    --dry-run             print segment/sidecar plan only\n"
 	    "  preview <file.stv>      decode STVQ and pipe A/V into ffmpeg\n"
@@ -62,10 +66,9 @@ static void usage(const char *argv0)
 	    (unsigned)STVQ_DEFAULT_CB_RANDOM_PCT,
 	    (unsigned)STVQ_DEFAULT_CB_LOOKAHEAD,
 	    (double)STVQ_DEFAULT_GAMMA,
-	    (double)STVQ_DEFAULT_Y_SCALE,
 	    (double)STVQ_DEFAULT_DCT_ALPHA,
 	    (unsigned)STVQ_DEFAULT_DCT_COEFFS,
-	    (unsigned)STVQ_METRIC_MAX_COEFFS);
+	    (unsigned)STVQ_DEFAULT_DCT_CHROMA_COEFFS);
 }
 
 static int cmd_inspect(int argc, char **argv, int argi)
@@ -177,7 +180,6 @@ static int cmd_encode(int argc, char **argv, int argi)
 	opts.dct_alpha = -1.0f; /* → default */
 	opts.dct_coeffs = 0;    /* → default */
 	opts.gamma = -1.0f;     /* → default */
-	opts.y_scale = -1.0f;   /* → default */
 
 	for (; argi < argc; argi++) {
 		const char *a = argv[argi];
@@ -244,6 +246,22 @@ static int cmd_encode(int argc, char **argv, int argi)
 				fprintf(stderr, "error: bad --dct-coeffs (1..%u)\n", (unsigned)STVQ_METRIC_MAX_COEFFS);
 				return 1;
 			}
+		} else if (strcmp(a, "--dct-chroma-coeffs") == 0) {
+			if (++argi >= argc || parse_u(argv[argi], &opts.dct_chroma_coeffs) != 0 ||
+			    opts.dct_chroma_coeffs > STVQ_METRIC_MAX_COEFFS) {
+				fprintf(stderr, "error: bad --dct-chroma-coeffs (0..%u)\n",
+				    (unsigned)STVQ_METRIC_MAX_COEFFS);
+				return 1;
+			}
+			opts.have_dct_chroma = 1;
+		} else if (!strncmp(a, "--dct-chroma-coeffs=", 20)) {
+			if (parse_u(a + 20, &opts.dct_chroma_coeffs) != 0 ||
+			    opts.dct_chroma_coeffs > STVQ_METRIC_MAX_COEFFS) {
+				fprintf(stderr, "error: bad --dct-chroma-coeffs (0..%u)\n",
+				    (unsigned)STVQ_METRIC_MAX_COEFFS);
+				return 1;
+			}
+			opts.have_dct_chroma = 1;
 		} else if (strcmp(a, "--gamma") == 0) {
 			if (++argi >= argc || parse_f(argv[argi], &opts.gamma) != 0 || opts.gamma < 0.0f) {
 				fprintf(stderr, "error: bad --gamma\n");
@@ -252,16 +270,6 @@ static int cmd_encode(int argc, char **argv, int argi)
 		} else if (!strncmp(a, "--gamma=", 8)) {
 			if (parse_f(a + 8, &opts.gamma) != 0 || opts.gamma < 0.0f) {
 				fprintf(stderr, "error: bad --gamma\n");
-				return 1;
-			}
-		} else if (strcmp(a, "--y-scale") == 0) {
-			if (++argi >= argc || parse_f(argv[argi], &opts.y_scale) != 0 || opts.y_scale < 0.0f) {
-				fprintf(stderr, "error: bad --y-scale\n");
-				return 1;
-			}
-		} else if (!strncmp(a, "--y-scale=", 10)) {
-			if (parse_f(a + 10, &opts.y_scale) != 0 || opts.y_scale < 0.0f) {
-				fprintf(stderr, "error: bad --y-scale\n");
 				return 1;
 			}
 		} else if (strcmp(a, "-o") == 0 || strcmp(a, "--output") == 0) {
@@ -397,6 +405,46 @@ static int cmd_refine_w16(int argc, char **argv, int argi)
 	return stvq_refine_w16(&opts) != 0;
 }
 
+static int cmd_fix_w16(int argc, char **argv, int argi)
+{
+	StvqFixW16Opts opts;
+	memset(&opts, 0, sizeof(opts));
+
+	for (; argi < argc; argi++) {
+		const char *a = argv[argi];
+		if (strcmp(a, "--w16fix") == 0) {
+			if (++argi >= argc) {
+				fprintf(stderr, "error: --w16fix needs PATH\n");
+				return 1;
+			}
+			opts.w16fix = argv[argi];
+		} else if (!strncmp(a, "--w16fix=", 10)) {
+			opts.w16fix = a + 10;
+		} else if (strcmp(a, "--dry-run") == 0) {
+			opts.dry_run = 1;
+		} else if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
+			usage(argv[0]);
+			return 0;
+		} else if (a[0] == '-') {
+			fprintf(stderr, "error: unknown option: %s\n", a);
+			usage(argv[0]);
+			return 1;
+		} else {
+			break;
+		}
+	}
+	if (argi >= argc) {
+		fprintf(stderr, "error: fix-w16 requires a VQA file\n");
+		return 1;
+	}
+	if (!opts.w16fix) {
+		fprintf(stderr, "error: --w16fix PATH is required\n");
+		return 1;
+	}
+	opts.vqa_path = argv[argi];
+	return stvq_fix_w16(&opts) != 0;
+}
+
 static int cmd_not_implemented(const char *name)
 {
 	fprintf(stderr, "error: '%s' is not implemented yet\n", name);
@@ -424,6 +472,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "refine-w16") == 0) {
 		return cmd_refine_w16(argc, argv, 2);
+	}
+	if (strcmp(argv[1], "fix-w16") == 0) {
+		return cmd_fix_w16(argc, argv, 2);
 	}
 	if (strcmp(argv[1], "split") == 0) {
 		return cmd_not_implemented("split");

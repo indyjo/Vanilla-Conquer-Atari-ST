@@ -84,6 +84,9 @@ const char *vqa_chunk_name(uint32_t id);
 const char *vqa_color_mode_name(uint8_t mode);
 void vqa_format_flags(uint16_t flags, char *buf, unsigned buf_len);
 
+/* VGA DAC is 6-bit; Westwood pals often leave junk in bits 6–7. Mask in place. */
+void vqa_sanitize_vga6_palette(unsigned char pal[VQA_PALETTE_BYTES]);
+
 #ifdef __cplusplus
 }
 #endif

@@ -46,11 +46,6 @@ static int write_stpl_chunk(StvqWriter *w, const uint16_t stpl[16])
 	return stvq_write_chunk_raw(w, STVQ_CHUNK_STPL, buf, 32);
 }
 
-static int write_stcb_chunk(StvqWriter *w, const StvqCodebook *cb)
-{
-	return stvq_write_chunk_raw(w, STVQ_CHUNK_STCB, cb->tiles, cb->entries * 32u);
-}
-
 static int write_stcr_chunk(StvqWriter *w, const StvqReplace *reps, unsigned n)
 {
 	unsigned char *buf;
@@ -238,7 +233,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	const char *outp;
 	int rc = -1;
 	StvqSelectProf sel_prof;
-	uint64_t prof_ns_raster = 0, prof_ns_train = 0, prof_ns_stvd = 0, prof_ns_frame_misc = 0;
+	uint64_t prof_ns_raster = 0, prof_ns_stvd = 0, prof_ns_frame_misc = 0;
 	uint64_t prof_ns_frames = 0;
 
 	memset(&dec, 0, sizeof(dec));
@@ -335,20 +330,10 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		prof_ns_raster = enc_ns_now() - t0;
 	}
 
-	fprintf(stderr, "training codebook (%u)...\n", opts->cb_size);
+	fprintf(stderr, "allocating codebook (%u)...\n", opts->cb_size);
 	stvq_metric_set_palette_vga6(dec.segments[0].pal, segpal[0].w16.subset);
 	if (stvq_codebook_alloc(&cb, opts->cb_size) != 0)
 		goto done;
-	{
-		unsigned stride = 1;
-		uint64_t t0 = enc_ns_now();
-		if (dec.frame_count * tiles_n > 200000u)
-			stride = (dec.frame_count * tiles_n) / 100000u;
-		if (stvq_codebook_train(&cb, (const uint8_t *const *)frame_tiles, (const uint8_t *const *)frame_src,
-		        dec.frame_count, tiles_n, stride) != 0)
-			goto done;
-		prof_ns_train = enc_ns_now() - t0;
-	}
 
 	recon[0] = (uint8_t *)calloc(tiles_n, 32u);
 	recon[1] = (uint8_t *)calloc(tiles_n, 32u);
@@ -391,8 +376,6 @@ int stvq_encode(const StvqEncodeOpts *opts)
 
 	if (write_stpl_chunk(&w, segpal[0].stpl) != 0)
 		goto done;
-	if (write_stcb_chunk(&w, &cb) != 0)
-		goto done;
 
 	for (f = 0; f < dec.frame_count; f++) {
 		long fr_pos;
@@ -406,6 +389,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		const uint8_t *recon_n1 = (f >= 1) ? recon[0] : NULL;
 		int seg = dec.frames[f].segment;
 		int emit_stpl = 0;
+		unsigned max_rep;
 		uint64_t frame_t0 = enc_ns_now(), t0, t1;
 
 		/* New W16/palette → rebuild CB features; prior tiles become prime eviction. */
@@ -429,12 +413,16 @@ int stvq_encode(const StvqEncodeOpts *opts)
 				goto done;
 		}
 
-		if (opts->cb_per_frame) {
-			reps = (StvqReplace *)malloc(opts->cb_per_frame * sizeof(*reps));
+		max_rep = opts->cb_per_frame;
+		if (max_rep > cb.entries)
+			max_rep = cb.entries;
+
+		if (max_rep) {
+			reps = (StvqReplace *)malloc(max_rep * sizeof(*reps));
 			if (!reps)
 				goto done;
 			nrep = stvq_codebook_select_replaces(&cb, (const uint8_t *const *)frame_tiles,
-			    (const uint8_t *const *)frame_src, dec.frame_count, f, tiles_n, opts->cb_per_frame,
+			    (const uint8_t *const *)frame_src, dec.frame_count, f, tiles_n, max_rep,
 			    opts->cb_random_pct, opts->cb_lookahead, recon_n2, recon_n1, frame_seg, seg_pal768,
 			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist);
 			if (write_stcr_chunk(&w, reps, nrep) != 0) {
@@ -539,7 +527,6 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		    100.0 * misc / (prof_ns_frames ? prof_ns_frames : 1));
 		fprintf(stderr, "profile (one-time setup):\n");
 		fprintf(stderr, "  rasterize            %6.2f s\n", prof_ns_raster / 1e9);
-		fprintf(stderr, "  train codebook       %6.2f s\n", prof_ns_train / 1e9);
 		(void)prof_ns_frame_misc;
 	}
 	rc = 0;

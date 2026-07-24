@@ -99,16 +99,17 @@ Requires existing `name.<N>.w16` sidecars; aborts if any are missing.
 
 Defaults: `--cb-size 2048`, `--cb-per-frame 32`, `--cb-random-pct 25`, `--cb-lookahead 1`,
 `--gamma 0.77`, `--dct-alpha 0.2`, `--dct-coeffs 15`, `--dct-chroma-coeffs 7`.
-STCR: residual-only shortlist of `2*R` (stay-as-is aware); accept `(100-random)%` by
+No initial `STCB`: the codebook starts empty and is filled only via `STCR`. STCR:
+residual-only shortlist of `2*R` (stay-as-is aware); accept `(100-random)%` by
 add-utility (ignore eviction) paired with least-damage victims (ignore install); then
 accept `random%` tiles directly. On palette/segment changes, codebook DCT features are
 recomputed under the new W16 and every existing CB entry becomes a **prime eviction
 candidate**; STCR always replaces the lowest-index free prime before damage-based
-victims (normal `R` / random%). STVD assignment and N−2 skip never use pre-cut tiles:
-only current-epoch CB entries are referenced, and the cut frame is force-full. Tile error is weighted **YUV-DCT** feature L2: source
-and recon → palette-opt YUV (`--gamma`) → per-plane 8×8 DCT → zig-zag packs
-`[Y×Ny | U×Nc | V×Nc]` with `√(1/(1+α(u²+v²)))`. Fewer chroma coeffs underweight U/V
-vs Y (chroma is smoother; U/V magnitudes are already smaller than Y).
+victims. STVD assignment and N−2 skip never use pre-cut tiles: only current-epoch CB
+entries are referenced, and the cut frame is force-full. Tile error is weighted
+**YUV-DCT** feature L2: source and recon → palette-opt YUV (`--gamma`) → per-plane 8×8
+DCT → zig-zag packs `[Y×Ny | U×Nc | V×Nc]` with `√(1/(1+α(u²+v²)))`. Fewer chroma coeffs
+underweight U/V vs Y (chroma is smoother; U/V magnitudes are already smaller than Y).
 
 STCR lookahead spans at most one palette cut: pre-cut frames score under the old palette,
 post-cut under the new; a second cut shrinks the window.
@@ -119,8 +120,19 @@ Decode a `.stv` and pipe RGB24 + signed 8-bit PCM into ffmpeg (`pipe()` + `/dev/
 no FIFOs):
 
 ```sh
-./vqatool preview [--ffmpeg PATH] [-o out.mkv] name.stv
+./vqatool preview [--ffmpeg PATH] [-o out.mkv] \
+  [--palette] [--codebook] [--cb-border N] [--no-video] name.stv
 ```
 
 Defaults: `$FFMPEG` or `ffmpeg` on `PATH`; output `name.mkv`. Video: H.264
 (`libx264`, ~1s keyframes). Audio: STVQ `s8` → AAC.
+
+Optional stacked compose (width = video width; height grows; leftover space centered;
+black chrome/borders):
+
+- `--palette` — one row of 18×8 swatches with a 1px black border each
+- `--codebook` — full codebook as an 8×8 tile matrix; `--cb-border N` (default 0) draws
+  an N-pixel black border around each tile. STCR replacements get a yellow highlight
+  border that fades out over 5 frames (inset over the tile when `N=0`, else on top of the
+  normal border)
+- `--no-video` — omit the decoded frame (requires `--palette` and/or `--codebook`)

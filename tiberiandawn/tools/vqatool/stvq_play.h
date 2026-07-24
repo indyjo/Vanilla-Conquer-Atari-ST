@@ -29,6 +29,9 @@ typedef struct StvqPlayer {
 	uint8_t *pcm;         /* last frame audio (owned, realloc'd) */
 	size_t pcm_cap;
 	size_t pcm_len;
+	uint16_t *stcr_idx; /* codebook indices replaced this frame (STCR) */
+	unsigned stcr_n;
+	unsigned stcr_cap;
 	int eof;
 } StvqPlayer;
 

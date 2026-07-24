@@ -1,5 +1,5 @@
 /*
- * stvq_codebook.c - k-medoids-ish train + per-frame STCR.
+ * stvq_codebook.c - Per-frame STCR selection (no initial train / STCB).
  */
 #include "stvq_codebook.h"
 #include "stvq_c2p.h"
@@ -115,94 +115,6 @@ static unsigned nearest_current_feat(const StvqCodebook *cb, const float *qfeat,
 	if (out_dist)
 		*out_dist = have ? best_d : ~0u;
 	return best;
-}
-
-int stvq_codebook_train(StvqCodebook *cb, const uint8_t *const *frame_tiles,
-    const uint8_t *const *frame_src, unsigned nframes, unsigned tiles_per_frame, unsigned sample_stride)
-{
-	unsigned total = nframes * tiles_per_frame;
-	unsigned sample_n;
-	uint8_t *samples_tile;
-	uint8_t *samples_src;
-	unsigned *assign;
-	unsigned i, iter, f, t, si;
-	unsigned stride = sample_stride ? sample_stride : 1;
-
-	if (!cb->entries || !total || !frame_tiles || !frame_src)
-		return -1;
-
-	sample_n = (total + stride - 1u) / stride;
-	if (sample_n < cb->entries)
-		sample_n = total < cb->entries ? total : cb->entries;
-
-	samples_tile = (uint8_t *)malloc((size_t)sample_n * 32u);
-	samples_src = (uint8_t *)malloc((size_t)sample_n * 64u);
-	assign = (unsigned *)malloc((size_t)sample_n * sizeof(unsigned));
-	if (!samples_tile || !samples_src || !assign) {
-		free(samples_tile);
-		free(samples_src);
-		free(assign);
-		return -1;
-	}
-
-	si = 0;
-	for (f = 0; f < nframes && si < sample_n; f++) {
-		for (t = 0; t < tiles_per_frame && si < sample_n; t += stride) {
-			memcpy(samples_tile + si * 32u, frame_tiles[f] + t * 32u, 32);
-			memcpy(samples_src + si * 64u, frame_src[f] + t * 64u, 64);
-			si++;
-		}
-	}
-	sample_n = si;
-	if (sample_n == 0) {
-		free(samples_tile);
-		free(samples_src);
-		free(assign);
-		return -1;
-	}
-
-	for (i = 0; i < cb->entries; i++) {
-		unsigned src = (i * sample_n) / cb->entries;
-		if (src >= sample_n)
-			src = sample_n - 1;
-		cb_set_tile(cb, i, samples_tile + src * 32u);
-	}
-
-	for (iter = 0; iter < 4; iter++) {
-		unsigned *counts = (unsigned *)calloc(cb->entries, sizeof(unsigned));
-		unsigned *first = (unsigned *)malloc(cb->entries * sizeof(unsigned));
-		if (!counts || !first) {
-			free(counts);
-			free(first);
-			free(samples_tile);
-			free(samples_src);
-			free(assign);
-			return -1;
-		}
-		for (i = 0; i < cb->entries; i++)
-			first[i] = ~0u;
-		for (i = 0; i < sample_n; i++) {
-			unsigned d;
-			unsigned j = stvq_codebook_nearest(cb, samples_src + i * 64u, &d);
-			assign[i] = j;
-			if (first[j] == ~0u)
-				first[j] = i;
-			counts[j]++;
-		}
-		for (i = 0; i < cb->entries; i++) {
-			if (first[i] != ~0u)
-				cb_set_tile(cb, i, samples_tile + first[i] * 32u);
-		}
-		free(counts);
-		free(first);
-	}
-
-	free(samples_tile);
-	free(samples_src);
-	free(assign);
-	memset(cb->use_count, 0, cb->entries * sizeof(uint32_t));
-	memset(cb->last_used, 0, cb->entries * sizeof(uint32_t));
-	return 0;
 }
 
 typedef struct Residual {

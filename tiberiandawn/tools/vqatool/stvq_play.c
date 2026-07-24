@@ -112,6 +112,14 @@ static int apply_stcr(StvqPlayer *p, uint32_t size)
 	if (size % 34u)
 		return -1;
 	n = size / 34u;
+	if (p->stcr_n + n > p->stcr_cap) {
+		unsigned cap = p->stcr_n + n;
+		uint16_t *ni = (uint16_t *)realloc(p->stcr_idx, cap * sizeof(uint16_t));
+		if (!ni)
+			return -1;
+		p->stcr_idx = ni;
+		p->stcr_cap = cap;
+	}
 	for (i = 0; i < n; i++) {
 		unsigned char ent[34];
 		uint16_t idx;
@@ -121,6 +129,7 @@ static int apply_stcr(StvqPlayer *p, uint32_t size)
 		if (idx >= p->hdr.cb_entries)
 			return -1;
 		memcpy(p->codebook + (size_t)idx * 32u, ent + 2, 32);
+		p->stcr_idx[p->stcr_n++] = idx;
 	}
 	return skip_pad(p->fp, size);
 }
@@ -206,6 +215,7 @@ void stvq_player_close(StvqPlayer *p)
 	free(p->work_tiles);
 	free(p->rgb);
 	free(p->pcm);
+	free(p->stcr_idx);
 	memset(p, 0, sizeof(*p));
 }
 
@@ -213,7 +223,7 @@ int stvq_player_open(StvqPlayer *p, const char *path)
 {
 	uint32_t id, size;
 	unsigned char raw[STVQ_STHD_SIZE];
-	int have_sthd = 0, have_stpl = 0, have_stcb = 0;
+	int have_sthd = 0, have_stpl = 0;
 
 	memset(p, 0, sizeof(*p));
 	p->fp = fopen(path, "rb");
@@ -227,7 +237,7 @@ int stvq_player_open(StvqPlayer *p, const char *path)
 	if (read_fully(p->fp, &id, 4) != 0 || id != STVQ_CHUNK_STVQ)
 		goto fail;
 
-	while (!have_sthd || !have_stpl || !have_stcb) {
+	while (!have_sthd || !have_stpl) {
 		long pos = ftell(p->fp);
 		if (read_chunk_hdr(p->fp, &id, &size) != 0)
 			goto fail;
@@ -246,11 +256,11 @@ int stvq_player_open(StvqPlayer *p, const char *path)
 				goto fail;
 			have_stpl = 1;
 		} else if (id == STVQ_CHUNK_STCB) {
+			/* Legacy optional full codebook */
 			if (!have_sthd)
 				goto fail;
 			if (load_stcb(p, size) != 0)
 				goto fail;
-			have_stcb = 1;
 		} else if (id == STVQ_CHUNK_STFR) {
 			/* rewind to STFR for playback loop */
 			if (fseek(p->fp, pos, SEEK_SET) != 0)
@@ -268,9 +278,15 @@ int stvq_player_open(StvqPlayer *p, const char *path)
 		}
 	}
 
-	if (!have_sthd || !have_stpl || !have_stcb) {
-		fprintf(stderr, "error: incomplete STVQ header (need STHD/STPL/STCB)\n");
+	if (!have_sthd || !have_stpl) {
+		fprintf(stderr, "error: incomplete STVQ header (need STHD/STPL)\n");
 		goto fail;
+	}
+	if (!p->codebook) {
+		size_t need = (size_t)p->hdr.cb_entries * 32u;
+		p->codebook = (uint8_t *)calloc(1, need ? need : 1);
+		if (!p->codebook)
+			goto fail;
 	}
 	if (!p->hdr.fps)
 		p->hdr.fps = 15;
@@ -312,6 +328,7 @@ int stvq_player_next_frame(StvqPlayer *p)
 	}
 
 	p->pcm_len = 0;
+	p->stcr_n = 0;
 	consumed = 0;
 	while (consumed < size) {
 		uint32_t cid, csize;

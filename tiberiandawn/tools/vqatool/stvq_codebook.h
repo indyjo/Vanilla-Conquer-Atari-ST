@@ -1,5 +1,5 @@
 /*
- * stvq_codebook.h - Codebook train + per-frame STCR selection.
+ * stvq_codebook.h - Per-frame STCR selection (empty CB filled via replaces).
  */
 #ifndef STVQ_CODEBOOK_H
 #define STVQ_CODEBOOK_H
@@ -34,13 +34,6 @@ void stvq_codebook_free(StvqCodebook *cb);
 void stvq_codebook_recompute_feats(StvqCodebook *cb);
 /* Mark all current CB tiles as prime eviction candidates (palette/W16 cut). */
 void stvq_codebook_on_palette_change(StvqCodebook *cb);
-
-/*
- * Train from paired dithered tiles (32B) and original VGA src tiles (64B).
- * Codebook stores dithered tiles; assignment uses YUV(src) vs pens.
- */
-int stvq_codebook_train(StvqCodebook *cb, const uint8_t *const *frame_tiles,
-    const uint8_t *const *frame_src, unsigned nframes, unsigned tiles_per_frame, unsigned sample_stride);
 
 /* Nearest current-palette CB entry to original VGA src tile (64 indices).
  * Entries from a prior palette epoch are ignored. */

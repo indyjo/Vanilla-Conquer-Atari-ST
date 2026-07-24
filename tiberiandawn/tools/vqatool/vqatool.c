@@ -55,6 +55,10 @@ static void usage(const char *argv0)
 	    "  preview <file.stv>      decode STVQ and pipe A/V into ffmpeg\n"
 	    "    --ffmpeg PATH         ffmpeg binary (default: $FFMPEG or ffmpeg)\n"
 	    "    -o, --output FILE     output .mkv path\n"
+	    "    --palette             stack 16-color palette strip under video\n"
+	    "    --codebook            stack codebook tile matrix under video\n"
+	    "    --cb-border N         codebook tile border px (default 0)\n"
+	    "    --no-video            omit decoded video (needs --palette/--codebook)\n"
 	    "\n"
 	    "Not implemented:\n"
 	    "  split, merge\n"
@@ -305,6 +309,7 @@ static int cmd_preview(int argc, char **argv, int argi)
 {
 	StvqPreviewOpts opts;
 	memset(&opts, 0, sizeof(opts));
+	opts.show_video = 1;
 
 	for (; argi < argc; argi++) {
 		const char *a = argv[argi];
@@ -324,6 +329,20 @@ static int cmd_preview(int argc, char **argv, int argi)
 			opts.out_path = argv[argi];
 		} else if (!strncmp(a, "--output=", 9)) {
 			opts.out_path = a + 9;
+		} else if (strcmp(a, "--palette") == 0) {
+			opts.show_palette = 1;
+		} else if (strcmp(a, "--codebook") == 0) {
+			opts.show_codebook = 1;
+		} else if (strcmp(a, "--no-video") == 0) {
+			opts.show_video = 0;
+		} else if (strcmp(a, "--cb-border") == 0) {
+			if (++argi >= argc) {
+				fprintf(stderr, "error: --cb-border needs N\n");
+				return 1;
+			}
+			opts.cb_border = (unsigned)strtoul(argv[argi], NULL, 0);
+		} else if (!strncmp(a, "--cb-border=", 12)) {
+			opts.cb_border = (unsigned)strtoul(a + 12, NULL, 0);
 		} else if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
 			usage(argv[0]);
 			return 0;

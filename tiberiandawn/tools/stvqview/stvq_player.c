@@ -213,7 +213,7 @@ int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path)
 {
 	uint32_t id, size;
 	unsigned char raw[STVQ_STHD_SIZE];
-	int have_sthd = 0, have_stpl = 0, have_stcb = 0;
+	int have_sthd = 0, have_stpl = 0;
 	stvq_player_open_error = NULL;
 	memset(p, 0, sizeof(*p));
 	p->hw = hw;
@@ -235,7 +235,7 @@ int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path)
 		}
 	}
 
-	while (!have_sthd || !have_stpl || !have_stcb) {
+	while (!have_sthd || !have_stpl) {
 		long pos = ftell(p->fp);
 		if (read_chunk_hdr(p->fp, &id, &size) != 0)
 			goto fail;
@@ -253,11 +253,11 @@ int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path)
 				goto fail;
 			have_stpl = 1;
 		} else if (id == STVQ_CHUNK_STCB) {
+			/* Legacy optional full codebook */
 			if (!have_sthd)
 				goto fail;
 			if (load_stcb(p, size) != 0)
 				goto fail;
-			have_stcb = 1;
 		} else if (id == STVQ_CHUNK_STFR) {
 			if (fseek(p->fp, pos, SEEK_SET) != 0)
 				goto fail;
@@ -268,9 +268,17 @@ int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path)
 		}
 	}
 
-	if (!have_sthd || !have_stpl || !have_stcb) {
-		stvq_player_open_error = "missing STHD/STPL/STCB";
+	if (!have_sthd || !have_stpl) {
+		stvq_player_open_error = "missing STHD/STPL";
 		goto fail;
+	}
+	if (!p->codebook) {
+		size_t need = (size_t)p->hdr.cb_entries * STVQ_TILE_BYTES;
+		p->codebook = (uint8_t *)calloc(1, need ? need : 1);
+		if (!p->codebook) {
+			stvq_player_open_error = "oom codebook";
+			goto fail;
+		}
 	}
 	if (p->hdr.version != STVQ_VERSION) {
 		stvq_player_open_error = "bad version";

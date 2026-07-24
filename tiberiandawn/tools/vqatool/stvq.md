@@ -13,7 +13,7 @@ FORM 'STVQ'
   STHD
   NAME?                 optional ASCII
   STPL                  initial palette
-  STCB                  initial codebook
+  STCB?                 unused (legacy; ignore if present)
   STFI?                 optional frame index
   STFR…                 one chunk per frame
   STEN                  end (size 0)
@@ -28,7 +28,7 @@ Playback loop: read `STFR` payload (IFF-padded), and the next 8 bytes (following
 | `STHD` | Header |
 | `NAME` | Optional encoder/string |
 | `STPL` | 16 STE colors (32 bytes) |
-| `STCB` | Full codebook |
+| `STCB` | **Unused** (legacy full codebook; optional) |
 | `STCR` | Sparse codebook replaces (inside `STFR`) |
 | `STFI` | Frame offsets |
 | `STFR` | One presentation frame |
@@ -63,15 +63,17 @@ Reuse of Westwood IDs only where payload matches (`FORM`, `NAME`, `SND0` = raw P
 
 Tile grid: `tiles_x = ceil(width/8)`, `tiles_y = ceil(height/8)`. Encoded coverage may extend past the visible edge; pad samples clamp to the nearest covered pixel (edge extend). Player crops to `width`×`height`.
 
+`cb_entries` sizes the in-memory codebook. The encoder does not emit an initial dictionary; the player allocates a zeroed buffer of `cb_entries × 32` bytes and fills it via `STCR`.
+
 ## `STPL`
 
 16 × `uint16` STE color registers (32 bytes). May also appear inside an `STFR` for mid-stream changes. Independent of codebook updates.
 
-## `STCB`
+## `STCB` (unused)
 
-`cb_entries` × 32-byte tiles. Each tile is ST interleaved planar 4bpp, ready for 8× `movep.l` (one 8×8 block).
+Legacy full codebook: `cb_entries` × 32-byte tiles (ST interleaved planar 4bpp).
 
-Used at clip/segment start. Mid-stream full replaces are allowed but not assumed affordable; prefer `STCR`.
+**Current encoders omit `STCB`.** Players may accept it for old files (load into the codebook buffer) or ignore unknown/optional header chunks; if absent, start from a zeroed codebook of `cb_entries` tiles. New encoders must not rely on `STCB`.
 
 ## `STCR`
 
@@ -83,7 +85,7 @@ Inside `STFR`, before `STVD`. Payload:
 
 `size` must be a multiple of 34. No protocol cap on count; encoder/runtime budgets are operational.
 
-Apply replaces before drawing that frame’s `STVD`.
+Apply replaces before drawing that frame’s `STVD`. This is the sole way new encoders populate the codebook.
 
 ## `STFI`
 
@@ -140,7 +142,7 @@ Length may still vary per frame. Even `SND0` also keeps subsequent IFF chunks wo
 
 ## Player outline
 
-1. Read `STHD`, initial `STPL`/`STCB`.
+1. Read `STHD` and initial `STPL`. Allocate zeroed codebook of `cb_entries` tiles. If a legacy `STCB` is present, load it instead.
 2. Loop: read `STFR` + 8-byte lookahead.
 3. Optional `STPL` → hardware palette; optional `STCR` → patch codebook.
 4. Decode `STVD` (column mask → `movep` or skip).

@@ -26,6 +26,7 @@ void palette_opt_color_params_default(PaletteOptColorParams *params)
 	params->gamma = 1.6f;
 	params->y_scale = 2.0f;
 	params->use_yuv = 1;
+	params->bits_per_channel = 4; /* STe */
 }
 
 void palette_build_opt_colors(const unsigned char *pal768, float colors[768])
@@ -37,15 +38,33 @@ void palette_build_opt_colors_params(const unsigned char *pal768, float colors[7
 	const PaletteOptColorParams *params)
 {
 	int i;
+	int bpc;
+	unsigned max;
+	float inv_max;
 	PaletteOptColorParams cfg;
 
 	palette_opt_color_params_default(&cfg);
 	if (params)
 		cfg = *params;
 
-	/* VGA DAC is 6-bit; mask junk in bits 6–7 (common in Westwood .PAL dumps). */
-	for (i = 0; i < 768; i++)
-		colors[i] = powf((float)(pal768[i] & 63) / 63.0f, cfg.gamma);
+	bpc = cfg.bits_per_channel;
+	if (bpc < 1)
+		bpc = 1;
+	else if (bpc > 6)
+		bpc = 6;
+	max = (1u << bpc) - 1u;
+	inv_max = 1.0f / (float)max;
+
+	/*
+	 * VGA DAC is 6-bit; mask junk in bits 6–7, then quantize to hardware
+	 * precision (STe 4-bit / ST 3-bit / VGA 6-bit) before gamma.
+	 */
+	for (i = 0; i < 768; i++) {
+		const unsigned c6 = (unsigned)pal768[i] & 63u;
+		const unsigned q = (c6 * max + 31u) / 63u;
+
+		colors[i] = powf((float)q * inv_max, cfg.gamma);
+	}
 
 	if (!cfg.use_yuv)
 		return;

@@ -129,10 +129,13 @@ static int json_write_header(PaletteOptJsonExport *exp)
 
 	fprintf(exp->f, "  \"metric\": { ");
 	if (exp->color_params.use_yuv) {
-		fprintf(exp->f, "\"space\": \"yuv\", \"gamma\": %.9g, \"y_scale\": %.9g",
-			(double)exp->color_params.gamma, (double)exp->color_params.y_scale);
+		fprintf(exp->f, "\"space\": \"yuv\", \"gamma\": %.9g, \"y_scale\": %.9g, "
+			"\"bits_per_channel\": %d",
+			(double)exp->color_params.gamma, (double)exp->color_params.y_scale,
+			exp->color_params.bits_per_channel);
 	} else {
-		fprintf(exp->f, "\"space\": \"rgb\", \"gamma\": %.9g", (double)exp->color_params.gamma);
+		fprintf(exp->f, "\"space\": \"rgb\", \"gamma\": %.9g, \"bits_per_channel\": %d",
+			(double)exp->color_params.gamma, exp->color_params.bits_per_channel);
 	}
 	fprintf(exp->f, " },\n");
 

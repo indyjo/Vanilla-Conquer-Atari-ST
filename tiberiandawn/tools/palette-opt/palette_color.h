@@ -12,14 +12,17 @@ typedef struct PaletteOptColorParams {
 	float gamma;
 	float y_scale;
 	int use_yuv;
+	/* Hardware gun precision: quantize VGA 6-bit to this many bits (1..6; default 4 = STe). */
+	int bits_per_channel;
 } PaletteOptColorParams;
 
 void palette_opt_color_params_default(PaletteOptColorParams *params);
 
 /*
  * pal768: 256 × RGB, channels 0..63 (VGA 6-bit).
- * colors: 768 floats written as either gamma-corrected RGB or transformed YUV.
- * With default params this matches the historical (2*y, u, v) metric.
+ * Each channel is quantized to bits_per_channel (rounded), normalized by
+ * (2^bpc-1), then gamma-corrected; optionally transformed to YUV.
+ * Quantize matches St_Pack_ST_HW_From_Rgb6_Channel: ((c6*max+31)/63).
  */
 void palette_build_opt_colors(const unsigned char *pal768, float colors[768]);
 void palette_build_opt_colors_params(const unsigned char *pal768, float colors[768],

@@ -95,6 +95,8 @@ static void print_help(FILE *out, const char *prog)
 		"  --gamma=F      Gamma exponent for normalized RGB channels (default 1.6).\n"
 		"  --y-scale=F    Multiply Y by F in YUV metric space (default 2.0).\n"
 		"                Ignored with --rgb.\n"
+		"  --bpc=N        Bits per RGB channel after VGA 6-bit input (1..6;\n"
+		"                default 4 = STe, 3 = ST, 6 = unquantized VGA).\n"
 		"  --rgb          Use gamma-corrected RGB metric instead of YUV.\n"
 		"\n"
 		"Subset (default: farthest-point spread init, then simulated annealing):\n"
@@ -171,6 +173,20 @@ static int parse_weight_granularity_option(const char *value)
 	if (!value || !*value || (end && *end != '\0') || gran <= 0 || gran > PALETTE_OPT_WEIGHT_SUM)
 		return 0;
 	return set_weight_granularity((int)gran);
+}
+
+static int parse_bpc_option(const char *value, int *out_bpc)
+{
+	char *end = NULL;
+	const long bpc = strtol(value, &end, 10);
+
+	if (!value || !*value || (end && *end != '\0') || bpc < 1 || bpc > 6) {
+		fprintf(stderr, "error: --bpc must be an integer 1..6 (got %s)\n",
+			value ? value : "(null)");
+		return 0;
+	}
+	*out_bpc = (int)bpc;
+	return 1;
 }
 
 static int parse_float_option(const char *opt_name, const char *value, float min_value,
@@ -462,6 +478,16 @@ int main(int argc, const char **argv)
 				return 1;
 		} else if (!strcmp(argv[argi], "--rgb")) {
 			color_params.use_yuv = 0;
+		} else if (!strncmp(argv[argi], "--bpc=", 6)) {
+			if (!parse_bpc_option(argv[argi] + 6, &color_params.bits_per_channel))
+				return 1;
+		} else if (!strcmp(argv[argi], "--bpc")) {
+			if (argi + 1 >= argc) {
+				print_usage(argv[0]);
+				return 1;
+			}
+			if (!parse_bpc_option(argv[++argi], &color_params.bits_per_channel))
+				return 1;
 		} else if (!strncmp(argv[argi], "--lambda=", 9)) {
 			lambda = (float)atof(argv[argi] + 9);
 		} else if (!strcmp(argv[argi], "--hist")) {
@@ -631,10 +657,12 @@ int main(int argc, const char **argv)
 	}
 
 	if (color_params.use_yuv) {
-		fprintf(stderr, "metric: YUV, gamma %.4g, Y scale %.4g\n",
-			(double)color_params.gamma, (double)color_params.y_scale);
+		fprintf(stderr, "metric: YUV, gamma %.4g, Y scale %.4g, bpc %d\n",
+			(double)color_params.gamma, (double)color_params.y_scale,
+			color_params.bits_per_channel);
 	} else {
-		fprintf(stderr, "metric: RGB, gamma %.4g\n", (double)color_params.gamma);
+		fprintf(stderr, "metric: RGB, gamma %.4g, bpc %d\n",
+			(double)color_params.gamma, color_params.bits_per_channel);
 	}
 
 	if (hist_path) {

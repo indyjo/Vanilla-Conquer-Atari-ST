@@ -84,6 +84,7 @@
 #include "st_blit.h"
 #include "c2p.h"
 #include "st16_convert.h"
+#include "memflag.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -123,7 +124,7 @@ namespace {
 	 */
 	static void ST_Free_Shadow_Planar_Cache(void)
 	{
-		Mfree(STShadowPlanarCache);
+		Stram_Free(STShadowPlanarCache);
 		STShadowPlanarCache = 0;
 	}
 
@@ -238,12 +239,11 @@ namespace {
 			return false;
 		}
 
-		long const cache = Mxalloc((long)ST_SHADOW_CACHE_BYTES, MX_STRAM);
-		if (cache <= 0L) {
+		void *const cache = Stram_Alloc((unsigned long)ST_SHADOW_CACHE_BYTES);
+		if (cache == NULL) {
 			sprintf(STShadowPlanarCacheError,
-				"Failed to build ST shadow mask cache: Mxalloc(%u) returned %ld",
-				(unsigned)ST_SHADOW_CACHE_BYTES,
-				cache);
+				"Failed to build ST shadow mask cache: Stram_Alloc(%u) failed",
+				(unsigned)ST_SHADOW_CACHE_BYTES);
 			return false;
 		}
 		STShadowPlanarCache = (uint8_t *)cache;

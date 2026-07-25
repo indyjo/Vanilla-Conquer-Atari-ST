@@ -115,6 +115,31 @@ void *Resize_Alloc(void const *original_ptr, unsigned long new_size_in_bytes)
 	return retval;
 }
 
+/*
+ * Mxalloc (GEMDOS 0x44) needs GEMDOS >= 0.19 (Sversion >= 0x1900).
+ * TOS 1.0–1.6x ship GEMDOS 0.13–0.17 — trap returns EINVFN; treat as no Mxalloc.
+ * On those systems Malloc is always ST-RAM (no TT alternate RAM).
+ */
+static int gemdos_has_mxalloc(void)
+{
+	static int cached = -1;
+
+	if (cached < 0)
+		cached = (Sversion() >= 0x1900) ? 1 : 0;
+	return cached;
+}
+
+static long stram_query_largest(void)
+{
+	long n;
+
+	if (gemdos_has_mxalloc())
+		n = Mxalloc(-1L, MX_STRAM);
+	else
+		n = Malloc(-1L);
+	return (n > 0L) ? n : 0L;
+}
+
 /*=========================================================================*/
 /* Ram_Free -- Determines the largest free chunk of RAM                    */
 /*=========================================================================*/
@@ -122,11 +147,9 @@ long Ram_Free(MemoryFlagType flag)
 {
 	(void)flag;
 	/*
-	 * MiNT C library: size argument -1 returns the largest free block for this RAM type.
-	 * Game allocations expect ST-RAM (chip/blitter-visible); TT-RAM is separate.
+	 * size -1 = largest free block. Prefer ST-RAM (chip/blitter-visible).
 	 */
-	long const n = Mxalloc(-1L, MX_STRAM);
-	return (n > 0L) ? n : 0L;
+	return stram_query_largest();
 }
 
 /*=========================================================================*/
@@ -146,21 +169,28 @@ long Total_Ram_Free(MemoryFlagType flag)
 {
 	(void)flag;
 	/*
-	 * No single Mxalloc call sums all fragments; report largest ST block plus largest TT block
-	 * (two pools — not one contiguous region).
+	 * No single call sums all fragments; report largest ST block plus largest TT block
+	 * (two pools — not one contiguous region). Pre-Mxalloc TOS: ST only.
 	 */
-	long st = Mxalloc(-1L, MX_STRAM);
-	long tt = Mxalloc(-1L, MX_TTRAM);
-	if (st < 0L)
-		st = 0L;
-	if (tt < 0L)
-		tt = 0L;
+	long st = stram_query_largest();
+	long tt = 0L;
+
+	if (gemdos_has_mxalloc()) {
+		tt = Mxalloc(-1L, MX_TTRAM);
+		if (tt < 0L)
+			tt = 0L;
+	}
 	return st + tt;
 }
 
 void *Stram_Alloc(unsigned long bytes_to_alloc)
 {
-	long const a = Mxalloc((long)bytes_to_alloc, MX_STRAM);
+	long a;
+
+	if (gemdos_has_mxalloc())
+		a = Mxalloc((long)bytes_to_alloc, MX_STRAM);
+	else
+		a = Malloc((long)bytes_to_alloc);
 	return a > 0L ? (void *)a : (void *)0;
 }
 

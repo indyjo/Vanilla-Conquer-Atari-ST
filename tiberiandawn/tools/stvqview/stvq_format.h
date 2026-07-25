@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-/* Big-endian FourCC (IFF on m68k): file bytes a,b,c,d ↔ uint32 0xaabbccdd. */
+/* Big-endian FourCC (IFF on m68k): file bytes a,b,c,d <-> uint32 0xaabbccdd. */
 #define STVQ_MAKE_CHUNK(a, b, c, d)                                                                                    \
 	((uint32_t)(((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d)))
 
@@ -59,7 +59,7 @@ typedef struct StvqHeader {
 	uint32_t reserved2;
 } StvqHeader;
 
-/* Native big-endian load (m68k): must be even-aligned — IFF payloads are. */
+/* Native big-endian load (m68k): must be even-aligned -- IFF payloads are. */
 static inline uint16_t stvq_read_be16(const unsigned char *p)
 {
 	return *(const uint16_t *)(const void *)p;

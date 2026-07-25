@@ -131,7 +131,7 @@ static int mem_apply_stcr(StvqPlayer *p, const unsigned char *body, uint32_t siz
  * Native BE loads: body is even-aligned (IFF pad + even STVD/SND0 sizes).
  * STVD layout is always even: 4*tiles_x + 2*indices.
  *
- * Dest walk: planar column addresses step +1,+7,+1,+7… (see stvq_tile_dest).
+ * Dest walk: planar column addresses step +1,+7,+1,+7... (see stvq_tile_dest).
  */
 static int mem_decode_stvd(StvqPlayer *p, const unsigned char *body, uint32_t size)
 {
@@ -170,7 +170,7 @@ static int mem_decode_stvd(StvqPlayer *p, const unsigned char *body, uint32_t si
 		mask = *(const uint32_t *)(const void *)rp;
 		rp += 2;
 
-		/* Walk bits MSB→LSB: add mask,mask ; bcs skip (X/C = former bit 31). */
+		/* Walk bits MSB->LSB: add mask,mask ; bcs skip (X/C = former bit 31). */
 		for (row = 0; row < tiles_y; row++, dst += 8u * STVQ_SCREEN_PITCH) {
 			uint32_t sum = mask + mask;
 			int skip = (sum < mask); /* carry out of bit 31 */
@@ -332,7 +332,6 @@ int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
 		prof->last_stfr_bytes = 0;
 		prof->last_stcr_n = 0;
 		prof->last_pcm_bytes = 0;
-		prof->single_read = 1;
 	}
 
 	if (p->eof)
@@ -400,7 +399,7 @@ int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
 			if (prof)
 				prof->last_pcm_bytes = csize;
 		}
-		/* else: unknown nested chunk — already skipped via consumed */
+		/* else: unknown nested chunk -- already skipped via consumed */
 	}
 
 	if (!got_stvd)

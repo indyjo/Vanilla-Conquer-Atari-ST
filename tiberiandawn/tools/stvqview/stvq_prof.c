@@ -19,9 +19,7 @@ unsigned long stvq_hz200(void)
 
 void stvq_prof_reset(StvqProf *p)
 {
-	int single = p ? p->single_read : 0;
 	memset(p, 0, sizeof(*p));
-	p->single_read = single;
 }
 
 static void acc(unsigned long *sum, unsigned long *mx, unsigned long v)
@@ -37,10 +35,9 @@ void stvq_prof_add(StvqProf *p)
 	acc(&p->sum_read, &p->max_read, p->last_read);
 	acc(&p->sum_stcr, &p->max_stcr, p->last_stcr);
 	acc(&p->sum_decode, &p->max_decode, p->last_decode);
-	acc(&p->sum_audio, &p->max_audio, p->last_audio);
-	acc(&p->sum_present, &p->max_present, p->last_present);
-	acc(&p->sum_vbl, &p->max_vbl, p->last_vbl);
 	acc(&p->sum_wait, &p->max_wait, p->last_wait);
+	acc(&p->sum_present, &p->max_present, p->last_present);
+	acc(&p->sum_audio, &p->max_audio, p->last_audio);
 	acc(&p->sum_total, &p->max_total, p->last_total);
 	p->sum_stfr_bytes += p->last_stfr_bytes;
 	p->sum_stcr_n += p->last_stcr_n;
@@ -58,22 +55,18 @@ static void print_bucket(FILE *out, const char *name, unsigned long sum, unsigne
 void stvq_prof_print(const StvqProf *p, FILE *out)
 {
 	unsigned long n = p->frames ? p->frames : 1;
-	unsigned long avg_total = p->sum_total / n;
-	unsigned long fps_x10 = avg_total ? (2000UL / avg_total) : 0;
 
 	fprintf(out, "\n--- STVQ profile (%lu frames) ---\n", p->frames);
-	fprintf(out, "STFR payload read: %s\n", p->single_read ? "SINGLE fread per frame" : "FRAGMENTED (many reads)");
-	fprintf(out, "Audio: SND0 stays in frame_buf; ring filled by memcpy on submit (no convert)\n");
-	fprintf(out, "Effective fps: %lu.%lu  (15fps budget ~67 ms/frame)\n", fps_x10 / 10u, fps_x10 % 10u);
+	fprintf(out, "Late present (>=1 VBL): %lu / %lu frames\n", p->late_present, p->frames);
 
+	/* Order matches the play loop: decode -> wait -> audio -> present. */
 	fprintf(out, "Buckets (avg / max):\n");
 	print_bucket(out, "read", p->sum_read, p->max_read, n);
 	print_bucket(out, "stcr", p->sum_stcr, p->max_stcr, n);
 	print_bucket(out, "decode", p->sum_decode, p->max_decode, n);
+	print_bucket(out, "wait", p->sum_wait, p->max_wait, n);
 	print_bucket(out, "audio", p->sum_audio, p->max_audio, n);
 	print_bucket(out, "present", p->sum_present, p->max_present, n);
-	print_bucket(out, "vbl", p->sum_vbl, p->max_vbl, n);
-	print_bucket(out, "wait", p->sum_wait, p->max_wait, n);
 	print_bucket(out, "TOTAL", p->sum_total, p->max_total, n);
 
 	fprintf(out, "Payload avg %lu B/frame  STCR avg %lu  PCM avg %lu B\n",

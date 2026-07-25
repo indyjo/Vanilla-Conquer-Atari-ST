@@ -223,7 +223,7 @@ static void ring_write_bytes(StvqHw *hw, const unsigned char *src, unsigned nbyt
 /*
  * Zero the free region (write head -> DMA) without advancing the write head.
  * Prevents DMA from replaying stale samples when it catches up or when we only
- * partially refill free space — that was a periodic click in quiet sections.
+ * partially refill free space -- that was a periodic click in quiet sections.
  */
 static void ring_scrub_free(StvqHw *hw)
 {
@@ -304,7 +304,7 @@ static long sup_ring_write(void)
 	ring_scrub_free(hw);
 	freeb = ring_free_bytes(hw);
 	if (freeb < need)
-		return 1; /* busy — caller should wait */
+		return 1; /* busy -- caller should wait */
 
 	ring_write_bytes(hw, g_sup_pcm, need);
 	ring_scrub_free(hw);

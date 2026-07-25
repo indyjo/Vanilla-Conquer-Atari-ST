@@ -11,7 +11,9 @@ extern "C" {
 #endif
 
 enum {
-	STVQ_HZ200_PER_SEC = 200
+	STVQ_HZ200_PER_SEC = 200,
+	/* 50 Hz display: one VBL = 20 ms = 4 * 5 ms ticks. */
+	STVQ_HZ200_PER_VBL = 4
 };
 
 typedef struct StvqProf {
@@ -21,20 +23,18 @@ typedef struct StvqProf {
 	unsigned long last_read;
 	unsigned long last_stcr;
 	unsigned long last_decode;
-	unsigned long last_audio;
-	unsigned long last_present;
-	unsigned long last_vbl; /* spin waiting for reveal VBL inside present */
 	unsigned long last_wait;
+	unsigned long last_present;
+	unsigned long last_audio;
 	unsigned long last_total;
 
 	/* Sums / maxima across frames. */
 	unsigned long sum_read, max_read;
 	unsigned long sum_stcr, max_stcr;
 	unsigned long sum_decode, max_decode;
-	unsigned long sum_audio, max_audio;
-	unsigned long sum_present, max_present;
-	unsigned long sum_vbl, max_vbl;
 	unsigned long sum_wait, max_wait;
+	unsigned long sum_present, max_present;
+	unsigned long sum_audio, max_audio;
 	unsigned long sum_total, max_total;
 
 	/* I/O shape for last frame / totals. */
@@ -45,8 +45,10 @@ typedef struct StvqProf {
 	unsigned long last_pcm_bytes;
 	unsigned long sum_pcm_bytes;
 
-	/* 1 = STFR payload loaded with a single fread. */
-	int single_read;
+	/* Nominal frame period in _hz200 ticks (from clip fps). */
+	unsigned long budget_ticks;
+	/* Present-to-present gap > budget + 1 VBL. */
+	unsigned long late_present;
 } StvqProf;
 
 unsigned long stvq_hz200(void);

@@ -85,7 +85,7 @@ void stvq_hw_wait_vbl(StvqHw *hw);
 int stvq_hw_poll_key(void);
 
 /*
- * Blit one 8×8 codebook tile (32 bytes, movep order) to planar dest.
+ * Blit one 8x8 codebook tile (32 bytes, movep order) to planar dest.
  * dest = first plane-0 byte of the top row (movep column).
  */
 static inline void stvq_movep_tile(uint8_t *dest, const uint8_t *tile32)
@@ -128,7 +128,7 @@ static inline void stvq_movep_tile(uint8_t *dest, const uint8_t *tile32)
 #endif
 }
 
-/* Screen address of 8×8 tile at pixel (px,py); px must be multiple of 8. */
+/* Screen address of 8x8 tile at pixel (px,py); px must be multiple of 8. */
 static inline uint8_t *stvq_tile_dest(uint8_t *screen, unsigned px, unsigned py)
 {
 	return screen + py * STVQ_SCREEN_PITCH + (px >> 4) * 8u + ((px >> 3) & 1u);

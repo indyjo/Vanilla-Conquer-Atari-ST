@@ -48,12 +48,12 @@ static int play(const char *path)
 	unsigned vbls_per_frame;
 	int rc = 1;
 	unsigned long t_frame0 = 0;
+	unsigned long t_prev_present = 0;
 
 	memset(&hw, 0, sizeof(hw));
 	memset(&player, 0, sizeof(player));
 	memset(&frame, 0, sizeof(frame));
 	stvq_prof_reset(&prof);
-	prof.single_read = 1;
 
 	if (stvq_player_open(&player, &hw, path) != 0) {
 		printf("error: cannot open %s as STVQ (%s)\n",
@@ -63,6 +63,12 @@ static int play(const char *path)
 	}
 
 	player.prof = &prof;
+	{
+		unsigned fps = player.hdr.fps ? player.hdr.fps : 15u;
+		prof.budget_ticks = (STVQ_HZ200_PER_SEC + fps / 2u) / fps;
+		if (!prof.budget_ticks)
+			prof.budget_ticks = 1;
+	}
 
 	printf("STVQ %u x %u %u frames fps=%u cb=%u max_frame=%u\n",
 	    (unsigned)player.hdr.width,
@@ -175,16 +181,29 @@ static int play(const char *path)
 			prof.last_wait = stvq_hz200() - tw0;
 		}
 
-		{
-			unsigned long tp0 = stvq_hz200();
-			prof.last_vbl = stvq_hw_present(&hw);
-			prof.last_present = stvq_hz200() - tp0;
-		}
-
+		/* Submit PCM before present so the VBL wait cannot drain the ring dry. */
 		if (use_audio && frame.pcm && frame.pcm_len >= 1) {
 			unsigned long ta0 = stvq_hz200();
 			stvq_hw_pcm_start(&hw, frame.pcm, frame.pcm_len, player.hdr.sample_rate);
 			prof.last_audio = stvq_hz200() - ta0;
+		}
+
+		{
+			unsigned long tp0 = stvq_hz200();
+			unsigned long t_done;
+			(void)stvq_hw_present(&hw);
+			t_done = stvq_hz200();
+			prof.last_present = t_done - tp0;
+			/*
+			 * Present cadence: more than one VBL past the nominal frame
+			 * period means this reveal was >=1 VBL late.
+			 */
+			if (t_prev_present && prof.budget_ticks) {
+				unsigned long dt = t_done - t_prev_present;
+				if (dt > prof.budget_ticks + STVQ_HZ200_PER_VBL)
+					prof.late_present++;
+			}
+			t_prev_present = t_done;
 		}
 
 		prof.last_total = stvq_hz200() - t_frame0;

@@ -72,7 +72,17 @@ static int dma_audio_available(void)
 
 static void *stram_alloc(unsigned long nbytes)
 {
-	return (void *)Mxalloc((long)nbytes, STVQ_MX_STRAM);
+	long p;
+	/* Mxalloc needs GEMDOS >= 0.19 (Sversion 0x1900); TOS 1.6x is 0.17. */
+	static int have_mxalloc = -1;
+
+	if (have_mxalloc < 0)
+		have_mxalloc = (Sversion() >= 0x1900) ? 1 : 0;
+
+	p = have_mxalloc ? Mxalloc((long)nbytes, STVQ_MX_STRAM) : Malloc((long)nbytes);
+	if (p <= 0)
+		return NULL;
+	return (void *)(unsigned long)p;
 }
 
 static void stram_free(void *p)

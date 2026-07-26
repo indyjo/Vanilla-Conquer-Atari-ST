@@ -1055,7 +1055,7 @@ void Fade_Sample(int handle, int)
 	Stop_Sample(handle);
 }
 int Get_Free_Sample_Handle(int) { return 1; }
-int Get_Digi_Handle(void) { return 1; }
+int Get_Digi_Handle(void) { return g_ste_dma_ok ? 1 : -1; }
 
 long Sample_Length(void const* sample)
 {
@@ -1070,6 +1070,33 @@ long Sample_Length(void const* sample)
 }
 
 void Restore_Sound_Buffers(void) {}
+
+/*
+ * Yield STE DMA to STV playback: stop voices, stop DMA, remove audio VBL.
+ * Keeps the game DMA ring allocated for Ste_Audio_Reclaim_Dma.
+ */
+void Ste_Audio_Yield_Dma(void)
+{
+	ste_process_pending_voice_shutdown();
+	ste_shutdown_all_voices();
+	g_stream_file_voice = -1;
+	ste_dma_stop();
+	ste_audio_vbl_remove();
+}
+
+/*
+ * Reclaim STE DMA after STV: reinstall mixer/VBL; idle until Theme/Play_Sample arms.
+ */
+void Ste_Audio_Reclaim_Dma(void)
+{
+	if (!g_ste_dma_ok) {
+		return;
+	}
+	ste_dma_stop();
+	ste_falcon_dma_matrix_connect();
+	ste_dma_mixer_connect();
+	ste_audio_vbl_install();
+}
 
 BOOL Set_Primary_Buffer_Format(void) { return TRUE; }
 BOOL Start_Primary_Sound_Buffer(BOOL) { return TRUE; }

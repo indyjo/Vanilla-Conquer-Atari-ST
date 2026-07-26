@@ -1,14 +1,13 @@
 /*
  * stvq_player.h - Stream STVQ frames into the back screen buffer.
  */
-#ifndef STVQVIEW_PLAYER_H
-#define STVQVIEW_PLAYER_H
+#ifndef STVQ_PLAYER_H
+#define STVQ_PLAYER_H
 
 #include "stvq_format.h"
 #include "stvq_hw.h"
+#include "stvq_io.h"
 #include "stvq_prof.h"
-
-#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,7 +22,7 @@ typedef struct StvqFrame {
 } StvqFrame;
 
 typedef struct StvqPlayer {
-	FILE *fp;
+	const StvqIo *io;
 	StvqHeader hdr;
 	unsigned tiles_x;
 	unsigned tiles_y;
@@ -32,13 +31,14 @@ typedef struct StvqPlayer {
 	int eof;
 	StvqHw *hw;
 	uint16_t initial_pal[16];
-	/* Scratch for one STFR payload (single fread). */
+	/* Scratch for one STFR payload (single read). */
 	unsigned char *frame_buf;
 	size_t frame_cap;
 	StvqProf *prof; /* optional; filled each next_frame */
 } StvqPlayer;
 
-int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path);
+/* Open via caller-owned IO (already positioned at start). Does not close IO. */
+int stvq_player_open(StvqPlayer *p, StvqHw *hw, const StvqIo *io);
 void stvq_player_close(StvqPlayer *p);
 
 /* Set when stvq_player_open returns -1 (static string). */
@@ -47,7 +47,7 @@ extern const char *stvq_player_open_error;
 /*
  * Decode next STFR into hw back buffer. Fills out (palette + pcm pointer into frame_buf).
  * Returns 1 ok, 0 at STEN/EOF, -1 error.
- * Reads the whole STFR payload with one fread, then parses in memory.
+ * Reads the whole STFR payload with one IO read, then parses in memory.
  * Submit out->pcm via stvq_hw_pcm_start before calling next_frame again.
  */
 int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out);
@@ -56,4 +56,4 @@ int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out);
 }
 #endif
 
-#endif /* STVQVIEW_PLAYER_H */
+#endif /* STVQ_PLAYER_H */

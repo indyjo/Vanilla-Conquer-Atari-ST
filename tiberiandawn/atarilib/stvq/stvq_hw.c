@@ -406,9 +406,11 @@ void stvq_hw_blit_tile(uint8_t *screen, unsigned px, unsigned py, const uint8_t 
 	}
 }
 
-int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height)
+int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, uint8_t *screen1,
+    int enable_audio)
 {
 	int i;
+	int have_screens = (screen0 != NULL && screen1 != NULL);
 
 	memset(hw, 0, sizeof(*hw));
 	hw->front = 0;
@@ -416,23 +418,28 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height)
 	hw->vbl_slot = -1;
 	hw->super_stack = 0;
 	hw->dma_rate_idx = STVQ_STE_RATE_12517;
+	hw->screens_owned = have_screens ? 0 : 1;
 
 	if (width == 0 || height == 0 || width > STVQ_SCREEN_W || height > STVQ_SCREEN_H)
+		return -1;
+	if ((screen0 == NULL) != (screen1 == NULL))
 		return -1;
 
 	hw->origin_x = (uint16_t)((STVQ_SCREEN_W - width) / 2u);
 	hw->origin_y = (uint16_t)((STVQ_SCREEN_H - height) / 2u);
 	hw->origin_x = (uint16_t)(hw->origin_x & ~7u);
 
-	hw->old_log = (long)Logbase();
-	hw->old_phys = (long)Physbase();
-	hw->old_rez = Getrez();
-
 	g_hw = hw;
-	Supexec(sup_snapshot_palette);
 
-	hw->dma_ok = dma_audio_available();
-	if (hw->dma_ok) {
+	if (hw->screens_owned) {
+		hw->old_log = (long)Logbase();
+		hw->old_phys = (long)Physbase();
+		hw->old_rez = Getrez();
+		Supexec(sup_snapshot_palette);
+	}
+
+	hw->dma_ok = 0;
+	if (enable_audio && dma_audio_available()) {
 		hw->ring_raw = stram_alloc((unsigned long)STVQ_DMA_RING_BYTES + 2u);
 		if (!hw->ring_raw)
 			goto fail;
@@ -440,33 +447,63 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height)
 		memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
 		hw->ring_write = 0;
 		hw->ring_armed = 0;
+		hw->dma_ok = 1;
 	}
 
-	for (i = 0; i < 2; i++) {
-		hw->screen_raw[i] = stram_alloc(STVQ_SCREEN_BYTES + 256u);
-		if (!hw->screen_raw[i])
-			goto fail;
-		hw->screen[i] = align256(hw->screen_raw[i]);
-		clear_screen(hw->screen[i]);
+	if (hw->screens_owned) {
+		for (i = 0; i < 2; i++) {
+			hw->screen_raw[i] = stram_alloc(STVQ_SCREEN_BYTES + 256u);
+			if (!hw->screen_raw[i])
+				goto fail;
+			hw->screen[i] = align256(hw->screen_raw[i]);
+			clear_screen(hw->screen[i]);
+		}
+	} else {
+		hw->screen[0] = screen0;
+		hw->screen[1] = screen1;
+		clear_screen(hw->screen[0]);
+		clear_screen(hw->screen[1]);
 	}
 
 	g_sup_rc = -1;
-	Supexec(sup_vbl_install);
-	if (g_sup_rc != 0)
-		goto fail;
+	if (hw->screens_owned) {
+		Supexec(sup_vbl_install);
+		if (g_sup_rc != 0)
+			goto fail;
 
-	Setscreen((void *)-1L, (void *)-1L, 0);
-	g_sup_phys = hw->screen[hw->front];
-	Supexec(sup_set_video_base);
-	Setscreen((void *)hw->screen[hw->front], (void *)hw->screen[hw->front], -1);
-
-	__asm__ volatile("dc.w 0xa00a"); /* hide mouse */
+		Setscreen((void *)-1L, (void *)-1L, 0);
+		g_sup_phys = hw->screen[hw->front];
+		Supexec(sup_set_video_base);
+		Setscreen((void *)hw->screen[hw->front], (void *)hw->screen[hw->front], -1);
+		__asm__ volatile("dc.w 0xa00a"); /* hide mouse */
+	} else {
+		/*
+		 * Game path: Setscreen page flip (log=phys=front). Keep GraphicBuffer
+		 * identities; only retarget TOS Logbase/Physbase during the clip.
+		 */
+		Setscreen((void *)hw->screen[0], (void *)hw->screen[0], -1);
+	}
 
 	return 0;
 
 fail:
 	stvq_hw_shutdown(hw);
 	return -1;
+}
+
+void stvq_hw_restore_entry_phys(StvqHw *hw)
+{
+	if (!hw || !hw->screen[0])
+		return;
+	hw->front = 0;
+	hw->back = 1;
+	if (hw->screens_owned) {
+		g_hw = hw;
+		g_sup_phys = hw->screen[0];
+		Supexec(sup_set_video_base);
+	} else {
+		Setscreen((void *)hw->screen[0], (void *)hw->screen[0], -1);
+	}
 }
 
 void stvq_hw_shutdown(StvqHw *hw)
@@ -479,24 +516,42 @@ void stvq_hw_shutdown(StvqHw *hw)
 	stvq_hw_pcm_stop(hw);
 
 	g_hw = hw;
-	Supexec(sup_vbl_remove);
-	g_hw = NULL;
+	if (hw->screens_owned)
+		Supexec(sup_vbl_remove);
 
-	__asm__ volatile("dc.w 0xa009"); /* show mouse */
+	/* Always put display back on entry Visible (screen[0]) before releasing. */
+	if (hw->screen[0]) {
+		hw->front = 0;
+		hw->back = 1;
+		if (hw->screens_owned) {
+			g_sup_phys = hw->screen[0];
+			Supexec(sup_set_video_base);
+		} else {
+				Setscreen((void *)hw->screen[0], (void *)hw->screen[0], -1);
+			}
+	}
 
-	g_sup_pal = hw->old_pal;
-	Supexec(sup_apply_palette);
-	Setscreen((void *)hw->old_log, (void *)hw->old_phys, hw->old_rez);
+	if (hw->screens_owned) {
+		__asm__ volatile("dc.w 0xa009"); /* show mouse */
 
-	for (i = 0; i < 2; i++) {
-		stram_free(hw->screen_raw[i]);
-		hw->screen_raw[i] = NULL;
-		hw->screen[i] = NULL;
+		g_sup_pal = hw->old_pal;
+		Supexec(sup_apply_palette);
+		Setscreen((void *)hw->old_log, (void *)hw->old_phys, hw->old_rez);
+
+		for (i = 0; i < 2; i++) {
+			stram_free(hw->screen_raw[i]);
+			hw->screen_raw[i] = NULL;
+			hw->screen[i] = NULL;
+		}
+	} else {
+		hw->screen[0] = NULL;
+		hw->screen[1] = NULL;
 	}
 
 	stram_free(hw->ring_raw);
 	hw->ring_raw = NULL;
 	hw->ring = NULL;
+	g_hw = NULL;
 }
 
 uint8_t *stvq_hw_back(StvqHw *hw)
@@ -521,6 +576,30 @@ unsigned long stvq_hw_present(StvqHw *hw)
 {
 	int new_front = hw->back;
 	unsigned long t0, t1;
+
+	if (!hw->screens_owned) {
+		/*
+		 * Main-thread flip via Setscreen(log=phys=completed back).
+		 *
+		 * TOS latches the new Physbase at the *next* VBL. The old order
+		 * (Vsync → Setscreen → swap indices) swapped immediately, so decode
+		 * painted the still-displayed plane for nearly a full frame (visible
+		 * tile crawl / jerkiness). Queue Setscreen first, wait one VBL, then
+		 * retire the old front as the new back.
+		 */
+		t0 = stvq_hz200();
+		if (hw->pending_pal_valid) {
+			g_sup_pal = hw->pending_pal;
+			Supexec(sup_apply_palette);
+			hw->pending_pal_valid = 0;
+		}
+		Setscreen((void *)hw->screen[new_front], (void *)hw->screen[new_front], -1);
+		Vsync();
+		hw->front = new_front;
+		hw->back = 1 - new_front;
+		t1 = stvq_hz200();
+		return t1 - t0;
+	}
 
 	while (hw->present_req)
 		;

@@ -121,6 +121,9 @@ endif
 # Include directories (platform-specific + common)
 # Put platform lib first so platform-specific headers take precedence over root headers
 INCLUDES = -I./$(PLATFORM_LIB) -I. -I./COMMONLIB -I.. -I../common
+ifeq ($(PLATFORM_LIB),ATARILIB)
+INCLUDES += -I./$(PLATFORM_LIB)/stvq
+endif
 
 # Some m68k-atari-mint installs omit libstdc++ from the primary sys-root; headers may live under sys-root-old.
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -422,6 +425,19 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
 	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/libcmini_posix_shim.cpp,)
 
+# Shared STVQ runtime (C) — game + tools/stvqview
+ifeq ($(PLATFORM_LIB),ATARILIB)
+STVQ_C_SOURCES = \
+	$(PLATFORM_LIB)/stvq/stvq_format.c \
+	$(PLATFORM_LIB)/stvq/stvq_hw.c \
+	$(PLATFORM_LIB)/stvq/stvq_player.c \
+	$(PLATFORM_LIB)/stvq/stvq_prof.c
+STVQ_C_OBJS = $(addprefix $(INTDIR)/,$(notdir $(STVQ_C_SOURCES:.c=.o)))
+else
+STVQ_C_SOURCES =
+STVQ_C_OBJS =
+endif
+
 # Assembly sources (platform-specific)
 # Root directory files use uppercase .ASM, ATARILIB files use lowercase .asm (as tracked in git)
 ASM_SOURCES = \
@@ -469,7 +485,7 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 RC_OBJECTS :=
 endif
 
-ALL_OBJECTS = $(CPP_OBJECTS) $(ASM_OBJECTS) $(RC_OBJECTS)
+ALL_OBJECTS = $(CPP_OBJECTS) $(ASM_OBJECTS) $(RC_OBJECTS) $(STVQ_C_OBJS)
 
 # Output files - platform-specific
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -562,6 +578,31 @@ $(INTDIR)/%.o: $(PLATFORM_LIB)/%.CPP | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+# STVQ shared C runtime (atarilib/stvq/)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+CFLAGS_STVQ = -Wall -Wextra -std=c99 $(INCLUDES) $(FASTCALL_FLAGS) $(FRAME_POINTER_FLAGS)
+ifeq ($(CONFIG),Debug)
+CFLAGS_STVQ += -O2 -g -DDEBUG
+else
+CFLAGS_STVQ += $(CXX_OPT_REL) -DNDEBUG
+ifeq ($(WITH_SYMBOLS),1)
+CFLAGS_STVQ += -g
+endif
+endif
+$(INTDIR)/stvq_format.o: $(PLATFORM_LIB)/stvq/stvq_format.c | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/stvq_hw.o: $(PLATFORM_LIB)/stvq/stvq_hw.c | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/stvq_player.o: $(PLATFORM_LIB)/stvq/stvq_player.c | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/stvq_prof.o: $(PLATFORM_LIB)/stvq/stvq_prof.c | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
+endif
 
 # Special rule for platform lib alloc.cpp to avoid conflict with root alloc.cpp
 $(INTDIR)/alloc_$(PLATFORM_LIB).o: $(PLATFORM_LIB)/ALLOC.CPP | $(INTDIR)

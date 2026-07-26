@@ -78,10 +78,179 @@
 #include "atarilib/shpx.h"
 #include "atarilib/st_decode_context.h"
 #include "atarilib/st_screen.h"
+#include "atarilib/audio.h"
+#include "atarilib/stvq/stvq_format.h"
+#include "atarilib/stvq/stvq_hw.h"
+#include "atarilib/stvq/stvq_io.h"
+#include "atarilib/stvq/stvq_player.h"
 #include "st_sprite_cache.h"
 #include <limits.h>
 
 static bool ST_Log_Free_Ram_On_Next_Main_Loop = false;
+
+extern bool InMovie;
+
+static int stvq_ccfile_read(void* user, void* buf, size_t n)
+{
+	CCFileClass* f = (CCFileClass*)user;
+	unsigned char* p = (unsigned char*)buf;
+	size_t got = 0;
+	while (got < n) {
+		int r = f->Read(p + got, (int)(n - got));
+		if (r <= 0) {
+			return -1;
+		}
+		got += (size_t)r;
+	}
+	return 0;
+}
+
+static int stvq_ccfile_seek(void* user, long off, int whence)
+{
+	CCFileClass* f = (CCFileClass*)user;
+	if (f->Seek((int)off, whence) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
+static int stvq_play_movie_file(CCFileClass& file, int use_audio)
+{
+	StvqIo io;
+	StvqHw hw;
+	StvqPlayer player;
+	StvqFrame frame;
+	uint8_t* visible0 = (uint8_t*)VisiblePage.Get_Buffer();
+	uint8_t* hidden0 = (uint8_t*)HiddenPage.Get_Buffer();
+	int yielded = 0;
+	int first = 1;
+	int have_frame = 0;
+	unsigned vbl_accum = 0;
+	unsigned vbls_per_frame;
+	int rc = 0;
+
+	memset(&io, 0, sizeof(io));
+	memset(&hw, 0, sizeof(hw));
+	memset(&player, 0, sizeof(player));
+	memset(&frame, 0, sizeof(frame));
+
+	io.user = &file;
+	io.read = stvq_ccfile_read;
+	io.seek = stvq_ccfile_seek;
+
+	if (stvq_player_open(&player, &hw, &io) != 0) {
+		CCDebugString("STVQ: open/init failed\n");
+#ifdef CHEAT_KEYS
+		Mono_Printf("STVQ open fail: %s\n", stvq_player_open_error ? stvq_player_open_error : "?");
+#endif
+		return -1;
+	}
+
+	if (use_audio) {
+		Ste_Audio_Yield_Dma();
+		yielded = 1;
+	}
+
+	if (stvq_hw_init(&hw, player.hdr.width, player.hdr.height, visible0, hidden0, use_audio) != 0) {
+		CCDebugString("STVQ: video init failed (OOM?)\n");
+		stvq_player_close(&player);
+		if (yielded) {
+			Ste_Audio_Reclaim_Dma();
+		}
+		return -1;
+	}
+	player.hw = &hw;
+
+	/* Digi+DMA path only if hw actually got a ring. */
+	use_audio = use_audio && hw.dma_ok;
+
+	stvq_hw_set_pending_palette(&hw, player.initial_pal);
+	vbls_per_frame = player.hdr.fps ? (50u + player.hdr.fps / 2u) / player.hdr.fps : 3u;
+	if (vbls_per_frame < 1) {
+		vbls_per_frame = 1;
+	}
+
+	Brokeout = false;
+	InMovie = true;
+
+	for (;;) {
+		if (Keyboard->Check()) {
+			int key = Keyboard->Get();
+			Keyboard->Clear();
+			if ((BreakoutAllowed || Debug_Flag) && key == KN_ESC) {
+				Brokeout = true;
+				rc = 1;
+				break;
+			}
+		}
+
+		if (!have_frame) {
+			int pr = stvq_player_next_frame(&player, &frame);
+			if (pr == 0) {
+				break;
+			}
+			if (pr < 0) {
+				CCDebugString("STVQ: decode failed\n");
+				rc = -1;
+				break;
+			}
+			have_frame = 1;
+		}
+
+		if (frame.have_stpl) {
+			stvq_hw_set_pending_palette(&hw, frame.stpl);
+		}
+
+		if (use_audio && !first) {
+			while (stvq_hw_pcm_busy(&hw, frame.pcm_len)) {
+				if (Keyboard->Check()) {
+					int key = Keyboard->Get();
+					Keyboard->Clear();
+					if ((BreakoutAllowed || Debug_Flag) && key == KN_ESC) {
+						Brokeout = true;
+						rc = 1;
+						goto done;
+					}
+				}
+			}
+		} else if (!use_audio && !first) {
+			while (vbl_accum < vbls_per_frame) {
+				stvq_hw_wait_vbl(&hw);
+				vbl_accum++;
+				if (Keyboard->Check()) {
+					int key = Keyboard->Get();
+					Keyboard->Clear();
+					if ((BreakoutAllowed || Debug_Flag) && key == KN_ESC) {
+						Brokeout = true;
+						rc = 1;
+						goto done;
+					}
+				}
+			}
+			vbl_accum = 0;
+		}
+
+		if (use_audio && frame.pcm && frame.pcm_len >= 1) {
+			stvq_hw_pcm_start(&hw, frame.pcm, frame.pcm_len, player.hdr.sample_rate);
+		}
+
+		(void)stvq_hw_present(&hw);
+		have_frame = 0;
+		first = 0;
+	}
+
+done:
+	stvq_hw_pcm_stop(&hw);
+	stvq_player_close(&player);
+	stvq_hw_shutdown(&hw);
+	/* Restore game visible plane (Logbase/phys) after Setscreen flips during play. */
+	ST_Screen_Apply_Game_Video_Hardware();
+	if (yielded) {
+		Ste_Audio_Reclaim_Dma();
+	}
+	InMovie = false;
+	return rc;
+}
 #endif
 
 #define SHAPE_TRANS 0x40
@@ -2233,6 +2402,10 @@ void Play_Movie(char const* name, ThemeType theme, bool clrscrn)
 
         _makepath(fullname, NULL, NULL, name, ".VQA");
         _makepath(palname, NULL, NULL, name, ".VQP");
+#ifdef ATARI_ST
+        printf("Play %s\n", fullname);
+        fflush(stdout);
+#endif
 #ifdef CHEAT_KEYS
         Mono_Set_Cursor(0, 0);
         Mono_Printf("[%s]", fullname);
@@ -2264,6 +2437,45 @@ void Play_Movie(char const* name, ThemeType theme, bool clrscrn)
         PreserveVQAScreen = 0;
         Keyboard->Clear();
 
+#ifdef ATARI_ST
+        /*
+        **	Atari ST: stream FORM STVQ under the same .VQA name. Real Westwood VQA
+        **	or bad headers soft-skip like a missing clip. Phys ping-pong only on
+        **	VisiblePage/HiddenPage; restore entry Visible phys on every exit.
+        */
+        {
+            CCFileClass file(fullname);
+            unsigned char peek[12];
+            int use_audio = (!Debug_Quiet && Get_Digi_Handle() != -1) ? 1 : 0;
+
+            if (!file.Is_Available() || !file.Open(READ)) {
+                /* Missing clip: soft-skip. */
+            } else if (file.Read(peek, 12) != 12) {
+                file.Close();
+            } else {
+                uint32_t form_id = stvq_read_be32(peek);
+                uint32_t type_id = stvq_read_be32(peek + 8);
+                file.Seek(0, SEEK_SET);
+
+                if (form_id != STVQ_CHUNK_FORM || type_id != STVQ_CHUNK_STVQ) {
+                    CCDebugString("STVQ: not FORM STVQ (skipping non-STV / VQA)\n");
+#ifdef CHEAT_KEYS
+                    Mono_Printf("STVQ skip non-STV [%s]\n", fullname);
+#endif
+                    file.Close();
+                } else {
+                    int play_rc = stvq_play_movie_file(file, use_audio);
+                    file.Close();
+                    if (play_rc > 0 || Brokeout) {
+                        clrscrn = true;
+                        VisiblePage.Clear();
+                        Brokeout = false;
+                    }
+                }
+            }
+        }
+        (void)palname;
+#else
         VQAHandle* vqa = NULL;
 
         if (!Debug_Quiet && Get_Digi_Handle() != -1) {
@@ -2335,6 +2547,7 @@ void Play_Movie(char const* name, ThemeType theme, bool clrscrn)
 
             VQA_Free(vqa);
         }
+#endif /* !ATARI_ST */
 
         /*
         **	Presume that the screen is left in a garbage state as well as the palette

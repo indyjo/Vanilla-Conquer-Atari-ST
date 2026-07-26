@@ -1,59 +1,59 @@
 /*
  * stvq_player.c - Stream decode STVQ into ping-pong back buffer.
  *
- * Each STFR payload is loaded with a single fread, then STPL/STCR/STVD/SND0
+ * Each STFR payload is loaded with a single IO read, then STPL/STCR/STVD/SND0
  * are parsed from memory (no per-replace disk I/O).
  */
 #include "stvq_player.h"
 
 #include <assert.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 const char *stvq_player_open_error;
 
-static int read_fully(FILE *fp, void *buf, size_t n)
+static int io_read(const StvqIo *io, void *buf, size_t n)
 {
-	unsigned char *p = (unsigned char *)buf;
-	size_t got = 0;
-	while (got < n) {
-		size_t r = fread(p + got, 1, n - got, fp);
-		if (r == 0)
-			return -1;
-		got += r;
-	}
-	return 0;
+	if (!io || !io->read)
+		return -1;
+	return io->read(io->user, buf, n);
 }
 
-static int read_chunk_hdr(FILE *fp, uint32_t *id, uint32_t *size)
+static int io_seek(const StvqIo *io, long off, int whence)
+{
+	if (!io || !io->seek)
+		return -1;
+	return io->seek(io->user, off, whence);
+}
+
+static int read_chunk_hdr(const StvqIo *io, uint32_t *id, uint32_t *size)
 {
 	unsigned char hdr[8];
-	if (read_fully(fp, hdr, 8) != 0)
+	if (io_read(io, hdr, 8) != 0)
 		return -1;
 	*id = stvq_read_be32(hdr);
 	*size = stvq_read_be32(hdr + 4);
 	return 0;
 }
 
-static int skip_bytes(FILE *fp, unsigned n)
+static int skip_bytes(const StvqIo *io, unsigned n)
 {
 	unsigned char buf[256];
 	while (n) {
 		unsigned chunk = n > sizeof(buf) ? (unsigned)sizeof(buf) : n;
-		if (read_fully(fp, buf, chunk) != 0)
+		if (io_read(io, buf, chunk) != 0)
 			return -1;
 		n -= chunk;
 	}
 	return 0;
 }
 
-static int skip_pad(FILE *fp, uint32_t size)
+static int skip_pad(const StvqIo *io, uint32_t size)
 {
 	unsigned pad = stvq_iff_padded(size);
 	if (pad > size)
-		return skip_bytes(fp, pad - size);
+		return skip_bytes(io, pad - size);
 	return 0;
 }
 
@@ -61,11 +61,11 @@ static int load_stpl(StvqPlayer *p, uint32_t size, uint16_t out[16])
 {
 	unsigned char buf[32];
 	int i;
-	if (size != STVQ_STPL_BYTES || read_fully(p->fp, buf, STVQ_STPL_BYTES) != 0)
+	if (size != STVQ_STPL_BYTES || io_read(p->io, buf, STVQ_STPL_BYTES) != 0)
 		return -1;
 	for (i = 0; i < 16; i++)
 		out[i] = stvq_read_be16(buf + i * 2);
-	return skip_pad(p->fp, size);
+	return skip_pad(p->io, size);
 }
 
 static int load_stcb(StvqPlayer *p, uint32_t size)
@@ -77,9 +77,9 @@ static int load_stcb(StvqPlayer *p, uint32_t size)
 	p->codebook = (uint8_t *)malloc(need);
 	if (!p->codebook)
 		return -1;
-	if (read_fully(p->fp, p->codebook, need) != 0)
+	if (io_read(p->io, p->codebook, need) != 0)
 		return -1;
-	return skip_pad(p->fp, size);
+	return skip_pad(p->io, size);
 }
 
 static int ensure_frame_buf(StvqPlayer *p, size_t need)
@@ -198,10 +198,7 @@ static int mem_decode_stvd(StvqPlayer *p, const unsigned char *body, uint32_t si
 
 void stvq_player_close(StvqPlayer *p)
 {
-	if (p->fp) {
-		fclose(p->fp);
-		p->fp = NULL;
-	}
+	p->io = NULL;
 	free(p->codebook);
 	p->codebook = NULL;
 	free(p->frame_buf);
@@ -209,7 +206,7 @@ void stvq_player_close(StvqPlayer *p)
 	p->frame_cap = 0;
 }
 
-int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path)
+int stvq_player_open(StvqPlayer *p, StvqHw *hw, const StvqIo *io)
 {
 	uint32_t id, size;
 	unsigned char raw[STVQ_STHD_SIZE];
@@ -217,33 +214,32 @@ int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path)
 	stvq_player_open_error = NULL;
 	memset(p, 0, sizeof(*p));
 	p->hw = hw;
-	p->fp = fopen(path, "rb");
-	if (!p->fp) {
-		stvq_player_open_error = strerror(errno);
+	p->io = io;
+	if (!io || !io->read || !io->seek) {
+		stvq_player_open_error = "bad io";
 		return -1;
 	}
 
-	if (read_chunk_hdr(p->fp, &id, &size) != 0 || id != STVQ_CHUNK_FORM) {
+	if (read_chunk_hdr(io, &id, &size) != 0 || id != STVQ_CHUNK_FORM) {
 		stvq_player_open_error = "not FORM";
 		goto fail;
 	}
 	{
 		unsigned char type[4];
-		if (read_fully(p->fp, type, 4) != 0 || stvq_read_be32(type) != STVQ_CHUNK_STVQ) {
+		if (io_read(io, type, 4) != 0 || stvq_read_be32(type) != STVQ_CHUNK_STVQ) {
 			stvq_player_open_error = "not STVQ";
 			goto fail;
 		}
 	}
 
 	while (!have_sthd || !have_stpl) {
-		long pos = ftell(p->fp);
-		if (read_chunk_hdr(p->fp, &id, &size) != 0)
+		if (read_chunk_hdr(io, &id, &size) != 0)
 			goto fail;
 		if (id == STVQ_CHUNK_STHD) {
-			if (size != STVQ_STHD_SIZE || read_fully(p->fp, raw, STVQ_STHD_SIZE) != 0)
+			if (size != STVQ_STHD_SIZE || io_read(io, raw, STVQ_STHD_SIZE) != 0)
 				goto fail;
 			stvq_header_unpack(raw, &p->hdr);
-			if (skip_pad(p->fp, size) != 0)
+			if (skip_pad(io, size) != 0)
 				goto fail;
 			have_sthd = 1;
 			p->tiles_x = stvq_tiles_x(p->hdr.width);
@@ -259,11 +255,12 @@ int stvq_player_open(StvqPlayer *p, StvqHw *hw, const char *path)
 			if (load_stcb(p, size) != 0)
 				goto fail;
 		} else if (id == STVQ_CHUNK_STFR) {
-			if (fseek(p->fp, pos, SEEK_SET) != 0)
+			/* Rewind to STFR header start (id+size already consumed). */
+			if (io_seek(io, -8, SEEK_CUR) != 0)
 				goto fail;
 			break;
 		} else {
-			if (skip_bytes(p->fp, stvq_iff_padded(size)) != 0)
+			if (skip_bytes(io, stvq_iff_padded(size)) != 0)
 				goto fail;
 		}
 	}
@@ -339,7 +336,7 @@ int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
 
 	t0 = stvq_hz200();
 
-	if (read_chunk_hdr(p->fp, &id, &size) != 0)
+	if (read_chunk_hdr(p->io, &id, &size) != 0)
 		return -1;
 	if (id == STVQ_CHUNK_STEN) {
 		p->eof = 1;
@@ -354,7 +351,7 @@ int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
 
 	/* ---- one-shot STFR payload read ---- */
 	t_read0 = stvq_hz200();
-	if (pad && read_fully(p->fp, p->frame_buf, pad) != 0)
+	if (pad && io_read(p->io, p->frame_buf, pad) != 0)
 		return -1;
 	t_read1 = stvq_hz200();
 	if (prof) {

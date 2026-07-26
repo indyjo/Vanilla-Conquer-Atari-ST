@@ -43,6 +43,13 @@
 
 void Load_Title_Screen(const char* name, GraphicViewPortClass* video_page, unsigned char* palette)
 {
+    Load_Title_Screen(name, video_page, palette, 1);
+}
+
+void Load_Title_Screen(const char* name, GraphicViewPortClass* video_page, unsigned char* palette,
+    int apply_hw_palette)
+{
+    (void)apply_hw_palette;
     GraphicBufferClass* load_buffer;
     const char* ext = strrchr(name, '.');
 

@@ -7,5 +7,7 @@
 class GraphicViewPortClass;
 
 void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsigned char *palette);
+void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsigned char *palette,
+	int apply_hw_palette);
 
 #endif

@@ -295,7 +295,19 @@ void Choose_Side(void)
 	Keyboard->Clear();
 	SysMemPage.Clear();
 
-#ifndef ATARI_ST
+#ifdef ATARI_ST
+	/*
+	**	Briefing clips after side select — same names as Open_Movie / VQA_Play above.
+	**	Play_Movie streams FORM STVQ under the .VQA name.
+	*/
+	if (!(Special.IsJurassic && AreThingiesEnabled)) {
+		if (Whom == HOUSE_GOOD) {
+			Play_Movie("GDI1");
+		} else {
+			Play_Movie("NOD1PRE");
+		}
+	}
+#else
 	if (Special.IsJurassic && AreThingiesEnabled) {
 		if (nodbrief) {
 			VQA_Close(nodbrief);

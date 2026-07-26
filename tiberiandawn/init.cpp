@@ -431,13 +431,15 @@ bool Init_Game(int, char*[])
         new MFCD("TRANSIT.MIX");
 
         CCDebugString("C&C95 - About to register GENERAL.MIX\n");
-        if (!GeneralMix)
+        if (!GeneralMix) {
             GeneralMix = new MFCD("GENERAL.MIX"); // Never cached.
+        }
 
         //	if (CCFileClass("MOVIES.MIX").Is_Available()) {
         CCDebugString("C&C95 - About to register MOVIES.MIX\n");
-        if (!MoviesMix)
+        if (!MoviesMix) {
             MoviesMix = new MFCD("MOVIES.MIX"); // Never cached.
+        }
                                                 //	}
 
         /*
@@ -460,6 +462,7 @@ bool Init_Game(int, char*[])
     CCDebugString("C&C95 - About to register SPEECH.MIX\n");
     if (CCFileClass("SPEECH.MIX").Is_Available()) {
         new MFCD("SPEECH.MIX"); // Never cached.
+    } else {
     }
     CCDebugString("C&C95 - About to register SOUNDS.MIX\n");
     new MFCD("SOUNDS.MIX"); // Cached.
@@ -470,7 +473,9 @@ bool Init_Game(int, char*[])
     CCFileClass rulesIniFile("RULES.INI");
     if (RuleINI.Load(rulesIniFile, false)) {
         Rule.Process(RuleINI);
+    } else {
     }
+
 
 #ifndef ATARI_ST
     /* Initialize the Interpolation Table.  */
@@ -504,17 +509,21 @@ bool Init_Game(int, char*[])
     if (!Special.IsFromInstall) {
 #ifdef ATARI_ST
         /*
-         * Match st_title_production: prime HW palette before title CPS load so C2P
-         * subset mapping starts from the same baseline as the test harness.
+         * After STVQ the last logo frame stays on Seen with the movie's HW pens.
+         * Prime CurrentPalette for C2P without touching $FF8240, and load the
+         * title into HidPage only — HW palette + blit wait for the VBL below.
          */
         {
-            unsigned char warm[768];
-            memcpy(warm, kStTemperatPal768, 768);
-            Set_Palette(warm);
+            int i;
+            for (i = 0; i < 768; i++) {
+                CurrentPalette[i] = (unsigned char)(kStTemperatPal768[i] & 63);
+            }
         }
-#endif
+        Load_Title_Screen(TitlePicture, &HidPage, Palette, 0);
+#else
         Load_Title_Screen(TitlePicture, &HidPage, Palette);
         Blit_Hid_Page_To_Seen_Buff();
+#endif
     }
 
     Hide_Mouse();
@@ -1527,10 +1536,6 @@ bool Select_Game(bool fade)
  *=============================================================================================*/
 static void Play_Intro(bool for_real)
 {
-#ifdef ATARI_ST
-    (void)for_real;
-    return;
-#endif
 #ifdef REMASTER_BUILD
     return; // No game intro movies. - LLL
 #else

@@ -117,6 +117,11 @@ int Get_Free_Sample_Handle(int priority);
 int Get_Digi_Handle(void);
 long Sample_Length(void const *sample);
 void Restore_Sound_Buffers(void);
+#ifdef ATARI_ST
+/* Hand off STE DMA to STV (stop voices + remove audio VBL); reclaim after movie. */
+void Ste_Audio_Yield_Dma(void);
+void Ste_Audio_Reclaim_Dma(void);
+#endif
 BOOL Set_Primary_Buffer_Format(void);
 BOOL Start_Primary_Sound_Buffer(BOOL forced);
 void Stop_Primary_Sound_Buffer(void);

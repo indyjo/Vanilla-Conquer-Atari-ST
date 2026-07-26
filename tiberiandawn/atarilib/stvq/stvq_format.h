@@ -1,8 +1,8 @@
 /*
- * stvq_format.h - FORM 'STVQ' chunk IDs and header (Atari ST viewer).
+ * stvq_format.h - FORM 'STVQ' chunk IDs and header (Atari ST runtime).
  */
-#ifndef STVQVIEW_FORMAT_H
-#define STVQVIEW_FORMAT_H
+#ifndef STVQ_FORMAT_H
+#define STVQ_FORMAT_H
 
 #include <stdint.h>
 
@@ -79,4 +79,4 @@ unsigned stvq_iff_padded(uint32_t size);
 }
 #endif
 
-#endif /* STVQVIEW_FORMAT_H */
+#endif /* STVQ_FORMAT_H */

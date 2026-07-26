@@ -4,6 +4,10 @@ Standalone Atari ST/STE player for FORM `STVQ` (`.stv`) clips produced by
 [`vqatool`](../vqatool/). See [`../vqatool/stvq.md`](../vqatool/stvq.md) for the
 bitstream.
 
+The decode/hw runtime lives in [`../../atarilib/stvq/`](../../atarilib/stvq/)
+(shared with the game `Play_Movie` path). This directory is a thin CLI
+(`stvqview.c` + FILE* `StvqIo` adapter + profiling).
+
 ## Build
 
 ```sh

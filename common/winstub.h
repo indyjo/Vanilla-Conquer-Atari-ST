@@ -28,7 +28,10 @@
 
 class GraphicViewPortClass;
 
-/* Load Title Screen. Supports PCX and CPS files as file argument. */
+/* Load Title Screen. Supports PCX and CPS files as file argument.
+ * apply_hw_palette: when 0, fill *palette / draw offscreen but do not call Set_Palette
+ * (Atari: keep prior HW pens visible until a VBL-synced reveal). */
 void Load_Title_Screen(const char* name, GraphicViewPortClass*, unsigned char*);
+void Load_Title_Screen(const char* name, GraphicViewPortClass*, unsigned char*, int apply_hw_palette);
 
 #endif // COMMON_WINSTUB_H

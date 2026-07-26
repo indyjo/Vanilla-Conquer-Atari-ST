@@ -4,14 +4,38 @@
  * Usage: stvqview.ttp file.stv
  * Keys: ESC quit, Space pause/resume.
  * Writes STVQPROF.TXT with 200Hz timing on exit.
+ *
+ * Thin CLI over atarilib/stvq (FILE* StvqIo adapter; private screens).
  */
 #include "stvq_format.h"
 #include "stvq_hw.h"
+#include "stvq_io.h"
 #include "stvq_player.h"
 #include "stvq_prof.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
+
+static int file_read(void *user, void *buf, size_t n)
+{
+	FILE *fp = (FILE *)user;
+	unsigned char *p = (unsigned char *)buf;
+	size_t got = 0;
+	while (got < n) {
+		size_t r = fread(p + got, 1, n - got, fp);
+		if (r == 0)
+			return -1;
+		got += r;
+	}
+	return 0;
+}
+
+static int file_seek(void *user, long off, int whence)
+{
+	FILE *fp = (FILE *)user;
+	return fseek(fp, off, whence) == 0 ? 0 : -1;
+}
 
 static void usage(void)
 {
@@ -36,6 +60,8 @@ static void dump_prof(const StvqProf *prof)
 
 static int play(const char *path)
 {
+	FILE *fp;
+	StvqIo io;
 	StvqHw hw;
 	StvqPlayer player;
 	StvqFrame frame;
@@ -50,15 +76,27 @@ static int play(const char *path)
 	unsigned long t_frame0 = 0;
 	unsigned long t_prev_present = 0;
 
+	memset(&io, 0, sizeof(io));
 	memset(&hw, 0, sizeof(hw));
 	memset(&player, 0, sizeof(player));
 	memset(&frame, 0, sizeof(frame));
 	stvq_prof_reset(&prof);
 
-	if (stvq_player_open(&player, &hw, path) != 0) {
+	fp = fopen(path, "rb");
+	if (!fp) {
+		printf("error: cannot open %s (%s)\n", path, strerror(errno));
+		return 1;
+	}
+
+	io.user = fp;
+	io.read = file_read;
+	io.seek = file_seek;
+
+	if (stvq_player_open(&player, &hw, &io) != 0) {
 		printf("error: cannot open %s as STVQ (%s)\n",
 		    path,
 		    stvq_player_open_error ? stvq_player_open_error : "unknown");
+		fclose(fp);
 		return 1;
 	}
 
@@ -80,9 +118,11 @@ static int play(const char *path)
 	printf("I/O: one fread per STFR; SND0 submitted from frame_buf into DMA ring\n");
 	fflush(stdout);
 
-	if (stvq_hw_init(&hw, player.hdr.width, player.hdr.height) != 0) {
+	/* NULL screens => allocate private ST-RAM ping-pong (standalone). */
+	if (stvq_hw_init(&hw, player.hdr.width, player.hdr.height, NULL, NULL, 1) != 0) {
 		printf("error: video init failed\n");
 		stvq_player_close(&player);
+		fclose(fp);
 		return 1;
 	}
 	player.hw = &hw;
@@ -130,6 +170,7 @@ static int play(const char *path)
 				printf("error: decode failed at frame %d\n", player.frame_index);
 				dump_prof(&prof);
 				stvq_player_close(&player);
+				fclose(fp);
 				return 1;
 			}
 			have_frame = 1;
@@ -221,6 +262,7 @@ done:
 		stvq_hw_shutdown(&hw);
 		printf("Audio session: dma_ok=%d use_audio=%d\n", dma_ok, use_audio);
 	}
+	fclose(fp);
 	dump_prof(&prof);
 	return rc;
 }

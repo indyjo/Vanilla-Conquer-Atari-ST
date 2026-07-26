@@ -1,8 +1,8 @@
 /*
  * stvq_prof.h - 200 Hz (_hz_200 @ 0x4BA) frame timing buckets.
  */
-#ifndef STVQVIEW_PROF_H
-#define STVQVIEW_PROF_H
+#ifndef STVQ_PROF_H
+#define STVQ_PROF_H
 
 #include <stdio.h>
 
@@ -61,4 +61,4 @@ void stvq_prof_print(const StvqProf *p, FILE *out);
 }
 #endif
 
-#endif /* STVQVIEW_PROF_H */
+#endif /* STVQ_PROF_H */

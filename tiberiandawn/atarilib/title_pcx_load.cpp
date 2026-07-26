@@ -34,6 +34,12 @@ static inline short SwapLE16(short val)
 
 void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsigned char *palette)
 {
+	Load_Title_Screen(name, video_page, palette, 1);
+}
+
+void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsigned char *palette,
+	int apply_hw_palette)
+{
 	if (!name || !video_page) {
 		return;
 	}
@@ -55,7 +61,7 @@ void Load_Title_Screen(char const *name, GraphicViewPortClass *video_page, unsig
 		return;
 	}
 #endif
-	if (palette) {
+	if (palette && apply_hw_palette) {
 		Set_Palette(palette);
 	}
 

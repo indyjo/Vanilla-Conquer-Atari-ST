@@ -1,8 +1,8 @@
 /*
  * stvq_hw.h - LoRes ping-pong screens, VBL-synced palette, STE DMA ring audio.
  */
-#ifndef STVQVIEW_HW_H
-#define STVQVIEW_HW_H
+#ifndef STVQ_HW_H
+#define STVQ_HW_H
 
 #include "stvq_format.h"
 
@@ -17,15 +17,16 @@ extern "C" {
 enum { STVQ_DMA_RING_BYTES = 2048 };
 
 typedef struct StvqHw {
-	void *screen_raw[2]; /* Mxalloc blocks (for free) */
-	uint8_t *screen[2];  /* 256-byte aligned planar 320x200 */
+	void *screen_raw[2]; /* Mxalloc blocks (for free); NULL if caller-supplied */
+	uint8_t *screen[2];  /* planar 320x200 (aligned when owned) */
+	int screens_owned;   /* 1 = allocated here; 0 = caller buffers */
 	int front;           /* index currently displayed */
 	int back;            /* index being drawn into */
 
 	uint16_t origin_x; /* pixel offset of tile (0,0) */
 	uint16_t origin_y;
 
-	int dma_ok; /* STE/TT/Falcon DMA available */
+	int dma_ok; /* STE/TT/Falcon DMA available and audio enabled */
 	int vbl_slot;
 
 	/* Present request (main -> VBL). */
@@ -35,7 +36,7 @@ typedef struct StvqHw {
 	uint16_t pending_pal[16];
 	volatile uint8_t *pending_phys;
 
-	/* Saved TOS state. */
+	/* Saved TOS state (owned-screen / standalone mode only). */
 	long old_log;
 	long old_phys;
 	short old_rez;
@@ -50,8 +51,18 @@ typedef struct StvqHw {
 	unsigned char dma_rate_idx; /* STE sound-mode rate bits */
 } StvqHw;
 
-int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height);
+/*
+ * screen0/screen1: if both non-NULL, use caller planar buffers. Game path flips
+ * with Setscreen(log=phys=front) then Vsync (phys latch) before swapping
+ * front/back. If both NULL, allocate ST-RAM screens (standalone; VBL flip).
+ * enable_audio: non-zero to allocate/use DMA ring when hardware supports it.
+ */
+int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, uint8_t *screen1,
+    int enable_audio);
 void stvq_hw_shutdown(StvqHw *hw);
+
+/* Force phys base back to screen[0] (entry VisiblePage). Safe any time after init. */
+void stvq_hw_restore_entry_phys(StvqHw *hw);
 
 uint8_t *stvq_hw_back(StvqHw *hw);
 uint8_t *stvq_hw_front(StvqHw *hw);
@@ -140,4 +151,4 @@ void stvq_hw_blit_tile(uint8_t *screen, unsigned px, unsigned py, const uint8_t 
 }
 #endif
 
-#endif /* STVQVIEW_HW_H */
+#endif /* STVQ_HW_H */

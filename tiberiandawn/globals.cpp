@@ -43,6 +43,12 @@ bool Debug_Cheat = false;
 bool Debug_Remap = false;
 bool Debug_Icon = false;
 bool Debug_Clipped_Tactical_Redraw = false; /* F8 / Debug_Flag: true = cell-flag + per-cell clip + footprint; false = unclipped redraw (Refresh_Cells / layer Render / IsToDisplay) */
+/*
+ * TODO(ST): Debug_Flag defaults true here (RA defaults false). With it on, "replay
+ * introduction" walks the debug movie carousel (INTRO2 → GDIEND1 → …) so the 2nd
+ * click soft-skips when those .VQA/STV files are missing. Decide: default false for
+ * release, or keep carousel and skip-absent clips in Play_Intro.
+ */
 bool Debug_Flag = true;
 bool Debug_Lose = false;
 bool Debug_Win = false;

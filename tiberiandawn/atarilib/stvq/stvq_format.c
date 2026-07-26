@@ -1,5 +1,5 @@
 /*
- * stvq_format.c - STVQ header helpers (viewer).
+ * stvq_format.c - STVQ header helpers (Atari ST runtime).
  */
 #include "stvq_format.h"
 

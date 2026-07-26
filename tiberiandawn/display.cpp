@@ -627,7 +627,6 @@ void DisplayClass::Init_IO(void)
 void DisplayClass::Init_Theater(TheaterType theater)
 {
     char fullname[16];
-    char iconname[16];
 #ifndef _RETRIEVE
     static TLucentType const MouseCols[4] = {
         {BLACK, BLACK, 110, 0}, {WHITE, WHITE, 110, 0}, {LTGREY, LTGREY, 110, 0}, {DKGREY, DKGREY, 110, 0}};
@@ -673,19 +672,24 @@ void DisplayClass::Init_Theater(TheaterType theater)
     }
 
 #endif
+#ifdef REMASTER_BUILD
     /*
     ** Register the hi-res icons mix file now since it is theater specific
     */
-    sprintf(fullname, "%s.MIX", Theaters[Theater].Root);
-    strcpy(iconname, fullname);
-    strcpy(&iconname[4], "ICNH.MIX");
-    if (Theater != LastTheater) {
-        if (TheaterIcons) {
-            delete TheaterIcons;
+    {
+        char iconname[16];
+        sprintf(fullname, "%s.MIX", Theaters[Theater].Root);
+        strcpy(iconname, fullname);
+        strcpy(&iconname[4], "ICNH.MIX");
+        if (Theater != LastTheater) {
+            if (TheaterIcons) {
+                delete TheaterIcons;
+            }
+            TheaterIcons = new MFCD(iconname);
+            TheaterIcons->Cache();
         }
-        TheaterIcons = new MFCD(iconname);
-        TheaterIcons->Cache();
     }
+#endif
 
     /*
     **	Load the custom palette associated with this theater.

@@ -86,16 +86,16 @@ static void Probe_ST_Blitter(void)
 	short cfg = Blitmode(-1);
 	if ((cfg & 0x0002) == 0) {
 		AllowHardwareBlitFills = FALSE;
-		printf("C&C - Atari BLiTTER chip not available.\nUsing software fallback.\n");
+		DBG_WARN("Atari BLiTTER chip not available; using software fallback");
 		return;
 	}
-	printf("C&C - Atari BLiTTER chip available.\n");
+	DBG_INFO("Atari BLiTTER chip available");
 	/* Only force hardware mode when hardware blits are enabled in config. */
 	if (AllowHardwareBlitFills) {
 		Blitmode(BLIT_HARD);
-		printf("Using hardware blits.\n");
+		DBG_INFO("Using hardware blits");
 	} else {
-		printf("Using software blits due to config.\n");
+		DBG_INFO("Using software blits due to config");
 	}
 }
 
@@ -138,17 +138,17 @@ extern bool ReadyToQuit;
 
 int main(int argc, char *argv[])
 {
-	printf("C&C - Starting up.\n");
+	printf("See CNC.LOG for debug logging.\n");
+	Debug_String_File("cnc.log");
+
+	DBG_INFO("C&C - Starting up");
 
 	{
 		long const st_largest = Ram_Free(MEM_NORMAL);
 		long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
-		printf("C&C ST - At program start:\n");
-		printf("ST-RAM %ld b (~%ld KiB)\n",
-		    st_largest, (st_largest > 0L) ? (st_largest / 1024L) : 0L);
-		printf("TT-RAM %ld b (~%ld KiB)\n",
+		DBG_INFO("C&C ST - At program start: ST-RAM %ld b (~%ld KiB), TT-RAM %ld b (~%ld KiB)",
+		    st_largest, (st_largest > 0L) ? (st_largest / 1024L) : 0L,
 		    tt_largest, (tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
-		fflush(stdout);
 	}
 
 	/*
@@ -224,7 +224,7 @@ int main(int argc, char *argv[])
 		bool const have_conquer_ini = Load_Private_Config_From_INI(cfile);
 		Read_Setup_Options( &cfile );
 
-		printf("C&C - Initialising audio.\n");
+		DBG_INFO("C&C - Initialising audio");
 
 		/*
 		** Initialize audio system (STe-class DMA 8-bit mono in audio_ste.cpp).
@@ -237,7 +237,7 @@ int main(int argc, char *argv[])
 		Palette = new(MEM_CLEAR) unsigned char[768];
 
 		BOOL video_success = FALSE;
-		printf("C&C - Setting video mode.\n");
+		DBG_INFO("C&C - Setting video mode");
 #ifdef ATARI_ST
 		ScreenWidth = 320;
 		ScreenHeight = 200;
@@ -270,8 +270,7 @@ int main(int argc, char *argv[])
 		Probe_ST_Blitter();
 		ST_Cache_Init();
 
-		printf("C&C - Initialising video surfaces.\n");
-		printf("C&C - ScreenWidth: %d, ScreenHeight: %d\n", ScreenWidth, ScreenHeight);
+		DBG_INFO("C&C - Initialising video surfaces (%dx%d)", ScreenWidth, ScreenHeight);
 
 		/*
 		** Initialize video buffers
@@ -314,10 +313,10 @@ int main(int argc, char *argv[])
 			SeenBuff.Attach(&VisiblePage,0, 0, ScreenWidth, ScreenHeight);
 			HidPage.Attach(&HiddenPage, 0, 0, ScreenWidth, ScreenHeight);
 		}
-		printf("C&C - Adjusting variables for resolution.\n");
+		DBG_INFO("C&C - Adjusting variables for resolution");
 		Options.Adjust_Variables_For_Resolution();
 
-		printf("C&C - Setting palette.\n");
+		DBG_INFO("C&C - Setting palette");
 		/////////Set_Palette(Palette);
 
 		WindowList[0][WINDOWWIDTH] 	= SeenBuff.Get_Width();
@@ -328,7 +327,7 @@ int main(int argc, char *argv[])
 		*/
 		Memory_Error = &Memory_Error_Handler;
 
-		printf("C&C - Creating mouse class.\n");
+		DBG_INFO("C&C - Creating mouse class");
 		WWMouse = new WWMouseClass(&SeenBuff, 32, 32);
 		MouseInstalled = TRUE;
 		IKBD_Install();
@@ -337,7 +336,7 @@ int main(int argc, char *argv[])
 		/*
 		** See if we should run the intro
 		*/
-		printf("C&C - Reading CONQUER.INI.\n");
+		DBG_INFO("C&C - Reading CONQUER.INI");
 		char *buffer = (char*)Alloc(64000 , MEM_NORMAL);
 		if (have_conquer_ini) {
 			cfile.Read(buffer, cfile.Size());
@@ -385,7 +384,7 @@ int main(int argc, char *argv[])
 
 		Memory_Error_Exit = Print_Error_End_Exit;
 
-		printf("C&C - Entering main game.\n");
+		DBG_INFO("C&C - Entering main game");
 		Main_Game(argc, argv);
 
 		VisiblePage.Clear();
@@ -393,7 +392,7 @@ int main(int argc, char *argv[])
 
 		Memory_Error_Exit = Print_Error_Exit;
 
-		printf("C&C - About to exit.\n");
+		DBG_INFO("C&C - About to exit");
 		ReadyToQuit = 1;
 
 		/*
@@ -446,12 +445,12 @@ void Prog_End(const char *why, bool fatal)
 	//		NullModem.Change_IRQ_Priority(0);
 	// }
 #endif
-	printf("C&C - About to call Sound_End.\n");
+	DBG_INFO("C&C - About to call Sound_End");
 	IKBD_Uninstall();
 	Sound_End();
-	printf("C&C - Returned from Sound_End.\n");
+	DBG_INFO("C&C - Returned from Sound_End");
 	if (WWMouse){
-		printf("C&C - Deleting mouse object.\n");
+		DBG_INFO("C&C - Deleting mouse object");
 		WWMouseClass *mouse_ptr = WWMouse;
 		delete mouse_ptr;
 		WWMouse = NULL;
@@ -462,7 +461,7 @@ void Prog_End(const char *why, bool fatal)
 	Cursconf(CURS_SHOW, 0);
 
 	if (Palette){
-		printf("C&C - Deleting palette object.\n");
+		DBG_INFO("C&C - Deleting palette object");
 		delete [] Palette;
 		Palette = NULL;
 	}
@@ -543,7 +542,7 @@ static bool Load_Private_Config_From_INI(RawFileClass &cfile)
 			profile_data = (char *)profile_alloc;
 		}
 	} else {
-		printf("C&C - CONQUER.INI not found; using defaults.\n");
+		DBG_INFO("C&C - CONQUER.INI not found; using defaults");
 	}
 
 	Read_Private_Config_Struct(profile_data, &NewConfig);

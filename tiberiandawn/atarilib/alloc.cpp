@@ -5,6 +5,7 @@
  */
 
 #include "memflag.h"
+#include "debugstring.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,13 +208,11 @@ void ST_Log_Free_Memory(const char *label)
 	long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
 	const char *tag = (label != NULL && label[0] != '\0') ? label : "free memory";
 
-	printf("C&C ST - %s:\n", tag);
-	printf("ST-RAM %ld b (~%ld KiB)\n",
+	DBG_INFO("C&C ST - %s: ST-RAM %ld b (~%ld KiB), TT-RAM %ld b (~%ld KiB)",
+	    tag,
 	    st_largest,
-	    (st_largest > 0L) ? (st_largest / 1024L) : 0L);
-	printf("TT-RAM %ld b (~%ld KiB)\n",
+	    (st_largest > 0L) ? (st_largest / 1024L) : 0L,
 	    tt_largest,
 	    (tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
-	fflush(stdout);
 }
 

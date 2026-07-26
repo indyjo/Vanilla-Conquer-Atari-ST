@@ -15,6 +15,7 @@
 #include "misc.h"
 #include "memflag.h"
 #include "st_hw_probe.h"
+#include "debugstring.h"
 
 #include <mint/osbind.h>
 #include <mint/ostruct.h>
@@ -118,7 +119,7 @@ static void Switch_To_LoRes(void)
 	int new_rez = Getrez();
 	if (new_rez == 0) {
 		ResolutionChanged = 1;
-		printf("C&C - Switched to LoRes mode (320x200).\n");
+		DBG_INFO("C&C - Switched to LoRes mode (320x200)");
 	} else {
 		printf("C&C - Warning: Could not switch to LoRes mode. Current mode: %d\n", new_rez);
 	}
@@ -129,7 +130,7 @@ static void Restore_Original_Resolution(void)
 	if (ResolutionChanged && OriginalResolution >= 0) {
 		ST_Shifter_Set_Sync_Mode_Only(OriginalResolution);
 		ResolutionChanged = 0;
-		printf("C&C - Restored original resolution mode: %d\n", OriginalResolution);
+		DBG_INFO("C&C - Restored original resolution mode: %d", OriginalResolution);
 	}
 }
 
@@ -147,7 +148,7 @@ void ST_Screen_Capture_Tos_Video_State(void)
 	Tos_Rez = Getrez();
 	Tos_StateCaptured = 1;
 	Palette_ST_Capture_Hardware_State_Once();
-	printf("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d\n",
+	DBG_INFO("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d",
 		Tos_LogBase, Tos_PhysBase, Tos_Rez);
 }
 
@@ -182,7 +183,7 @@ void ST_Screen_Shutdown_Restore_Tos(void)
 		if (!ST_Current_Video_Matches((long)Tos_LogBase, (long)Tos_PhysBase, Tos_Rez)) {
 			ST_Shifter_Set_Sync_Mode_Only(Tos_Rez);
 			ST_Screen_Hardware_Set_Phys_Base((void *)Tos_PhysBase);
-			printf("C&C - Restored TOS shifter: phys=$%lX rez=%d (log=$%lX unchanged in OS).\n",
+			DBG_INFO("C&C - Restored TOS shifter: phys=$%lX rez=%d (log=$%lX unchanged in OS)",
 				Tos_PhysBase, Tos_Rez, Tos_LogBase);
 		}
 	}
@@ -282,7 +283,7 @@ void ST_Screen_Capture_Tos_Video_State(void)
 	Tos_Rez = Getrez();
 	Tos_StateCaptured = 1;
 	Palette_ST_Capture_Hardware_State_Once();
-	printf("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d\n",
+	DBG_INFO("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d",
 		Tos_LogBase, Tos_PhysBase, Tos_Rez);
 }
 

@@ -132,7 +132,7 @@ static inline uint32_t ReadLE32_u8(const unsigned char *p)
 #define APPLY_XOR_DELTA_LINEAR_BOUNDED(target, delta, frame_bytes) Apply_XOR_Delta((target), (delta))
 #endif
 
-#if defined(DEBUG) || defined(_DEBUG)
+#if defined(DEBUG)
 static const unsigned char *g_wsa_dbg_direct_begin = NULL;
 static const unsigned char *g_wsa_dbg_direct_end = NULL; /* exclusive */
 static int g_wsa_dbg_direct_enabled = 0;
@@ -441,7 +441,7 @@ BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int frame_number, i
 	if (sys_header->current_frame == total_frames) {
 		if (!(sys_header->flags & WSA_FRAME_0_ON_PAGE)) {
 			if (direct_to_dest) {
-#if defined(DEBUG) || defined(_DEBUG)
+#if defined(DEBUG)
 				const unsigned long direct_span =
 					((unsigned long)sys_header->pixel_height - 1UL) * (unsigned long)dest_width +
 					(unsigned long)sys_header->pixel_width;
@@ -452,11 +452,11 @@ BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int frame_number, i
 				                                    sys_header->pixel_width,
 				                                    dest_width,
 				                                    (sys_header->flags & WSA_FRAME_0_IS_DELTA) ? DO_XOR : DO_COPY);
-#if defined(DEBUG) || defined(_DEBUG)
+#if defined(DEBUG)
 				WSA_Debug_Clear_Direct_Bounds();
 #endif
 			} else {
-#if defined(DEBUG) || defined(_DEBUG)
+#if defined(DEBUG)
 				const unsigned int guarded_frame_bytes =
 					(unsigned int)((const char *)sys_header->delta_buffer - (const char *)frame_buffer);
 				APPLY_XOR_DELTA_LINEAR_BOUNDED(frame_buffer, sys_header->delta_buffer, guarded_frame_bytes);
@@ -907,7 +907,7 @@ PRIVATE BOOL Apply_Delta(SysAnimHeaderType *sys_header, int curr_frame, char *de
 	LCW_Uncompress(delta_back, sys_header->delta_buffer, sys_header->largest_frame_size);
 
 	if (sys_header->flags & WSA_TARGET_IN_BUFFER) {
-#if defined(DEBUG) || defined(_DEBUG)
+#if defined(DEBUG)
 		const unsigned int guarded_frame_bytes =
 			(unsigned int)((const char *)sys_header->delta_buffer - (const char *)dest_ptr);
 		APPLY_XOR_DELTA_LINEAR_BOUNDED(dest_ptr, sys_header->delta_buffer, guarded_frame_bytes);
@@ -915,14 +915,14 @@ PRIVATE BOOL Apply_Delta(SysAnimHeaderType *sys_header, int curr_frame, char *de
 		APPLY_XOR_DELTA_LINEAR(dest_ptr, sys_header->delta_buffer);
 #endif
 	} else {
-#if defined(DEBUG) || defined(_DEBUG)
+#if defined(DEBUG)
 		const unsigned long direct_span =
 			((unsigned long)sys_header->pixel_height - 1UL) * (unsigned long)dest_w +
 			(unsigned long)sys_header->pixel_width;
 		WSA_Debug_Set_Direct_Bounds(dest_ptr, direct_span);
 #endif
 		Apply_XOR_Delta_To_Page_Or_Viewport(dest_ptr, sys_header->delta_buffer, sys_header->pixel_width, dest_w, DO_XOR);
-#if defined(DEBUG) || defined(_DEBUG)
+#if defined(DEBUG)
 		WSA_Debug_Clear_Direct_Bounds();
 #endif
 	}

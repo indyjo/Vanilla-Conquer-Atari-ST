@@ -881,11 +881,10 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 	ste_falcon_dma_matrix_connect();
 	ste_dma_mixer_connect();
 	ste_audio_vbl_install();
-	printf("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d, hw=%d)\n",
+	DBG_INFO("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d, hw=%d)",
 	    g_ste_dma_rate_idx == STE_HW_RATE_12517_IDX ? 12517u : 25033u,
 	    g_ste_pcm_dup2x,
 	    ST_Hw_Machine_Major());
-	fflush(stdout);
 	return TRUE;
 }
 

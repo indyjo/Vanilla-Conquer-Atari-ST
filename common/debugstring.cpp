@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "debugstring.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -64,6 +66,12 @@ void Debug_String_Log(unsigned level, const char* file, int line, const char* fm
         fprintf(DebugState.File, "\n");
         va_end(args);
         fflush(DebugState.File);
+#ifdef ATARI_ST
+        /* File already has the line; only mirror WARN+ to the TOS console. */
+        if (level > LOGLEVEL_WARN) {
+            return;
+        }
+#endif
     }
 
     /* Don't print file and line numbers to stderr to avoid clogging it up with too much info */

@@ -224,9 +224,18 @@ DEFINES += LIBCMINI
 endif
 endif
 
+# _DEBUG enables DBG_* logging (gated further by LOGGING_LEVEL). Always on;
+# NDEBUG / -DDEBUG remain the Debug-vs-Release switches for asserts and extra checks.
+DEFINES += _DEBUG
+# LOGGING_LEVEL: optional override of common/debugstring.h default (5).
+#   0=none 1=fatal 2=error 3=warn 4=info 5=debug 6=trace
+#   make LOGGING_LEVEL=3   # WARN and above only
+ifneq ($(LOGGING_LEVEL),)
+DEFINES += LOGGING_LEVEL=$(LOGGING_LEVEL)
+endif
+
 # Debug configuration
 ifeq ($(CONFIG),Debug)
-DEFINES += _DEBUG
 # -O2 keeps libstdc++ iostream dead-strippable under --gc-sections; -O0 leaves
 # references that pull MiNT-only POSIX symbols (writev, poll, …) from libstdc++.a.
 CXXFLAGS = $(CXXFLAGS_COMMON) -O2 -g -DDEBUG
@@ -270,10 +279,8 @@ ASMFLAGS += -g
 endif
 
 # Resource compiler flags (windres style)
-RCFLAGS = -O coff
-ifeq ($(CONFIG),Debug)
-RCFLAGS += -D_DEBUG=1
-else
+RCFLAGS = -O coff -D_DEBUG=1
+ifneq ($(CONFIG),Debug)
 RCFLAGS += -DNDEBUG=1
 endif
 

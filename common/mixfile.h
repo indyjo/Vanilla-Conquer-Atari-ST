@@ -20,9 +20,6 @@
 
 #include <errno.h>
 #include <stdlib.h>
-#if defined(ATARI_ST)
-#include <cstdio>
-#endif
 #include "debugstring.h"
 #include "listnode.h"
 #include "pk.h"
@@ -54,8 +51,11 @@ static inline long MixFile_Payload_KiB(int data_size)
 static inline void MixFile_Announce_Load(char const* filename, bool ok)
 {
     if (filename != NULL && filename[0] != '\0') {
-        std::printf("Load %s [%s]\n", filename, ok ? "ok" : "fail");
-        std::fflush(stdout);
+        if (ok) {
+            DBG_INFO("Load %s [ok]", filename);
+        } else {
+            DBG_WARN("Load %s [fail]", filename);
+        }
     }
 }
 #endif

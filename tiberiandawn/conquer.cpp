@@ -2403,8 +2403,7 @@ void Play_Movie(char const* name, ThemeType theme, bool clrscrn)
         _makepath(fullname, NULL, NULL, name, ".VQA");
         _makepath(palname, NULL, NULL, name, ".VQP");
 #ifdef ATARI_ST
-        printf("Play %s\n", fullname);
-        fflush(stdout);
+        DBG_INFO("Play %s", fullname);
 #endif
 #ifdef CHEAT_KEYS
         Mono_Set_Cursor(0, 0);

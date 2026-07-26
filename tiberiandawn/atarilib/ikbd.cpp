@@ -1,5 +1,6 @@
 #include "ikbd.h"
 #include "keyboard.h"
+#include "debugstring.h"
 
 #include <mint/osbind.h>
 
@@ -360,11 +361,15 @@ static long IKBD_Shutdown_Supervisor(void)
 BOOL IKBD_Install(void)
 {
 	if (HandlerInstalled) {
-		printf("IKBD: interrupt handler already installed.\n");
+		DBG_INFO("IKBD: interrupt handler already installed");
 		return TRUE;
 	}
 	BOOL ok = Supexec(IKBD_Install_Supervisor) != 0 ? TRUE : FALSE;
-	printf("IKBD: interrupt handler %s.\n", ok ? "installed" : "install failed");
+	if (ok) {
+		DBG_INFO("IKBD: interrupt handler installed");
+	} else {
+		printf("IKBD: interrupt handler install failed.\n");
+	}
 	return ok;
 }
 

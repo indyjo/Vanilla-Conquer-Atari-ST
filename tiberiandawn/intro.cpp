@@ -140,9 +140,12 @@ void Choose_Side(void)
 	speechn = Load_Alloc_Data(nodfile);
 	Sample_Make_PCM((void *)speechn);
 
+#if defined(WIN32) || defined(ATARI_ST)
+	if (Special.IsFromInstall) {
 #ifdef WIN32
-	if (Special.IsFromInstall){
-		if (mem_info.dwTotalPhys >= 12*1024*1024){
+		if (mem_info.dwTotalPhys >= 12 * 1024 * 1024)
+#endif
+		{
 			VisiblePage.Clear();
 			PreserveVQAScreen = 1;
 			Play_Movie("INTRO2", THEME_NONE, false);

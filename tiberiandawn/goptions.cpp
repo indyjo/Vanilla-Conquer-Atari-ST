@@ -388,6 +388,8 @@ void GameOptionsClass::Process(void)
                     memset(BlackPalette, 0x00, 768);
                     Set_Palette(BlackPalette);
                     Map.Flag_To_Redraw(true);
+                    Map.Render();
+                    Fade_Palette_To(GamePalette, FADE_PALETTE_FAST, Call_Back);
                     Theme.Queue_Song(THEME_PICK_ANOTHER);
                     process = false;
                 }

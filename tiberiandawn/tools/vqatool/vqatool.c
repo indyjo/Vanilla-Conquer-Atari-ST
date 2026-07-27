@@ -8,6 +8,7 @@
 #include "stvq_metric.h"
 #include "stvq_preview.h"
 #include "stvq_refine_w16.h"
+#include "vqa_dump.h"
 #include "vqa_inspect.h"
 
 #include <stdio.h>
@@ -19,11 +20,18 @@ static void usage(const char *argv0)
 	fprintf(stderr,
 	    "usage: %s <command> [options] <file>...\n"
 	    "\n"
-	    "VQA inspect:\n"
+	    "VQA inspect / dump:\n"
 	    "  inspect <file.vqa>      print VQA structure and metadata\n"
 	    "    -f, --frames          list each frame container and sub-chunk summary\n"
 	    "    -p, --palette         list frames where the palette changes\n"
 	    "    -v, --verbose         list every chunk with file offset\n"
+	    "  dump <file.vqa>         write decoded frames as uncompressed BMP\n"
+	    "    -o, --outdir DIR      output directory (default: <stem>_bmp)\n"
+	    "    --every N             dump every Nth frame (default 1 = all)\n"
+	    "    --frame N             dump a single frame\n"
+	    "    --frames A-B          dump inclusive frame range\n"
+	    "    --rgb24               24-bit BGR instead of 8-bit paletted\n"
+	    "    --dry-run             decode + print plan only\n"
 	    "\n"
 	    "16-color W16 sidecars (next to the VQA):\n"
 	    "  init-w16 <file.vqa>     write .pal/.hist; create missing .w16 via palette-opt\n"
@@ -73,6 +81,103 @@ static void usage(const char *argv0)
 	    (double)STVQ_DEFAULT_DCT_ALPHA,
 	    (unsigned)STVQ_DEFAULT_DCT_COEFFS,
 	    (unsigned)STVQ_DEFAULT_DCT_CHROMA_COEFFS);
+}
+
+static int parse_frame_range(const char *s, int *first, int *last)
+{
+	char *end = NULL;
+	long a, b;
+	a = strtol(s, &end, 10);
+	if (end == s || a < 0)
+		return -1;
+	if (*end == '\0') {
+		*first = (int)a;
+		*last = (int)a;
+		return 0;
+	}
+	if (*end != '-')
+		return -1;
+	b = strtol(end + 1, &end, 10);
+	if (*end != '\0' || b < 0)
+		return -1;
+	*first = (int)a;
+	*last = (int)b;
+	return 0;
+}
+
+static int cmd_dump(int argc, char **argv, int argi)
+{
+	VqaDumpOpts opts;
+	memset(&opts, 0, sizeof(opts));
+	opts.every = 1;
+	opts.frame_first = -1;
+	opts.frame_last = -1;
+
+	for (; argi < argc; argi++) {
+		const char *a = argv[argi];
+		if (strcmp(a, "-o") == 0 || strcmp(a, "--outdir") == 0) {
+			if (++argi >= argc) {
+				fprintf(stderr, "error: %s needs a directory\n", a);
+				return 1;
+			}
+			opts.out_dir = argv[argi];
+		} else if (!strncmp(a, "--outdir=", 9)) {
+			opts.out_dir = a + 9;
+		} else if (strcmp(a, "--every") == 0) {
+			unsigned n;
+			if (++argi >= argc || sscanf(argv[argi], "%u", &n) != 1 || n < 1u) {
+				fprintf(stderr, "error: bad --every\n");
+				return 1;
+			}
+			opts.every = (int)n;
+		} else if (!strncmp(a, "--every=", 8)) {
+			unsigned n;
+			if (sscanf(a + 8, "%u", &n) != 1 || n < 1u) {
+				fprintf(stderr, "error: bad --every\n");
+				return 1;
+			}
+			opts.every = (int)n;
+		} else if (strcmp(a, "--frame") == 0) {
+			if (++argi >= argc || parse_frame_range(argv[argi], &opts.frame_first, &opts.frame_last) != 0) {
+				fprintf(stderr, "error: bad --frame\n");
+				return 1;
+			}
+		} else if (!strncmp(a, "--frame=", 8)) {
+			if (parse_frame_range(a + 8, &opts.frame_first, &opts.frame_last) != 0) {
+				fprintf(stderr, "error: bad --frame\n");
+				return 1;
+			}
+		} else if (strcmp(a, "--frames") == 0) {
+			if (++argi >= argc || parse_frame_range(argv[argi], &opts.frame_first, &opts.frame_last) != 0) {
+				fprintf(stderr, "error: bad --frames (want A-B)\n");
+				return 1;
+			}
+		} else if (!strncmp(a, "--frames=", 9)) {
+			if (parse_frame_range(a + 9, &opts.frame_first, &opts.frame_last) != 0) {
+				fprintf(stderr, "error: bad --frames (want A-B)\n");
+				return 1;
+			}
+		} else if (strcmp(a, "--rgb24") == 0) {
+			opts.rgb24 = 1;
+		} else if (strcmp(a, "--dry-run") == 0) {
+			opts.dry_run = 1;
+		} else if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
+			usage(argv[0]);
+			return 0;
+		} else if (a[0] == '-') {
+			fprintf(stderr, "error: unknown option: %s\n", a);
+			usage(argv[0]);
+			return 1;
+		} else {
+			break;
+		}
+	}
+	if (argi >= argc) {
+		fprintf(stderr, "error: dump requires a VQA file\n");
+		return 1;
+	}
+	opts.vqa_path = argv[argi];
+	return vqa_dump(&opts) != 0;
 }
 
 static int cmd_inspect(int argc, char **argv, int argi)
@@ -479,6 +584,9 @@ int main(int argc, char **argv)
 
 	if (strcmp(argv[1], "inspect") == 0) {
 		return cmd_inspect(argc, argv, 2);
+	}
+	if (strcmp(argv[1], "dump") == 0) {
+		return cmd_dump(argc, argv, 2);
 	}
 	if (strcmp(argv[1], "init-w16") == 0) {
 		return cmd_init_w16(argc, argv, 2);

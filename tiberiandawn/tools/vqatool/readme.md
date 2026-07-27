@@ -5,7 +5,7 @@ Host utility for inspecting Westwood VQA files and encoding them to FORM `STVQ`
 
 See [stvq.md](stvq.md) for the STVQ bitstream.
 
-Typical flow: **inspect** → **init-w16** / **refine-w16** → **fix-w16** → **encode** → **preview**.
+Typical flow: **inspect** → **dump** (optional decode check) → **init-w16** / **refine-w16** → **fix-w16** → **encode** → **preview**.
 
 ## Build
 
@@ -30,6 +30,20 @@ Sample VQAs (NOD/GDI) live under `samples/` (gitignored). See `samples/readme.md
 | `-f`, `--frames` | list each frame container and sub-chunk summary |
 | `-p`, `--palette` | list frames where the palette changes |
 | `-v`, `--verbose` | list every chunk with file offset |
+
+## Dump decoded frames (BMP)
+
+Writes each decoded VQA frame as an uncompressed Windows BMP so you can spot
+decode issues before encode. Default is **8-bit paletted** (VGA indices +
+segment palette); use `--rgb24` for 24-bit BGR.
+
+```sh
+./vqatool dump CONSYARD.VQA
+./vqatool dump --every 15 -o /tmp/cs CONSYARD.VQA
+./vqatool dump --frames 0-30 --rgb24 GDI1.VQA
+```
+
+Output defaults to `<stem>_bmp/` next to the VQA (`CONSYARD_0000.bmp`, …).
 
 ## 16-color W16 sidecars
 

@@ -208,30 +208,30 @@ static int load_cbpz(DecodeCtx *d, uint32_t size)
 	unsigned group = d->hdr.groupsize ? d->hdr.groupsize : 8;
 	unsigned char *dst;
 	if (d->num_partial == 0) {
+		/* Compressed partials accumulate in the high half (like Westwood CBOffset). */
 		d->cbpz_off = d->max_cb / 2u;
 		d->partial_size = 0;
 	}
-	if (d->cbpz_off + pad > d->max_cb)
+	/*
+	 * Match VQA_Load_CBPZ: read IFF-padded bytes, but advance PartialCBSize by
+	 * iffsize only so the next chunk overwrites the pad byte. Leaving pads in
+	 * the stream corrupts LCW (breaks every groupsize frames).
+	 */
+	if (d->cbpz_off + d->partial_size + pad > d->max_cb)
 		return -1;
-	dst = d->next_cb + d->cbpz_off;
+	dst = d->next_cb + d->cbpz_off + d->partial_size;
 	if (vqa_reader_read(&d->r, dst, pad) != 0)
 		return -1;
 	d->partial_size += size;
-	d->cbpz_off += pad;
 	d->num_partial++;
 	if (d->num_partial == group) {
-		unsigned char *comp = d->next_cb + (d->max_cb / 2u);
-		unsigned comp_len = d->cbpz_off - (d->max_cb / 2u);
+		unsigned char *comp = d->next_cb + d->cbpz_off;
+		unsigned comp_len = d->partial_size;
 		unsigned char *tmpbuf = (unsigned char *)malloc(comp_len ? comp_len : 1);
 		unsigned char *decomp_dst;
 		if (!tmpbuf)
 			return -1;
 		memcpy(tmpbuf, comp, comp_len);
-		/*
-		 * Decompress into a scratch area then copy into next_cb, or decompress
-		 * in place carefully. next_cb's low half may overlap; use cur_cb as
-		 * temp only if !cb_new_ready — simpler: malloc dest.
-		 */
 		decomp_dst = (unsigned char *)malloc(d->max_cb);
 		if (!decomp_dst) {
 			free(tmpbuf);

@@ -21,6 +21,7 @@
 *.dylib
 *.dll
 *.exe
+*.d
 
 # Python cache artifacts
 __pycache__/

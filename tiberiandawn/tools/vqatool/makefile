@@ -15,6 +15,7 @@ C_SRCS = \
 	vqa_io.c \
 	vqa_inspect.c \
 	vqa_decode.c \
+	vqa_dump.c \
 	stvq_format.c \
 	stvq_write.c \
 	stvq_palette.c \

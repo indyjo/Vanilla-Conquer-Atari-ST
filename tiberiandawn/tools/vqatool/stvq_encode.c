@@ -280,7 +280,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	if (opts->dry_run) {
 		for (s = 0; s < dec.segment_count; s++) {
 			char pal[768], hist[768], w16[768];
-			if (opts->have_w16_crc) {
+			if (opts->have_w16_crc && opts->w16_dir) {
 				stvq_crc_w16_path(opts->w16_dir, opts->w16_crc, (int)s, w16, sizeof(w16));
 				fprintf(stderr, "  seg %u frames %d..%d → %s\n", s, dec.segments[s].start_frame,
 				    dec.segments[s].end_frame, w16);
@@ -312,11 +312,12 @@ int stvq_encode(const StvqEncodeOpts *opts)
 
 	for (s = 0; s < dec.segment_count; s++) {
 		int load_rc;
-		if (opts->have_w16_crc)
+		if (opts->have_w16_crc && opts->w16_dir) {
 			load_rc = stvq_load_segment_w16_crc(
 			    opts->w16_dir, opts->w16_crc, (int)s, &dec.segments[s], &segpal[s]);
-		else
+		} else {
 			load_rc = stvq_load_segment_w16(opts->vqa_path, (int)s, &dec.segments[s], &segpal[s]);
+		}
 		if (load_rc != 0)
 			goto done;
 		stvq_c2p_init(&c2ps[s], &segpal[s].w16);

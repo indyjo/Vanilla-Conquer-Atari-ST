@@ -6,6 +6,7 @@ COMMON = ../../../common
 CFLAGS ?= -O2 -Wall -Wextra -std=c99
 CXXFLAGS ?= -O2 -Wall -Wextra -std=c++17
 CPPFLAGS = -I$(COMMON) -I. -I../palette-opt
+DEPFLAGS = -MMD -MP
 LDFLAGS ?=
 
 C_SRCS = \
@@ -28,29 +29,32 @@ C_SRCS = \
 	stvq_fix_w16.c
 
 OBJS = $(C_SRCS:.c=.o) palette_color.o lcw.o vqa_lcw_bridge.o unvqbuff.o vqa_unvq_bridge.o
+DEPS = $(OBJS:.o=.d)
 
 vqatool: $(OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $(OBJS) -lm
 
 palette_color.o: ../palette-opt/palette_color.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 lcw.o: $(COMMON)/lcw.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 unvqbuff.o: $(COMMON)/unvqbuff.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 vqa_lcw_bridge.o: vqa_lcw_bridge.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 vqa_unvq_bridge.o: vqa_unvq_bridge.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 %.o: %.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 clean:
-	rm -f vqatool $(OBJS)
+	rm -f vqatool $(OBJS) $(DEPS)
+
+-include $(DEPS)
 
 .PHONY: clean

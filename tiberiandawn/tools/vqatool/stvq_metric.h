@@ -13,8 +13,10 @@ extern "C" {
 /* Fixed-point scale for unsigned tile error: round(sum_sq * SCALE). */
 #define STVQ_METRIC_SCALE 65536.0f
 
-/* Feature vector capacity: Y + U + V zig-zag packs. */
+/* Max zig-zag coeffs per Y/U/V plane (8×8 DCT). */
 #define STVQ_METRIC_MAX_COEFFS 64
+/* Max feature vector length: full Y + U + V packs. */
+#define STVQ_METRIC_MAX_FEAT_LEN (STVQ_METRIC_MAX_COEFFS * 3u)
 #define STVQ_DEFAULT_DCT_ALPHA 0.2f
 #define STVQ_DEFAULT_DCT_COEFFS 15        /* Y zig-zag count */
 #define STVQ_DEFAULT_DCT_CHROMA_COEFFS 7  /* U and V each (≈ half of Y) */
@@ -23,7 +25,8 @@ extern "C" {
 /*
  * DCT coeff weight: w(u,v) = 1 / (1 + alpha*(u^2+v^2)).
  * Features store sqrt(w)*coeff so L2 matches weighted SSE.
- * Layout: [Y₀..Y_{ny-1} | U₀..U_{nu-1} | V₀..V_{nv-1}], ny+2*nu ≤ MAX.
+ * Layout: [Y₀..Y_{ny-1} | U₀..U_{nu-1} | V₀..V_{nv-1}],
+ * feat_len = ny + 2*nu (each plane count clamped to 0..64).
  * Fewer chroma coeffs underweight U/V vs Y (chroma is smoother;
  * U/V magnitudes are already smaller than Y).
  */

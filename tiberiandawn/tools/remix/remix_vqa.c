@@ -49,8 +49,8 @@ static void dct_for_effort(RemixVideoEffort e, unsigned *y, unsigned *chroma)
 		*chroma = 16u;
 		break;
 	case REMIX_VIDEO_EFFORT_THOROUGH:
-		*y = 60u;
-		*chroma = 60u;
+		*y = 64u;
+		*chroma = 64u;
 		break;
 	case REMIX_VIDEO_EFFORT_NORMAL:
 	default:

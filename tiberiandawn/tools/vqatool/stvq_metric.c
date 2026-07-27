@@ -75,29 +75,18 @@ static void ensure_dct_tables(void)
 	dct_tables_ready = 1;
 }
 
-static void clamp_coeff_budget(void)
+/* Clamp each plane to a valid zig-zag count (Y ≥ 1). feat_len = y + 2*c. */
+static void clamp_plane_counts(void)
 {
 	unsigned y = dct_y_coeffs;
 	unsigned c = dct_chroma_coeffs;
-	unsigned total;
 
 	if (y < 1)
 		y = 1;
-	if (y > 64)
-		y = 64;
-	if (c > 64)
-		c = 64;
-	/* Leave room for U and V packs in the feature vector. */
-	while (y + 2u * c > STVQ_METRIC_MAX_COEFFS) {
-		if (c > 0)
-			c--;
-		else if (y > 1)
-			y--;
-		else
-			break;
-	}
-	total = y + 2u * c;
-	(void)total;
+	if (y > STVQ_METRIC_MAX_COEFFS)
+		y = STVQ_METRIC_MAX_COEFFS;
+	if (c > STVQ_METRIC_MAX_COEFFS)
+		c = STVQ_METRIC_MAX_COEFFS;
 	dct_y_coeffs = y;
 	dct_chroma_coeffs = c;
 }
@@ -107,7 +96,7 @@ static void rebuild_sqrt_w(void)
 	unsigned i;
 	ensure_dct_tables();
 	ensure_zigzag();
-	clamp_coeff_budget();
+	clamp_plane_counts();
 	for (i = 0; i < 64; i++) {
 		unsigned u = zz_u[i], v = zz_v[i];
 		float w = 1.0f / (1.0f + dct_alpha * (float)(u * u + v * v));
@@ -284,7 +273,7 @@ unsigned stvq_src_pens_error(const uint8_t src_vga[64], const uint8_t pens[64])
 
 unsigned stvq_src_pens_error_lim(const uint8_t src_vga[64], const uint8_t pens[64], unsigned max_d)
 {
-	float fa[STVQ_METRIC_MAX_COEFFS], fb[STVQ_METRIC_MAX_COEFFS];
+	float fa[STVQ_METRIC_MAX_FEAT_LEN], fb[STVQ_METRIC_MAX_FEAT_LEN];
 	if (!metric_ready)
 		return 0;
 	stvq_metric_feat_from_indices(src_vga, fa);

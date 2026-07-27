@@ -13,9 +13,10 @@ extern "C" {
 
 typedef struct StvqCodebook {
 	unsigned entries;
+	unsigned feat_stride; /* == stvq_metric_feat_len() at alloc / last resize */
 	uint8_t *tiles; /* entries * 32 */
 	uint8_t *pens;  /* entries * 64 unpacked pens (cache for metric) */
-	float *feats;   /* entries * STVQ_METRIC_MAX_COEFFS DCT features */
+	float *feats;   /* entries * feat_stride DCT features */
 	uint32_t *use_count;
 	uint32_t *last_used;
 	/*

@@ -175,8 +175,8 @@
     {#if release}
       <p class="text-sm text-stone-300">
         {release.file.name} — {release.assetNames.length} file(s)
-        (cnc.tos + {release.assetNames.filter((n) => n.toLowerCase().endsWith('.w16')).length}×
-        .w16)
+        (cnc.tos + {release.assetNames.filter((n) => n.toLowerCase().endsWith('.w16') && !n.startsWith('video/')).length}×
+        .w16{#if release.assetNames.some((n) => n.startsWith('video/'))}, {release.assetNames.filter((n) => n.startsWith('video/')).length}× video/*.w16{/if})
       </p>
       <button
         type="button"

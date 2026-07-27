@@ -5,6 +5,7 @@
 #include "remix.h"
 #include "remix_shpx.h"
 #include "remix_st16.h"
+#include "remix_vqa.h"
 
 #include <emscripten.h>
 #include <stdio.h>
@@ -15,6 +16,8 @@
 #define WASM_IN_B_PATH "/in_b.mix"
 #define WASM_OUT_PATH "/out.mix"
 #define WASM_MERGE_TMP_PATH "/out.mix.merge.tmp"
+#define WASM_IN_VQA_PATH "/in.vqa"
+#define WASM_OUT_STV_PATH "/out.stv"
 /** Input already written to MEMFS by JS (see remix_wasm_memfs_input()). */
 #define WASM_MEMFS_INPUT (-1)
 
@@ -23,6 +26,9 @@ static unsigned g_wasm_entry_count;
 static unsigned g_wasm_entry_cap;
 static int g_wasm_convert_st16 = 1;
 static int g_wasm_convert_shpx = 0;
+static int g_wasm_convert_vqa = 0;
+static RemixVideoQuality g_wasm_video_quality = REMIX_VIDEO_QUALITY_MEDIUM;
+static RemixVideoEffort g_wasm_video_effort = REMIX_VIDEO_EFFORT_NORMAL;
 static char g_wasm_mix_basename[256];
 static const char g_wasm_w16_dir[] = ".";
 
@@ -80,6 +86,8 @@ static void wasm_workfiles_cleanup(void)
 	remove(WASM_IN_B_PATH);
 	remove(WASM_OUT_PATH);
 	remove(WASM_MERGE_TMP_PATH);
+	remove(WASM_IN_VQA_PATH);
+	remove(WASM_OUT_STV_PATH);
 }
 
 static void wasm_prepare_outputs(void)
@@ -115,6 +123,22 @@ static void wasm_entry_report(const RemixEntry *entry, void *ctx)
 	g_wasm_entries[g_wasm_entry_count++] = *entry;
 }
 
+static void wasm_encode_progress(
+    void *user_data, const char *phase, uint32_t id, unsigned done, unsigned total)
+{
+	(void)user_data;
+	if (!phase)
+		phase = "";
+	EM_ASM(
+	    {
+		    var fn = Module['onRemixProgress'];
+		    if (typeof fn === 'function') {
+			    fn(UTF8ToString($0), $1 >>> 0, $2 >>> 0, $3 >>> 0);
+		    }
+	    },
+	    phase, id, done, total);
+}
+
 static void wasm_config_init(RemixConfig *cfg)
 {
 	memset(cfg, 0, sizeof(*cfg));
@@ -122,12 +146,17 @@ static void wasm_config_init(RemixConfig *cfg)
 	cfg->fallback_copy_on_convert_fail = 1;
 	cfg->convert_st16_iconsets = g_wasm_convert_st16;
 	cfg->convert_shpx = g_wasm_convert_shpx;
+	cfg->convert_vqa = g_wasm_convert_vqa;
+	cfg->video_quality = g_wasm_video_quality;
+	cfg->video_effort = g_wasm_video_effort;
 	/* shpx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
 	cfg->shpx_pool_id = 0;
 	cfg->mix_basename = g_wasm_mix_basename[0] ? g_wasm_mix_basename : NULL;
-	cfg->w16_dir = g_wasm_convert_st16 ? g_wasm_w16_dir : NULL;
+	cfg->w16_dir = (g_wasm_convert_st16 || g_wasm_convert_vqa) ? g_wasm_w16_dir : NULL;
 	cfg->entry_report = wasm_entry_report;
 	cfg->entry_report_ctx = NULL;
+	cfg->encode_progress = wasm_encode_progress;
+	cfg->encode_progress_ctx = NULL;
 }
 
 static int wasm_stage_input(const uint8_t *in_data, int in_len, const char *path)
@@ -159,6 +188,32 @@ void remix_wasm_set_shpx_enabled(int enabled)
 }
 
 EMSCRIPTEN_KEEPALIVE
+void remix_wasm_set_vqa_enabled(int enabled)
+{
+	g_wasm_convert_vqa = enabled ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void remix_wasm_set_video_quality(int quality)
+{
+	if (quality < 0)
+		quality = 0;
+	if (quality > 2)
+		quality = 2;
+	g_wasm_video_quality = (RemixVideoQuality)quality;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void remix_wasm_set_video_effort(int effort)
+{
+	if (effort < 0)
+		effort = 0;
+	if (effort > 2)
+		effort = 2;
+	g_wasm_video_effort = (RemixVideoEffort)effort;
+}
+
+EMSCRIPTEN_KEEPALIVE
 void remix_wasm_set_mix_basename(const char *basename)
 {
 	if (!basename) {
@@ -174,6 +229,50 @@ int remix_wasm_install_w16(const uint8_t *data, int len)
 	if (!data || len <= 0)
 		return 0;
 	return remix_st16_install_weights_from_buffer(data, (size_t)len);
+}
+
+/**
+ * Encode one VQA payload to STVQ.
+ * JS writes the VQA to /in.vqa and video/{crc}.*.w16 into MEMFS first.
+ * On success, STVQ is at /out.stv. Returns 1 ok, -1 omit, 0 error.
+ */
+EMSCRIPTEN_KEEPALIVE
+int remix_wasm_encode_vqa(uint32_t crc)
+{
+	RemixConfig cfg;
+	uint8_t *vqa = NULL;
+	size_t vqa_len = 0;
+	unsigned char *stv = NULL;
+	uint32_t stv_len = 0;
+	int rc;
+
+	vqa = read_file(WASM_IN_VQA_PATH, &vqa_len);
+	if (!vqa || vqa_len == 0) {
+		free(vqa);
+		return 0;
+	}
+
+	wasm_config_init(&cfg);
+	cfg.convert_vqa = 1;
+	cfg.w16_dir = g_wasm_w16_dir;
+	cfg.encode_progress = wasm_encode_progress;
+	cfg.encode_progress_ctx = NULL;
+
+	rc = remix_vqa_convert_buffer(vqa, vqa_len, crc, &cfg, &stv, &stv_len);
+	free(vqa);
+	remove(WASM_IN_VQA_PATH);
+	remove(WASM_OUT_STV_PATH);
+
+	if (rc == 1) {
+		if (!write_file(WASM_OUT_STV_PATH, stv, (size_t)stv_len)) {
+			free(stv);
+			return 0;
+		}
+		free(stv);
+	} else {
+		free(stv);
+	}
+	return rc;
 }
 
 EMSCRIPTEN_KEEPALIVE

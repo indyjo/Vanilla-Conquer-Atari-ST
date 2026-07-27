@@ -41,6 +41,10 @@ const selected = listSelectedMixes(mixes, {
   speechAndSfx: true,
   musicScores: false,
   movieSequences: false,
+  convertSt16Iconsets: true,
+  convertShpx: true,
+  videoQuality: 'medium',
+  videoEffort: 'normal',
 });
 
 console.log('volumeId:', vol.volumeId, '->', label);

@@ -1031,6 +1031,10 @@ itch-release:
 	for f in atari-assets/*.w16; do \
 		if [ -f "$$f" ]; then cp "$$f" "$(ITCH_STAGE_DIR)/"; fi; \
 	done; \
+	mkdir -p "$(ITCH_STAGE_DIR)/video"; \
+	for f in atari-assets/video/*.w16; do \
+		if [ -f "$$f" ]; then cp "$$f" "$(ITCH_STAGE_DIR)/video/"; fi; \
+	done; \
 	if [ ! -f atari-assets/record.bin ]; then \
 		echo "error: atari-assets/record.bin not found" >&2; \
 		exit 1; \

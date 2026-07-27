@@ -165,11 +165,14 @@ static int looks_like_voc(const unsigned char *data, size_t len, char *type_out,
 
 static int looks_like_vqa(const unsigned char *data, size_t len, char *type_out, size_t type_out_len)
 {
-	if (len >= 4 && data[0] == 'F' && data[1] == 'O' && data[2] == 'R' && data[3] == 'M') {
-		snprintf(type_out, type_out_len, "vqa");
+	if (len < 4 || data[0] != 'F' || data[1] != 'O' || data[2] != 'R' || data[3] != 'M')
+		return 0;
+	if (len >= 12 && data[8] == 'S' && data[9] == 'T' && data[10] == 'V' && data[11] == 'Q') {
+		snprintf(type_out, type_out_len, "stv");
 		return 1;
 	}
-	return 0;
+	snprintf(type_out, type_out_len, "vqa");
+	return 1;
 }
 
 static int looks_like_pcx(const unsigned char *data, size_t len, char *type_out, size_t type_out_len)

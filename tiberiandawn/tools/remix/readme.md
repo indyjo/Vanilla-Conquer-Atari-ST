@@ -7,9 +7,14 @@ For each embedded file the tool autodetects the asset type, converts audio to
 PCM stereo/16-bit/other rates), optionally converts terrain iconsets in theater
 MIX files to **ST16** planar format (requires matching `*.W16` C2P weights),
 optionally convert KeyFrame SHPs to **SHPX** (`--shpx`),
+optionally convert VQA movies to **STVQ** (`--convert-vqa`; needs
+`video/xxxxxxxx.N.w16` sidecars under `--w16-dir`),
 and pad payloads to even byte offsets from the MIX start.
 
 Plain TD-style MIX files only (no encrypted or extended headers).
+
+Prefer [remix-web](../remix-web/) for end-user MIX prep (browser WASM). This host
+CLI is for developers and batch scripts.
 
 ## Build
 
@@ -44,15 +49,6 @@ Regenerate test blobs from an unmodified `CONQUER.MIX`:
 python3 testdata/extract_shapes.py /path/to/conquer.mix
 ```
 
-MiNT `remix.tos` (cross-compiler):
-
-```bash
-make mint
-```
-
-The `itch-release` target in `tiberiandawn/makefile` builds `remix.tos` and
-includes it in the release zip next to `cnc.tos`.
-
 ## Host usage
 
 **Single file** (output path must differ from input):
@@ -64,29 +60,54 @@ includes it in the release zip next to `cnc.tos`.
 Place `TEMPERAT.W16`, `DESERT.W16`, etc. in the current directory (or pass
 `--w16-dir`) when repacking theater MIX files. ST16 conversion is **on by default**.
 
+For movies:
+
+```bash
+./remix -o movies.out.mix --convert-vqa --w16-dir ../../atari-assets \
+  --video-quality medium --video-effort normal movies.mix
+```
+
+W16 sidecars are looked up as `{w16-dir}/video/{crc:08x}.{seg}.w16` where `crc`
+is the MIX entry CRC (lowercase hex). Missing sidecars or encode failure: that
+entry is **omitted** from the output MIX (warning on stderr). Already-converted
+`FORM STVQ` payloads are copied unchanged.
+
 **Directory** (non-recursive; `.mix` / `.MIX`):
 
 ```bash
 ./remix -d /path/to/gamedata
 ```
 
-## MiNT usage (`remix.tos`)
-
-No arguments. Place `remix.tos` in the game folder with the `.mix` files and
-matching `*.W16` files, then run once before `cnc.tos`. The tool writes
-`temp.mxx` while working on each archive, then replaces the source `.mix` in place.
-
-## Options (host only)
+## Options
 
 | Option | Meaning |
 |--------|---------|
 | `-o`, `--output PATH` | Output MIX file, or output directory with `-d` |
 | `-d`, `--directory DIR` | Process all MIX files in `DIR` |
-| `--w16-dir PATH` | Directory containing `TEMPERAT.W16` etc. (default: cwd) |
+| `--w16-dir PATH` | Directory containing theater `*.W16` and `video/` (default: cwd) |
 | `--no-st16-iconsets` | Skip ST16 iconset conversion in theater MIX files |
 | `--shpx` | Convert KeyFrame SHPs to SHPX + `poolnnnn.bin` sidecar (CONQUER / TEMPERAT / DESERT / WINTER) |
 | `--shpx-verbose` | Per-shape SHPX/clip log on stderr (requires `--shpx`) |
 | `--pool-id ID` | SHPX pool id (default from MIX name: 1–4; requires `--shpx`) |
+| `--convert-vqa` | Convert VQA payloads to STVQ |
+| `--video-quality Q` | `low` / `medium` / `high` (default `medium`) |
+| `--video-effort E` | `fast` / `normal` / `thorough` (default `normal`) |
 | `-h`, `--help` | Show help |
 
-See [spec.md](spec.md) for ST16 scope, detection types (`icn` / `st16`), and failure policy.
+### Video presets
+
+| Quality | `cb_per_frame` |
+|---------|----------------|
+| low | 32 |
+| medium | 64 |
+| high | 128 |
+
+| Effort | `dct_coeffs` / chroma | `cb_lookahead` |
+|--------|------------------------|----------------|
+| fast | 32 / 16 | 0 |
+| normal | 48 / 40 | 1 |
+| thorough | 60 / 60 | 3 |
+
+`cb_size=2048`, `cb_random_pct=25` stay fixed. Lookahead is extra frames after the current (`0` = current only).
+
+See [spec.md](spec.md) for ST16 scope, detection types (`icn` / `st16` / `vqa` / `stv`), and failure policy.

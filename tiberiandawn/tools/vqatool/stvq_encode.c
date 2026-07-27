@@ -280,9 +280,15 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	if (opts->dry_run) {
 		for (s = 0; s < dec.segment_count; s++) {
 			char pal[768], hist[768], w16[768];
-			stvq_sidecar_paths(opts->vqa_path, (int)s, pal, hist, w16, sizeof(pal));
-			fprintf(stderr, "  seg %u frames %d..%d → %s / %s / %s\n", s, dec.segments[s].start_frame,
-			    dec.segments[s].end_frame, pal, hist, w16);
+			if (opts->have_w16_crc) {
+				stvq_crc_w16_path(opts->w16_dir, opts->w16_crc, (int)s, w16, sizeof(w16));
+				fprintf(stderr, "  seg %u frames %d..%d → %s\n", s, dec.segments[s].start_frame,
+				    dec.segments[s].end_frame, w16);
+			} else {
+				stvq_sidecar_paths(opts->vqa_path, (int)s, pal, hist, w16, sizeof(pal));
+				fprintf(stderr, "  seg %u frames %d..%d → %s / %s / %s\n", s,
+				    dec.segments[s].start_frame, dec.segments[s].end_frame, pal, hist, w16);
+			}
 		}
 		outp = opts->out_path;
 		if (!outp) {
@@ -305,7 +311,13 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		goto done;
 
 	for (s = 0; s < dec.segment_count; s++) {
-		if (stvq_load_segment_w16(opts->vqa_path, (int)s, &dec.segments[s], &segpal[s]) != 0)
+		int load_rc;
+		if (opts->have_w16_crc)
+			load_rc = stvq_load_segment_w16_crc(
+			    opts->w16_dir, opts->w16_crc, (int)s, &dec.segments[s], &segpal[s]);
+		else
+			load_rc = stvq_load_segment_w16(opts->vqa_path, (int)s, &dec.segments[s], &segpal[s]);
+		if (load_rc != 0)
 			goto done;
 		stvq_c2p_init(&c2ps[s], &segpal[s].w16);
 		seg_pal768[s] = dec.segments[s].pal;
@@ -317,6 +329,8 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	fprintf(stderr, "rasterizing tiles...\n");
 	{
 		uint64_t t0 = enc_ns_now();
+		if (opts->progress)
+			opts->progress(opts->progress_ctx, "prep", 0, dec.frame_count);
 		for (f = 0; f < dec.frame_count; f++) {
 			int seg = dec.frames[f].segment;
 			frame_tiles[f] = (uint8_t *)malloc((size_t)tiles_n * 32u);
@@ -326,6 +340,8 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			if (stvq_frame_to_tiles(&c2ps[seg], dec.frames[f].pixels, dec.width, dec.height, tiles_x,
 			        tiles_y, frame_tiles[f], frame_src[f]) != 0)
 				goto done;
+			if (opts->progress)
+				opts->progress(opts->progress_ctx, "prep", f + 1u, dec.frame_count);
 		}
 		prof_ns_raster = enc_ns_now() - t0;
 	}
@@ -377,6 +393,8 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	if (write_stpl_chunk(&w, segpal[0].stpl) != 0)
 		goto done;
 
+	if (opts->progress)
+		opts->progress(opts->progress_ctx, "encode", 0, dec.frame_count);
 	for (f = 0; f < dec.frame_count; f++) {
 		long fr_pos;
 		StvqReplace *reps = NULL;
@@ -471,7 +489,9 @@ int stvq_encode(const StvqEncodeOpts *opts)
 
 		prof_ns_frames += enc_ns_now() - frame_t0;
 
-		if ((f % 50u) == 0u)
+		if (opts->progress)
+			opts->progress(opts->progress_ctx, "encode", f + 1u, dec.frame_count);
+		else if ((f % 50u) == 0u)
 			fprintf(stderr, "  frame %u/%u\n", f, dec.frame_count);
 	}
 

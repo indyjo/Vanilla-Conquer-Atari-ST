@@ -1,6 +1,13 @@
 export type DiscLabel = 'GDI' | 'NOD';
 
-export type TargetVersion = '0.1.x' | '0.2.x';
+export type TargetVersion = '0.1.x' | '0.2.x' | '0.3.x';
+
+export type VideoQuality = 'low' | 'medium' | 'high';
+
+export type VideoEffort = 'fast' | 'normal' | 'thorough';
+
+/** Parallel VQA encode workers (1–8). */
+export type VideoParallelism = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 export interface TargetVersionState {
   version: TargetVersion;
@@ -13,6 +20,9 @@ export interface ContentOptions {
   movieSequences: boolean;
   convertSt16Iconsets: boolean;
   convertShpx: boolean;
+  videoQuality: VideoQuality;
+  videoEffort: VideoEffort;
+  videoParallelism: VideoParallelism;
 }
 
 export const DEFAULT_CONTENT_OPTIONS: ContentOptions = {
@@ -21,6 +31,9 @@ export const DEFAULT_CONTENT_OPTIONS: ContentOptions = {
   movieSequences: false,
   convertSt16Iconsets: true,
   convertShpx: true,
+  videoQuality: 'medium',
+  videoEffort: 'normal',
+  videoParallelism: 4,
 };
 
 export interface IsoFileEntry {
@@ -40,12 +53,21 @@ export interface ProcessLogLine {
   text: string;
 }
 
+export interface EncodeJobProgress {
+  phase: string;
+  label: string;
+  done: number;
+  total: number;
+}
+
 export interface ProcessProgress {
   phase: 'idle' | 'scan' | 'extract' | 'remix' | 'zip' | 'done' | 'error';
   current?: string;
   done: number;
   total: number;
   log: ProcessLogLine[];
+  /** Live VQA→STVQ encode jobs (one entry per in-flight CRC). */
+  encodes?: EncodeJobProgress[];
 }
 
 export interface PipelineResult {

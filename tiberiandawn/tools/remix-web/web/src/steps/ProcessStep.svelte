@@ -84,6 +84,24 @@
   const pct = $derived(
     progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0,
   );
+
+  function encodeVerb(phase: string): string {
+    if (phase === 'start') return 'Starting';
+    if (phase === 'prep') return 'Preparing';
+    return 'Encoding';
+  }
+
+  function encodeJobLabel(enc: { phase: string; label: string; done: number; total: number }): string {
+    const verb = encodeVerb(enc.phase);
+    if (enc.total <= 0) return `${verb} ${enc.label}…`;
+    return `${verb} ${enc.label} — frame ${enc.done} / ${enc.total}`;
+  }
+
+  function encodeJobPct(enc: { done: number; total: number }): number {
+    return enc.total > 0 ? Math.round((enc.done / enc.total) * 100) : 0;
+  }
+
+  const activeEncodes = $derived(progress.encodes ?? []);
 </script>
 
 <section class="space-y-6">
@@ -91,7 +109,8 @@
     <h2 class="cnc-step-title">3. Process</h2>
     <p class="mt-2 text-sm text-stone-400">
       Extract MIX files from the ISO, then repack each one with REMIX (audio conversion, even
-      offsets).
+      offsets). Remix runs in a background worker so the page stays responsive — movie encoding can
+      still take a long time.
     </p>
   </div>
 
@@ -110,6 +129,23 @@
           <div class="cnc-progress-bar" style="width: {pct}%"></div>
         </div>
         <p class="text-xs text-stone-500">{progress.done} / {progress.total} MIX files</p>
+      {/if}
+      {#if activeEncodes.length > 0}
+        <div class="space-y-2 border-t border-stone-700/60 pt-2">
+          <p class="text-xs text-stone-500">
+            {activeEncodes.length} encode{activeEncodes.length === 1 ? '' : 's'} in flight
+          </p>
+          {#each activeEncodes as enc (enc.label)}
+            <div class="space-y-1">
+              <p class="font-mono text-xs text-cnc-gold">{encodeJobLabel(enc)}</p>
+              {#if enc.total > 0}
+                <div class="cnc-progress-track">
+                  <div class="cnc-progress-bar" style="width: {encodeJobPct(enc)}%"></div>
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
       {/if}
     </div>
   {/if}

@@ -5,6 +5,7 @@
 #include "remix_print.h"
 #include "remix_shpx.h"
 #include "remix_st16.h"
+#include "remix_vqa.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -125,26 +126,36 @@ static int write_mix_index(FILE *out, const RemixMix *mix, int final_offsets)
 	unsigned char sb[12];
 	RemixEntry *sorted;
 	unsigned i;
+	unsigned out_count = 0;
 
-	if (mix->count == 0)
+	for (i = 0; i < mix->count; ++i) {
+		if (!mix->entries[i].omit)
+			++out_count;
+	}
+	if (out_count == 0)
 		return 0;
-	sorted = (RemixEntry *)malloc((size_t)mix->count * sizeof(RemixEntry));
+	sorted = (RemixEntry *)malloc((size_t)out_count * sizeof(RemixEntry));
 	if (!sorted)
 		return 0;
-	memcpy(sorted, mix->entries, (size_t)mix->count * sizeof(RemixEntry));
-	qsort(sorted, mix->count, sizeof(RemixEntry), entry_cmp_crc);
+	out_count = 0;
+	for (i = 0; i < mix->count; ++i) {
+		if (mix->entries[i].omit)
+			continue;
+		sorted[out_count++] = mix->entries[i];
+	}
+	qsort(sorted, out_count, sizeof(RemixEntry), entry_cmp_crc);
 
 	if (fseek(out, 0, SEEK_SET) != 0) {
 		free(sorted);
 		return 0;
 	}
 
-	write_le16(hdr, mix->count);
+	write_le16(hdr, (uint16_t)out_count);
 	write_le32(hdr + 2, final_offsets ? mix->data_size : 0);
 	if (fwrite(hdr, 1, sizeof(hdr), out) != sizeof(hdr))
 		goto fail;
 
-	for (i = 0; i < mix->count; ++i) {
+	for (i = 0; i < out_count; ++i) {
 		const RemixEntry *e = &sorted[i];
 		write_le32(sb, e->crc);
 		if (final_offsets) {
@@ -175,17 +186,77 @@ static int patch_header(FILE *out, const RemixMix *mix)
 	return write_mix_index(out, mix, 1);
 }
 
+/** If any entries were omitted, rewrite header+body so data_start matches new count. */
+static int finalize_mix_file(FILE *out, RemixMix *mix, uint32_t body_bytes, uint32_t orig_data_start)
+{
+	unsigned kept = 0;
+	unsigned i;
+	unsigned char *body = NULL;
+	uint32_t new_data_start;
+
+	for (i = 0; i < mix->count; ++i) {
+		if (!mix->entries[i].omit)
+			++kept;
+	}
+	mix->data_size = body_bytes;
+
+	if (kept == mix->count)
+		return patch_header(out, mix);
+
+	if (kept == 0)
+		return 0;
+
+	body = (unsigned char *)malloc(body_bytes ? body_bytes : 1u);
+	if (!body)
+		return 0;
+	if (body_bytes > 0) {
+		if (fseek(out, (long)orig_data_start, SEEK_SET) != 0)
+			goto fail;
+		if (fread(body, 1, body_bytes, out) != body_bytes)
+			goto fail;
+	}
+
+	new_data_start = 6u + kept * 12u;
+	if (!patch_header(out, mix))
+		goto fail;
+	/* patch_header wrote kept entries; seek to new data start and write body. */
+	if (fseek(out, (long)new_data_start, SEEK_SET) != 0)
+		goto fail;
+	if (body_bytes > 0 && fwrite(body, 1, body_bytes, out) != body_bytes)
+		goto fail;
+	free(body);
+	body = NULL;
+	/* Trailing bytes past the new EOF are harmless; MIX readers use header sizes. */
+
+	/* Compact in-memory entry list for reporting. */
+	{
+		unsigned w = 0;
+		for (i = 0; i < mix->count; ++i) {
+			if (mix->entries[i].omit)
+				continue;
+			if (w != i)
+				mix->entries[w] = mix->entries[i];
+			++w;
+		}
+		mix->count = (uint16_t)w;
+	}
+	return 1;
+
+fail:
+	free(body);
+	return 0;
+}
+
 typedef struct ProgressCtx {
 	const RemixConfig *cfg;
 } ProgressCtx;
 
 static void mix_progress(void *ctx, const char *verb, unsigned done, unsigned total)
 {
-	ProgressCtx *p = (ProgressCtx *)ctx;
-
-	if (!p || p->cfg->ui != REMIX_UI_ST)
-		return;
-	remix_print_st_progress(verb, done, total);
+	(void)ctx;
+	(void)verb;
+	(void)done;
+	(void)total;
 }
 
 static int copy_payload(
@@ -371,10 +442,13 @@ static int process_entry(
 	int shpx_rc;
 	int shpx_converted = 0;
 	int try_shpx = 0;
+	int try_vqa = 0;
+	int vqa_rc = -1;
 	ProgressCtx progress;
 
 	e->new_offset = 0;
 	e->new_size = 0;
+	e->omit = 0;
 	snprintf(e->type_in, sizeof(e->type_in), "empty");
 	snprintf(e->type_out, sizeof(e->type_out), "empty");
 
@@ -399,9 +473,9 @@ static int process_entry(
 	needs_convert = is_audio && remix_aud_needs_convert(probe, probe_len, e->old_size);
 	try_iconset = cfg && cfg->convert_st16_iconsets && cfg->mix_basename
 	    && remix_st16_is_theater_mix(cfg->mix_basename) && !needs_convert;
-	/* Iconset and SHPX may both apply in theater MIXes; try_shpx after iconset_rc. */
 	try_shpx = cfg && cfg->convert_shpx && cfg->mix_basename
 	    && remix_shpx_is_eligible(cfg->mix_basename) && !needs_convert;
+	try_vqa = cfg && cfg->convert_vqa && strcmp(e->type_in, "vqa") == 0 && !needs_convert;
 
 	if (stats) {
 		++stats->payload_files;
@@ -410,10 +484,12 @@ static int process_entry(
 			if (!needs_convert)
 				++stats->audio_already_ok;
 		}
+		if (strcmp(e->type_in, "vqa") == 0 || strcmp(e->type_in, "stv") == 0) {
+			++stats->vqa_files;
+			if (strcmp(e->type_in, "stv") == 0)
+				++stats->vqa_already_stv;
+		}
 	}
-
-	if (cfg->ui == REMIX_UI_ST)
-		remix_print_st_entry_line(e->crc, e->old_size, e->type_in, e->type_in);
 
 	if (((mix->data_start + *body_pos) & 1u) != 0u) {
 		unsigned char pad = 0;
@@ -429,12 +505,6 @@ static int process_entry(
 
 	memset(&progress, 0, sizeof(progress));
 	progress.cfg = cfg;
-	if (cfg->ui == REMIX_UI_ST) {
-		unsigned total = e->old_size > 0 ? (unsigned)e->old_size : 1u;
-
-		remix_print_st_progress_reset();
-		remix_print_st_progress(needs_convert ? "CONVERT" : "COPY", 0, total);
-	}
 
 	iconset_rc = -1;
 	if (try_iconset) {
@@ -453,17 +523,11 @@ static int process_entry(
 		if (shpx_rc == 0) {
 			if (cfg->fallback_copy_on_convert_fail) {
 				char warn[REMIX_LINE_WIDTH + 1];
-				unsigned total = e->old_size > 0 ? (unsigned)e->old_size : 1u;
 
 				snprintf(
 				    warn, sizeof(warn), "WARN %08X shpx copy", (unsigned)e->crc);
-				if (cfg->ui == REMIX_UI_ST) {
-					remix_print_st_progress_reset();
+				if (cfg->ui == REMIX_UI_HOST)
 					remix_print_st_warn(warn);
-					remix_print_st_progress("COPY", 0, total);
-				} else if (cfg->ui == REMIX_UI_HOST) {
-					remix_print_st_warn(warn);
-				}
 				if (fseek(out, out_payload_start, SEEK_SET) != 0)
 					return 0;
 				*body_pos = e->new_offset;
@@ -483,7 +547,38 @@ static int process_entry(
 		}
 	}
 
-	if (iconset_rc <= 0 && shpx_rc <= 0 && needs_convert) {
+	if (iconset_rc <= 0 && shpx_rc <= 0 && try_vqa) {
+		uint32_t out_payload = 0;
+
+		vqa_rc = remix_vqa_convert_payload(
+		    in, in_pos, probe, probe_len, e->old_size, e->crc, cfg, out, &out_payload);
+		if (vqa_rc == 1) {
+			e->new_size = out_payload;
+			snprintf(e->type_out, sizeof(e->type_out), "stv");
+			if (stats)
+				++stats->vqa_converted;
+		} else if (vqa_rc < 0) {
+			/* Omit: rewind any pad written for this entry. */
+			e->omit = 1;
+			e->new_size = 0;
+			snprintf(e->type_out, sizeof(e->type_out), "omit");
+			if (fseek(out, out_payload_start, SEEK_SET) != 0)
+				return 0;
+			*body_pos = e->new_offset;
+			/* If we padded before this entry, leave the pad (even alignment for next). */
+			if (stats)
+				++stats->vqa_omitted;
+			if (cfg->ui == REMIX_UI_HOST)
+				remix_print_host_entry(e);
+			if (cfg->entry_report)
+				cfg->entry_report(e, cfg->entry_report_ctx);
+			(void)iconset_converted;
+			(void)shpx_converted;
+			return 1;
+		} else {
+			return 0;
+		}
+	} else if (iconset_rc <= 0 && shpx_rc <= 0 && needs_convert) {
 		uint32_t out_payload = 0;
 		int ok;
 
@@ -497,18 +592,12 @@ static int process_entry(
 				++stats->audio_converted;
 		} else if (cfg->fallback_copy_on_convert_fail) {
 			char warn[REMIX_LINE_WIDTH + 1];
-			unsigned total = e->old_size > 0 ? (unsigned)e->old_size : 1u;
 
 			snprintf(
 			    warn, sizeof(warn), "WARN %08X %s copy", (unsigned)e->crc,
 			    remix_aud_fail_hint(probe, probe_len, e->old_size));
-			if (cfg->ui == REMIX_UI_ST) {
-				remix_print_st_progress_reset();
+			if (cfg->ui == REMIX_UI_HOST)
 				remix_print_st_warn(warn);
-				remix_print_st_progress("COPY", 0, total);
-			} else if (cfg->ui == REMIX_UI_HOST) {
-				remix_print_st_warn(warn);
-			}
 			if (fseek(out, out_payload_start, SEEK_SET) != 0)
 				return 0;
 			*body_pos = e->new_offset;
@@ -522,7 +611,7 @@ static int process_entry(
 		} else {
 			return 0;
 		}
-	} else if (iconset_rc <= 0 && shpx_rc <= 0) {
+	} else if (iconset_rc <= 0 && shpx_rc <= 0 && vqa_rc <= 0) {
 		if (!copy_payload(in, out, probe, probe_len, e->old_size, mix_progress, &progress))
 			return 0;
 		e->new_size = e->old_size;
@@ -600,9 +689,7 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 		use_cfg->convert_st16_iconsets, use_cfg->mix_basename, use_cfg->w16_dir))
 		goto fail;
 
-	if (use_cfg->ui == REMIX_UI_ST)
-		remix_print_st_mix_header(in_path, mix.count);
-	else if (use_cfg->ui == REMIX_UI_HOST)
+	if (use_cfg->ui == REMIX_UI_HOST)
 		remix_print_host_banner(in_path, out_path, mix.count, mix.data_start);
 
 	if (use_cfg->ui == REMIX_UI_HOST)
@@ -613,8 +700,7 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 			goto fail;
 	}
 
-	mix.data_size = body_pos;
-	if (!patch_header(out, &mix))
+	if (!finalize_mix_file(out, &mix, body_pos, mix.data_start))
 		goto fail;
 
 	if (use_cfg->convert_shpx && shpx_pool.size > 0) {
@@ -626,9 +712,7 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 	fclose(out);
 	remix_shpx_pool_free(&shpx_pool);
 
-	if (use_cfg->ui == REMIX_UI_ST)
-		remix_print_st_mix_done(in_path, mix.count, mix.data_size);
-	else if (use_cfg->ui == REMIX_UI_HOST)
+	if (use_cfg->ui == REMIX_UI_HOST)
 		remix_print_host_mix_done(out_path, mix.count, mix.data_size);
 
 	free_mix(&mix);

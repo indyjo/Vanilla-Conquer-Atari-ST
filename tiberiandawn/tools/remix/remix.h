@@ -29,6 +29,7 @@ typedef struct RemixEntry {
 	uint32_t new_size;
 	char type_in[32];
 	char type_out[32];
+	int omit; /* 1 = drop from output MIX directory */
 } RemixEntry;
 
 typedef struct RemixMix {
@@ -55,27 +56,56 @@ typedef struct RemixStats {
 	unsigned shpx_converted;
 	unsigned shpx_skipped;
 	unsigned shpx_errors;
+	unsigned vqa_files;
+	unsigned vqa_converted;
+	unsigned vqa_omitted;
+	unsigned vqa_already_stv;
 } RemixStats;
 
 typedef enum RemixUi {
 	REMIX_UI_HOST,
-	REMIX_UI_ST,
 	REMIX_UI_WASM
 } RemixUi;
 
+typedef enum RemixVideoQuality {
+	REMIX_VIDEO_QUALITY_LOW = 0,
+	REMIX_VIDEO_QUALITY_MEDIUM = 1,
+	REMIX_VIDEO_QUALITY_HIGH = 2
+} RemixVideoQuality;
+
+typedef enum RemixVideoEffort {
+	REMIX_VIDEO_EFFORT_FAST = 0,
+	REMIX_VIDEO_EFFORT_NORMAL = 1,
+	REMIX_VIDEO_EFFORT_THOROUGH = 2
+} RemixVideoEffort;
+
 typedef void (*RemixEntryReportFn)(const RemixEntry *entry, void *user_data);
+
+/**
+ * Long-running encode progress (VQA→STVQ).
+ * phase is "start", "prep", or "encode"; id is the MIX entry CRC.
+ * For "start", done is the VQA payload size and total is 0.
+ * For "prep"/"encode", done/total are frame counts (done may be 0 at phase start).
+ */
+typedef void (*RemixEncodeProgressFn)(
+    void *user_data, const char *phase, uint32_t id, unsigned done, unsigned total);
 
 typedef struct RemixConfig {
 	RemixUi ui;
 	int fallback_copy_on_convert_fail;
 	int convert_st16_iconsets;
 	int convert_shpx;
+	int convert_vqa;
+	RemixVideoQuality video_quality;
+	RemixVideoEffort video_effort;
 	int shpx_verbose;
 	uint16_t shpx_pool_id;
 	const char *w16_dir;
 	const char *mix_basename;
 	RemixEntryReportFn entry_report;
 	void *entry_report_ctx;
+	RemixEncodeProgressFn encode_progress;
+	void *encode_progress_ctx;
 } RemixConfig;
 
 void remix_stats_init(RemixStats *stats);

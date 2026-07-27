@@ -22,7 +22,7 @@ Minimum reliable emulation: **Mega STE, 16 MHz, 10 MB RAM, with BLiTTER _and
 
 1. Get C&C Tiberian Dawn data ([C&C Communications Center — downloads](https://cnc-comm.com/command-and-conquer/downloads/the-game)). Use the DOS ("C&C Classic") version, not the Windows 95 ("Gold") version.
 2. One folder: `cnc.tos`, C&C `.MIX` files, and [`tiberiandawn/atari-assets/`](tiberiandawn/atari-assets/readme.md) sidecars (`.W16`).
-3. Repack MIXes before first play: run [`remix.tos`](tiberiandawn/tools/remix/readme.md) on the Atari (or host [`remix`](tiberiandawn/tools/remix/readme.md) with `./remix -d /path/to/gamedata`) for even-aligned payloads and 11025 Hz mono PCM audio.
+3. Repack MIXes before first play with [remix-web](tiberiandawn/tools/remix-web/) (or host [`remix`](tiberiandawn/tools/remix/readme.md) with `./remix -d /path/to/gamedata`) for even-aligned payloads, 11025 Hz mono PCM audio, and optional ST16/SHPX/STVQ conversion.
 
 ## Build
 
@@ -32,7 +32,7 @@ Minimum reliable emulation: **Mega STE, 16 MHz, 10 MB RAM, with BLiTTER _and
 
 | Tool | Description |
 |------|-------------|
-| [remix](tiberiandawn/tools/remix/readme.md) / `remix.tos` | Repack `.MIX` (even offsets, audio → 11025 Hz PCM) |
+| [remix](tiberiandawn/tools/remix/readme.md) / [remix-web](tiberiandawn/tools/remix-web/) | Repack `.MIX` (even offsets, audio → 11025 Hz PCM, optional ST16/SHPX/STVQ) |
 | [paltool](tiberiandawn/tools/paltool/paltool.c) | Extract 768-byte `.PAL` from BMP / CPS / WSA |
 | [palette-opt](tiberiandawn/tools/palette-opt/readme.md) | Build `.W16` chunky→planar weight sets |
 | [histtool](tiberiandawn/tools/histtool/readme.md) | Frame histograms for `palette-opt --hist` |

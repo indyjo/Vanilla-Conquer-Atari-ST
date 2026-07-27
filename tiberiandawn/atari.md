@@ -156,7 +156,7 @@ ST16: done, Icons=0x2c, Size=<n> (freed <n> bytes)
 
 Runtime conversion reads the original LE Westwood blob, then writes back an ST16 blob whose numeric fields are **BE** (`ST16_Native_Swap_Header` during `ST16_Convert_InPlace`). Offline ST16 repack should emit the same BE layout directly. Unconverted blobs in MIX remain LE until converted.
 
-**Offline repack:** the `remix` tool (host CLI, `remix.tos`, and [remix-web](../tools/remix-web/)) can convert standard iconsets in theater MIX files to ST16 during MIX repack when matching `*.W16` weights are available. This avoids mission-start conversion and reduces MIX size. See [tools/remix/spec.md](../tools/remix/spec.md).
+**Offline repack:** the `remix` tool (host CLI and [remix-web](../tools/remix-web/)) can convert standard iconsets in theater MIX files to ST16 during MIX repack when matching `*.W16` weights are available. This avoids mission-start conversion and reduces MIX size. See [tools/remix/spec.md](../tools/remix/spec.md).
 
 `Buffer_Draw_Stamp` resolves the iconset (converting once if needed), then blits planar data via `ST16_Blit_Stamp`. Unmasked terrain prefers the **hardware blitter** when `HardwareFills=1` in `CONQUER.INI`; otherwise (or if the blit fails) it falls back to a **CPU planar copy**. Masked ST16 stamps still require `HardwareFills`. The old per-tile planar LRU atlas cache has been removed.
 

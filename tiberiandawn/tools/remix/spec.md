@@ -16,17 +16,18 @@ For build and usage, see `readme.md`.
 - Plain MIX files: 6-byte header + `count × 12`-byte index + data section.
 - Per-payload type sniffing (AUD, PCX, SHP, ICN, ST16, …).
 - Audio conversion to **11025 Hz, 8-bit mono, PCM** (compression type 0).
-- **ST16 iconset conversion** in theater MIX files (optional, default on host/MiNT).
+- **ST16 iconset conversion** in theater MIX files (optional, default on).
+- **VQA → STVQ** conversion (`--convert-vqa`; CRC-named `video/` W16 sidecars).
 - Even-byte payload alignment from the start of the MIX data section.
-- Host CLI (`remix`) and MiNT front end (`remix.tos`).
+- Host CLI (`remix`) and browser WASM ([remix-web](../remix-web/)).
 
 ### Out of scope
 
 - Encrypted MIX headers, checksum trailers, or RA-style extended headers.
 - Compression types other than AUD **0**, **1**, and **99**.
 - Non-integer resampling (e.g. 44100 → 11025).
-- Recursive directory processing on MiNT.
 - In-place rewrite without a temporary file.
+- On-ST MiNT `remix.tos` (removed; use host remix or remix-web).
 
 ---
 

@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Rename .w16 sidecars between VQA basename and Westwood CRC forms.
 
-forward:  NAME.<n>.w16  ->  xxxxxxxx.<n>.w16
+to-crc:   NAME.<n>.w16  ->  xxxxxxxx.<n>.w16
   where xxxxxxxx is the lowercase 8-digit Westwood CRC of "NAME.VQA"
 
-backward: xxxxxxxx.<n>.w16  ->  NAME.<n>.w16
+from-crc: xxxxxxxx.<n>.w16  ->  NAME.<n>.w16
   looking up NAME via the list_mix CRC database
 
-Files are moved into an output directory. Unknown CRCs and existing
-destinations are warned about and skipped. Use --dry-run to preview.
+By default files are moved into an output directory. Use -l to hardlink
+or -s to symlink instead. Unknown CRCs and existing destinations are
+warned about and skipped. Use --dry-run to preview.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -21,8 +23,8 @@ from pathlib import Path
 
 from list_mix import calculate_crc, read_mix_database
 
-FORWARD_RE = re.compile(r"^([^./]+)\.(\d+)\.w16$", re.IGNORECASE)
-BACKWARD_RE = re.compile(r"^([0-9a-fA-F]{8})\.(\d+)\.w16$", re.IGNORECASE)
+TO_CRC_RE = re.compile(r"^([^./]+)\.(\d+)\.w16$", re.IGNORECASE)
+FROM_CRC_RE = re.compile(r"^([0-9a-fA-F]{8})\.(\d+)\.w16$", re.IGNORECASE)
 
 
 def warn(msg: str) -> None:
@@ -34,28 +36,34 @@ def vqa_crc(name: str) -> int:
     return calculate_crc(f"{name.upper()}.VQA".encode("ascii"))
 
 
-def move_file(src: Path, dest: Path, *, dry_run: bool) -> bool:
+def place_file(src: Path, dest: Path, *, mode: str, dry_run: bool) -> bool:
     if dest.exists():
         warn(f"destination exists, skipping: {dest}")
         return False
     if dry_run:
         print(f"dry: {src.name} -> {dest}", flush=True)
         return True
-    shutil.move(str(src), str(dest))
+    if mode == "hardlink":
+        os.link(src, dest)
+    elif mode == "symlink":
+        os.symlink(src.resolve(), dest)
+    else:
+        shutil.move(str(src), str(dest))
     print(f"{src.name} -> {dest}", flush=True)
     return True
 
 
-def cmd_forward(
+def cmd_to_crc(
     files: list[Path],
     outdir: Path,
     database: dict[int, tuple[str, str]],
     *,
+    mode: str,
     dry_run: bool,
 ) -> int:
     ok = 0
     for src in files:
-        m = FORWARD_RE.match(src.name)
+        m = TO_CRC_RE.match(src.name)
         if not m:
             warn(f"not NAME.<n>.w16, skipping: {src}")
             continue
@@ -72,21 +80,22 @@ def cmd_forward(
             )
             continue
         dest = outdir / f"{crc:08x}.{number}.w16"
-        if move_file(src, dest, dry_run=dry_run):
+        if place_file(src, dest, mode=mode, dry_run=dry_run):
             ok += 1
     return ok
 
 
-def cmd_backward(
+def cmd_from_crc(
     files: list[Path],
     outdir: Path,
     database: dict[int, tuple[str, str]],
     *,
+    mode: str,
     dry_run: bool,
 ) -> int:
     ok = 0
     for src in files:
-        m = BACKWARD_RE.match(src.name)
+        m = FROM_CRC_RE.match(src.name)
         if not m:
             warn(f"not xxxxxxxx.<n>.w16, skipping: {src}")
             continue
@@ -104,14 +113,32 @@ def cmd_backward(
             warn(f"database name {db_name!r} has unexpected dots, skipping: {src}")
             continue
         dest = outdir / f"{stem}.{number}.w16"
-        if move_file(src, dest, dry_run=dry_run):
+        if place_file(src, dest, mode=mode, dry_run=dry_run):
             ok += 1
     return ok
 
 
+def place_mode(args: argparse.Namespace) -> str:
+    if args.hardlink:
+        return "hardlink"
+    if args.symlink:
+        return "symlink"
+    return "move"
+
+
+def place_verb(mode: str, *, dry_run: bool) -> str:
+    verbs = {
+        "hardlink": ("would hardlink", "hardlinked"),
+        "symlink": ("would symlink", "symlinked"),
+        "move": ("would move", "moved"),
+    }
+    dry, done = verbs[mode]
+    return dry if dry_run else done
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Move .w16 files between NAME.<n>.w16 and CRC.<n>.w16 forms"
+        description="Place .w16 files between NAME.<n>.w16 and CRC.<n>.w16 forms"
     )
     parser.add_argument(
         "-d",
@@ -123,7 +150,20 @@ def build_parser() -> argparse.ArgumentParser:
         "-n",
         "--dry-run",
         action="store_true",
-        help="Show planned moves without renaming or creating directories",
+        help="Show planned actions without creating files or directories",
+    )
+    link = parser.add_mutually_exclusive_group()
+    link.add_argument(
+        "-l",
+        "--hardlink",
+        action="store_true",
+        help="Hardlink into outdir instead of moving",
+    )
+    link.add_argument(
+        "-s",
+        "--symlink",
+        action="store_true",
+        help="Symlink into outdir instead of moving",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -133,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
             "--outdir",
             required=True,
             type=Path,
-            help="Directory to move renamed files into",
+            help="Directory to place renamed files into",
         )
         p.add_argument(
             "files",
@@ -142,15 +182,16 @@ def build_parser() -> argparse.ArgumentParser:
             help="Input .w16 files",
         )
 
-    p_fwd = sub.add_parser("forward", help="NAME.<n>.w16 -> xxxxxxxx.<n>.w16")
-    add_common(p_fwd)
-    p_bwd = sub.add_parser("backward", help="xxxxxxxx.<n>.w16 -> NAME.<n>.w16")
-    add_common(p_bwd)
+    p_to = sub.add_parser("to-crc", help="NAME.<n>.w16 -> xxxxxxxx.<n>.w16")
+    add_common(p_to)
+    p_from = sub.add_parser("from-crc", help="xxxxxxxx.<n>.w16 -> NAME.<n>.w16")
+    add_common(p_from)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    mode = place_mode(args)
 
     if args.database:
         database = read_mix_database(args.database)
@@ -169,15 +210,14 @@ def main(argv: list[str] | None = None) -> int:
         warn("no input files to process")
         return 1
 
-    if args.command == "forward":
-        ok = cmd_forward(files, outdir, database, dry_run=args.dry_run)
+    if args.command == "to-crc":
+        ok = cmd_to_crc(files, outdir, database, mode=mode, dry_run=args.dry_run)
     else:
-        ok = cmd_backward(files, outdir, database, dry_run=args.dry_run)
+        ok = cmd_from_crc(files, outdir, database, mode=mode, dry_run=args.dry_run)
 
     failed = len(files) - ok
     if failed:
-        verb = "would move" if args.dry_run else "moved"
-        warn(f"{verb} {ok}, skipped {failed}")
+        warn(f"{place_verb(mode, dry_run=args.dry_run)} {ok}, skipped {failed}")
         return 1
     return 0
 

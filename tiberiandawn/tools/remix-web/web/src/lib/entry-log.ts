@@ -13,7 +13,13 @@ export function formatRemixEntryLine(entry: RemixEntry): string {
 
 /** Log lines for notable per-entry REMIX results (converted audio, etc.). */
 export function notableEntryLines(entries: RemixEntry[], maxLines = 24): string[] {
-  const converted = entries.filter((e) => e.oldSize > 0 && e.typeIn !== e.typeOut);
+  /* VQA→STV is logged when encode starts (live); skip those here to avoid duplicates. */
+  const converted = entries.filter(
+    (e) =>
+      e.oldSize > 0 &&
+      e.typeIn !== e.typeOut &&
+      !(e.typeIn === 'vqa' && e.typeOut === 'stv'),
+  );
   const lines = converted.slice(0, maxLines).map((e) => `  ${formatRemixEntryLine(e)}`);
   if (converted.length > maxLines) {
     lines.push(`  … ${converted.length - maxLines} more converted`);

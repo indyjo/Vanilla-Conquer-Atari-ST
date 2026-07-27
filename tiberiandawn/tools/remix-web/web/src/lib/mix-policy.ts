@@ -8,7 +8,7 @@ export const OPTIONAL_GROUPS = {
 } as const;
 
 /** Never extract these from the ISO (even if present). */
-export const NEVER_EXTRACT = new Set(['SETUP.MIX', 'ZOUNDS.MIX', 'MOVIES.MIX']);
+export const NEVER_EXTRACT = new Set(['SETUP.MIX', 'ZOUNDS.MIX']);
 
 /** Core MIX files always included when present on disc. */
 export const CORE_MIXES = new Set([
@@ -22,6 +22,16 @@ export const CORE_MIXES = new Set([
   'SNOW.MIX',
   'JUNGLE.MIX',
 ]);
+
+/**
+ * MIX archives that appear on both GDI and NOD discs and must be union-merged
+ * (by CRC) before REMIX so shared payloads are only converted once.
+ */
+export const DUAL_DISC_MERGE_MIXES = new Set(['GENERAL.MIX', 'MOVIES.MIX']);
+
+export function shouldMergeDualDisc(basename: string): boolean {
+  return DUAL_DISC_MERGE_MIXES.has(basename.toUpperCase());
+}
 
 /** Flatten ISO path to output basename (uppercase). */
 export function flattenMixPath(isoPath: string): string {

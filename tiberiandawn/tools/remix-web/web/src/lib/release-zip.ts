@@ -7,26 +7,23 @@ export class ReleaseZipError extends Error {
   }
 }
 
-/** Basenames to pull from an itch.io / Atari ST release ZIP into the output folder. */
-function isReleaseAsset(basename: string): boolean {
-  const lower = basename.toLowerCase();
-  if (lower === 'cnc.tos') return true;
-  if (lower === 'record.bin') return true;
-  if (lower.endsWith('.w16')) return true;
-  if (lower === 'readme.txt' || lower === 'readme.md') return true;
+/** Basenames / paths to pull from an itch.io / Atari ST release ZIP into the output folder. */
+function isReleaseAsset(relPath: string): boolean {
+  const lower = relPath.toLowerCase();
+  const basename = lower.includes('/') ? lower.slice(lower.lastIndexOf('/') + 1) : lower;
+  if (basename === 'cnc.tos') return true;
+  if (basename === 'record.bin') return true;
+  if (basename.endsWith('.w16')) return true;
+  if (basename === 'readme.txt' || basename === 'readme.md') return true;
   return false;
 }
 
-function shouldSkipReleaseAsset(basename: string): boolean {
-  const lower = basename.toLowerCase();
-  // remix-web replaces the on-ST remix step; omit remix.tos from bundled output.
-  return lower === 'remix.tos';
-}
-
 export interface ReleaseAssets {
+  /** Keys: lowercase basename for flat assets, or `video/xxxxxxxx.n.w16` for FMV sidecars. */
   files: Map<string, Uint8Array>;
   hasCncTos: boolean;
   w16Count: number;
+  videoW16Count: number;
 }
 
 export async function extractReleaseAssets(zipFile: File): Promise<ReleaseAssets> {
@@ -41,28 +38,41 @@ export async function extractReleaseAssets(zipFile: File): Promise<ReleaseAssets
   const files = new Map<string, Uint8Array>();
   let hasCncTos = false;
   let w16Count = 0;
+  let videoW16Count = 0;
 
   for (const [path, data] of Object.entries(entries)) {
     if (path.endsWith('/')) continue;
     const parts = path.replace(/\\/g, '/').split('/');
     const basename = parts[parts.length - 1];
-    if (!basename || shouldSkipReleaseAsset(basename)) continue;
-    if (!isReleaseAsset(basename)) continue;
+    if (!basename) continue;
 
-    if (!files.has(basename.toLowerCase())) {
-      files.set(basename.toLowerCase(), data);
+    const parent = parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : '';
+    const lowerBase = basename.toLowerCase();
+
+    if (parent === 'video' && lowerBase.endsWith('.w16')) {
+      const key = `video/${lowerBase}`;
+      if (!files.has(key)) {
+        files.set(key, data);
+        videoW16Count++;
+      }
+      continue;
     }
 
-    const lower = basename.toLowerCase();
-    if (lower === 'cnc.tos') hasCncTos = true;
-    if (lower.endsWith('.w16')) w16Count++;
+    if (!isReleaseAsset(lowerBase)) continue;
+
+    if (!files.has(lowerBase)) {
+      files.set(lowerBase, data);
+    }
+
+    if (lowerBase === 'cnc.tos') hasCncTos = true;
+    if (lowerBase.endsWith('.w16')) w16Count++;
   }
 
   if (!hasCncTos) {
     throw new ReleaseZipError('Release ZIP must contain cnc.tos');
   }
 
-  return { files, hasCncTos, w16Count };
+  return { files, hasCncTos, w16Count, videoW16Count };
 }
 
 export function describeReleaseAssets(assets: ReleaseAssets): string[] {

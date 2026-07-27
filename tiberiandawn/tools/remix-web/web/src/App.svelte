@@ -82,8 +82,9 @@
           targetVersion = state;
           contentOptions = {
             ...contentOptions,
-            convertSt16Iconsets: state.version === '0.2.x',
-            convertShpx: state.version === '0.2.x',
+            convertSt16Iconsets: state.version === '0.2.x' || state.version === '0.3.x',
+            convertShpx: state.version === '0.2.x' || state.version === '0.3.x',
+            movieSequences: false,
           };
         }}
         onNext={() => (step = 'customize')}

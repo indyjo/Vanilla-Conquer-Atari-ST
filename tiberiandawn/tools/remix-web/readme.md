@@ -73,20 +73,24 @@ Open the URL printed by Vite. Place `remix.js` / `remix.wasm` in `web/public/` (
 
 ## Usage
 
-1. **Discs** — pick **both** GDI and NOD install media (ISO or ZIP with one disc image); optionally the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) for `cnc.tos` + `record.bin` + `*.w16`
-2. **Customize** — target C&C4ST version (0.1.x / 0.2.x), optional ST16 iconset conversion for theater MIX files, optional SHPX shape conversion for CONQUER / TEMPERAT / DESERT / WINTER, speech/SFX and music toggles
-3. **Process** — streaming ISO extract → merge `GENERAL.MIX` when dual-disc → REMIX each MIX → bundle release files if provided
+1. **Discs** — pick **both** GDI and NOD install media (ISO or ZIP with one disc image); optionally the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) for `cnc.tos` + `record.bin` + `*.w16` (+ `video/` for FMV)
+2. **Customize** — target C&C4ST version (0.1.x / 0.2.x / 0.3.x), optional ST16 iconset conversion for theater MIX files, optional SHPX shape conversion for CONQUER / TEMPERAT / DESERT / WINTER, speech/SFX and music toggles; movie sequences (VQA→STVQ) when targeting **0.3.x**
+3. **Process** — streaming ISO extract → merge `GENERAL.MIX` / `MOVIES.MIX` when dual-disc → REMIX each MIX → bundle release files if provided (`video/` sidecars are used for encode then dropped from the download ZIP)
 4. **Checkout** — download ZIP (MIX-only, or full ready-to-play folder if release ZIP was attached)
 
 Copy the ZIP contents to a folder on your Atari ST drive. If you skipped the release ZIP, add `cnc.tos`, `record.bin`, and `*.W16` from itch.io manually.
 
-### ST16 iconsets (0.2.x)
+### ST16 iconsets (0.2.x / 0.3.x)
 
-When **Convert terrain iconsets to ST16** is enabled (default for target **0.2.x**), remix-web pre-converts iconsets in theater MIX files (`TEMPERAT`, `DESERT`, `WINTER`, `SNOW`, `JUNGLE`). This requires the itch.io release ZIP (for matching `*.W16` weights). Target **0.1.x** disables ST16 by default; enabling it shows an incompatibility warning.
+When **Convert terrain iconsets to ST16** is enabled (default for target **0.2.x** / **0.3.x**), remix-web pre-converts iconsets in theater MIX files (`TEMPERAT`, `DESERT`, `WINTER`, `SNOW`, `JUNGLE`). This requires the itch.io release ZIP (for matching `*.W16` weights). Target **0.1.x** disables ST16 by default; enabling it shows an incompatibility warning.
 
-### SHPX shapes (0.2.x)
+### SHPX shapes (0.2.x / 0.3.x)
 
-When **Convert shapes to SHPX** is enabled (default for target **0.2.x**), remix-web converts KeyFrame SHPs in `CONQUER.MIX`, `TEMPERAT.MIX`, `DESERT.MIX`, and `WINTER.MIX` to the external-pool SHPX format and writes matching sidecars into the output ZIP (`pool0001.bin` … `pool0004.bin`). This saves RAM on the Atari ST and is mandatory on 4 MB machines. It is incompatible with the **0.1.x** line of C&C4ST.
+When **Convert shapes to SHPX** is enabled (default for target **0.2.x** / **0.3.x**), remix-web converts KeyFrame SHPs in `CONQUER.MIX`, `TEMPERAT.MIX`, `DESERT.MIX`, and `WINTER.MIX` to the external-pool SHPX format and writes matching sidecars into the output ZIP (`pool0001.bin` … `pool0004.bin`). This saves RAM on the Atari ST and is mandatory on 4 MB machines. It is incompatible with the **0.1.x** line of C&C4ST.
+
+### Movie sequences (0.3.x)
+
+When targeting **0.3.x**, enable **Movie sequences** to extract `MOVIES.MIX` and convert VQA payloads to STVQ using CRC-named `video/xxxxxxxx.N.w16` sidecars from the release ZIP. GDI and NOD `MOVIES.MIX` are merged first (union by CRC) so shared clips are encoded only once. Encoding runs in a windowed worker pool (configurable 1–8 parallel encodes, default 4) with ordered MIX writeout. Quality and encoding-effort selects map to remix STVQ presets. Missing sidecars omit that clip (with a warning). Encoding is still slow in the browser, but parallel workers use multiple CPU cores.
 
 ## Legal
 

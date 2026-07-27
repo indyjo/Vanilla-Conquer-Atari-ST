@@ -571,7 +571,6 @@ void Do_Win(void)
                 }
 
 #ifdef ATARI_ST
-                printf("[Scenario] Do_Win after Score.Presentation, Scenario=%d calling Map_Selection\n", Scen.Scenario);
                 ST_Log_Free_Memory("Do_Win before Map_Selection");
 #endif
                 Map_Selection();
@@ -582,7 +581,6 @@ void Do_Win(void)
                 */
                 ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
                 ST_Log_Free_Memory("Do_Win after Map_Selection");
-                printf("[Scenario] Do_Win Map_Selection returned\n");
 #endif
             }
             Scen.Scenario++;
@@ -633,9 +631,6 @@ void Do_Win(void)
     }
     SabotagedType = STRUCT_NONE;
 
-#ifdef ATARI_ST
-    printf("[Scenario] Do_Win before Map.Render + Fade (next scenario load)\n");
-#endif
     Map.Render();
     Fade_Palette_To(GamePalette, FADE_PALETTE_FAST, Call_Back);
     Show_Mouse();

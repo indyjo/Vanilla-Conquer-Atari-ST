@@ -108,6 +108,7 @@ static void usage(const char *prog)
 	    "  - convert audio to 11025 Hz 8-bit mono PCM .AUD\n"
 	    "  - convert theater terrain iconsets to ST16 (needs *.W16 in cwd)\n"
 	    "  - convert KeyFrame SHPs to SHPX + poolnnnn.bin sidecar (--shpx)\n"
+	    "  - convert VQA movies to STVQ (--convert-vqa; needs video/*.w16)\n"
 	    "  - pad payloads to even byte offsets from MIX start\n"
 	    "\n"
 	    "Multiple inputs: merge by CRC+size (keep first), then repack.\n"
@@ -115,11 +116,14 @@ static void usage(const char *prog)
 	    "Options:\n"
 	    "  -o, --output PATH       output MIX file, or output directory with -d\n"
 	    "  -d, --directory DIR     remix all .mix/.MIX files in DIR (non-recursive)\n"
-	    "  --w16-dir PATH          directory containing TEMPERAT.W16 etc. (default: cwd)\n"
+	    "  --w16-dir PATH          directory containing TEMPERAT.W16 and video/ (default: cwd)\n"
 	    "  --no-st16-iconsets      skip ST16 iconset conversion\n"
 	    "  --shpx                  convert KeyFrame SHPs to SHPX (CONQUER/TEMPERAT/DESERT/WINTER)\n"
 	    "  --shpx-verbose          per-shape SHPX/clip details on stderr (requires --shpx)\n"
 	    "  --pool-id ID            SHPX pool id (default from MIX name; requires --shpx)\n"
+	    "  --convert-vqa           convert VQA payloads to STVQ (needs video/xxxxxxxx.N.w16)\n"
+	    "  --video-quality Q       low|medium|high (default medium; requires --convert-vqa)\n"
+	    "  --video-effort E        fast|normal|thorough (default normal; requires --convert-vqa)\n"
 	    "  -h, --help              show this help\n",
 	    prog, prog, prog);
 }
@@ -222,6 +226,8 @@ int main(int argc, char **argv)
 	cfg.ui = REMIX_UI_HOST;
 	cfg.fallback_copy_on_convert_fail = 1;
 	cfg.convert_st16_iconsets = 1;
+	cfg.video_quality = REMIX_VIDEO_QUALITY_MEDIUM;
+	cfg.video_effort = REMIX_VIDEO_EFFORT_NORMAL;
 	/* shpx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
 
 	for (argi = 1; argi < argc; ++argi) {
@@ -249,6 +255,42 @@ int main(int argc, char **argv)
 			cfg.convert_shpx = 1;
 		} else if (!strcmp(argv[argi], "--shpx-verbose")) {
 			cfg.shpx_verbose = 1;
+		} else if (!strcmp(argv[argi], "--convert-vqa")) {
+			cfg.convert_vqa = 1;
+		} else if (!strcmp(argv[argi], "--video-quality")) {
+			const char *q;
+			if (argi + 1 >= argc) {
+				fprintf(stderr, "error: %s requires low|medium|high\n", argv[argi]);
+				return 1;
+			}
+			q = argv[++argi];
+			if (!strcmp(q, "low"))
+				cfg.video_quality = REMIX_VIDEO_QUALITY_LOW;
+			else if (!strcmp(q, "medium"))
+				cfg.video_quality = REMIX_VIDEO_QUALITY_MEDIUM;
+			else if (!strcmp(q, "high"))
+				cfg.video_quality = REMIX_VIDEO_QUALITY_HIGH;
+			else {
+				fprintf(stderr, "error: --video-quality must be low|medium|high\n");
+				return 1;
+			}
+		} else if (!strcmp(argv[argi], "--video-effort")) {
+			const char *e;
+			if (argi + 1 >= argc) {
+				fprintf(stderr, "error: %s requires fast|normal|thorough\n", argv[argi]);
+				return 1;
+			}
+			e = argv[++argi];
+			if (!strcmp(e, "fast"))
+				cfg.video_effort = REMIX_VIDEO_EFFORT_FAST;
+			else if (!strcmp(e, "normal"))
+				cfg.video_effort = REMIX_VIDEO_EFFORT_NORMAL;
+			else if (!strcmp(e, "thorough"))
+				cfg.video_effort = REMIX_VIDEO_EFFORT_THOROUGH;
+			else {
+				fprintf(stderr, "error: --video-effort must be fast|normal|thorough\n");
+				return 1;
+			}
 		} else if (!strcmp(argv[argi], "--pool-id")) {
 			unsigned long id;
 			char *end;

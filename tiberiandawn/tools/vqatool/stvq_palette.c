@@ -49,6 +49,14 @@ int stvq_sidecar_paths(const char *vqa_path, int seg, char *pal, char *hist, cha
 	return 0;
 }
 
+int stvq_crc_w16_path(const char *w16_dir, uint32_t crc, int seg, char *w16, size_t n)
+{
+	const char *root = (w16_dir && w16_dir[0]) ? w16_dir : ".";
+	if (snprintf(w16, n, "%s/video/%08x.%d.w16", root, (unsigned)crc, seg) >= (int)n)
+		return -1;
+	return 0;
+}
+
 int stvq_write_pal(const char *path, const unsigned char pal[768])
 {
 	FILE *fp = fopen(path, "wb");
@@ -129,14 +137,10 @@ static int file_exists(const char *path)
 	return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
-int stvq_load_segment_w16(const char *vqa_path, int seg, const VqaPalSegment *seginfo, StvqSegPalette *out)
+static int load_segment_w16_from_path(
+    const char *w16_path, const VqaPalSegment *seginfo, StvqSegPalette *out)
 {
-	char pal_path[768], hist_path[768], w16_path[768];
 	memset(out, 0, sizeof(*out));
-	stvq_sidecar_paths(vqa_path, seg, pal_path, hist_path, w16_path, sizeof(pal_path));
-	(void)pal_path;
-	(void)hist_path;
-
 	if (!file_exists(w16_path)) {
 		fprintf(stderr, "error: missing %s (run: vqatool init-w16 ...)\n", w16_path);
 		return -1;
@@ -148,4 +152,22 @@ int stvq_load_segment_w16(const char *vqa_path, int seg, const VqaPalSegment *se
 	fill_pen_vga6(&out->w16, seginfo->pal, out->pen_vga6);
 	out->have_w16 = 1;
 	return 0;
+}
+
+int stvq_load_segment_w16(const char *vqa_path, int seg, const VqaPalSegment *seginfo, StvqSegPalette *out)
+{
+	char pal_path[768], hist_path[768], w16_path[768];
+	stvq_sidecar_paths(vqa_path, seg, pal_path, hist_path, w16_path, sizeof(pal_path));
+	(void)pal_path;
+	(void)hist_path;
+	return load_segment_w16_from_path(w16_path, seginfo, out);
+}
+
+int stvq_load_segment_w16_crc(
+    const char *w16_dir, uint32_t crc, int seg, const VqaPalSegment *seginfo, StvqSegPalette *out)
+{
+	char w16_path[768];
+	if (stvq_crc_w16_path(w16_dir, crc, seg, w16_path, sizeof(w16_path)) != 0)
+		return -1;
+	return load_segment_w16_from_path(w16_path, seginfo, out);
 }

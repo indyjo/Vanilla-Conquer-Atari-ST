@@ -30,6 +30,9 @@ typedef struct StvqSegPalette {
 
 int stvq_sidecar_paths(const char *vqa_path, int seg, char *pal, char *hist, char *w16, size_t n);
 
+/* CRC form: {w16_dir}/video/{crc:08x}.{seg}.w16 (w16_dir may be NULL → ".") */
+int stvq_crc_w16_path(const char *w16_dir, uint32_t crc, int seg, char *w16, size_t n);
+
 int stvq_write_pal(const char *path, const unsigned char pal[768]);
 int stvq_write_hist(const char *path, const uint64_t counts[256]);
 int stvq_load_w16(const char *path, StvqWeightSet *out);
@@ -37,6 +40,10 @@ int stvq_build_stpl(const StvqWeightSet *w16, const unsigned char pal[768], uint
 
 /* Load existing name.<N>.w16; error if missing. */
 int stvq_load_segment_w16(const char *vqa_path, int seg, const VqaPalSegment *seginfo, StvqSegPalette *out);
+
+/* Load {w16_dir}/video/{crc:08x}.{seg}.w16; error if missing. */
+int stvq_load_segment_w16_crc(
+    const char *w16_dir, uint32_t crc, int seg, const VqaPalSegment *seginfo, StvqSegPalette *out);
 
 #ifdef __cplusplus
 }

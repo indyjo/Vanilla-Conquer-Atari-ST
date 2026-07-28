@@ -24,14 +24,18 @@ typedef struct StvqFrame {
 typedef struct StvqPlayer {
 	const StvqIo *io;
 	StvqHeader hdr;
-	unsigned tiles_x;
-	unsigned tiles_y;
+	uint16_t tiles_x;
+	uint16_t tiles_y;
 	uint8_t *codebook; /* cb_entries * 32 */
 	int frame_index;
-	int eof;
 	StvqHw *hw;
 	uint16_t initial_pal[16];
-	/* Scratch for one STFR payload (single read). */
+	/*
+	 * Prefetch invariant: IO sits after the next top-level chunk header;
+	 * next_size is that chunk's size. next_size==0 means finished (STEN).
+	 */
+	uint32_t next_size;
+	/* Scratch: STFR payload + following 8-byte header (single read). */
 	unsigned char *frame_buf;
 	size_t frame_cap;
 	StvqProf *prof; /* optional; filled each next_frame */
@@ -46,8 +50,8 @@ extern const char *stvq_player_open_error;
 
 /*
  * Decode next STFR into hw back buffer. Fills out (palette + pcm pointer into frame_buf).
- * Returns 1 ok, 0 at STEN/EOF, -1 error.
- * Reads the whole STFR payload with one IO read, then parses in memory.
+ * Returns 1 ok, 0 at end (next_size==0), -1 error.
+ * One IO read of payload + next header; nested chunks parsed in memory.
  * Submit out->pcm via stvq_hw_pcm_start before calling next_frame again.
  */
 int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out);

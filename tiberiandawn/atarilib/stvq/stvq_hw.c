@@ -1,17 +1,16 @@
 /*
- * stvq_hw.c - Ping-pong LoRes, VBL palette/swap, STE DMA looping ring audio.
+ * stvq_hw.c - Ping-pong LoRes, Setscreen/Setpalette+Vsync flip, STE DMA ring audio.
  *
  * Audio matches audio_ste.cpp: fixed ST-RAM ring, arm once with loop, mixer poke
  * at $FFFF8922, write head that never overtakes the DMA frame counter.
  *
- * Stay in user mode; use Supexec only for privileged register / VBL-queue access.
+ * Stay in user mode; use Supexec only for privileged register access.
  */
 #include "stvq_hw.h"
 #include "stvq_prof.h"
 
 #include <mint/cookie.h>
 #include <mint/osbind.h>
-#include <mint/sysvars.h>
 
 #include <string.h>
 
@@ -45,14 +44,6 @@ static uint8_t *g_sup_phys;
 static const uint16_t *g_sup_pal;
 static const unsigned char *g_sup_pcm;
 static size_t g_sup_pcm_len;
-static long g_sup_rc;
-
-static void stvq_vbl_proc(void);
-
-static void (**vbl_queue_table(void))(void)
-{
-	return (void (**)(void)) * (unsigned long *)0x456UL;
-}
 
 static int dma_audio_available(void)
 {
@@ -259,6 +250,14 @@ static long sup_apply_palette(void)
 	return 0;
 }
 
+/* TOS Setpalette leaves colorptr ($45A) armed; clear so later pending_pal edits
+ * are not live-copied on pacing Vsyncs before the next present. */
+static long sup_clear_colorptr(void)
+{
+	*(volatile unsigned long *)0x45AUL = 0;
+	return 0;
+}
+
 static long sup_snapshot_palette(void)
 {
 	StvqHw *hw = g_hw;
@@ -311,69 +310,6 @@ static long sup_ring_write(void)
 	return 0;
 }
 
-static long sup_vbl_install(void)
-{
-	StvqHw *hw = g_hw;
-	short n;
-	void (**vq)(void);
-	int i;
-	int first_free_found = 0;
-
-	hw->vbl_slot = -1;
-	n = *nvbls;
-	if (n <= 0) {
-		g_sup_rc = -1;
-		return 0;
-	}
-	vq = vbl_queue_table();
-	for (i = 0; i < n; i++) {
-		if (vq[i] == 0) {
-			if (!first_free_found) {
-				first_free_found = 1;
-				continue;
-			}
-			vq[i] = stvq_vbl_proc;
-			hw->vbl_slot = i;
-			g_sup_rc = 0;
-			return 0;
-		}
-	}
-	g_sup_rc = -1;
-	return 0;
-}
-
-static long sup_vbl_remove(void)
-{
-	StvqHw *hw = g_hw;
-	if (!hw || hw->vbl_slot < 0)
-		return 0;
-	{
-		short n = *nvbls;
-		void (**vq)(void) = vbl_queue_table();
-		if (hw->vbl_slot < n)
-			vq[hw->vbl_slot] = 0;
-	}
-	hw->vbl_slot = -1;
-	return 0;
-}
-
-static void stvq_vbl_proc(void)
-{
-	StvqHw *hw = g_hw;
-	if (!hw || !hw->present_req)
-		return;
-
-	if (hw->pending_pal_valid) {
-		apply_palette(hw->pending_pal);
-		hw->pending_pal_valid = 0;
-	}
-	if (hw->pending_phys)
-		set_video_base((uint8_t *)hw->pending_phys);
-
-	hw->present_req = 0;
-	hw->present_done = 1;
-}
-
 static void clear_screen(uint8_t *s)
 {
 	memset(s, 0, STVQ_SCREEN_BYTES);
@@ -415,7 +351,6 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, 
 	memset(hw, 0, sizeof(*hw));
 	hw->front = 0;
 	hw->back = 1;
-	hw->vbl_slot = -1;
 	hw->super_stack = 0;
 	hw->dma_rate_idx = STVQ_STE_RATE_12517;
 	hw->screens_owned = have_screens ? 0 : 1;
@@ -465,12 +400,7 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, 
 		clear_screen(hw->screen[1]);
 	}
 
-	g_sup_rc = -1;
 	if (hw->screens_owned) {
-		Supexec(sup_vbl_install);
-		if (g_sup_rc != 0)
-			goto fail;
-
 		Setscreen((void *)-1L, (void *)-1L, 0);
 		g_sup_phys = hw->screen[hw->front];
 		Supexec(sup_set_video_base);
@@ -516,8 +446,6 @@ void stvq_hw_shutdown(StvqHw *hw)
 	stvq_hw_pcm_stop(hw);
 
 	g_hw = hw;
-	if (hw->screens_owned)
-		Supexec(sup_vbl_remove);
 
 	/* Always put display back on entry Visible (screen[0]) before releasing. */
 	if (hw->screen[0]) {
@@ -577,44 +505,26 @@ unsigned long stvq_hw_present(StvqHw *hw)
 	int new_front = hw->back;
 	unsigned long t0, t1;
 
-	if (!hw->screens_owned) {
-		/*
-		 * Main-thread flip via Setscreen(log=phys=completed back).
-		 *
-		 * TOS latches the new Physbase at the *next* VBL. The old order
-		 * (Vsync → Setscreen → swap indices) swapped immediately, so decode
-		 * painted the still-displayed plane for nearly a full frame (visible
-		 * tile crawl / jerkiness). Queue Setscreen first, wait one VBL, then
-		 * retire the old front as the new back.
-		 */
-		t0 = stvq_hz200();
-		if (hw->pending_pal_valid) {
-			g_sup_pal = hw->pending_pal;
-			Supexec(sup_apply_palette);
-			hw->pending_pal_valid = 0;
-		}
-		Setscreen((void *)hw->screen[new_front], (void *)hw->screen[new_front], -1);
-		Vsync();
-		hw->front = new_front;
-		hw->back = 1 - new_front;
-		t1 = stvq_hz200();
-		return t1 - t0;
-	}
-
-	while (hw->present_req)
-		;
-
-	hw->present_done = 0;
-	hw->pending_phys = hw->screen[new_front];
-	hw->present_req = 1;
-
+	/*
+	 * Queue phys (+ optional palette) for the next VBL, then wait.
+	 * Setpalette and Setscreen both take effect in TOS's VBL.
+	 *
+	 * pending_pal must remain valid through Vsync. Afterward, clear
+	 * colorptr so set_pending_palette can refill pending_pal without
+	 * those words being applied on intervening wait Vsyncs.
+	 */
 	t0 = stvq_hz200();
-	while (!hw->present_done)
-		;
-	t1 = stvq_hz200();
-
+	if (hw->pending_pal_valid)
+		Setpalette(hw->pending_pal);
+	Setscreen((void *)hw->screen[new_front], (void *)hw->screen[new_front], -1);
+	Vsync();
+	if (hw->pending_pal_valid) {
+		Supexec(sup_clear_colorptr);
+		hw->pending_pal_valid = 0;
+	}
 	hw->front = new_front;
 	hw->back = 1 - new_front;
+	t1 = stvq_hz200();
 	return t1 - t0;
 }
 

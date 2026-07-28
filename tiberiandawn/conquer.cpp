@@ -90,19 +90,14 @@ static bool ST_Log_Free_Ram_On_Next_Main_Loop = false;
 
 extern bool InMovie;
 
-static int stvq_ccfile_read(void* user, void* buf, size_t n)
+static size_t stvq_ccfile_read(void* user, void* buf, size_t n)
 {
 	CCFileClass* f = (CCFileClass*)user;
-	unsigned char* p = (unsigned char*)buf;
-	size_t got = 0;
-	while (got < n) {
-		int r = f->Read(p + got, (int)(n - got));
-		if (r <= 0) {
-			return -1;
-		}
-		got += (size_t)r;
+	int r = f->Read(buf, (int)n);
+	if (r < 0) {
+		return 0;
 	}
-	return 0;
+	return (size_t)r;
 }
 
 static int stvq_ccfile_seek(void* user, long off, int whence)
@@ -197,11 +192,8 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 			have_frame = 1;
 		}
 
-		if (frame.have_stpl) {
-			stvq_hw_set_pending_palette(&hw, frame.stpl);
-		}
-
 		if (use_audio && !first) {
+			/* Audio master: wait until ring has room for this frame's PCM. */
 			while (stvq_hw_pcm_busy(&hw, frame.pcm_len)) {
 				if (Keyboard->Check()) {
 					int key = Keyboard->Get();
@@ -228,6 +220,11 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 				}
 			}
 			vbl_accum = 0;
+		}
+
+		/* After pacing waits: mutating pending_pal before wait would race TOS colorptr. */
+		if (frame.have_stpl) {
+			stvq_hw_set_pending_palette(&hw, frame.stpl);
 		}
 
 		if (use_audio && frame.pcm && frame.pcm_len >= 1) {

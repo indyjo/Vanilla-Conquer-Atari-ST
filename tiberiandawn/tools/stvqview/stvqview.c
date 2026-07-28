@@ -17,18 +17,10 @@
 #include <stdio.h>
 #include <string.h>
 
-static int file_read(void *user, void *buf, size_t n)
+static size_t file_read(void *user, void *buf, size_t n)
 {
 	FILE *fp = (FILE *)user;
-	unsigned char *p = (unsigned char *)buf;
-	size_t got = 0;
-	while (got < n) {
-		size_t r = fread(p + got, 1, n - got, fp);
-		if (r == 0)
-			return -1;
-		got += r;
-	}
-	return 0;
+	return fread(buf, 1, n, fp);
 }
 
 static int file_seek(void *user, long off, int whence)
@@ -73,8 +65,17 @@ static int play(const char *path)
 	unsigned vbl_accum = 0;
 	unsigned vbls_per_frame;
 	int rc = 1;
+	int key;
+	int pr;
+	int dma_ok;
+	unsigned fps;
 	unsigned long t_frame0 = 0;
 	unsigned long t_prev_present = 0;
+	unsigned long tw0;
+	unsigned long ta0;
+	unsigned long tp0;
+	unsigned long t_done;
+	unsigned long dt;
 
 	memset(&io, 0, sizeof(io));
 	memset(&hw, 0, sizeof(hw));
@@ -101,12 +102,10 @@ static int play(const char *path)
 	}
 
 	player.prof = &prof;
-	{
-		unsigned fps = player.hdr.fps ? player.hdr.fps : 15u;
-		prof.budget_ticks = (STVQ_HZ200_PER_SEC + fps / 2u) / fps;
-		if (!prof.budget_ticks)
-			prof.budget_ticks = 1;
-	}
+	fps = player.hdr.fps ? player.hdr.fps : 15u;
+	prof.budget_ticks = (STVQ_HZ200_PER_SEC + fps / 2u) / fps;
+	if (!prof.budget_ticks)
+		prof.budget_ticks = 1;
 
 	printf("STVQ %u x %u %u frames fps=%u cb=%u max_frame=%u\n",
 	    (unsigned)player.hdr.width,
@@ -140,7 +139,7 @@ static int play(const char *path)
 		vbls_per_frame = 1;
 
 	for (;;) {
-		int key = stvq_hw_poll_key();
+		key = stvq_hw_poll_key();
 		if (key == 27) {
 			rc = 0;
 			break;
@@ -157,7 +156,6 @@ static int play(const char *path)
 		}
 
 		if (!have_frame) {
-			int pr;
 			t_frame0 = stvq_hz200();
 			pr = stvq_player_next_frame(&player, &frame);
 			if (pr == 0) {
@@ -176,76 +174,72 @@ static int play(const char *path)
 			have_frame = 1;
 		}
 
+		tw0 = stvq_hz200();
+		if (use_audio && !first) {
+			/* Audio master: wait until ring has room for this frame's PCM. */
+			while (stvq_hw_pcm_busy(&hw, frame.pcm_len)) {
+				key = stvq_hw_poll_key();
+				if (key == 27) {
+					rc = 0;
+					goto done;
+				}
+				if (key == ' ') {
+					paused = 1;
+					stvq_hw_pcm_stop(&hw);
+					break;
+				}
+			}
+			if (paused) {
+				prof.last_wait = stvq_hz200() - tw0;
+				continue;
+			}
+		} else if (!use_audio && !first) {
+			while (vbl_accum < vbls_per_frame) {
+				stvq_hw_wait_vbl(&hw);
+				vbl_accum++;
+				key = stvq_hw_poll_key();
+				if (key == 27) {
+					rc = 0;
+					goto done;
+				}
+				if (key == ' ') {
+					paused = 1;
+					break;
+				}
+			}
+			if (paused) {
+				prof.last_wait = stvq_hz200() - tw0;
+				continue;
+			}
+			vbl_accum = 0;
+		}
+		prof.last_wait = stvq_hz200() - tw0;
+
+		/* After pacing waits: mutating pending_pal before wait would race TOS colorptr. */
 		if (frame.have_stpl)
 			stvq_hw_set_pending_palette(&hw, frame.stpl);
 
-		{
-			unsigned long tw0 = stvq_hz200();
-			if (use_audio && !first) {
-				/* Audio master: wait until ring has room for this frame's PCM. */
-				while (stvq_hw_pcm_busy(&hw, frame.pcm_len)) {
-					key = stvq_hw_poll_key();
-					if (key == 27) {
-						rc = 0;
-						goto done;
-					}
-					if (key == ' ') {
-						paused = 1;
-						stvq_hw_pcm_stop(&hw);
-						break;
-					}
-				}
-				if (paused) {
-					prof.last_wait = stvq_hz200() - tw0;
-					continue;
-				}
-			} else if (!use_audio && !first) {
-				while (vbl_accum < vbls_per_frame) {
-					stvq_hw_wait_vbl(&hw);
-					vbl_accum++;
-					key = stvq_hw_poll_key();
-					if (key == 27) {
-						rc = 0;
-						goto done;
-					}
-					if (key == ' ') {
-						paused = 1;
-						break;
-					}
-				}
-				if (paused) {
-					prof.last_wait = stvq_hz200() - tw0;
-					continue;
-				}
-				vbl_accum = 0;
-			}
-			prof.last_wait = stvq_hz200() - tw0;
-		}
-
 		/* Submit PCM before present so the VBL wait cannot drain the ring dry. */
 		if (use_audio && frame.pcm && frame.pcm_len >= 1) {
-			unsigned long ta0 = stvq_hz200();
+			ta0 = stvq_hz200();
 			stvq_hw_pcm_start(&hw, frame.pcm, frame.pcm_len, player.hdr.sample_rate);
 			prof.last_audio = stvq_hz200() - ta0;
 		}
 
-		{
-			unsigned long tp0 = stvq_hz200();
-			unsigned long t_done;
-			(void)stvq_hw_present(&hw);
-			t_done = stvq_hz200();
-			prof.last_present = t_done - tp0;
-			/*
-			 * Present cadence: more than one VBL past the nominal frame
-			 * period means this reveal was >=1 VBL late.
-			 */
-			if (t_prev_present && prof.budget_ticks) {
-				unsigned long dt = t_done - t_prev_present;
-				if (dt > prof.budget_ticks + STVQ_HZ200_PER_VBL)
-					prof.late_present++;
-			}
-			t_prev_present = t_done;
+		tp0 = stvq_hz200();
+		(void)stvq_hw_present(&hw);
+		t_done = stvq_hz200();
+		prof.last_present = t_done - tp0;
+		/*
+		 * Present cadence: more than one VBL past the nominal frame
+		 * period means this reveal was >=1 VBL late.
+		 */
+		if (t_prev_present && prof.budget_ticks) {
+			dt = t_done - t_prev_present;
+			if (dt > prof.budget_ticks + STVQ_HZ200_PER_VBL)
+				prof.late_present++;
 		}
+		t_prev_present = t_done;
 
 		prof.last_total = stvq_hz200() - t_frame0;
 		stvq_prof_add(&prof);
@@ -257,11 +251,9 @@ static int play(const char *path)
 done:
 	stvq_hw_pcm_stop(&hw);
 	stvq_player_close(&player);
-	{
-		int dma_ok = hw.dma_ok;
-		stvq_hw_shutdown(&hw);
-		printf("Audio session: dma_ok=%d use_audio=%d\n", dma_ok, use_audio);
-	}
+	dma_ok = hw.dma_ok;
+	stvq_hw_shutdown(&hw);
+	printf("Audio session: dma_ok=%d use_audio=%d\n", dma_ok, use_audio);
 	fclose(fp);
 	dump_prof(&prof);
 	return rc;

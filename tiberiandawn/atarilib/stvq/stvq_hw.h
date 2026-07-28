@@ -13,8 +13,8 @@
 extern "C" {
 #endif
 
-/* Looping DMA ring in ST-RAM (~164 ms @ 12517 Hz). */
-enum { STVQ_DMA_RING_BYTES = 2048 };
+/* Looping DMA ring in ST-RAM (~82 ms @ 12517 Hz). */
+enum { STVQ_DMA_RING_BYTES = 1024 };
 
 typedef struct StvqHw {
 	void *screen_raw[2]; /* Mxalloc blocks (for free); NULL if caller-supplied */
@@ -27,14 +27,10 @@ typedef struct StvqHw {
 	uint16_t origin_y;
 
 	int dma_ok; /* STE/TT/Falcon DMA available and audio enabled */
-	int vbl_slot;
 
-	/* Present request (main -> VBL). */
-	volatile int present_req;
-	volatile int present_done;
+	/* Present: palette queued for Setpalette on next present/Vsync. */
 	volatile int pending_pal_valid;
 	uint16_t pending_pal[16];
-	volatile uint8_t *pending_phys;
 
 	/* Saved TOS state (owned-screen / standalone mode only). */
 	long old_log;
@@ -53,8 +49,8 @@ typedef struct StvqHw {
 
 /*
  * screen0/screen1: if both non-NULL, use caller planar buffers. Game path flips
- * with Setscreen(log=phys=front) then Vsync (phys latch) before swapping
- * front/back. If both NULL, allocate ST-RAM screens (standalone; VBL flip).
+ * with Setscreen(log=phys=front) then Vsync. If both NULL, allocate ST-RAM
+ * screens (standalone; same Setscreen+Vsync flip).
  * enable_audio: non-zero to allocate/use DMA ring when hardware supports it.
  */
 int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, uint8_t *screen1,
@@ -67,11 +63,11 @@ void stvq_hw_restore_entry_phys(StvqHw *hw);
 uint8_t *stvq_hw_back(StvqHw *hw);
 uint8_t *stvq_hw_front(StvqHw *hw);
 
-/* Queue STPL for the next present (applied on the reveal VBL). */
+/* Queue STPL for the next present (Setpalette on reveal VBL; colorptr cleared after). */
 void stvq_hw_set_pending_palette(StvqHw *hw, const uint16_t ste_be[16]);
 
-/* Request swap+palette on next VBL; blocks until done.
- * Returns _hz200 ticks spent spinning for that VBL (not including prior-present drain). */
+/* Queue swap+palette for next VBL; blocks until done (Vsync).
+ * Returns _hz200 ticks spent waiting for that VBL. */
 unsigned long stvq_hw_present(StvqHw *hw);
 
 /*

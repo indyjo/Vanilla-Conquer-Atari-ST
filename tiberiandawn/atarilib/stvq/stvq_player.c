@@ -332,37 +332,33 @@ fail:
 	return -1;
 }
 
-int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
+int stvq_player_read_frame(StvqPlayer *p)
 {
-	int got_stvd = 0;
 	StvqProf *prof = p->prof;
-
-	memset(out, 0, sizeof(*out));
+	uint32_t size;
+	size_t need;
+	size_t got;
+	unsigned long t_read0;
+	unsigned long t_read1;
 
 	if (prof) {
 		prof->last_read = 0;
-		prof->last_stcr = 0;
-		prof->last_decode = 0;
-		prof->last_audio = 0;
 		prof->last_stfr_bytes = 0;
-		prof->last_stcr_n = 0;
-		prof->last_pcm_bytes = 0;
 	}
 
+	if (p->load_ready)
+		return 1;
 	if (p->next_size == 0)
 		return 0;
 
-	unsigned long t0 = stvq_hz200();
-	uint32_t size = p->next_size;
-	size_t need = (size_t)size + 8u;
+	size = p->next_size;
+	need = (size_t)size + 8u;
 	if (ensure_frame_buf(p, need) != 0)
 		return -1;
 
-	/* ---- one-shot: STFR payload + following chunk header ---- */
-	unsigned long t_read0 = stvq_hz200();
-	size_t got = p->io->read(p->io->user, p->frame_buf, need);
-	unsigned long t_read1 = stvq_hz200();
-	/* Full payload+header, or payload only (exactly 8 short → EOF after frame). */
+	t_read0 = stvq_hz200();
+	got = p->io->read(p->io->user, p->frame_buf, need);
+	t_read1 = stvq_hz200();
 	if (got != need && got != (size_t)size)
 		return -1;
 	if (prof) {
@@ -370,8 +366,38 @@ int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
 		prof->last_stfr_bytes = size;
 	}
 
-	const unsigned char *rp = p->frame_buf;
-	const unsigned char *end = p->frame_buf + size;
+	p->load_size = size;
+	p->load_got = got;
+	p->load_ready = 1;
+	return 1;
+}
+
+int stvq_player_decode_frame(StvqPlayer *p, StvqFrame *out)
+{
+	int got_stvd = 0;
+	StvqProf *prof = p->prof;
+	uint32_t size;
+	size_t got;
+	const unsigned char *rp;
+	const unsigned char *end;
+
+	memset(out, 0, sizeof(*out));
+
+	if (prof) {
+		prof->last_stcr = 0;
+		prof->last_decode = 0;
+		prof->last_audio = 0;
+		prof->last_stcr_n = 0;
+		prof->last_pcm_bytes = 0;
+	}
+
+	if (!p->load_ready)
+		return -1;
+
+	size = p->load_size;
+	got = p->load_got;
+	rp = p->frame_buf;
+	end = p->frame_buf + size;
 	while (rp + 8 <= end) {
 		uint32_t cid = stvq_read_be32(rp);
 		uint32_t csize = stvq_read_be32(rp + 4);
@@ -411,15 +437,20 @@ int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
 	if (!got_stvd)
 		return -1;
 
-	if (got == need)
+	if (got == (size_t)size + 8u)
 		p->next_size = stvq_read_be32(p->frame_buf + size + 4);
 	else
-		p->next_size = 0; /* truncated after this frame */
+		p->next_size = 0;
 
-	unsigned long t1 = stvq_hz200();
-	(void)t0;
-	(void)t1;
-
+	p->load_ready = 0;
 	p->frame_index++;
 	return 1;
+}
+
+int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out)
+{
+	int pr = stvq_player_read_frame(p);
+	if (pr != 1)
+		return pr;
+	return stvq_player_decode_frame(p, out);
 }

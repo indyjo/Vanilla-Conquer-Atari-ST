@@ -4,7 +4,8 @@
  * Audio matches audio_ste.cpp: fixed ST-RAM ring, arm once with loop, mixer poke
  * at $FFFF8922, write head that never overtakes the DMA frame counter.
  *
- * Stay in user mode; use Supexec only for privileged register access.
+ * Caller must be in supervisor mode (game startup / stvqview Super(0)).
+ * Hardware and TOS sysvars are accessed directly — no Supexec.
  */
 #include "stvq_hw.h"
 #include "stvq_prof.h"
@@ -32,18 +33,10 @@ static volatile unsigned char const *const STE_DMA_CNT_L = (volatile unsigned ch
 /* Same poke as audio_ste (not Microwire-framed LMC1992). */
 static volatile unsigned char *const STE_DMA_MIXER = (volatile unsigned char *)0xFFFF8922UL;
 
-static StvqHw *g_hw;
-
 static volatile unsigned char *const VID_BASE_H = (volatile unsigned char *)0xFF8201UL;
 static volatile unsigned char *const VID_BASE_M = (volatile unsigned char *)0xFF8203UL;
 static volatile unsigned char *const VID_BASE_L = (volatile unsigned char *)0xFF820DUL;
 static volatile uint16_t *const VID_PAL = (volatile uint16_t *)0xFF8240UL;
-
-/* Supexec argument marshalling. */
-static uint8_t *g_sup_phys;
-static const uint16_t *g_sup_pal;
-static const unsigned char *g_sup_pcm;
-static size_t g_sup_pcm_len;
 
 static int dma_audio_available(void)
 {
@@ -109,6 +102,13 @@ static void apply_palette(const uint16_t ste[16])
 		VID_PAL[i] = ste[i];
 }
 
+static void snapshot_palette(uint16_t out[16])
+{
+	int i;
+	for (i = 0; i < 16; i++)
+		out[i] = VID_PAL[i];
+}
+
 /* high_reg points at $FF8903 or $FF890F; mid/low are +2/+4. */
 static void dma_set_address(volatile unsigned char *high_reg, unsigned long phys)
 {
@@ -169,27 +169,60 @@ static int ring_dma_offset(StvqHw *hw)
 }
 
 /*
- * Free bytes from write head forward to DMA read (exclusive).
- * When not armed, the whole ring is free.
- * Write head may be odd; only the DMA frame start/end need even addresses.
+ * Account DMA progress against ring_queued. If DMA has consumed more than we
+ * wrote (underrun), clamp to empty and resync the write head to the play head
+ * so the next fill is immediate — modular (dma-write) free alone looks "full".
+ * Call often enough that DMA cannot lap a full ring between syncs (~82 ms @ 12.5 kHz).
+ */
+static void ring_sync(StvqHw *hw)
+{
+	unsigned long base;
+	unsigned long end;
+	unsigned long cnt;
+	unsigned dma_off;
+	unsigned played;
+
+	if (!hw->ring || !hw->ring_armed)
+		return;
+
+	base = (unsigned long)hw->ring;
+	end = base + (unsigned long)STVQ_DMA_RING_BYTES;
+	cnt = ((unsigned long)*STE_DMA_CNT_H << 16) | ((unsigned long)*STE_DMA_CNT_M << 8) |
+	    (unsigned long)*STE_DMA_CNT_L;
+	if (cnt < base || cnt >= end)
+		return;
+
+	dma_off = (unsigned)(cnt - base);
+
+	played = (dma_off + (unsigned)STVQ_DMA_RING_BYTES - hw->ring_dma_pos) %
+	    (unsigned)STVQ_DMA_RING_BYTES;
+	hw->ring_dma_pos = dma_off;
+
+	if (played >= hw->ring_queued) {
+		/* Underrun: treat as empty. Keep write head even — mono DMA can sit on
+		 * an odd byte, and libcmini memcpy word-copies (Address Error on odd). */
+		hw->ring_queued = 0;
+		hw->ring_write = dma_off & ~1u;
+	} else {
+		hw->ring_queued -= played;
+	}
+}
+
+/*
+ * Free bytes available to write (leaves 1 byte unused so write never lands on DMA).
+ * When not armed, the whole usable capacity is free.
  */
 static unsigned ring_free_bytes(StvqHw *hw)
 {
-	int dma_off;
-	unsigned space;
-
 	if (!hw->ring)
 		return 0;
 	if (!hw->ring_armed)
-		return (unsigned)STVQ_DMA_RING_BYTES;
+		return (unsigned)STVQ_DMA_RING_BYTES - 1u;
 
-	dma_off = ring_dma_offset(hw);
-	if (dma_off < 0)
+	ring_sync(hw);
+	if (hw->ring_queued >= (unsigned)STVQ_DMA_RING_BYTES - 1u)
 		return 0;
-
-	space = ((unsigned)dma_off + (unsigned)STVQ_DMA_RING_BYTES - hw->ring_write) %
-	    (unsigned)STVQ_DMA_RING_BYTES;
-	return space;
+	return ((unsigned)STVQ_DMA_RING_BYTES - 1u) - hw->ring_queued;
 }
 
 /* Copy `nbytes` into the ring at write head, wrapping; advances write head. */
@@ -212,101 +245,35 @@ static void ring_write_bytes(StvqHw *hw, const unsigned char *src, unsigned nbyt
 }
 
 /*
- * Zero the free region (write head -> DMA) without advancing the write head.
- * Prevents DMA from replaying stale samples when it catches up or when we only
- * partially refill free space -- that was a periodic click in quiet sections.
+ * Queue `need` PCM bytes into the ring.
+ * Returns 0 ok, 1 busy (not enough free), -1 error.
  */
-static void ring_scrub_free(StvqHw *hw)
+static int ring_queue_pcm(StvqHw *hw, const unsigned char *pcm, unsigned need)
 {
 	unsigned freeb;
-	unsigned off;
+	int dma_off;
 
-	if (!hw->ring || !hw->ring_armed)
-		return;
-
-	freeb = ring_free_bytes(hw);
-	off = hw->ring_write;
-	while (freeb) {
-		unsigned to_end = (unsigned)STVQ_DMA_RING_BYTES - off;
-		unsigned batch = freeb < to_end ? freeb : to_end;
-
-		memset(hw->ring + off, 0, batch);
-		freeb -= batch;
-		off += batch;
-		if (off >= (unsigned)STVQ_DMA_RING_BYTES)
-			off = 0;
-	}
-}
-
-static long sup_set_video_base(void)
-{
-	set_video_base(g_sup_phys);
-	return 0;
-}
-
-static long sup_apply_palette(void)
-{
-	apply_palette(g_sup_pal);
-	return 0;
-}
-
-/* TOS Setpalette leaves colorptr ($45A) armed; clear so later pending_pal edits
- * are not live-copied on pacing Vsyncs before the next present. */
-static long sup_clear_colorptr(void)
-{
-	*(volatile unsigned long *)0x45AUL = 0;
-	return 0;
-}
-
-static long sup_snapshot_palette(void)
-{
-	StvqHw *hw = g_hw;
-	int i;
-	for (i = 0; i < 16; i++)
-		hw->old_pal[i] = VID_PAL[i];
-	return 0;
-}
-
-static long sup_dma_stop(void)
-{
-	dma_stop_impl();
-	if (g_hw)
-		g_hw->ring_armed = 0;
-	return 0;
-}
-
-static long sup_ring_free(void)
-{
-	ring_scrub_free(g_hw);
-	return (long)ring_free_bytes(g_hw);
-}
-
-static long sup_ring_write(void)
-{
-	StvqHw *hw = g_hw;
-	unsigned need = (unsigned)g_sup_pcm_len;
-	unsigned freeb;
-
-	if (!hw || !hw->ring || !g_sup_pcm || need < 1)
+	if (!hw || !hw->ring || !pcm || need < 1)
 		return -1;
 
 	if (!hw->ring_armed) {
 		/* Cold start: silence ring, place first chunk at 0, then arm loop. */
 		memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
 		hw->ring_write = 0;
-		ring_write_bytes(hw, g_sup_pcm, need);
+		ring_write_bytes(hw, pcm, need);
 		dma_arm_loop_impl(hw);
-		ring_scrub_free(hw);
+		hw->ring_queued = need;
+		dma_off = ring_dma_offset(hw);
+		hw->ring_dma_pos = dma_off >= 0 ? (unsigned)dma_off : 0;
 		return 0;
 	}
 
-	ring_scrub_free(hw);
 	freeb = ring_free_bytes(hw);
 	if (freeb < need)
 		return 1; /* busy -- caller should wait */
 
-	ring_write_bytes(hw, g_sup_pcm, need);
-	ring_scrub_free(hw);
+	ring_write_bytes(hw, pcm, need);
+	hw->ring_queued += need;
 	return 0;
 }
 
@@ -351,7 +318,6 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, 
 	memset(hw, 0, sizeof(*hw));
 	hw->front = 0;
 	hw->back = 1;
-	hw->super_stack = 0;
 	hw->dma_rate_idx = STVQ_STE_RATE_12517;
 	hw->screens_owned = have_screens ? 0 : 1;
 
@@ -364,13 +330,11 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, 
 	hw->origin_y = (uint16_t)((STVQ_SCREEN_H - height) / 2u);
 	hw->origin_x = (uint16_t)(hw->origin_x & ~7u);
 
-	g_hw = hw;
-
 	if (hw->screens_owned) {
 		hw->old_log = (long)Logbase();
 		hw->old_phys = (long)Physbase();
 		hw->old_rez = Getrez();
-		Supexec(sup_snapshot_palette);
+		snapshot_palette(hw->old_pal);
 	}
 
 	hw->dma_ok = 0;
@@ -381,6 +345,8 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, 
 		hw->ring = align2(hw->ring_raw);
 		memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
 		hw->ring_write = 0;
+		hw->ring_queued = 0;
+		hw->ring_dma_pos = 0;
 		hw->ring_armed = 0;
 		hw->dma_ok = 1;
 	}
@@ -402,8 +368,7 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, 
 
 	if (hw->screens_owned) {
 		Setscreen((void *)-1L, (void *)-1L, 0);
-		g_sup_phys = hw->screen[hw->front];
-		Supexec(sup_set_video_base);
+		set_video_base(hw->screen[hw->front]);
 		Setscreen((void *)hw->screen[hw->front], (void *)hw->screen[hw->front], -1);
 		__asm__ volatile("dc.w 0xa00a"); /* hide mouse */
 	} else {
@@ -427,13 +392,10 @@ void stvq_hw_restore_entry_phys(StvqHw *hw)
 		return;
 	hw->front = 0;
 	hw->back = 1;
-	if (hw->screens_owned) {
-		g_hw = hw;
-		g_sup_phys = hw->screen[0];
-		Supexec(sup_set_video_base);
-	} else {
+	if (hw->screens_owned)
+		set_video_base(hw->screen[0]);
+	else
 		Setscreen((void *)hw->screen[0], (void *)hw->screen[0], -1);
-	}
 }
 
 void stvq_hw_shutdown(StvqHw *hw)
@@ -445,25 +407,20 @@ void stvq_hw_shutdown(StvqHw *hw)
 
 	stvq_hw_pcm_stop(hw);
 
-	g_hw = hw;
-
 	/* Always put display back on entry Visible (screen[0]) before releasing. */
 	if (hw->screen[0]) {
 		hw->front = 0;
 		hw->back = 1;
-		if (hw->screens_owned) {
-			g_sup_phys = hw->screen[0];
-			Supexec(sup_set_video_base);
-		} else {
-				Setscreen((void *)hw->screen[0], (void *)hw->screen[0], -1);
-			}
+		if (hw->screens_owned)
+			set_video_base(hw->screen[0]);
+		else
+			Setscreen((void *)hw->screen[0], (void *)hw->screen[0], -1);
 	}
 
 	if (hw->screens_owned) {
 		__asm__ volatile("dc.w 0xa009"); /* show mouse */
 
-		g_sup_pal = hw->old_pal;
-		Supexec(sup_apply_palette);
+		apply_palette(hw->old_pal);
 		Setscreen((void *)hw->old_log, (void *)hw->old_phys, hw->old_rez);
 
 		for (i = 0; i < 2; i++) {
@@ -479,7 +436,6 @@ void stvq_hw_shutdown(StvqHw *hw)
 	stram_free(hw->ring_raw);
 	hw->ring_raw = NULL;
 	hw->ring = NULL;
-	g_hw = NULL;
 }
 
 uint8_t *stvq_hw_back(StvqHw *hw)
@@ -500,32 +456,49 @@ void stvq_hw_set_pending_palette(StvqHw *hw, const uint16_t ste_be[16])
 	hw->pending_pal_valid = 1;
 }
 
-unsigned long stvq_hw_present(StvqHw *hw)
+void stvq_hw_present_begin(StvqHw *hw)
 {
 	int new_front = hw->back;
-	unsigned long t0, t1;
 
 	/*
-	 * Queue phys (+ optional palette) for the next VBL, then wait.
-	 * Setpalette and Setscreen both take effect in TOS's VBL.
+	 * Queue phys (+ optional palette) for the next VBL.
+	 * Caller may do useful work (e.g. next-frame disk read) before present_end.
+	 * pending_pal must remain valid until present_end (through the applying VBL).
 	 *
-	 * pending_pal must remain valid through Vsync. Afterward, clear
-	 * colorptr so set_pending_palette can refill pending_pal without
-	 * those words being applied on intervening wait Vsyncs.
+	 * Record _vbclock so present_end can skip Vsync when that VBL already
+	 * ran during the overlapped work (otherwise Vsync waits for yet another).
 	 */
-	t0 = stvq_hz200();
+	hw->present_new_front = new_front;
+	hw->present_vbl0 = *(volatile unsigned long *)0x462UL;
 	if (hw->pending_pal_valid)
 		Setpalette(hw->pending_pal);
 	Setscreen((void *)hw->screen[new_front], (void *)hw->screen[new_front], -1);
-	Vsync();
+}
+
+unsigned long stvq_hw_present_end(StvqHw *hw)
+{
+	int new_front = hw->present_new_front;
+	unsigned long t0, t1;
+
+	t0 = stvq_hz200();
+	if (*(volatile unsigned long *)0x462UL == hw->present_vbl0)
+		Vsync();
 	if (hw->pending_pal_valid) {
-		Supexec(sup_clear_colorptr);
+		/* TOS Setpalette leaves colorptr ($45A) armed; clear so later
+		 * pending_pal edits are not live-copied on pacing Vsyncs. */
+		*(volatile unsigned long *)0x45AUL = 0;
 		hw->pending_pal_valid = 0;
 	}
 	hw->front = new_front;
 	hw->back = 1 - new_front;
 	t1 = stvq_hz200();
 	return t1 - t0;
+}
+
+unsigned long stvq_hw_present(StvqHw *hw)
+{
+	stvq_hw_present_begin(hw);
+	return stvq_hw_present_end(hw);
 }
 
 static unsigned char rate_idx_for(unsigned sample_rate)
@@ -535,27 +508,32 @@ static unsigned char rate_idx_for(unsigned sample_rate)
 	return (unsigned char)STVQ_STE_RATE_12517;
 }
 
-void stvq_hw_pcm_start(StvqHw *hw, const unsigned char *pcm, size_t len, unsigned sample_rate)
+static int pcm_prepare(StvqHw *hw, const unsigned char **pcm, size_t *len, unsigned sample_rate)
 {
-	long rc;
-
-	if (!hw->dma_ok || !hw->ring || !pcm || len < 1)
-		return;
+	if (!hw->dma_ok || !hw->ring || !*pcm || *len < 1)
+		return -1;
 
 	if (!sample_rate)
 		sample_rate = STVQ_SAMPLE_RATE;
 	hw->dma_rate_idx = rate_idx_for(sample_rate);
 
-	if (len > (size_t)STVQ_DMA_RING_BYTES)
-		len = (size_t)STVQ_DMA_RING_BYTES;
+	if (*len > (size_t)STVQ_DMA_RING_BYTES - 1u)
+		*len = (size_t)STVQ_DMA_RING_BYTES - 1u;
+	*len &= ~1u; /* keep ring_write even */
+	if (*len < 1)
+		return -1;
+	return 0;
+}
 
-	g_hw = hw;
-	g_sup_pcm = pcm;
-	g_sup_pcm_len = len;
+void stvq_hw_pcm_start(StvqHw *hw, const unsigned char *pcm, size_t len, unsigned sample_rate)
+{
+	int rc;
 
-	/* Wait in user mode until the ring has room (never overtake DMA). */
+	if (pcm_prepare(hw, &pcm, &len, sample_rate) != 0)
+		return;
+
 	for (;;) {
-		rc = Supexec(sup_ring_write);
+		rc = ring_queue_pcm(hw, pcm, (unsigned)len);
 		if (rc != 1)
 			break;
 	}
@@ -572,23 +550,23 @@ int stvq_hw_pcm_busy(StvqHw *hw, size_t need)
 
 	if (need < 1)
 		return 0;
-	if (need > (size_t)STVQ_DMA_RING_BYTES)
-		need = (size_t)STVQ_DMA_RING_BYTES;
+	if (need > (size_t)STVQ_DMA_RING_BYTES - 1u)
+		need = (size_t)STVQ_DMA_RING_BYTES - 1u;
 
-	g_hw = hw;
-	freeb = (unsigned)Supexec(sup_ring_free);
+	freeb = ring_free_bytes(hw);
 	return freeb < need ? 1 : 0;
 }
 
 void stvq_hw_pcm_stop(StvqHw *hw)
 {
 	if (hw->dma_ok) {
-		g_hw = hw;
-		Supexec(sup_dma_stop);
+		dma_stop_impl();
+		hw->ring_armed = 0;
 		if (hw->ring)
 			memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
 		hw->ring_write = 0;
-		hw->ring_armed = 0;
+		hw->ring_queued = 0;
+		hw->ring_dma_pos = 0;
 	}
 }
 

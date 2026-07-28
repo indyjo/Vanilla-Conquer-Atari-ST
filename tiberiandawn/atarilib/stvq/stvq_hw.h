@@ -37,14 +37,19 @@ typedef struct StvqHw {
 	long old_phys;
 	short old_rez;
 	uint16_t old_pal[16];
-	long super_stack; /* Super() return, or 0 if already super */
 
 	/* Looping STE DMA ring (ST-RAM). */
 	unsigned char *ring_raw;
 	unsigned char *ring; /* even-aligned */
 	unsigned ring_write; /* next write offset 0 .. STVQ_DMA_RING_BYTES-1 */
+	unsigned ring_queued; /* valid bytes ahead of DMA (software; detects underrun) */
+	unsigned ring_dma_pos; /* last DMA offset observed by ring_sync */
 	int ring_armed;      /* DMA looping */
 	unsigned char dma_rate_idx; /* STE sound-mode rate bits */
+
+	/* present_begin / present_end */
+	int present_new_front;
+	unsigned long present_vbl0; /* _vbclock at begin; skip Vsync if it advanced */
 } StvqHw;
 
 /*
@@ -66,8 +71,15 @@ uint8_t *stvq_hw_front(StvqHw *hw);
 /* Queue STPL for the next present (Setpalette on reveal VBL; colorptr cleared after). */
 void stvq_hw_set_pending_palette(StvqHw *hw, const uint16_t ste_be[16]);
 
-/* Queue swap+palette for next VBL; blocks until done (Vsync).
- * Returns _hz200 ticks spent waiting for that VBL. */
+/* Queue swap+palette for next VBL (Setscreen); does not wait. Pair with present_end.
+ * Snapshots _vbclock so present_end can skip Vsync if that VBL already ran
+ * during overlapped work (avoids waiting an extra frame). */
+void stvq_hw_present_begin(StvqHw *hw);
+
+/* Wait until queued present has taken effect. Vsync only if _vbclock unchanged. */
+unsigned long stvq_hw_present_end(StvqHw *hw);
+
+/* present_begin + present_end. Returns _hz200 ticks spent in present_end's Vsync. */
 unsigned long stvq_hw_present(StvqHw *hw);
 
 /*
@@ -80,6 +92,9 @@ void stvq_hw_pcm_start(StvqHw *hw, const unsigned char *pcm, size_t len, unsigne
 /*
  * Audio master clock: 1 while the ring has fewer than `need` free bytes
  * (cannot submit the next chunk yet without overtaking DMA).
+ * Free space uses a software queued count so DMA underrun (DMA lapping the
+ * write cursor) is treated as empty — refill immediately instead of waiting
+ * on the inverted modular (dma-write) gap.
  */
 int stvq_hw_pcm_busy(StvqHw *hw, size_t need);
 

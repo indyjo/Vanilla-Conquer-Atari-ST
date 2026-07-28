@@ -38,6 +38,10 @@ typedef struct StvqPlayer {
 	/* Scratch: STFR payload + following 8-byte header (single read). */
 	unsigned char *frame_buf;
 	size_t frame_cap;
+	/* After read_frame: payload ready to decode (size = STFR body, got = bytes read). */
+	int load_ready;
+	uint32_t load_size;
+	size_t load_got;
 	StvqProf *prof; /* optional; filled each next_frame */
 } StvqPlayer;
 
@@ -49,10 +53,23 @@ void stvq_player_close(StvqPlayer *p);
 extern const char *stvq_player_open_error;
 
 /*
- * Decode next STFR into hw back buffer. Fills out (palette + pcm pointer into frame_buf).
+ * Read next STFR payload (+ following header) into frame_buf. Does not decode.
  * Returns 1 ok, 0 at end (next_size==0), -1 error.
- * One IO read of payload + next header; nested chunks parsed in memory.
- * Submit out->pcm via stvq_hw_pcm_start before calling next_frame again.
+ * No-op (returns 1) if load_ready already set (e.g. prefetched).
+ * Safe to call after pcm for the previous frame has been copied out of frame_buf.
+ */
+int stvq_player_read_frame(StvqPlayer *p);
+
+/*
+ * Decode load_ready payload into hw back buffer. Fills out (palette + pcm in frame_buf).
+ * Returns 1 ok, -1 error. Clears load_ready.
+ */
+int stvq_player_decode_frame(StvqPlayer *p, StvqFrame *out);
+
+/*
+ * read_frame + decode_frame (read is a no-op when already prefetched).
+ * Returns 1 ok, 0 at end, -1 error.
+ * Submit out->pcm via stvq_hw_pcm_start before the next read/prefetch.
  */
 int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out);
 

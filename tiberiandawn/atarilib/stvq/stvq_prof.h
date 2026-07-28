@@ -1,5 +1,6 @@
 /*
  * stvq_prof.h - 200 Hz (_hz_200 @ 0x4BA) frame timing buckets.
+ * stvq_hz200() reads the sysvar directly; caller must be in supervisor mode.
  */
 #ifndef STVQ_PROF_H
 #define STVQ_PROF_H

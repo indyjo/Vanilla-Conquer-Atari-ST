@@ -119,7 +119,6 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 	uint8_t* hidden0 = (uint8_t*)HiddenPage.Get_Buffer();
 	int yielded = 0;
 	int first = 1;
-	int have_frame = 0;
 	unsigned vbl_accum = 0;
 	unsigned vbls_per_frame;
 	int rc = 0;
@@ -179,7 +178,7 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 			}
 		}
 
-		if (!have_frame) {
+		{
 			int pr = stvq_player_next_frame(&player, &frame);
 			if (pr == 0) {
 				break;
@@ -187,9 +186,8 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 			if (pr < 0) {
 				CCDebugString("STVQ: decode failed\n");
 				rc = -1;
-				break;
+				goto done;
 			}
-			have_frame = 1;
 		}
 
 		if (use_audio && !first) {
@@ -231,8 +229,18 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 			stvq_hw_pcm_start(&hw, frame.pcm, frame.pcm_len, player.hdr.sample_rate);
 		}
 
-		(void)stvq_hw_present(&hw);
-		have_frame = 0;
+		/* Queue flip, then prefetch next STFR during the present VBL wait. */
+		stvq_hw_present_begin(&hw);
+		{
+			int pr = stvq_player_read_frame(&player);
+			if (pr < 0) {
+				CCDebugString("STVQ: prefetch read failed\n");
+				rc = -1;
+				(void)stvq_hw_present_end(&hw);
+				goto done;
+			}
+		}
+		(void)stvq_hw_present_end(&hw);
 		first = 0;
 	}
 

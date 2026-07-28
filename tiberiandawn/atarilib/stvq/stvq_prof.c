@@ -1,20 +1,14 @@
 /*
- * stvq_prof.c - 200 Hz timing helpers (Supexec read of _hz_200 @ 0x4BA).
+ * stvq_prof.c - 200 Hz timing helpers (direct read of _hz_200 @ 0x4BA).
+ * Caller must be in supervisor mode.
  */
 #include "stvq_prof.h"
 
-#include <mint/osbind.h>
-
 #include <string.h>
-
-static long hz200_super(void)
-{
-	return (long)(*(volatile unsigned long *)0x4BAL);
-}
 
 unsigned long stvq_hz200(void)
 {
-	return (unsigned long)Supexec(hz200_super);
+	return *(volatile unsigned long *)0x4BAUL;
 }
 
 void stvq_prof_reset(StvqProf *p)

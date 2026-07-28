@@ -6,12 +6,15 @@
  * Writes STVQPROF.TXT with 200Hz timing on exit.
  *
  * Thin CLI over atarilib/stvq (FILE* StvqIo adapter; private screens).
+ * Play runs under Supexec (hardware paths expect supervisor).
  */
 #include "stvq_format.h"
 #include "stvq_hw.h"
 #include "stvq_io.h"
 #include "stvq_player.h"
 #include "stvq_prof.h"
+
+#include <mint/osbind.h>
 
 #include <errno.h>
 #include <stdio.h>
@@ -60,11 +63,10 @@ static int play(const char *path)
 	StvqProf prof;
 	int paused = 0;
 	int first = 1;
-	int have_frame = 0;
 	int use_audio;
 	unsigned vbl_accum = 0;
 	unsigned vbls_per_frame;
-	int rc = 1;
+	int rc = 0;
 	int key;
 	int pr;
 	int dma_ok;
@@ -76,6 +78,7 @@ static int play(const char *path)
 	unsigned long tp0;
 	unsigned long t_done;
 	unsigned long dt;
+	const char *err = NULL;
 
 	memset(&io, 0, sizeof(io));
 	memset(&hw, 0, sizeof(hw));
@@ -114,7 +117,7 @@ static int play(const char *path)
 	    (unsigned)player.hdr.fps,
 	    (unsigned)player.hdr.cb_entries,
 	    (unsigned)player.hdr.max_frame_bytes);
-	printf("I/O: one fread per STFR; SND0 submitted from frame_buf into DMA ring\n");
+	printf("I/O: prefetch next STFR during present VBL; SND0 into DMA ring\n");
 	fflush(stdout);
 
 	/* NULL screens => allocate private ST-RAM ping-pong (standalone). */
@@ -140,76 +143,40 @@ static int play(const char *path)
 
 	for (;;) {
 		key = stvq_hw_poll_key();
-		if (key == 27) {
-			rc = 0;
+		if (key == 27)
 			break;
-		}
 		if (key == ' ') {
 			paused = !paused;
 			if (paused)
 				stvq_hw_pcm_stop(&hw);
 		}
-
 		if (paused) {
 			stvq_hw_wait_vbl(&hw);
 			continue;
 		}
 
-		if (!have_frame) {
-			t_frame0 = stvq_hz200();
-			pr = stvq_player_next_frame(&player, &frame);
-			if (pr == 0) {
-				rc = 0;
-				break;
-			}
-			if (pr < 0) {
-				stvq_hw_pcm_stop(&hw);
-				stvq_hw_shutdown(&hw);
-				printf("error: decode failed at frame %d\n", player.frame_index);
-				dump_prof(&prof);
-				stvq_player_close(&player);
-				fclose(fp);
-				return 1;
-			}
-			have_frame = 1;
+		t_frame0 = stvq_hz200();
+		pr = stvq_player_next_frame(&player, &frame);
+		if (pr == 0)
+			break;
+		if (pr < 0) {
+			err = "frame failed";
+			rc = 1;
+			goto done;
 		}
 
 		tw0 = stvq_hz200();
 		if (use_audio && !first) {
-			/* Audio master: wait until ring has room for this frame's PCM. */
 			while (stvq_hw_pcm_busy(&hw, frame.pcm_len)) {
-				key = stvq_hw_poll_key();
-				if (key == 27) {
-					rc = 0;
+				if (stvq_hw_poll_key() == 27)
 					goto done;
-				}
-				if (key == ' ') {
-					paused = 1;
-					stvq_hw_pcm_stop(&hw);
-					break;
-				}
-			}
-			if (paused) {
-				prof.last_wait = stvq_hz200() - tw0;
-				continue;
 			}
 		} else if (!use_audio && !first) {
 			while (vbl_accum < vbls_per_frame) {
 				stvq_hw_wait_vbl(&hw);
 				vbl_accum++;
-				key = stvq_hw_poll_key();
-				if (key == 27) {
-					rc = 0;
+				if (stvq_hw_poll_key() == 27)
 					goto done;
-				}
-				if (key == ' ') {
-					paused = 1;
-					break;
-				}
-			}
-			if (paused) {
-				prof.last_wait = stvq_hz200() - tw0;
-				continue;
 			}
 			vbl_accum = 0;
 		}
@@ -227,13 +194,21 @@ static int play(const char *path)
 		}
 
 		tp0 = stvq_hz200();
-		(void)stvq_hw_present(&hw);
+		/*
+		 * Queue flip, then read the next STFR before Vsync so disk time
+		 * collapses into the present VBL wait when the read is short enough.
+		 */
+		stvq_hw_present_begin(&hw);
+		pr = stvq_player_read_frame(&player);
+		(void)stvq_hw_present_end(&hw);
 		t_done = stvq_hz200();
 		prof.last_present = t_done - tp0;
-		/*
-		 * Present cadence: more than one VBL past the nominal frame
-		 * period means this reveal was >=1 VBL late.
-		 */
+		if (pr < 0) {
+			err = "prefetch read failed";
+			rc = 1;
+			goto done;
+		}
+
 		if (t_prev_present && prof.budget_ticks) {
 			dt = t_done - t_prev_present;
 			if (dt > prof.budget_ticks + STVQ_HZ200_PER_VBL)
@@ -243,12 +218,12 @@ static int play(const char *path)
 
 		prof.last_total = stvq_hz200() - t_frame0;
 		stvq_prof_add(&prof);
-
-		have_frame = 0;
 		first = 0;
 	}
 
 done:
+	if (err)
+		printf("error: %s at frame %d\n", err, player.frame_index);
 	stvq_hw_pcm_stop(&hw);
 	stvq_player_close(&player);
 	dma_ok = hw.dma_ok;
@@ -259,11 +234,20 @@ done:
 	return rc;
 }
 
+/* Supexec entry: filename via g_play_path (Supexec callbacks take no args). */
+static const char *g_play_path;
+
+static long play_super(void)
+{
+	return (long)play(g_play_path);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
 		usage();
 		return 1;
 	}
-	return play(argv[1]);
+	g_play_path = argv[1];
+	return (int)Supexec(play_super);
 }

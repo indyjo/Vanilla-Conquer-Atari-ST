@@ -96,11 +96,12 @@ entry is **omitted** from the output MIX (warning on stderr). Already-converted
 
 ### Video presets
 
-| Quality | `cb_per_frame` |
-|---------|----------------|
-| low | 32 |
-| medium | 64 |
-| high | 128 |
+| Quality | `cb_per_frame` | Notes |
+|---------|----------------|-------|
+| low | 32 | Suited for 8 MHz Atari ST |
+| medium | 64 | |
+| high | 128 | |
+
 
 | Effort | `dct_coeffs` / chroma | `cb_lookahead` |
 |--------|------------------------|----------------|

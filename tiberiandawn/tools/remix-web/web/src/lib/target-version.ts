@@ -55,7 +55,7 @@ export const TARGET_VERSION_OPTIONS: { value: TargetVersion; label: string }[] =
 ];
 
 export const VIDEO_QUALITY_OPTIONS: { value: 'low' | 'medium' | 'high'; label: string }[] = [
-  { value: 'low', label: 'Low (smaller files)' },
+  { value: 'low', label: 'Low (suited for 8 MHz Atari ST)' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High (larger files)' },
 ];

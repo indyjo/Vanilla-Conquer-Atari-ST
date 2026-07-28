@@ -122,7 +122,7 @@ static void usage(const char *prog)
 	    "  --shpx-verbose          per-shape SHPX/clip details on stderr (requires --shpx)\n"
 	    "  --pool-id ID            SHPX pool id (default from MIX name; requires --shpx)\n"
 	    "  --convert-vqa           convert VQA payloads to STVQ (needs video/xxxxxxxx.N.w16)\n"
-	    "  --video-quality Q       low|medium|high (default medium; requires --convert-vqa)\n"
+	    "  --video-quality Q       low|medium|high (default medium; low suits 8 MHz ST; requires --convert-vqa)\n"
 	    "  --video-effort E        fast|normal|thorough (default normal; requires --convert-vqa)\n"
 	    "  -h, --help              show this help\n",
 	    prog, prog, prog);

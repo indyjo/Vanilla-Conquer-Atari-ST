@@ -90,7 +90,7 @@ When **Convert shapes to SHPX** is enabled (default for target **0.2.x** / **0.3
 
 ### Movie sequences (0.3.x)
 
-When targeting **0.3.x**, enable **Movie sequences** to extract `MOVIES.MIX` and convert VQA payloads to STVQ using CRC-named `video/xxxxxxxx.N.w16` sidecars from the release ZIP. GDI and NOD `MOVIES.MIX` are merged first (union by CRC) so shared clips are encoded only once. Encoding runs in a windowed worker pool (configurable 1–8 parallel encodes, default 4) with ordered MIX writeout. Quality and encoding-effort selects map to remix STVQ presets. Missing sidecars omit that clip (with a warning). Encoding is still slow in the browser, but parallel workers use multiple CPU cores.
+When targeting **0.3.x**, enable **Movie sequences** to extract `MOVIES.MIX` and convert VQA payloads to STVQ using CRC-named `video/xxxxxxxx.N.w16` sidecars from the release ZIP. GDI and NOD `MOVIES.MIX` are merged first (union by CRC) so shared clips are encoded only once. Encoding runs in a windowed worker pool (configurable 1–8 parallel encodes, default 4) with ordered MIX writeout. Quality and encoding-effort selects map to remix STVQ presets — **Low** quality is suited for 8 MHz Atari ST computers. Missing sidecars omit that clip (with a warning). Encoding is still slow in the browser, but parallel workers use multiple CPU cores.
 
 ## Legal
 

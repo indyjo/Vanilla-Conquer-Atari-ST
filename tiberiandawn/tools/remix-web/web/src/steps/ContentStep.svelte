@@ -225,6 +225,9 @@
               <option value={opt.value}>{opt.label}</option>
             {/each}
           </select>
+          <span class="mt-1 block text-xs text-stone-500">
+            Low is suited for 8 MHz Atari ST computers; medium/high need a faster CPU.
+          </span>
         </label>
         <label class="block text-sm">
           <span class="font-medium text-stone-200">Encoding effort</span>

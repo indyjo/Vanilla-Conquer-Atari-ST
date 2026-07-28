@@ -42,7 +42,8 @@ float stvq_metric_gamma(void);
 
 /*
  * Build VGA YUV table + pen→VGA map from full VGA6 palette + W16 subset.
- * Uses current gamma (default 0.77); Y unscaled.
+ * Uses current gamma (default 0.77); Y unscaled. No STE bpc quantize — DCT
+ * features come from original VGA6 colors; hardware 4-bit is STPL-only.
  */
 void stvq_metric_set_palette_vga6(const uint8_t pal768[768], const uint8_t subset[16]);
 

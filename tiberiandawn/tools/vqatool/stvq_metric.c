@@ -159,6 +159,7 @@ void stvq_metric_set_palette_vga6(const uint8_t pal768[768], const uint8_t subse
 	palette_opt_color_params_default(&params);
 	params.gamma = color_gamma;
 	params.y_scale = 1.0f; /* luma weight via DCT coeff counts, not Y scale */
+	/* Target-style build: full VGA6 (bits_per_channel ignored). */
 	palette_build_opt_colors_params(san, colors, &params);
 	memcpy(yuv, colors, sizeof(yuv));
 	for (i = 0; i < 16; i++)

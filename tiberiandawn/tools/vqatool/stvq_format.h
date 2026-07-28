@@ -67,7 +67,9 @@ void stvq_header_pack(unsigned char out[STVQ_STHD_SIZE], const StvqHeader *h);
 void stvq_header_unpack(const unsigned char in[STVQ_STHD_SIZE], StvqHeader *h);
 unsigned stvq_tiles_x(unsigned width);
 unsigned stvq_tiles_y(unsigned height);
+/* VGA 6-bit RGB → STE hardware word (4 bits/gun, STE bit order). */
 uint16_t stvq_vga6_to_ste(uint8_t r6, uint8_t g6, uint8_t b6);
+/* STE hardware word → 8-bit RGB for host preview. */
 void stvq_ste_to_rgb24(uint16_t ste, uint8_t *r, uint8_t *g, uint8_t *b);
 
 #ifdef __cplusplus

@@ -12,6 +12,7 @@
 #include <string.h>
 
 float colors[768];
+float pen_colors[768];
 static float dist_sq[PALETTE_OPT_DIST_SQ_COUNT];
 static unsigned char raw_pal[768];
 
@@ -229,10 +230,10 @@ static int apply_subset_spread(int n, const PaletteSubsetFix *fix, PaletteOptJso
 	int got;
 
 	if (json) {
-		got = palette_subset_spread_colors_fix_trace(colors, n, fix, subset, json, dist_sq, alpha,
-			lambda);
+		got = palette_subset_spread_colors_fix_trace(pen_colors, n, fix, subset, json, colors,
+			dist_sq, alpha, lambda);
 	} else {
-		got = palette_subset_spread_colors_fix(colors, n, fix, subset);
+		got = palette_subset_spread_colors_fix(pen_colors, n, fix, subset);
 	}
 	if (got != n) {
 		fprintf(stderr, "error: spread subset expected %d indices, got %d\n", n, got);
@@ -386,7 +387,7 @@ static int dump_ply_palette_subset(const char *prefix)
 	}
 	fprintf(stderr, "wrote %s.palette.ply\n", prefix);
 
-	if (!ply_dump_subset(prefix, colors, raw_pal, subset, subset_count)) {
+	if (!ply_dump_subset(prefix, pen_colors, raw_pal, subset, subset_count)) {
 		fprintf(stderr, "error: cannot write %s.subset.ply\n", prefix);
 		return 0;
 	}
@@ -641,12 +642,13 @@ int main(int argc, const char **argv)
 	}
 
 	palette_build_opt_colors_params(raw_pal, colors, &color_params);
-	palette_build_dist_sq_matrix(colors, dist_sq);
+	palette_build_opt_pen_colors_params(raw_pal, pen_colors, &color_params);
+	palette_build_dist_sq_matrix(colors, pen_colors, dist_sq);
 	sa_params.lambda = lambda;
 
 	if (export_json_path) {
 		json_export = palette_opt_json_create(export_json_path, palette_path, raw_pal, colors,
-			&color_params, &sa_params, lambda, export_every,
+			pen_colors, &color_params, &sa_params, lambda, export_every,
 			palette_opt_weight_granularity, subset_n);
 		if (!json_export) {
 			fprintf(stderr, "error: failed to open JSON export: %s\n", export_json_path);
@@ -657,11 +659,11 @@ int main(int argc, const char **argv)
 	}
 
 	if (color_params.use_yuv) {
-		fprintf(stderr, "metric: YUV, gamma %.4g, Y scale %.4g, bpc %d\n",
+		fprintf(stderr, "metric: YUV, gamma %.4g, Y scale %.4g, pen bpc %d (targets VGA6)\n",
 			(double)color_params.gamma, (double)color_params.y_scale,
 			color_params.bits_per_channel);
 	} else {
-		fprintf(stderr, "metric: RGB, gamma %.4g, bpc %d\n",
+		fprintf(stderr, "metric: RGB, gamma %.4g, pen bpc %d (targets VGA6)\n",
 			(double)color_params.gamma, color_params.bits_per_channel);
 	}
 
@@ -702,7 +704,7 @@ int main(int argc, const char **argv)
 		PaletteSubsetOptStats stats;
 		const PaletteSubsetFix *fix_arg =
 			palette_subset_fix_count(&subset_fix) > 0 ? &subset_fix : NULL;
-		if (palette_subset_opt_anneal(colors, dist_sq, subset, subset_n, fix_arg, alpha,
+		if (palette_subset_opt_anneal(colors, pen_colors, dist_sq, subset, subset_n, fix_arg, alpha,
 				&sa_params, &stats, stderr, json_export) != 0) {
 			fprintf(stderr, "error: subset simulated annealing failed\n");
 			palette_opt_json_free(json_export);
@@ -721,7 +723,7 @@ int main(int argc, const char **argv)
 
 	if (json_export && palette_opt_json_should_export_weights(0, export_every)) {
 		if (!palette_opt_json_weights_step(json_export, 0, "start", subset, subset_count,
-				all_weights, colors, dist_sq, alpha, lambda)) {
+				all_weights, colors, pen_colors, dist_sq, alpha, lambda)) {
 			fprintf(stderr, "error: json weights export failed at start\n");
 			palette_opt_json_free(json_export);
 			return 1;
@@ -730,8 +732,8 @@ int main(int argc, const char **argv)
 
 	for (target = 0; target < 256; target++) {
 		unsigned char wrow[16];
-		const float residual = palette_weight_opt_best(colors, dist_sq, subset, subset_count,
-			target, lambda, wrow);
+		const float residual = palette_weight_opt_best(colors, pen_colors, dist_sq, subset,
+			subset_count, target, lambda, wrow);
 		const int targets_done = target + 1;
 		const char *note;
 
@@ -753,7 +755,7 @@ int main(int argc, const char **argv)
 			continue;
 		note = (targets_done >= 256) ? "final" : "partial";
 		if (!palette_opt_json_weights_step(json_export, targets_done, note, subset, subset_count,
-				all_weights, colors, dist_sq, alpha, lambda)) {
+				all_weights, colors, pen_colors, dist_sq, alpha, lambda)) {
 			fprintf(stderr, "error: json weights export failed at target %d\n", target);
 			palette_opt_json_free(json_export);
 			return 1;
@@ -793,7 +795,7 @@ int main(int argc, const char **argv)
 	}
 
 	if (ply_prefix) {
-		if (!ply_dump_mix(ply_prefix, colors, raw_pal, all_weights, subset, subset_count))
+		if (!ply_dump_mix(ply_prefix, pen_colors, raw_pal, all_weights, subset, subset_count))
 			return 1;
 		fprintf(stderr, "wrote %s.mix.ply\n", ply_prefix);
 	}

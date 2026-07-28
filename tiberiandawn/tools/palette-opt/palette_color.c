@@ -26,16 +26,11 @@ void palette_opt_color_params_default(PaletteOptColorParams *params)
 	params->gamma = 1.6f;
 	params->y_scale = 2.0f;
 	params->use_yuv = 1;
-	params->bits_per_channel = 4; /* STe */
+	params->bits_per_channel = 4; /* STe pens */
 }
 
-void palette_build_opt_colors(const unsigned char *pal768, float colors[768])
-{
-	palette_build_opt_colors_params(pal768, colors, NULL);
-}
-
-void palette_build_opt_colors_params(const unsigned char *pal768, float colors[768],
-	const PaletteOptColorParams *params)
+static void build_metric_colors(const unsigned char *pal768, float colors[768],
+	const PaletteOptColorParams *params, int quantize_bpc)
 {
 	int i;
 	int bpc;
@@ -47,17 +42,21 @@ void palette_build_opt_colors_params(const unsigned char *pal768, float colors[7
 	if (params)
 		cfg = *params;
 
-	bpc = cfg.bits_per_channel;
-	if (bpc < 1)
-		bpc = 1;
-	else if (bpc > 6)
+	if (quantize_bpc) {
+		bpc = cfg.bits_per_channel;
+		if (bpc < 1)
+			bpc = 1;
+		else if (bpc > 6)
+			bpc = 6;
+	} else {
 		bpc = 6;
+	}
 	max = (1u << bpc) - 1u;
 	inv_max = 1.0f / (float)max;
 
 	/*
-	 * VGA DAC is 6-bit; mask junk in bits 6–7, then quantize to hardware
-	 * precision (STe 4-bit / ST 3-bit / VGA 6-bit) before gamma.
+	 * VGA DAC is 6-bit; mask junk in bits 6–7. Targets keep full precision
+	 * (bpc=6). Pens quantize to hardware guns before gamma.
 	 */
 	for (i = 0; i < 768; i++) {
 		const unsigned c6 = (unsigned)pal768[i] & 63u;
@@ -82,25 +81,39 @@ void palette_build_opt_colors_params(const unsigned char *pal768, float colors[7
 	}
 }
 
-void palette_build_dist_sq_matrix(const float *colors, float dist_sq[PALETTE_OPT_DIST_SQ_COUNT])
+void palette_build_opt_colors(const unsigned char *pal768, float colors[768])
+{
+	palette_build_opt_colors_params(pal768, colors, NULL);
+}
+
+void palette_build_opt_colors_params(const unsigned char *pal768, float colors[768],
+	const PaletteOptColorParams *params)
+{
+	build_metric_colors(pal768, colors, params, 0);
+}
+
+void palette_build_opt_pen_colors_params(const unsigned char *pal768, float pen_colors[768],
+	const PaletteOptColorParams *params)
+{
+	build_metric_colors(pal768, pen_colors, params, 1);
+}
+
+void palette_build_dist_sq_matrix(const float *target_colors, const float *pen_colors,
+	float dist_sq[PALETTE_OPT_DIST_SQ_COUNT])
 {
 	int i;
 
-	if (!colors || !dist_sq)
+	if (!target_colors || !pen_colors || !dist_sq)
 		return;
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static)
 #endif
 	for (i = 0; i < PALETTE_OPT_PALETTE_SIZE; i++) {
-		const float *ci = &colors[3 * i];
+		const float *ti = &target_colors[3 * i];
 		int j;
 
-		dist_sq[i * PALETTE_OPT_PALETTE_SIZE + i] = 0.0f;
-		for (j = i + 1; j < PALETTE_OPT_PALETTE_SIZE; j++) {
-			const float d = dist_sq3(ci, &colors[3 * j]);
-			dist_sq[i * PALETTE_OPT_PALETTE_SIZE + j] = d;
-			dist_sq[j * PALETTE_OPT_PALETTE_SIZE + i] = d;
-		}
+		for (j = 0; j < PALETTE_OPT_PALETTE_SIZE; j++)
+			dist_sq[i * PALETTE_OPT_PALETTE_SIZE + j] = dist_sq3(ti, &pen_colors[3 * j]);
 	}
 }

@@ -17,7 +17,8 @@ struct PaletteOptJsonExport {
 	char *path;
 	char *palette_path;
 	unsigned char pal768[768];
-	float colors[768];
+	float target_colors[768];
+	float pen_colors[768];
 	PaletteOptColorParams color_params;
 	PaletteSubsetOptParams sa_params;
 	float lambda;
@@ -156,7 +157,7 @@ static int json_write_header(PaletteOptJsonExport *exp)
 	fprintf(exp->f, ",\n");
 
 	fprintf(exp->f, "  \"colors\": ");
-	json_write_float_array(exp->f, exp->colors, 768);
+	json_write_float_array(exp->f, exp->target_colors, 768);
 	fprintf(exp->f, ",\n");
 
 	fprintf(exp->f, "  \"steps\": [\n");
@@ -243,16 +244,16 @@ static int json_record_step(PaletteOptJsonExport *exp, const char *phase, int it
 
 static int json_eval_record(PaletteOptJsonExport *exp, const char *phase, int iter,
 	double T, int has_T, int move_in, int move_out, int has_move, const char *note,
-	const unsigned char *subset, int subset_n, const float *colors, const float *dist_sq,
-	const double *alpha, float lambda)
+	const unsigned char *subset, int subset_n, const float *target_colors,
+	const float *pen_colors, const float *dist_sq, const double *alpha, float lambda)
 {
 	unsigned char weights[256][16];
 	double cost = 0.0;
 	double e1 = 0.0;
 	double e2 = 0.0;
 
-	if (palette_subset_evaluate(colors, dist_sq, subset, subset_n, alpha, lambda, weights,
-			&cost, &e1, &e2) != 0)
+	if (palette_subset_evaluate(target_colors, pen_colors, dist_sq, subset, subset_n, alpha,
+			lambda, weights, &cost, &e1, &e2) != 0)
 		return 0;
 
 	if (cost < exp->best_cost)
@@ -263,14 +264,15 @@ static int json_eval_record(PaletteOptJsonExport *exp, const char *phase, int it
 }
 
 PaletteOptJsonExport *palette_opt_json_create(const char *path, const char *palette_path,
-	const unsigned char *pal768, const float *colors,
+	const unsigned char *pal768, const float *target_colors, const float *pen_colors,
 	const PaletteOptColorParams *color_params, const PaletteSubsetOptParams *sa_params,
 	float lambda, int export_every, int weight_granularity, int subset_n)
 {
 	PaletteOptJsonExport *exp;
 
-	if (!path || !path[0] || !palette_path || !pal768 || !colors || !color_params
-		|| !sa_params || export_every <= 0 || subset_n <= 0 || subset_n > 16)
+	if (!path || !path[0] || !palette_path || !pal768 || !target_colors || !pen_colors
+		|| !color_params || !sa_params || export_every <= 0 || subset_n <= 0
+		|| subset_n > 16)
 		return NULL;
 
 	exp = (PaletteOptJsonExport *)calloc(1, sizeof(*exp));
@@ -292,7 +294,8 @@ PaletteOptJsonExport *palette_opt_json_create(const char *path, const char *pale
 	setvbuf(exp->f, NULL, _IONBF, 0);
 
 	memcpy(exp->pal768, pal768, 768);
-	memcpy(exp->colors, colors, 768 * sizeof(float));
+	memcpy(exp->target_colors, target_colors, 768 * sizeof(float));
+	memcpy(exp->pen_colors, pen_colors, 768 * sizeof(float));
 	exp->color_params = *color_params;
 	exp->sa_params = *sa_params;
 	exp->lambda = lambda;
@@ -376,8 +379,8 @@ int palette_opt_json_should_export_weights(int targets_done, int export_every)
 }
 
 int palette_opt_json_spread_step(PaletteOptJsonExport *exp, int pen,
-	const unsigned char *subset, const float *colors, const float *dist_sq,
-	const double *alpha, float lambda)
+	const unsigned char *subset, const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const double *alpha, float lambda)
 {
 	char note[JSON_EXPORT_NOTE_MAX + 1];
 
@@ -386,21 +389,21 @@ int palette_opt_json_spread_step(PaletteOptJsonExport *exp, int pen,
 
 	snprintf(note, sizeof(note), "pen%d", pen);
 	return json_eval_record(exp, "spread", pen, 0.0, 0, -1, -1, 0, note, subset, pen + 1,
-		colors, dist_sq, alpha, lambda);
+		target_colors, pen_colors, dist_sq, alpha, lambda);
 }
 
 int palette_opt_json_anneal_step(PaletteOptJsonExport *exp, int iter, double T,
 	double cost, double e1, double e2, int move_in, int move_out, const char *note,
-	const unsigned char *subset, const float *colors, const float *dist_sq,
-	const double *alpha, float lambda)
+	const unsigned char *subset, const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const double *alpha, float lambda)
 {
 	unsigned char weights[256][16];
 
 	if (!exp || !subset)
 		return 0;
 
-	if (palette_subset_evaluate(colors, dist_sq, subset, exp->subset_n, alpha, lambda, weights,
-			NULL, NULL, NULL) != 0)
+	if (palette_subset_evaluate(target_colors, pen_colors, dist_sq, subset, exp->subset_n, alpha,
+			lambda, weights, NULL, NULL, NULL) != 0)
 		return 0;
 
 	if (cost < exp->best_cost) {
@@ -416,8 +419,8 @@ int palette_opt_json_anneal_step(PaletteOptJsonExport *exp, int iter, double T,
 
 int palette_opt_json_weights_step(PaletteOptJsonExport *exp, int targets_done,
 	const char *note, const unsigned char *subset, int subset_n,
-	const unsigned char (*weights)[16], const float *colors, const float *dist_sq,
-	const double *alpha, float lambda)
+	const unsigned char (*weights)[16], const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const double *alpha, float lambda)
 {
 	double cost = 0.0;
 	double e1 = 0.0;
@@ -426,8 +429,8 @@ int palette_opt_json_weights_step(PaletteOptJsonExport *exp, int targets_done,
 	if (!exp || !subset || !weights)
 		return 0;
 
-	if (palette_subset_evaluate(colors, dist_sq, subset, subset_n, alpha, lambda,
-			(unsigned char (*)[16])weights, &cost, &e1, &e2) != 0)
+	if (palette_subset_evaluate(target_colors, pen_colors, dist_sq, subset, subset_n, alpha,
+			lambda, (unsigned char (*)[16])weights, &cost, &e1, &e2) != 0)
 		return 0;
 
 	if (cost < exp->best_cost)

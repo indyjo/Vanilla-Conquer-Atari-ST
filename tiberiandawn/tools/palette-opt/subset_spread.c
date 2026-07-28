@@ -163,32 +163,32 @@ static int spread_pick_for_pen(const float *colors, const unsigned char *used,
 	return pick;
 }
 
-int palette_subset_spread_colors_fix_trace(const float *colors, int n,
+int palette_subset_spread_colors_fix_trace(const float *pen_colors, int n,
 	const PaletteSubsetFix *fix, unsigned char *out_subset,
-	PaletteOptJsonExport *json_export, const float *dist_sq, const double *alpha,
-	float lambda)
+	PaletteOptJsonExport *json_export, const float *target_colors, const float *dist_sq,
+	const double *alpha, float lambda)
 {
 	unsigned char used[256];
 	int pen;
 
-	if (!colors || !out_subset || n <= 0 || n > PALETTE_SUBSET_MAX)
+	if (!pen_colors || !out_subset || n <= 0 || n > PALETTE_SUBSET_MAX)
 		return 0;
-	if (!json_export || !dist_sq)
-		return palette_subset_spread_colors_fix(colors, n, fix, out_subset);
+	if (!json_export || !dist_sq || !target_colors)
+		return palette_subset_spread_colors_fix(pen_colors, n, fix, out_subset);
 
 	memset(used, 0, sizeof(used));
 	memset(out_subset, 0, (size_t)n);
 
 	for (pen = 0; pen < n; pen++) {
-		const int pick = spread_pick_for_pen(colors, used, out_subset, pen, fix, pen);
+		const int pick = spread_pick_for_pen(pen_colors, used, out_subset, pen, fix, pen);
 		if (pick < 0) {
 			fprintf(stderr, "error: spread trace failed at pen %d\n", pen);
 			return 0;
 		}
 		out_subset[pen] = (unsigned char)pick;
 		used[pick] = 1;
-		if (!palette_opt_json_spread_step(json_export, pen, out_subset, colors, dist_sq, alpha,
-				lambda)) {
+		if (!palette_opt_json_spread_step(json_export, pen, out_subset, target_colors, pen_colors,
+				dist_sq, alpha, lambda)) {
 			fprintf(stderr, "error: json spread export failed at pen %d\n", pen);
 			return 0;
 		}

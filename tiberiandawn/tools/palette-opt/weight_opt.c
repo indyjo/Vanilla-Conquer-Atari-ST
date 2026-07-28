@@ -60,27 +60,27 @@ static float e2_cost_from_weights(const float *target, int subset_n,
 	}
 }
 
-void palette_weight_e1_e2(const float *colors, const float *dist_sq, const unsigned char *subset,
-	int subset_n, int target_i, const unsigned char *weights, float lambda, float *out_e1,
-	float *out_e2, float *out_blend)
+void palette_weight_e1_e2(const float *target_colors, const float *pen_colors, const float *dist_sq,
+	const unsigned char *subset, int subset_n, int target_i, const unsigned char *weights,
+	float lambda, float *out_e1, float *out_e2, float *out_blend)
 {
-	const float *target = &colors[3 * target_i];
-	float pen_colors[16][3];
+	const float *target = &target_colors[3 * target_i];
+	float pens[16][3];
 	float pen_d_sq[16];
 	float e1, e2;
 	int k;
 
 	for (k = 0; k < subset_n; k++) {
 		const int pal = (int)subset[k];
-		const float *pen = &colors[3 * pal];
-		pen_colors[k][0] = pen[0];
-		pen_colors[k][1] = pen[1];
-		pen_colors[k][2] = pen[2];
+		const float *pen = &pen_colors[3 * pal];
+		pens[k][0] = pen[0];
+		pens[k][1] = pen[1];
+		pens[k][2] = pen[2];
 		pen_d_sq[k] = palette_dist_sq(dist_sq, target_i, pal);
 	}
 
 	e1 = e1_cost_from_weights(subset_n, pen_d_sq, weights);
-	e2 = e2_cost_from_weights(target, subset_n, pen_colors, weights);
+	e2 = e2_cost_from_weights(target, subset_n, pens, weights);
 
 	if (out_e1)
 		*out_e1 = e1;
@@ -178,25 +178,26 @@ static float weight_search_solve(WeightSearchCtx *ctx)
 	return ctx->best_cost;
 }
 
-float palette_weight_opt_best(const float *colors, const float *dist_sq, const unsigned char *subset,
-	int subset_n, int target_i, float lambda, unsigned char *out_weights)
+float palette_weight_opt_best(const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const unsigned char *subset, int subset_n, int target_i, float lambda,
+	unsigned char *out_weights)
 {
 	WeightSearchCtx ctx;
 	int pen_idx;
 	const int row = target_i * PALETTE_OPT_PALETTE_SIZE;
 
-	if (!colors || !dist_sq || !subset || !out_weights || subset_n <= 0
+	if (!target_colors || !pen_colors || !dist_sq || !subset || !out_weights || subset_n <= 0
 		|| subset_n > PALETTE_OPT_WEIGHT_SLOTS || target_i < 0
 		|| target_i >= PALETTE_OPT_PALETTE_SIZE)
 		return -1.0f;
 
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.target = &colors[3 * target_i];
+	ctx.target = &target_colors[3 * target_i];
 	ctx.lambda = lambda;
 	ctx.subset_n = subset_n;
 	for (pen_idx = 0; pen_idx < subset_n; pen_idx++) {
 		const int pal = (int)subset[pen_idx];
-		const float *p = &colors[3 * pal];
+		const float *p = &pen_colors[3 * pal];
 		ctx.pen_colors[pen_idx][0] = p[0];
 		ctx.pen_colors[pen_idx][1] = p[1];
 		ctx.pen_colors[pen_idx][2] = p[2];

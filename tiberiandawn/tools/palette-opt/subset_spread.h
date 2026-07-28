@@ -18,20 +18,20 @@ struct PaletteOptJsonExport;
  * out_subset[pen] = palette index for pen slot `pen` (0..n-1).
  * fix may pin individual pens; remaining pens are filled in ascending pen order.
  *
- * colors: 768 floats from palette_build_opt_colors(); interpretation depends on
- * the active metric transform.
+ * colors: 768 floats in pen/display metric space (hardware-quantized).
  */
 int palette_subset_spread_colors_fix(const float *colors, int n, const PaletteSubsetFix *fix,
 	unsigned char *out_subset);
 
 /*
- * Same as palette_subset_spread_colors_fix; when json_export is non-NULL, fills pens
- * 0..n-1 in order and records one spread trace step per pen for external visualization.
+ * Same as palette_subset_spread_colors_fix (spread in pen_colors space); when
+ * json_export is non-NULL, records one spread trace step per pen.
+ * target_colors / dist_sq are used only for the trace cost evaluation.
  */
-int palette_subset_spread_colors_fix_trace(const float *colors, int n,
+int palette_subset_spread_colors_fix_trace(const float *pen_colors, int n,
 	const PaletteSubsetFix *fix, unsigned char *out_subset,
-	struct PaletteOptJsonExport *json_export, const float *dist_sq, const double *alpha,
-	float lambda);
+	struct PaletteOptJsonExport *json_export, const float *target_colors, const float *dist_sq,
+	const double *alpha, float lambda);
 
 int palette_subset_spread_colors(const float *colors, int n, unsigned char *out_subset);
 

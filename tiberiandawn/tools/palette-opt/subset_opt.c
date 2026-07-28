@@ -101,10 +101,10 @@ static int subset_has_index(const unsigned char *subset, int n, int idx)
 	return 0;
 }
 
-int palette_subset_evaluate(const float *colors, const float *dist_sq, const unsigned char *subset,
-	int subset_n, const double *alpha_in, float lambda,
-	unsigned char (*weights)[PALETTE_OPT_WEIGHT_SLOTS], double *out_cost, double *out_sum_e1,
-	double *out_sum_e2)
+int palette_subset_evaluate(const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const unsigned char *subset, int subset_n, const double *alpha_in,
+	float lambda, unsigned char (*weights)[PALETTE_OPT_WEIGHT_SLOTS], double *out_cost,
+	double *out_sum_e1, double *out_sum_e2)
 {
 	double alpha[PALETTE_OPT_NUM_COLORS];
 	double cost = 0.0;
@@ -113,7 +113,7 @@ int palette_subset_evaluate(const float *colors, const float *dist_sq, const uns
 	int err = 0;
 	int i;
 
-	if (!colors || !dist_sq || !subset || subset_n <= 0)
+	if (!target_colors || !pen_colors || !dist_sq || !subset || subset_n <= 0)
 		return -1;
 
 	if (alpha_in)
@@ -127,12 +127,13 @@ int palette_subset_evaluate(const float *colors, const float *dist_sq, const uns
 	for (i = 0; i < PALETTE_OPT_NUM_COLORS; i++) {
 		unsigned char wrow[PALETTE_OPT_WEIGHT_SLOTS];
 		float e1, e2, blend;
-		if (palette_weight_opt_best(colors, dist_sq, subset, subset_n, i, lambda, wrow) < 0.0f) {
+		if (palette_weight_opt_best(target_colors, pen_colors, dist_sq, subset, subset_n, i, lambda,
+				wrow) < 0.0f) {
 			err = 1;
 			continue;
 		}
-		palette_weight_e1_e2(colors, dist_sq, subset, subset_n, i, wrow, lambda, &e1, &e2,
-			&blend);
+		palette_weight_e1_e2(target_colors, pen_colors, dist_sq, subset, subset_n, i, wrow, lambda,
+			&e1, &e2, &blend);
 		cost += alpha[i] * (double)blend;
 		sum_e1 += alpha[i] * (double)e1;
 		sum_e2 += alpha[i] * (double)e2;
@@ -241,10 +242,10 @@ static int log_sa_should_print(int iter, int log_every, const char *note)
 	return 0;
 }
 
-int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigned char *subset_io,
-	int subset_n, const PaletteSubsetFix *fix, const double *alpha,
-	const PaletteSubsetOptParams *params, PaletteSubsetOptStats *stats, FILE *log,
-	PaletteOptJsonExport *json_export)
+int palette_subset_opt_anneal(const float *target_colors, const float *pen_colors,
+	const float *dist_sq, unsigned char *subset_io, int subset_n, const PaletteSubsetFix *fix,
+	const double *alpha, const PaletteSubsetOptParams *params, PaletteSubsetOptStats *stats,
+	FILE *log, PaletteOptJsonExport *json_export)
 {
 	PaletteSubsetOptParams defaults;
 	unsigned char subset_best[PALETTE_OPT_DEFAULT_SUBSET_N];
@@ -268,7 +269,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 	int export_every;
 	float t0, tmin, cool;
 
-	if (!colors || !dist_sq || !subset_io || subset_n <= 0
+	if (!target_colors || !pen_colors || !dist_sq || !subset_io || subset_n <= 0
 		|| subset_n > PALETTE_OPT_DEFAULT_SUBSET_N)
 		return -1;
 
@@ -301,7 +302,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 	fprintf(log, "  evaluating initial subset (256 weight passes)...\n");
 	fflush(log);
 
-	if (palette_subset_evaluate(colors, dist_sq, subset_cur, subset_n, alpha, lambda, NULL,
+	if (palette_subset_evaluate(target_colors, pen_colors, dist_sq, subset_cur, subset_n, alpha, lambda, NULL,
 			&cost_cur, &e1_cur, &e2_cur) != 0)
 		return -1;
 
@@ -326,7 +327,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 			out_idx = pick_random_outside(trial, subset_n, &rng);
 			trial[slot] = (unsigned char)out_idx;
 			subset_enforce_fixes(fix, trial, subset_n);
-			if (palette_subset_evaluate(colors, dist_sq, trial, subset_n, alpha, lambda, NULL,
+			if (palette_subset_evaluate(target_colors, pen_colors, dist_sq, trial, subset_n, alpha, lambda, NULL,
 					&ct, &e1t, &e2t) == 0) {
 				const double d = fabs(ct - cost_cur);
 				if (d > 0.0) {
@@ -354,7 +355,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 
 	if (json_export) {
 		if (!palette_opt_json_anneal_step(json_export, 0, T, cost_cur, e1_cur, e2_cur, -1, -1,
-				"init", subset_cur, colors, dist_sq, alpha, lambda))
+				"init", subset_cur, target_colors, pen_colors, dist_sq, alpha, lambda))
 			return -1;
 		last_export_iter = 0;
 	}
@@ -374,7 +375,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 		trial[slot] = (unsigned char)out_idx;
 		subset_enforce_fixes(fix, trial, subset_n);
 
-		if (palette_subset_evaluate(colors, dist_sq, trial, subset_n, alpha, lambda, NULL,
+		if (palette_subset_evaluate(target_colors, pen_colors, dist_sq, trial, subset_n, alpha, lambda, NULL,
 				&cost_try, &e1_try, &e2_try) != 0)
 			continue;
 
@@ -417,7 +418,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 
 		if (json_export && palette_opt_json_should_export_anneal(iter, max_iter, export_every)) {
 			if (!palette_opt_json_anneal_step(json_export, iter, T, cost_cur, e1_cur, e2_cur,
-					in_idx, out_idx, note, subset_cur, colors, dist_sq, alpha, lambda))
+					in_idx, out_idx, note, subset_cur, target_colors, pen_colors, dist_sq, alpha, lambda))
 				return -1;
 			last_export_iter = iter;
 		}
@@ -428,7 +429,7 @@ int palette_subset_opt_anneal(const float *colors, const float *dist_sq, unsigne
 
 	if (json_export && last_iter >= 0 && last_export_iter != last_iter) {
 		if (!palette_opt_json_anneal_step(json_export, last_iter, T, cost_cur, e1_cur, e2_cur,
-				in_idx, out_idx, "final", subset_cur, colors, dist_sq, alpha, lambda))
+				in_idx, out_idx, "final", subset_cur, target_colors, pen_colors, dist_sq, alpha, lambda))
 			return -1;
 	}
 

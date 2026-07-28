@@ -4,9 +4,10 @@ Host utility that, given a 256-color palette and a 16-pen subset, searches mixin
 weights for each target color (STDOOM-style dither / distance metric) and writes a
 C2P `.W16` bundle.
 
-VGA 6-bit channels are quantized to hardware gun precision (**`--bpc`**, default
-**4** = STe; **3** = ST; **6** = full VGA), normalized as **`q / (2^bpc-1)`**, then
-gamma-corrected. The default metric is **YUV** with **`gamma=1.6`** and **`Y *= 2`**;
+VGA **targets** keep full 6-bit precision. **Pens** are quantized to hardware gun
+precision (**`--bpc`**, default **4** = STe; **3** = ST; **6** = full VGA),
+normalized as **`q / (2^bpc-1)`**, then gamma-corrected. The default metric is
+**YUV** with **`gamma=1.6`** and **`Y *= 2`**;
 use `--gamma`, `--y-scale`, `--bpc`, or `--rgb` to change that transform.
 
 ### Regenerate Atari c2p weight table
@@ -65,7 +66,7 @@ Without **`-o`**, weight rows are printed to stdout in C form; stderr carries lo
 **Fixed pens:** `--fix PEN,IDX` pins pen `PEN` to palette index `IDX` (repeatable).
 
 **Metric transform:** `--gamma F` sets the gamma exponent, `--y-scale F` scales Y in
-YUV space, `--bpc N` sets bits per channel after VGA input (1..6; default 4), and
+YUV space, `--bpc N` sets pen gun bits only (1..6; default 4; targets stay VGA6), and
 `--rgb` switches the optimizer to gamma-corrected RGB space instead of YUV.
 
 ### Subset init and continue
@@ -100,7 +101,7 @@ Global cost \(\sum_i \alpha_i c_i\); without `--hist`, \(\alpha_i = 1/256\).
 | `--lambda` | `0.6` |
 | `--gamma` | `1.6` |
 | `--y-scale` | `2.0` |
-| `--bpc` | `4` (STe; `3` = ST, `6` = VGA) |
+| `--bpc` | `4` (STe pens; targets always VGA6) |
 | metric | `YUV` (`--rgb` switches to RGB) |
 | `--sa-iter` | `25000` (`0` = no SA steps) |
 | `--sa-log-every` | `10` |

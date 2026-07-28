@@ -17,18 +17,20 @@
 extern int palette_opt_weight_granularity;
 
 /*
- * colors: 768 floats (metric space, caller-defined).
- * subset: n palette indices; pen k uses colors[3*subset[k]].
- * target_i: source palette index 0..255.
+ * target_colors: 768 floats — full-VGA metric space (targets).
+ * pen_colors: 768 floats — hardware-quantized metric space (pens).
+ * dist_sq: asymmetric ||target[i] - pen[j]||^2 from palette_build_dist_sq_matrix.
+ * subset: n palette indices; pen k uses pen_colors[3*subset[k]].
+ * target_i: source palette index 0..255 (uses target_colors).
  * out_weights[16]: pen-slot weights summing to PALETTE_OPT_WEIGHT_SUM.
  * Returns blended cost c = (1-lambda)*e1 + lambda*e2, or -1 if infeasible.
  */
-float palette_weight_opt_best(const float *colors, const float *dist_sq,
-	const unsigned char *subset, int subset_n, int target_i, float lambda,
+float palette_weight_opt_best(const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const unsigned char *subset, int subset_n, int target_i, float lambda,
 	unsigned char *out_weights);
 
-void palette_weight_e1_e2(const float *colors, const float *dist_sq, const unsigned char *subset,
-	int subset_n, int target_i, const unsigned char *weights, float lambda, float *out_e1,
-	float *out_e2, float *out_blend);
+void palette_weight_e1_e2(const float *target_colors, const float *pen_colors, const float *dist_sq,
+	const unsigned char *subset, int subset_n, int target_i, const unsigned char *weights,
+	float lambda, float *out_e1, float *out_e2, float *out_blend);
 
 #endif /* PALETTE_OPT_WEIGHT_OPT_H */

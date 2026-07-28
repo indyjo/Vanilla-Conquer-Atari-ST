@@ -16,7 +16,7 @@ typedef struct PaletteOptJsonExport PaletteOptJsonExport;
  * or palette_opt_json_free to finalize.
  */
 PaletteOptJsonExport *palette_opt_json_create(const char *path, const char *palette_path,
-	const unsigned char *pal768, const float *colors,
+	const unsigned char *pal768, const float *target_colors, const float *pen_colors,
 	const PaletteOptColorParams *color_params, const PaletteSubsetOptParams *sa_params,
 	float lambda, int export_every, int weight_granularity, int subset_n);
 
@@ -25,8 +25,8 @@ void palette_opt_json_free(PaletteOptJsonExport *exp);
 
 /* Spread: pen 0..subset_n-1 just assigned in out_subset[0..pen]. */
 int palette_opt_json_spread_step(PaletteOptJsonExport *exp, int pen,
-	const unsigned char *subset, const float *colors, const float *dist_sq,
-	const double *alpha, float lambda);
+	const unsigned char *subset, const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const double *alpha, float lambda);
 
 /*
  * Anneal grid export. move_in/move_out are -1 if not applicable (iter 0).
@@ -34,14 +34,14 @@ int palette_opt_json_spread_step(PaletteOptJsonExport *exp, int pen,
  */
 int palette_opt_json_anneal_step(PaletteOptJsonExport *exp, int iter, double T,
 	double cost, double e1, double e2, int move_in, int move_out, const char *note,
-	const unsigned char *subset, const float *colors, const float *dist_sq,
-	const double *alpha, float lambda);
+	const unsigned char *subset, const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const double *alpha, float lambda);
 
 /* Weights phase: targets_done is count of palette indices optimized (0..256). */
 int palette_opt_json_weights_step(PaletteOptJsonExport *exp, int targets_done,
 	const char *note, const unsigned char *subset, int subset_n,
-	const unsigned char (*weights)[16], const float *colors, const float *dist_sq,
-	const double *alpha, float lambda);
+	const unsigned char (*weights)[16], const float *target_colors, const float *pen_colors,
+	const float *dist_sq, const double *alpha, float lambda);
 
 void palette_opt_json_set_sa_t0(PaletteOptJsonExport *exp, double t0);
 

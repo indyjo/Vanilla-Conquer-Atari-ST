@@ -142,6 +142,27 @@ ifeq ($(FASTCALL),1)
 FASTCALL_FLAGS = -mfastcall
 endif
 
+# m68k CPU target. Empty (default) = 68000/68010 code, runs on every ST/STE.
+# M68K_CPU=68020-60 builds for 68020…68060 (TT, Falcon, accelerator boards).
+#
+# -msoft-float is not optional here: gcc's -m68020-60 implies -m68881, and this
+# toolchain ships no soft-float 020 multilib, so its m68020-60 libc/crt0 demand
+# a coprocessor. Without it the binary dies before main() on an FPU-less machine
+# ("This program requires a 68881 or higher arithmetic coprocessor"), which looks
+# like an instant drop back to the desktop. Soft-float keeps the 020 integer
+# codegen (muls.l, bitfield ops) and matches the FPU-free ABI.
+#
+# Deliberately NOT added to LINKFLAGS: the link step must keep selecting the
+# default (68000, FPU-free) multilib. That library code runs unchanged on 020+.
+M68K_CPU ?=
+CPU_FLAGS :=
+ASM_CPU_FLAGS = -m68000
+ifneq ($(strip $(M68K_CPU)),)
+CPU_FLAGS = -m$(M68K_CPU) -msoft-float
+# GNU as has no -m68020-60; -m68020 accepts the common 020+ instruction set.
+ASM_CPU_FLAGS = -m68020
+endif
+
 LIBC_RUNTIME ?= libcmini
 
 # Keep frame pointer chain for Hatari profiler / backtraces (-O3 omits by default).
@@ -157,6 +178,7 @@ CXXFLAGS_COMMON += $(INCLUDES)
 CXXFLAGS_COMMON += -Wno-unused-parameter -Wno-sign-compare -Wno-deprecated-declarations
 CXXFLAGS_COMMON += -std=c++17 -fpermissive
 CXXFLAGS_COMMON += $(FASTCALL_FLAGS)
+CXXFLAGS_COMMON += $(CPU_FLAGS)
 CXXFLAGS_COMMON += $(FRAME_POINTER_FLAGS)
 
 # Note: Windows-specific libraries may not be available for m68k target
@@ -270,7 +292,7 @@ DEFINE_FLAGS = $(foreach def,$(DEFINES),-D$(def))
 
 # Assembly flags (GAS - GNU Assembler for m68k)
 # Note: Assembly files may be x86-specific and may need conversion
-ASMFLAGS = -m68000
+ASMFLAGS = $(ASM_CPU_FLAGS)
 ifeq ($(CONFIG),Debug)
 ASMFLAGS += -g
 endif
@@ -588,7 +610,7 @@ $(INTDIR)/%.o: $(PLATFORM_LIB)/%.CPP | $(INTDIR)
 
 # STVQ shared C runtime (atarilib/stvq/)
 ifeq ($(PLATFORM_LIB),ATARILIB)
-CFLAGS_STVQ = -Wall -Wextra -std=c99 $(INCLUDES) $(FASTCALL_FLAGS) $(FRAME_POINTER_FLAGS)
+CFLAGS_STVQ = -Wall -Wextra -std=c99 $(INCLUDES) $(FASTCALL_FLAGS) $(CPU_FLAGS) $(FRAME_POINTER_FLAGS)
 ifeq ($(CONFIG),Debug)
 CFLAGS_STVQ += -O2 -g -DDEBUG
 else
@@ -795,6 +817,7 @@ endif
 	@echo "  FRAME_POINTERS=1 - Keep A6 frame chain (-fno-omit-frame-pointer); default: 0"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
 	@echo "  FASTCALL=0       - Disable -mfastcall on compile and link (default: 1)"
+	@echo "  M68K_CPU=68020-60 - Atari-only: build for 68020..68060 (default: empty = 68000)"
 	@echo "  LIBC_RUNTIME=libcmini|mintlib|auto - Atari-only C runtime (default: libcmini)"
 	@echo "    mintlib: paths_posix.cpp; libcmini: paths_tos.cpp (-DLIBCMINI)"
 	@echo "  LIBCMINI_PREFIX  - Atari-only libcmini install prefix ending in /usr"

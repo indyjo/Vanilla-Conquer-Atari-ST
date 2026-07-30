@@ -1,5 +1,11 @@
 /*
  * ST software blitter: interprets ST_Blitter register state (BLIT_iT semantics).
+ *
+ * The rect loop is specialised at compile time on the halftone op and the X
+ * direction, and the per-line word loop is split into first / middle / last so
+ * that the endmask selection, the last-word test and the op dispatch all leave
+ * the inner loop. An unmasked, unskewed forward blit gets a separate tight path.
+ * Semantics are unchanged from the straightforward interpreter this replaces.
  */
 
 #include "st_blit.h"
@@ -15,42 +21,463 @@ ST_Soft_Backend &ST_Blit_Soft_Backend()
 	return g_soft_backend;
 }
 
-static uint16_t ST_Soft_Apply_Op(uint8_t op, uint16_t d, uint16_t s, uint16_t mask)
-{
-	const uint16_t dm = (uint16_t)(d & mask);
-	const uint16_t sm = (uint16_t)(s & mask);
-	const uint16_t keep = (uint16_t)(d & ~mask);
+namespace {
 
-	switch (op) {
-	case 1:
-		return (uint16_t)((dm & sm) | keep);
-	case 3:
+/*
+ * BLIT_iT ops, with the destination bits outside the endmask preserved.
+ * mask/notmask are passed in because the caller hoists them per segment.
+ */
+template <uint8_t OP>
+inline uint16_t ST_Soft_Op(uint16_t d, uint16_t s, uint16_t mask, uint16_t notmask)
+{
+	const uint16_t sm = (uint16_t)(s & mask);
+	const uint16_t keep = (uint16_t)(d & notmask);
+
+	if (OP == 1) {
+		/* (d & mask) & (s & mask) == d & sm */
+		return (uint16_t)((d & sm) | keep);
+	}
+	if (OP == 3) {
 		return (uint16_t)(sm | keep);
-	case 7:
-		return (uint16_t)((dm | sm) | keep);
-	default:
-		return d;
+	}
+	/* OP == 7: (d & mask) | (s & mask) */
+	return (uint16_t)(((uint16_t)((d | s) & mask)) | keep);
+}
+
+/* Same three ops with mask == 0xFFFF folded away. */
+template <uint8_t OP>
+inline uint16_t ST_Soft_Op_Full(uint16_t d, uint16_t s)
+{
+	if (OP == 1) {
+		return (uint16_t)(d & s);
+	}
+	if (OP == 3) {
+		return s;
+	}
+	return (uint16_t)(d | s);
+}
+
+/*
+ * One 16-pixel word. MASK/NOTMASK/LAST are compile-time constant at every use,
+ * so the endmask pick and the nfsr test fold away per segment.
+ */
+#define ST_SOFT_WORD(MASK, NOTMASK, LAST)                                          \
+	do {                                                                       \
+		if (!REVERSE) {                                                    \
+			hold = (hold << 16) | (hold >> 16);                        \
+		}                                                                  \
+		if (!nfsr || !(LAST)) {                                            \
+			hold = (hold & 0xFFFF0000u) | *(const uint16_t *)s;         \
+			s += src_x_inc;                                            \
+		}                                                                  \
+		if (REVERSE) {                                                     \
+			hold = (hold << 16) | (hold >> 16);                        \
+		}                                                                  \
+		*(uint16_t *)d = ST_Soft_Op<OP>(*(const uint16_t *)d,               \
+		    (uint16_t)(hold >> shift), (MASK), (NOTMASK));                  \
+		d += dst_x_inc;                                                    \
+	} while (0)
+
+/* Unmasked, unskewed, forward: no hold register, no endmask, no dest read for OP 3. */
+template <uint8_t OP>
+void ST_Soft_Blit_Fast(
+	const uint8_t *s,
+	uint8_t *d,
+	int16_t src_x_inc,
+	int16_t dst_x_inc,
+	int16_t src_y_inc,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count)
+{
+	for (uint16_t line = 0; line < y_count; ++line) {
+		for (uint16_t wi = 0; wi < x_count; ++wi) {
+			*(uint16_t *)d = ST_Soft_Op_Full<OP>(*(const uint16_t *)d, *(const uint16_t *)s);
+			s += src_x_inc;
+			d += dst_x_inc;
+		}
+		s += src_y_inc - src_x_inc;
+		d += dst_y_inc - dst_x_inc;
 	}
 }
 
-static uint16_t ST_Soft_Endmask(
+template <uint8_t OP, bool REVERSE>
+void ST_Soft_Blit_Rect(
+	const uint8_t *s,
+	uint8_t *d,
+	int16_t src_x_inc,
+	int16_t dst_x_inc,
+	int16_t src_y_inc,
+	int16_t dst_y_inc,
 	uint16_t x_count,
+	uint16_t y_count,
 	uint16_t endmask1,
 	uint16_t endmask2,
 	uint16_t endmask3,
-	uint16_t wi)
+	unsigned shift,
+	bool fxsr,
+	bool nfsr)
 {
-	// Hatari: first word or single-word line -> endmask1; last word -> endmask3; else endmask2.
-	// reverse_x is handled in prepare by swapping endmask1/endmask3 in the register image.
-	if (x_count == 1 || wi == 0) {
-		return endmask1;
+	const uint16_t notmask1 = (uint16_t)~endmask1;
+	const uint16_t notmask2 = (uint16_t)~endmask2;
+	const uint16_t notmask3 = (uint16_t)~endmask3;
+	/* x_count >= 2 here whenever the split path runs; middle may be 0. */
+	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
+	uint32_t hold = 0;
+
+	for (uint16_t line = 0; line < y_count; ++line) {
+		if (x_count > 0) {
+			if (fxsr) {
+				/* Prime the hold register with one extra source read. */
+				if (REVERSE) {
+					hold = (hold & 0x0000FFFFu)
+						| ((uint32_t) * (const uint16_t *)s << 16);
+				} else {
+					hold = (hold & 0xFFFF0000u) | *(const uint16_t *)s;
+				}
+				s += src_x_inc;
+			}
+
+			if (x_count == 1) {
+				/* Single word is both first and last: endmask1, nfsr applies. */
+				ST_SOFT_WORD(endmask1, notmask1, true);
+			} else {
+				ST_SOFT_WORD(endmask1, notmask1, false);
+				for (uint16_t i = 0; i < middle; ++i) {
+					ST_SOFT_WORD(endmask2, notmask2, false);
+				}
+				ST_SOFT_WORD(endmask3, notmask3, true);
+			}
+		}
+
+		s += src_y_inc - src_x_inc;
+		d += dst_y_inc - dst_x_inc;
 	}
-	if (wi + 1 == x_count) {
-		return endmask3;
-	}
-	return endmask2;
 }
 
+#undef ST_SOFT_WORD
+
+template <uint8_t OP>
+inline void ST_Soft_Blit_Op(
+	const uint8_t *s,
+	uint8_t *d,
+	int16_t src_x_inc,
+	int16_t dst_x_inc,
+	int16_t src_y_inc,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3,
+	unsigned shift,
+	bool fxsr,
+	bool nfsr,
+	bool reverse_x)
+{
+	const bool unmasked = (endmask1 == 0xFFFFu) && (endmask2 == 0xFFFFu) && (endmask3 == 0xFFFFu);
+
+	if (unmasked && shift == 0 && !fxsr && !nfsr && !reverse_x) {
+		ST_Soft_Blit_Fast<OP>(
+			s, d, src_x_inc, dst_x_inc, src_y_inc, dst_y_inc, x_count, y_count);
+		return;
+	}
+	if (reverse_x) {
+		ST_Soft_Blit_Rect<OP, true>(s,
+			d,
+			src_x_inc,
+			dst_x_inc,
+			src_y_inc,
+			dst_y_inc,
+			x_count,
+			y_count,
+			endmask1,
+			endmask2,
+			endmask3,
+			shift,
+			fxsr,
+			nfsr);
+	} else {
+		ST_Soft_Blit_Rect<OP, false>(s,
+			d,
+			src_x_inc,
+			dst_x_inc,
+			src_y_inc,
+			dst_y_inc,
+			x_count,
+			y_count,
+			endmask1,
+			endmask2,
+			endmask3,
+			shift,
+			fxsr,
+			nfsr);
+	}
+}
+
+/* ---------------------------------------------------------------------------
+ * All four bitplanes in one pass.
+ *
+ * In the ST planar layout the four planes of a 16-pixel column are 8 contiguous
+ * bytes, so one base pointer with fixed +0/+2/+4/+6 offsets replaces the four
+ * separate passes the hardware needs. Loop control, pointer arithmetic and the
+ * endmask setup are then paid once per column instead of four times.
+ * ------------------------------------------------------------------------- */
+
+#define ST_SOFT_P4_SWAP()                                                          \
+	do {                                                                       \
+		h0 = (h0 << 16) | (h0 >> 16);                                      \
+		h1 = (h1 << 16) | (h1 >> 16);                                      \
+		h2 = (h2 << 16) | (h2 >> 16);                                      \
+		h3 = (h3 << 16) | (h3 >> 16);                                      \
+	} while (0)
+
+#define ST_SOFT_P4_STORE(MASK, NOTMASK)                                            \
+	do {                                                                       \
+		*(uint16_t *)(d + 0) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 0),   \
+		    (uint16_t)(h0 >> shift), (MASK), (NOTMASK));                    \
+		*(uint16_t *)(d + 2) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 2),   \
+		    (uint16_t)(h1 >> shift), (MASK), (NOTMASK));                    \
+		*(uint16_t *)(d + 4) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 4),   \
+		    (uint16_t)(h2 >> shift), (MASK), (NOTMASK));                    \
+		*(uint16_t *)(d + 6) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 6),   \
+		    (uint16_t)(h3 >> shift), (MASK), (NOTMASK));                    \
+		d += dst_x_inc;                                                    \
+	} while (0)
+
+#define ST_SOFT_P4_WORD(MASK, NOTMASK, LAST)                                       \
+	do {                                                                       \
+		if (!REVERSE) {                                                    \
+			ST_SOFT_P4_SWAP();                                         \
+		}                                                                  \
+		if (!nfsr || !(LAST)) {                                            \
+			h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(s + 0);       \
+			h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(s + 2);       \
+			h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(s + 4);       \
+			h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(s + 6);       \
+			s += src_x_inc;                                            \
+		}                                                                  \
+		if (REVERSE) {                                                     \
+			ST_SOFT_P4_SWAP();                                         \
+		}                                                                  \
+		ST_SOFT_P4_STORE((MASK), (NOTMASK));                               \
+	} while (0)
+
+/*
+ * Planar source (one source plane per destination plane).
+ *
+ * Both strides are compile-time constants here: ST_Blit_Prepare_88 and
+ * ST_Blit_Prepare_88_Scroll always pass 8, negated for reverse. That frees the
+ * two registers that held them, turns the pointer bumps into addq/post-increment
+ * and takes dst_x_inc off the stack. Run_Planes verifies the assumption and
+ * falls back to the generic per-plane loop if it ever fails to hold.
+ */
+template <uint8_t OP, bool REVERSE>
+void ST_Soft_P4_Planar(
+	const uint8_t *s,
+	uint8_t *d,
+	int16_t src_y_inc,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3,
+	unsigned shift,
+	bool fxsr,
+	bool nfsr)
+{
+	const int src_x_inc = REVERSE ? -8 : 8;
+	const int dst_x_inc = REVERSE ? -8 : 8;
+	const uint16_t notmask1 = (uint16_t)~endmask1;
+	const uint16_t notmask2 = (uint16_t)~endmask2;
+	const uint16_t notmask3 = (uint16_t)~endmask3;
+	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
+	uint32_t h0 = 0, h1 = 0, h2 = 0, h3 = 0;
+
+	for (uint16_t line = 0; line < y_count; ++line) {
+		if (x_count > 0) {
+			if (fxsr) {
+				if (REVERSE) {
+					h0 = (h0 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 0) << 16);
+					h1 = (h1 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 2) << 16);
+					h2 = (h2 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 4) << 16);
+					h3 = (h3 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 6) << 16);
+				} else {
+					h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(s + 0);
+					h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(s + 2);
+					h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(s + 4);
+					h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(s + 6);
+				}
+				s += src_x_inc;
+			}
+
+			if (x_count == 1) {
+				ST_SOFT_P4_WORD(endmask1, notmask1, true);
+			} else {
+				ST_SOFT_P4_WORD(endmask1, notmask1, false);
+				/*
+				 * Bound the middle run by the destination pointer, not by a
+				 * counter: that becomes a cmpa/branch pair and keeps a data
+				 * register free for the endmask instead of the loop index.
+				 */
+				const uint8_t *const dmid_end = d + (int)middle * dst_x_inc;
+				while (d != dmid_end) {
+					ST_SOFT_P4_WORD(endmask2, notmask2, false);
+				}
+				ST_SOFT_P4_WORD(endmask3, notmask3, true);
+			}
+		}
+
+		s += src_y_inc - src_x_inc;
+		d += dst_y_inc - dst_x_inc;
+	}
+}
+
+/*
+ * 1bpp mask source shared by all four planes: one source read per column
+ * instead of four, and a single hold register.
+ */
+template <uint8_t OP>
+void ST_Soft_P4_Broadcast(
+	const uint8_t *s,
+	uint8_t *d,
+	int16_t src_y_inc,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3,
+	unsigned shift,
+	bool fxsr,
+	bool nfsr)
+{
+	/* ST_Blit_Prepare_28: 1bpp mask source steps 2, destination steps 8. */
+	const int src_x_inc = 2;
+	const int dst_x_inc = 8;
+	const uint16_t notmask1 = (uint16_t)~endmask1;
+	const uint16_t notmask2 = (uint16_t)~endmask2;
+	const uint16_t notmask3 = (uint16_t)~endmask3;
+	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
+	uint32_t hold = 0;
+
+#define ST_SOFT_BC_WORD(MASK, NOTMASK, LAST)                                       \
+	do {                                                                       \
+		hold = (hold << 16) | (hold >> 16);                                \
+		if (!nfsr || !(LAST)) {                                            \
+			hold = (hold & 0xFFFF0000u) | *(const uint16_t *)s;         \
+			s += src_x_inc;                                            \
+		}                                                                  \
+		const uint16_t sv = (uint16_t)(hold >> shift);                     \
+		*(uint16_t *)(d + 0) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 0), sv, (MASK), (NOTMASK)); \
+		*(uint16_t *)(d + 2) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 2), sv, (MASK), (NOTMASK)); \
+		*(uint16_t *)(d + 4) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 4), sv, (MASK), (NOTMASK)); \
+		*(uint16_t *)(d + 6) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 6), sv, (MASK), (NOTMASK)); \
+		d += dst_x_inc;                                                    \
+	} while (0)
+
+	for (uint16_t line = 0; line < y_count; ++line) {
+		if (x_count > 0) {
+			if (fxsr) {
+				hold = (hold & 0xFFFF0000u) | *(const uint16_t *)s;
+				s += src_x_inc;
+			}
+			if (x_count == 1) {
+				ST_SOFT_BC_WORD(endmask1, notmask1, true);
+			} else {
+				ST_SOFT_BC_WORD(endmask1, notmask1, false);
+				const uint8_t *const dmid_end = d + (int)middle * dst_x_inc;
+				while (d != dmid_end) {
+					ST_SOFT_BC_WORD(endmask2, notmask2, false);
+				}
+				ST_SOFT_BC_WORD(endmask3, notmask3, true);
+			}
+		}
+		s += src_y_inc - src_x_inc;
+		d += dst_y_inc - dst_x_inc;
+	}
+#undef ST_SOFT_BC_WORD
+}
+
+#undef ST_SOFT_P4_WORD
+#undef ST_SOFT_P4_STORE
+#undef ST_SOFT_P4_SWAP
+
+} // namespace
+
+void ST_Soft_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
+{
+	(void)hog;
+	volatile ST_Blitter &r = Regs();
+	r.src_addr = (void *)job.src_plane0;
+	r.dst_addr = job.dst_plane0;
+	r.y_count = lines;
+
+	const int16_t src_x_inc = r.src_x_inc;
+	const int16_t dst_x_inc = r.dst_x_inc;
+	const int16_t src_y_inc = r.src_y_inc;
+	const int16_t dst_y_inc = r.dst_y_inc;
+	const uint16_t x_count = r.x_count;
+	const uint8_t op = r.op;
+	const uint16_t endmask1 = r.endmask1;
+	const uint16_t endmask2 = r.endmask2;
+	const uint16_t endmask3 = r.endmask3;
+	const unsigned shift = (unsigned)(r.skew & 15u);
+	const bool fxsr = (r.skew & 0x80u) != 0;
+	const bool nfsr = (r.skew & 0x40u) != 0;
+	const bool reverse_x = src_x_inc < 0;
+
+	const uint8_t *const s = job.src_plane0;
+	uint8_t *const d = job.dst_plane0;
+
+	/*
+	 * The specialised paths bake in the strides the prepare helpers produce.
+	 * Anything else — including the degenerate single-column case, where
+	 * ST_Blit_Prepare_Impl zeroes both increments — takes the generic
+	 * per-plane loop, which handles every register image.
+	 */
+	const bool strides_ok = job.src_addr_per_plane
+		? (src_x_inc == (reverse_x ? -8 : 8) && dst_x_inc == (reverse_x ? -8 : 8))
+		: (!reverse_x && src_x_inc == 2 && dst_x_inc == 8);
+	if (!strides_ok) {
+		ST_Blit_Backend::Run_Planes(job, lines, hog);
+		return;
+	}
+
+#define ST_SOFT_P4_DISPATCH(OPV)                                                  \
+	do {                                                                      \
+		if (!job.src_addr_per_plane) {                                    \
+			ST_Soft_P4_Broadcast<OPV>(s, d, src_y_inc, dst_y_inc,      \
+			    x_count, lines, endmask1, endmask2, endmask3, shift,   \
+			    fxsr, nfsr);                                           \
+		} else if (reverse_x) {                                           \
+			ST_Soft_P4_Planar<OPV, true>(s, d, src_y_inc, dst_y_inc,   \
+			    x_count, lines, endmask1, endmask2, endmask3, shift,   \
+			    fxsr, nfsr);                                           \
+		} else {                                                          \
+			ST_Soft_P4_Planar<OPV, false>(s, d, src_y_inc, dst_y_inc,  \
+			    x_count, lines, endmask1, endmask2, endmask3, shift,   \
+			    fxsr, nfsr);                                           \
+		}                                                                 \
+	} while (0)
+
+	switch (op) {
+	case 1:
+		ST_SOFT_P4_DISPATCH(1);
+		break;
+	case 3:
+		ST_SOFT_P4_DISPATCH(3);
+		break;
+	case 7:
+		ST_SOFT_P4_DISPATCH(7);
+		break;
+	default:
+		/* Leaves the destination unchanged. */
+		break;
+	}
+#undef ST_SOFT_P4_DISPATCH
+}
 void ST_Soft_Backend::Await()
 {
 }
@@ -78,50 +505,24 @@ void ST_Soft_Backend::Execute(bool hog, uint16_t lines, void *src_addr, void *ds
 	const bool nfsr = (r.skew & 0x40u) != 0;
 	const bool reverse_x = src_x_inc < 0;
 
-	uint8_t *s = (uint8_t *)src_addr;
+	const uint8_t *s = (const uint8_t *)src_addr;
 	uint8_t *d = (uint8_t *)dst_addr;
-	union {
-		uint32_t u32;
-		struct {
-			uint16_t left;
-			uint16_t right;
-		} u16;
-	} hold;
-	
-	for (uint16_t line = 0; line < y_count; ++line) {
 
-		// Force additional source read to prime the hold register
-		if (fxsr && x_count > 0) {
-			if (reverse_x) {
-				hold.u16.left = *(uint16_t *)s;
-			} else {
-				hold.u16.right = *(uint16_t *)s;
-			}
-			s += src_x_inc;
-		}
-
-		for (uint16_t wi = 0; wi < x_count; ++wi) {
-			const bool last_word = (wi + 1) == x_count;
-			if (!reverse_x) {
-				hold.u32 = (hold.u32 << 16) | (hold.u32 >> 16);
-			}
-			if (!nfsr || !last_word) {
-				hold.u16.right = *(uint16_t *)s;
-				s += src_x_inc;
-			}
-			if (reverse_x) {
-				hold.u32 = (hold.u32 << 16) | (hold.u32 >> 16);
-			}
-
-			const uint16_t sval = (uint16_t)(hold.u32 >> shift);
-			const uint16_t mask = ST_Soft_Endmask(x_count, endmask1, endmask2, endmask3, wi);
-			const uint16_t dval = *(uint16_t *)d;
-
-			*(uint16_t *)d = ST_Soft_Apply_Op(op, dval, sval, mask);
-			d += dst_x_inc;
-		}
-
-		s += src_y_inc - src_x_inc;
-		d += dst_y_inc - dst_x_inc;
+	switch (op) {
+	case 1:
+		ST_Soft_Blit_Op<1>(s, d, src_x_inc, dst_x_inc, src_y_inc, dst_y_inc, x_count,
+			y_count, endmask1, endmask2, endmask3, shift, fxsr, nfsr, reverse_x);
+		break;
+	case 3:
+		ST_Soft_Blit_Op<3>(s, d, src_x_inc, dst_x_inc, src_y_inc, dst_y_inc, x_count,
+			y_count, endmask1, endmask2, endmask3, shift, fxsr, nfsr, reverse_x);
+		break;
+	case 7:
+		ST_Soft_Blit_Op<7>(s, d, src_x_inc, dst_x_inc, src_y_inc, dst_y_inc, x_count,
+			y_count, endmask1, endmask2, endmask3, shift, fxsr, nfsr, reverse_x);
+		break;
+	default:
+		/* Every other op leaves the destination unchanged; nothing to write. */
+		break;
 	}
 }

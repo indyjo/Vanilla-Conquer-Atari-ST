@@ -67,6 +67,9 @@ long Total_Ram_Free(MemoryFlagType flag);
 void *Stram_Alloc(unsigned long bytes_to_alloc);
 void Stram_Free(void *pointer);
 
+/* Prefers TT-RAM, falls back to ST-RAM. Not for BLiTTER or DMA targets. */
+void *Pref_Ttram_Alloc(unsigned long bytes_to_alloc);
+
 /* Log largest free ST-RAM and TT-RAM blocks to stdout (label may be NULL). */
 void ST_Log_Free_Memory(const char *label);
 

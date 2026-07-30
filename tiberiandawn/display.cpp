@@ -239,10 +239,17 @@ namespace {
 			return false;
 		}
 
-		void *const cache = Stram_Alloc((unsigned long)ST_SHADOW_CACHE_BYTES);
+		/*
+		 * Only the BLiTTER forces this into ST-RAM — it reads the mask slots and
+		 * cannot address alternate RAM. With hardware blits off the CPU reads them
+		 * instead, so prefer TT-RAM. Stram_Free/Mfree releases either pool.
+		 */
+		void *const cache = AllowHardwareBlitFills
+			? Stram_Alloc((unsigned long)ST_SHADOW_CACHE_BYTES)
+			: Pref_Ttram_Alloc((unsigned long)ST_SHADOW_CACHE_BYTES);
 		if (cache == NULL) {
 			sprintf(STShadowPlanarCacheError,
-				"Failed to build ST shadow mask cache: Stram_Alloc(%u) failed",
+				"Failed to build ST shadow mask cache: alloc(%u) failed",
 				(unsigned)ST_SHADOW_CACHE_BYTES);
 			return false;
 		}

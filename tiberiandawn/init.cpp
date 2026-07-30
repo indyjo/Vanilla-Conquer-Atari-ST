@@ -201,6 +201,16 @@ bool Init_Game(int, char*[])
             new MFCD("LOCAL.MIX"); // Cached.
             MFCD::Cache("LOCAL.MIX");
         }
+#ifdef ATARI_ST
+        /*
+        ** Atari ST runtime sidecars (C2P *.W16 weights, etc.). Register only —
+        ** never cache; the archive can be large and payloads are loaded on demand.
+        */
+        if (CCFileClass("ATARIST.MIX").Is_Available()) {
+            CCDebugString("C&C ST - About to register ATARIST.MIX\n");
+            new MFCD("ATARIST.MIX"); // Never cached.
+        }
+#endif
         CCDebugString("C&C95 - About to register UPDATE.MIX\n");
         new MFCD("UPDATE.MIX"); // Cached.
         new MFCD("UPDATA.MIX"); // Cached.

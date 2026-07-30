@@ -103,17 +103,17 @@
 <section class="space-y-6">
   <div>
     <h2 class="cnc-step-title">2. Customize content</h2>
-    <p class="mt-2 text-sm text-stone-400">
+    <p class="mt-2 text-sm text-[#b0b0b0]">
       Choose optional MIX archives and remix options. Core game data is always extracted when
       present.
     </p>
   </div>
 
   <div class="cnc-panel space-y-3">
-    <p class="text-sm font-medium text-stone-200">Target C&C4ST version</p>
-    <p class="text-xs text-stone-500">
+    <p class="text-sm font-medium text-[#e8e8e8]">Target C&C4ST version</p>
+    <p class="text-xs text-[#8a8a8a]">
       {#if targetVersion.source === 'release'}
-        Pre-filled from release ZIP readme when available.
+        Pre-filled from the release ZIP filename when possible.
       {:else}
         Choose the port version you plan to run.
       {/if}
@@ -141,14 +141,14 @@
         />
         <span>
           <span class="font-medium">Convert terrain iconsets to ST16</span>
-          <span class="block text-xs text-stone-400"
+          <span class="block text-xs text-[#b0b0b0]"
             >TEMPERAT, DESERT, WINTER MIX — requires matching *.W16 from release ZIP</span
           >
         </span>
       </label>
 
       {#if st16Warning}
-        <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+        <p class="rounded border border-[#fab05b]/40 bg-[#322312]/50 px-3 py-2 text-xs text-[#fab05b]">
           {st16Warning}
         </p>
       {/if}
@@ -162,14 +162,14 @@
         />
         <span>
           <span class="font-medium">Convert shapes to SHPX</span>
-          <span class="block text-xs text-stone-400"
+          <span class="block text-xs text-[#b0b0b0]"
             >CONQUER / TEMPERAT / DESERT / WINTER — external shape pools; saves RAM.</span
           >
         </span>
       </label>
 
       {#if shpxWarning}
-        <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+        <p class="rounded border border-[#fab05b]/40 bg-[#322312]/50 px-3 py-2 text-xs text-[#fab05b]">
           {shpxWarning}
         </p>
       {/if}
@@ -183,7 +183,7 @@
         />
         <span>
           <span class="font-medium">Speech and sound effects</span>
-          <span class="block text-xs text-stone-400">SOUNDS.MIX, SPEECH.MIX</span>
+          <span class="block text-xs text-[#b0b0b0]">SOUNDS.MIX, SPEECH.MIX</span>
         </span>
       </label>
 
@@ -196,7 +196,7 @@
         />
         <span>
           <span class="font-medium">Music</span>
-          <span class="block text-xs text-stone-400">SCORES.MIX (~large)</span>
+          <span class="block text-xs text-[#b0b0b0]">SCORES.MIX (~large)</span>
         </span>
       </label>
 
@@ -210,7 +210,7 @@
         />
         <span>
           <span class="font-medium">Movie sequences</span>
-          <span class="block text-xs text-stone-400">
+          <span class="block text-xs text-[#b0b0b0]">
             {#if moviesOk}
               MOVIES.MIX — encode VQAs to STVQ (needs video/*.w16)
             {:else}
@@ -229,7 +229,7 @@
         />
         <span>
           <span class="font-medium">Audio</span>
-          <span class="block text-xs text-stone-400"
+          <span class="block text-xs text-[#b0b0b0]"
             >Speech, sound effects, and optional music — converted for this release.</span
           >
         </span>
@@ -245,8 +245,8 @@
           />
           <span>
             <span class="font-medium">Include music</span>
-            <span class="block text-xs text-stone-400"
-              >Uncheck to omit SCORES.MIX and save disk space.</span
+            <span class="block text-xs text-[#b0b0b0]"
+              >Uncheck to omit music and save disk space.</span
             >
           </span>
         </label>
@@ -261,7 +261,7 @@
         />
         <span>
           <span class="font-medium">Video</span>
-          <span class="block text-xs text-stone-400"
+          <span class="block text-xs text-[#b0b0b0]"
             >Uncheck to save disk space and encoding time.</span
           >
         </span>
@@ -269,9 +269,9 @@
     {/if}
 
     {#if moviesOk && options.movieSequences}
-      <div class="ml-7 space-y-3 rounded border border-stone-700/60 bg-stone-900/40 p-3">
+      <div class="ml-7 space-y-3 rounded border border-[#4b4b4b] bg-[#1f1f1f] p-3">
         <label class="block text-sm">
-          <span class="font-medium text-stone-200">Video quality</span>
+          <span class="font-medium text-[#e8e8e8]">Video quality</span>
           <select
             class="cnc-select mt-1 block max-w-md text-sm"
             value={options.videoQuality}
@@ -281,12 +281,9 @@
               <option value={opt.value}>{opt.label}</option>
             {/each}
           </select>
-          <span class="mt-1 block text-xs text-stone-500">
-            Low is suited for 8 MHz Atari ST computers; medium/high need a faster CPU.
-          </span>
         </label>
         <label class="block text-sm">
-          <span class="font-medium text-stone-200">Encoding effort</span>
+          <span class="font-medium text-[#e8e8e8]">Encoding effort</span>
           <select
             class="cnc-select mt-1 block max-w-md text-sm"
             value={options.videoEffort}
@@ -298,7 +295,7 @@
           </select>
         </label>
         <label class="block text-sm">
-          <span class="font-medium text-stone-200">Parallel encodes</span>
+          <span class="font-medium text-[#e8e8e8]">Parallel encodes</span>
           <select
             class="cnc-select mt-1 block max-w-md text-sm"
             value={options.videoParallelism}

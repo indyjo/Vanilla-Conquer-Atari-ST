@@ -10,11 +10,11 @@ import type { RemixEncodeProgress, RemixProgressHandler } from './wasm-core';
 import type { WorkerRequest, WorkerResponse } from './remix.worker';
 import RemixWorker from './remix.worker.ts?worker';
 
-export const VQA_ENCODE_WORKERS_DEFAULT = 4;
+export const VQA_ENCODE_WORKERS_DEFAULT = 6;
 
 /** Staging slack beyond worker count so a finished job can be replaced immediately. */
 export function vqaEncodeWindowForWorkers(workers: number): number {
-  const w = Math.max(1, Math.min(8, Math.round(workers)));
+  const w = Math.max(1, Math.min(16, Math.round(workers)));
   return w + 2;
 }
 
@@ -68,7 +68,7 @@ export class VqaEncodePool {
 
   constructor(baseUrl: string, workerCount = VQA_ENCODE_WORKERS_DEFAULT) {
     this.baseUrl = absoluteBaseUrl(baseUrl);
-    const n = Math.max(1, Math.min(8, workerCount));
+    const n = Math.max(1, Math.min(16, workerCount));
     for (let i = 0; i < n; i++) {
       this.workers.push({ worker: this.spawnWorker(), busyJobId: null });
     }
@@ -215,9 +215,11 @@ export async function encodeVqaWindowed(
     workers?: number;
     onProgress?: RemixProgressHandler;
     onJobStart?: (crc: number, size: number) => void;
+    /** Called when a VQA encode finishes (ok or omit), with input VQA byte size. */
+    onJobComplete?: (crc: number, size: number) => void;
   },
 ): Promise<WindowedEncodeResult[]> {
-  const workers = Math.max(1, Math.min(8, opts.workers ?? VQA_ENCODE_WORKERS_DEFAULT));
+  const workers = Math.max(1, Math.min(16, opts.workers ?? VQA_ENCODE_WORKERS_DEFAULT));
   const windowSize = opts.windowSize ?? vqaEncodeWindowForWorkers(workers);
   const pool = new VqaEncodePool(opts.baseUrl, workers);
   const results: (WindowedEncodeResult | undefined)[] = new Array(items.length);
@@ -242,6 +244,7 @@ export async function encodeVqaWindowed(
       const sidecars = opts.videoW16ForCrc(item.crc);
       if (sidecars.length === 0) {
         results[index] = { crc: item.crc, stv: null };
+        opts.onJobComplete?.(item.crc, item.vqa.length);
         continue;
       }
 
@@ -263,12 +266,14 @@ export async function encodeVqaWindowed(
             outcome.status === 'ok'
               ? { crc: outcome.crc, stv: outcome.stv }
               : { crc: outcome.crc, stv: null };
+          opts.onJobComplete?.(item.crc, item.vqa.length);
           opts.onProgress?.({ phase: 'done', crc: item.crc, done: 0, total: 0 });
           inflight.delete(index);
           /* Free window slot → stage more so idle workers stay busy. */
           tryStage();
         })
         .catch((err) => {
+          opts.onJobComplete?.(item.crc, item.vqa.length);
           opts.onProgress?.({ phase: 'done', crc: item.crc, done: 0, total: 0 });
           inflight.delete(index);
           tryStage();

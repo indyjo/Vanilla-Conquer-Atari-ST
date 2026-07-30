@@ -49,7 +49,7 @@ export interface RemixMixOptions {
   convertVqa?: boolean;
   videoQuality?: 'low' | 'medium' | 'high';
   videoEffort?: 'fast' | 'normal' | 'thorough';
-  /** Parallel encode workers for MOVIES.MIX (1–8). */
+  /** Parallel encode workers for MOVIES.MIX (1–16). */
   videoParallelism?: number;
   mixBasename?: string;
   /** SHPX pool id; defaults from mixBasename when omitted. */

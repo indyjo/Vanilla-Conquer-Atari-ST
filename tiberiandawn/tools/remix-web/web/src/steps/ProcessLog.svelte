@@ -28,11 +28,11 @@
 
 <div class="space-y-2">
   {#if log.length > 0}
-    <div class="flex items-center justify-between gap-2 text-xs text-stone-500">
+    <div class="flex items-center justify-between gap-2 text-xs text-[#8a8a8a]">
       <span>
         {log.length} line(s)
         {#if warnCount > 0}
-          · <span class="text-amber-300">{warnCount} warning(s)</span>
+          · <span class="text-[#fab05b]">{warnCount} warning(s)</span>
         {/if}
         {#if errorCount > 0}
           · <span class="text-red-400">{errorCount} error(s)</span>
@@ -41,7 +41,7 @@
       <button
         type="button"
         onclick={copyLog}
-        class="rounded border border-stone-700 px-2 py-0.5 text-stone-400 hover:text-stone-200"
+        class="rounded border border-[#4b4b4b] px-2 py-0.5 text-[#b0b0b0] hover:text-[#e8e8e8]"
       >
         Copy log
       </button>
@@ -50,15 +50,15 @@
 
   <div
     bind:this={logEl}
-    class="overflow-y-auto rounded border border-stone-800 bg-black/40 p-3 font-mono text-xs {maxHeightClass}"
+    class="overflow-y-auto rounded border border-[#4b4b4b] bg-[#1a1a1a] p-3 font-mono text-xs {maxHeightClass}"
   >
     {#each log as line}
       <p
         class={line.level === 'error'
           ? 'text-red-400'
           : line.level === 'warn'
-            ? 'text-amber-300'
-            : 'text-stone-400'}
+            ? 'text-[#fab05b]'
+            : 'text-[#b0b0b0]'}
       >
         {line.text}
       </p>

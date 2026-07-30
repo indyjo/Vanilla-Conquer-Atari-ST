@@ -1,4 +1,4 @@
-import type { TargetVersion, TargetVersionState } from './types';
+import type { TargetVersion, TargetVersionState, VideoParallelism } from './types';
 
 export function defaultSt16ForVersion(version: TargetVersion): boolean {
   return version === '0.2.x' || version === '0.3.x';
@@ -13,22 +13,20 @@ export function moviesSupportedForVersion(version: TargetVersion): boolean {
 }
 
 export function defaultTargetVersionState(): TargetVersionState {
-  return { version: '0.2.x', source: 'manual' };
+  return { version: '0.3.x', source: 'manual' };
 }
 
-/** Parse C&C4ST version from itch.io release readme text. */
-export function parseTargetVersionFromReadme(text: string): TargetVersion | null {
+function matchTargetVersion(text: string): TargetVersion | null {
   const lower = text.toLowerCase();
-  if (/\b0\.3\.\d+\b/.test(lower) || lower.includes('0.3.x')) {
-    return '0.3.x';
-  }
-  if (/\b0\.2\.\d+\b/.test(lower) || lower.includes('0.2.x')) {
-    return '0.2.x';
-  }
-  if (/\b0\.1\.\d+\b/.test(lower) || lower.includes('0.1.x')) {
-    return '0.1.x';
-  }
+  if (/\b0\.3(\.\d+|\.x)?\b/.test(lower)) return '0.3.x';
+  if (/\b0\.2(\.\d+|\.x)?\b/.test(lower)) return '0.2.x';
+  if (/\b0\.1(\.\d+|\.x)?\b/.test(lower)) return '0.1.x';
   return null;
+}
+
+/** Guess target version from release ZIP filename (e.g. cncst-0.3.0-dev.zip); default 0.3.x. */
+export function guessTargetVersionFromFilename(name: string): TargetVersion {
+  return matchTargetVersion(name) ?? '0.3.x';
 }
 
 export function st16IncompatibilityWarning(version: TargetVersion, enabled: boolean): string | null {
@@ -50,12 +48,12 @@ export function shpxIncompatibilityWarning(version: TargetVersion, enabled: bool
 
 export const TARGET_VERSION_OPTIONS: { value: TargetVersion; label: string }[] = [
   { value: '0.1.x', label: 'First public beta (0.1.x)' },
-  { value: '0.2.x', label: 'Current release (0.2.x)' },
-  { value: '0.3.x', label: 'FMV release (0.3.x)' },
+  { value: '0.2.x', label: 'Previous release (0.2.x)' },
+  { value: '0.3.x', label: 'Current release (0.3.x)' },
 ];
 
 export const VIDEO_QUALITY_OPTIONS: { value: 'low' | 'medium' | 'high'; label: string }[] = [
-  { value: 'low', label: 'Low (suited for 8 MHz Atari ST)' },
+  { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High (larger files)' },
 ];
@@ -66,20 +64,28 @@ export const VIDEO_EFFORT_OPTIONS: { value: 'fast' | 'normal' | 'thorough'; labe
   { value: 'thorough', label: 'Thorough (slower, better)' },
 ];
 
-export const VIDEO_PARALLELISM_OPTIONS: { value: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; label: string }[] = [
+export const VIDEO_PARALLELISM_VALUES: readonly VideoParallelism[] = [1, 2, 4, 6, 8, 12, 16];
+
+export const VIDEO_PARALLELISM_OPTIONS: { value: VideoParallelism; label: string }[] = [
   { value: 1, label: '1 worker' },
   { value: 2, label: '2 workers' },
-  { value: 3, label: '3 workers' },
-  { value: 4, label: '4 workers (default)' },
-  { value: 5, label: '5 workers' },
-  { value: 6, label: '6 workers' },
-  { value: 7, label: '7 workers' },
+  { value: 4, label: '4 workers' },
+  { value: 6, label: '6 workers (default)' },
   { value: 8, label: '8 workers' },
+  { value: 12, label: '12 workers' },
+  { value: 16, label: '16 workers' },
 ];
 
-export function clampVideoParallelism(n: number): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 {
+export function clampVideoParallelism(n: number): VideoParallelism {
   const v = Math.round(n);
-  if (v < 1) return 1;
-  if (v > 8) return 8;
-  return v as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  let best: VideoParallelism = VIDEO_PARALLELISM_VALUES[0]!;
+  let bestDist = Math.abs(v - best);
+  for (const opt of VIDEO_PARALLELISM_VALUES) {
+    const dist = Math.abs(v - opt);
+    if (dist < bestDist) {
+      best = opt;
+      bestDist = dist;
+    }
+  }
+  return best;
 }

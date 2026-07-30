@@ -1,150 +1,215 @@
 @import 'tailwindcss';
 
+/*
+ * Visual tokens aligned with https://indyjo.itch.io/commandconquer
+ * (itch custom theme: Anonymous Pro, #fab05b accent, charcoal panels).
+ */
 @theme {
-  --color-cnc-gold: #c9a227;
-  --color-cnc-bronze: #6b5520;
-  --color-cnc-olive: #2d3a1f;
-  --color-cnc-panel: #10150d;
+  --color-cnc-gold: #fab05b;
+  --color-cnc-bronze: #4b4b4b;
+  --color-cnc-olive: #3a3a3a;
+  --color-cnc-panel: #252525;
+  --font-cnc: 'Anonymous Pro', Lato, ui-monospace, monospace;
 }
 
 :root {
   color-scheme: dark;
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  background: linear-gradient(165deg, #0a0e08 0%, #121a0f 45%, #0b0f0a 100%);
-  color: #d8e6c8;
+  font-family: var(--font-cnc);
+  background: #363333;
+  color: #e8e8e8;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  background: #363333;
+  color: #e8e8e8;
 }
 
 #app {
   min-height: 100vh;
 }
 
+.cnc-shell {
+  background: #252525;
+  border: 1px solid #4b4b4b;
+  border-radius: 3px;
+}
+
 .cnc-title {
+  font-family: var(--font-cnc);
   font-size: 1.75rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--color-cnc-gold);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.02em;
+  color: #e8e8e8;
+  text-shadow: none;
 }
 
 .cnc-step-title {
+  font-family: var(--font-cnc);
   font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--color-cnc-gold);
+  font-weight: 700;
+  color: #e8e8e8;
+}
+
+.cnc-eyebrow {
+  font-family: var(--font-cnc);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fab05b;
 }
 
 .cnc-panel {
-  border-radius: 0.375rem;
-  border: 1px solid color-mix(in srgb, var(--color-cnc-bronze) 55%, transparent);
-  background: color-mix(in srgb, var(--color-cnc-panel) 92%, black);
+  border-radius: 3px;
+  border: 1px solid #4b4b4b;
+  background: #2d2c2c;
   padding: 1rem;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-cnc-gold) 8%, transparent);
+  box-shadow: none;
 }
 
 .cnc-btn-primary {
-  border-radius: 0.375rem;
-  background: linear-gradient(180deg, #d4b84a 0%, var(--color-cnc-gold) 45%, #9a7b18 100%);
-  padding: 0.5rem 1rem;
+  border-radius: 3px;
+  background: #fab05b;
+  padding: 0.55rem 1.1rem;
+  font-family: var(--font-cnc);
   font-size: 0.875rem;
-  font-weight: 600;
-  color: #1a1408;
-  border: 1px solid #5c4810;
-}
-
-.cnc-btn-primary:hover {
-  filter: brightness(1.05);
-}
-
-.cnc-btn-secondary {
-  border-radius: 0.375rem;
-  border: 1px solid color-mix(in srgb, var(--color-cnc-bronze) 70%, transparent);
-  background: color-mix(in srgb, var(--color-cnc-olive) 80%, black);
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  color: #d8e6c8;
-}
-
-.cnc-btn-secondary:hover {
-  border-color: var(--color-cnc-gold);
-}
-
-.cnc-nav-pill {
-  border-radius: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  background: #0f140c;
-  color: #6b7564;
+  font-weight: 700;
+  color: #322312;
   border: 1px solid transparent;
 }
 
+.cnc-btn-primary:hover {
+  filter: brightness(1.06);
+}
+
+.cnc-btn-primary:disabled {
+  opacity: 0.4;
+  filter: none;
+}
+
+.cnc-btn-secondary {
+  border-radius: 3px;
+  border: 1px solid #4b4b4b;
+  background: #333333;
+  padding: 0.55rem 1.1rem;
+  font-family: var(--font-cnc);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #e8e8e8;
+}
+
+.cnc-btn-secondary:hover {
+  border-color: #fab05b;
+  color: #fab05b;
+}
+
+.cnc-nav-pill {
+  border-radius: 3px;
+  padding: 0.3rem 0.55rem;
+  background: #2d2c2c;
+  color: #8a8a8a;
+  border: 1px solid #4b4b4b;
+  font-family: var(--font-cnc);
+}
+
 .cnc-nav-pill-active {
-  background: color-mix(in srgb, var(--color-cnc-olive) 90%, black);
-  color: #e8dcc0;
-  border-color: color-mix(in srgb, var(--color-cnc-bronze) 50%, transparent);
+  background: #3a3a3a;
+  color: #e8e8e8;
+  border-color: #fab05b;
 }
 
 .cnc-progress-track {
   height: 0.5rem;
-  border-radius: 0.25rem;
-  background: #1a2214;
+  border-radius: 3px;
+  background: #1f1f1f;
   overflow: hidden;
+  border: 1px solid #4b4b4b;
 }
 
 .cnc-progress-bar {
   height: 100%;
-  border-radius: 0.25rem;
-  background: linear-gradient(90deg, #6b5520, var(--color-cnc-gold));
+  border-radius: 2px;
+  background: #fab05b;
   transition: width 0.2s ease;
 }
 
 .cnc-scroll {
-  scrollbar-color: var(--color-cnc-bronze) transparent;
+  scrollbar-color: #4b4b4b transparent;
 }
 
 .cnc-field {
-  border-radius: 0.375rem;
-  border: 1px solid color-mix(in srgb, var(--color-cnc-bronze) 45%, transparent);
-  background: color-mix(in srgb, var(--color-cnc-panel) 88%, black);
+  border-radius: 3px;
+  border: 1px solid #4b4b4b;
+  background: #2d2c2c;
   padding: 1rem;
 }
 
 .cnc-field:hover {
-  border-color: color-mix(in srgb, var(--color-cnc-gold) 35%, transparent);
+  border-color: color-mix(in srgb, #fab05b 55%, #4b4b4b);
 }
 
 .cnc-select {
   display: block;
   width: 100%;
-  border-radius: 0.375rem;
-  border: 1px solid color-mix(in srgb, var(--color-cnc-bronze) 70%, transparent);
-  background: color-mix(in srgb, var(--color-cnc-olive) 80%, black);
+  border-radius: 3px;
+  border: 1px solid #4b4b4b;
+  background: #333333;
   padding: 0.5rem 2rem 0.5rem 0.75rem;
-  color: #d8e6c8;
+  color: #e8e8e8;
+  font-family: var(--font-cnc);
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23c9a227' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23fab05b' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.65rem center;
 }
 
 .cnc-select:hover {
-  border-color: color-mix(in srgb, var(--color-cnc-gold) 35%, transparent);
+  border-color: color-mix(in srgb, #fab05b 55%, #4b4b4b);
 }
 
 .cnc-select:focus {
   outline: none;
-  border-color: var(--color-cnc-gold);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-cnc-gold) 25%, transparent);
+  border-color: #fab05b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #fab05b 28%, transparent);
 }
 
 .cnc-link {
-  color: var(--color-cnc-gold);
+  color: #fab05b;
   text-decoration: underline;
 }
 
 .cnc-link:hover {
-  color: #e8d078;
+  color: #ffc47a;
+}
+
+.cnc-file {
+  display: block;
+  width: 100%;
+  font-size: 0.875rem;
+  font-family: var(--font-cnc);
+  color: #c8c8c8;
+}
+
+.cnc-file::file-selector-button {
+  margin-right: 0.75rem;
+  border-radius: 3px;
+  border: 0;
+  background: #fab05b;
+  padding: 0.4rem 0.85rem;
+  font-family: var(--font-cnc);
+  font-weight: 700;
+  color: #322312;
+  cursor: pointer;
+}
+
+.cnc-file::file-selector-button:hover {
+  filter: brightness(1.06);
+}
+
+code {
+  font-family: var(--font-cnc);
+  color: #c8c8c8;
 }

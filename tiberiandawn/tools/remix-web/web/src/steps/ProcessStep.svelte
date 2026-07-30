@@ -107,7 +107,7 @@
 <section class="space-y-6">
   <div>
     <h2 class="cnc-step-title">3. Process</h2>
-    <p class="mt-2 text-sm text-stone-400">
+    <p class="mt-2 text-sm text-[#b0b0b0]">
       Extract MIX files from the ISO, then repack each one with REMIX (audio conversion, even
       offsets). Remix runs in a background worker so the page stays responsive — movie encoding can
       still take a long time.
@@ -119,7 +119,7 @@
   {:else}
     <div class="cnc-panel space-y-2">
       <div class="flex justify-between text-sm">
-        <span class="capitalize text-stone-300">{progress.phase}</span>
+        <span class="capitalize text-[#c8c8c8]">{progress.phase}</span>
         {#if progress.current}
           <span class="font-mono text-cnc-gold">{progress.current}</span>
         {/if}
@@ -128,11 +128,11 @@
         <div class="cnc-progress-track">
           <div class="cnc-progress-bar" style="width: {pct}%"></div>
         </div>
-        <p class="text-xs text-stone-500">{progress.done} / {progress.total} MIX files</p>
+        <p class="text-xs text-[#8a8a8a]">{pct}% complete</p>
       {/if}
       {#if activeEncodes.length > 0}
-        <div class="space-y-2 border-t border-stone-700/60 pt-2">
-          <p class="text-xs text-stone-500">
+        <div class="space-y-2 border-t border-[#4b4b4b] pt-2">
+          <p class="text-xs text-[#8a8a8a]">
             {activeEncodes.length} encode{activeEncodes.length === 1 ? '' : 's'} in flight
           </p>
           {#each activeEncodes as enc (enc.label)}

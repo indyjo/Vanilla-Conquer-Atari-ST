@@ -1,5 +1,6 @@
 import { detectDiscLabel, extractFile, parseIso9660, type Iso9660Volume } from './iso9660';
 import { flattenMixPath, listSelectedMixes, shouldMergeDualDisc } from './mix-policy';
+import { assembleMix, mixFilenameCrc, type AssemblePayload } from './mix-format';
 import { buildZip, lowercaseFileMap } from './zip';
 import { extractReleaseAssets } from './release-zip';
 import { remixMergeMixBytes, remixMixBytes, type RemixEntry, type RemixMixOptions } from './wasm-bridge';
@@ -84,6 +85,38 @@ function encodeProgressUpdate(
 
 async function tick(): Promise<void> {
   await new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+/** Overall progress scale — MOVIES.MIX encoding dominates wall time. */
+const PROGRESS_SCALE = 10000;
+const MOVIES_PROGRESS_SHARE = 0.95;
+
+function isMoviesMix(base: string): boolean {
+  return base.toUpperCase() === 'MOVIES.MIX';
+}
+
+/** Work-unit budget: ~95% for movies VQA encodes when present; rest split across other mixes + zip. */
+function progressBudgets(selected: string[], moviesEnabled: boolean): {
+  total: number;
+  moviesUnits: number;
+  otherPerStep: number;
+  otherSteps: number;
+} {
+  const hasMovies = moviesEnabled && selected.some(isMoviesMix);
+  const otherSteps = selected.filter((b) => !isMoviesMix(b)).length + 1; /* + zip */
+  const moviesUnits = hasMovies ? Math.round(PROGRESS_SCALE * MOVIES_PROGRESS_SHARE) : 0;
+  const otherUnits = PROGRESS_SCALE - moviesUnits;
+  const otherPerStep = otherSteps > 0 ? Math.floor(otherUnits / otherSteps) : 0;
+  return { total: PROGRESS_SCALE, moviesUnits, otherPerStep, otherSteps };
+}
+
+/** Build ATARIST.MIX from root *.w16 release assets (CRC from uppercase basename). */
+function buildAtariStMix(w16Files: Map<string, Uint8Array>): Uint8Array {
+  const items: AssemblePayload[] = [];
+  for (const [name, data] of w16Files) {
+    items.push({ crc: mixFilenameCrc(name), payload: data });
+  }
+  return assembleMix(items);
 }
 
 function buildMixMap(volume: Iso9660Volume, disc: DiscSelection): Map<string, MixLocation> {
@@ -282,10 +315,12 @@ export async function runPipeline(
     throw new Error('No MIX files matched the selected content options');
   }
 
+  const budgets = progressBudgets(selected, req.contentOptions.movieSequences);
+
   progress = {
     ...logLine(progress, 'info', `Will process ${selected.length} MIX file(s)`),
     phase: 'extract',
-    total: selected.length,
+    total: budgets.total,
     done: 0,
   };
   onProgress(progress);
@@ -390,6 +425,7 @@ export async function runPipeline(
       let audxPool: Uint8Array | undefined;
 
       if (remixOpts.convertVqa) {
+        const moviesStart = progress.done;
         const movies = await remixMoviesMix(
           rawGdi,
           rawNod,
@@ -403,10 +439,25 @@ export async function runPipeline(
             progress = logLine(progress, 'info', text);
             onProgress(progress);
           },
+          (_crc, completedBytes, totalBytes) => {
+            const frac = totalBytes > 0 ? completedBytes / totalBytes : 1;
+            progress = {
+              ...progress,
+              done: Math.min(
+                budgets.total,
+                Math.round(moviesStart + frac * budgets.moviesUnits),
+              ),
+            };
+            onProgress(progress);
+          },
         );
         output = movies.output;
         stats = movies.stats;
         entries = movies.entries;
+        progress = {
+          ...progress,
+          done: Math.min(budgets.total, moviesStart + budgets.moviesUnits),
+        };
       } else {
         progress = logLine(progress, 'info', 'Merge + REMIX (WebAssembly)…');
         onProgress(progress);
@@ -456,7 +507,12 @@ export async function runPipeline(
       const loc = gdiMap.get(base) ?? nodMap.get(base);
       if (!loc) {
         progress = logLine(progress, 'warn', `Missing on both discs: ${base}`);
-        progress = { ...progress, done: progress.done + 1 };
+        if (!isMoviesMix(base)) {
+          progress = {
+            ...progress,
+            done: Math.min(budgets.total, progress.done + budgets.otherPerStep),
+          };
+        }
         onProgress(progress);
         await tick();
         continue;
@@ -484,6 +540,7 @@ export async function runPipeline(
         progress = logLine(progress, 'info', 'Parallel VQA encode…');
         onProgress(progress);
         await tick();
+        const moviesStart = progress.done;
         const movies = await remixMoviesMix(
           raw,
           null,
@@ -497,10 +554,25 @@ export async function runPipeline(
             progress = logLine(progress, 'info', text);
             onProgress(progress);
           },
+          (_crc, completedBytes, totalBytes) => {
+            const frac = totalBytes > 0 ? completedBytes / totalBytes : 1;
+            progress = {
+              ...progress,
+              done: Math.min(
+                budgets.total,
+                Math.round(moviesStart + frac * budgets.moviesUnits),
+              ),
+            };
+            onProgress(progress);
+          },
         );
         output = movies.output;
         stats = movies.stats;
         entries = movies.entries;
+        progress = {
+          ...progress,
+          done: Math.min(budgets.total, moviesStart + budgets.moviesUnits),
+        };
       } else {
         progress = logLine(progress, 'info', 'REMIX (WebAssembly)…');
         onProgress(progress);
@@ -547,7 +619,16 @@ export async function runPipeline(
       }
     }
 
-    progress = { ...progress, done: progress.done + 1 };
+    /* Movies VQA path already advanced via size-weighted callbacks. */
+    const moviesWeighted =
+      isMoviesMix(base) &&
+      remixOptionsForMix(base, req.contentOptions, releaseFiles, req.targetVersion).convertVqa;
+    if (!moviesWeighted) {
+      progress = {
+        ...progress,
+        done: Math.min(budgets.total, progress.done + budgets.otherPerStep),
+      };
+    }
     onProgress(progress);
     await tick();
   }
@@ -565,9 +646,17 @@ export async function runPipeline(
   await tick();
 
   let skippedVideo = 0;
+  const w16ForLocal = new Map<string, Uint8Array>();
   for (const [name, data] of releaseFiles) {
     if (name.startsWith('video/')) {
       skippedVideo++;
+      continue;
+    }
+    if (name.endsWith('.w16')) {
+      w16ForLocal.set(name, data);
+      continue;
+    }
+    if (name === 'readme.txt' || name === 'readme.md') {
       continue;
     }
     if (outputFiles.has(name)) {
@@ -589,6 +678,22 @@ export async function runPipeline(
     await tick();
   }
 
+  if (w16ForLocal.size > 0) {
+    const mix = buildAtariStMix(w16ForLocal);
+    outputFiles.set('ATARIST.MIX', mix);
+    progress = logLine(
+      progress,
+      'info',
+      `Wrote atarist.mix with ${w16ForLocal.size} .w16 file(s) (${mix.length} bytes)`,
+    );
+    onProgress(progress);
+    await tick();
+  }
+
+  progress = {
+    ...progress,
+    done: Math.min(budgets.total, progress.done + budgets.otherPerStep),
+  };
   const output = lowercaseFileMap(outputFiles);
   const zipBlob = buildZip(output);
   progress = logLine(
@@ -596,7 +701,7 @@ export async function runPipeline(
     'info',
     `Created ZIP (${output.size} files, ${zipBlob.size} bytes)`,
   );
-  progress = { ...progress, phase: 'done' };
+  progress = { ...progress, phase: 'done', done: budgets.total };
   onProgress(progress);
 
   return {

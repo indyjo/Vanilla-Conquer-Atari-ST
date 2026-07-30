@@ -6,8 +6,8 @@ export type VideoQuality = 'low' | 'medium' | 'high';
 
 export type VideoEffort = 'fast' | 'normal' | 'thorough';
 
-/** Parallel VQA encode workers (1–8). */
-export type VideoParallelism = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+/** Parallel VQA encode workers (1, 2, 4, 6, 8, 12, or 16). */
+export type VideoParallelism = 1 | 2 | 4 | 6 | 8 | 12 | 16;
 
 export interface TargetVersionState {
   version: TargetVersion;
@@ -31,9 +31,9 @@ export const DEFAULT_CONTENT_OPTIONS: ContentOptions = {
   movieSequences: true,
   convertSt16Iconsets: true,
   convertShpx: true,
-  videoQuality: 'medium',
-  videoEffort: 'normal',
-  videoParallelism: 4,
+  videoQuality: 'low',
+  videoEffort: 'fast',
+  videoParallelism: 6,
 };
 
 export interface IsoFileEntry {

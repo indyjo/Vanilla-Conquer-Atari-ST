@@ -2,7 +2,7 @@
  * MOVIES.MIX remix with windowed parallel VQA→STVQ encoding.
  *
  * 1. Merge (and/or remix) without VQA encode — keeps VQA payloads intact
- * 2. Encode VQAs with a worker pool (1–8, default 4) and staging window, ordered commit
+ * 2. Encode VQAs with a worker pool (1–16, default 6) and staging window, ordered commit
  * 3. Assemble final MIX with STV substitutions / omits
  */
 import {
@@ -81,6 +81,7 @@ export async function remixMoviesMix(
   options: RemixMixOptions,
   onProgress?: RemixProgressHandler,
   onLog?: (text: string) => void,
+  onVqaComplete?: (crc: number, vqaBytes: number, totalVqaBytes: number) => void,
 ): Promise<MoviesRemixResult> {
   const workers = clampVideoParallelism(
     options.videoParallelism ?? VQA_ENCODE_WORKERS_DEFAULT,
@@ -136,6 +137,9 @@ export async function remixMoviesMix(
     `Movies: ${vqaItems.length} VQA clip(s) to encode, ${work.length - vqaItems.length} other payload(s)`,
   );
 
+  const totalVqaBytes = vqaItems.reduce((sum, it) => sum + it.vqa.length, 0);
+  let completedVqaBytes = 0;
+
   const encodeResults =
     vqaItems.length === 0
       ? []
@@ -147,6 +151,10 @@ export async function remixMoviesMix(
           workers,
           windowSize,
           onProgress,
+          onJobComplete: (crc, size) => {
+            completedVqaBytes += size;
+            onVqaComplete?.(crc, completedVqaBytes, totalVqaBytes);
+          },
         });
 
   const assembleItems: AssemblePayload[] = [];

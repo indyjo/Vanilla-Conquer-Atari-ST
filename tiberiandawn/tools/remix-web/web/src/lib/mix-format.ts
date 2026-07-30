@@ -116,6 +116,29 @@ export interface AssemblePayload {
   payload: Uint8Array | null;
 }
 
+/**
+ * Westwood MIX filename CRC (Calculate_CRC). Pass an uppercase name
+ * (e.g. TEMPERAT.W16) — MixFileClass::Offset uppercases before hashing.
+ */
+export function mixFilenameCrc(name: string): number {
+  const data = new TextEncoder().encode(name.toUpperCase());
+  let crc = 0;
+  const chunks = (data.length + 3) >> 2;
+  for (let i = 0; i < chunks; i++) {
+    const off = i * 4;
+    const avail = data.length - off;
+    const value =
+      (avail > 0 ? data[off]! : 0) |
+      (avail > 1 ? data[off + 1]! << 8 : 0) |
+      (avail > 2 ? data[off + 2]! << 16 : 0) |
+      (avail > 3 ? data[off + 3]! << 24 : 0);
+    const highBit = crc & 0x80000000 ? 1 : 0;
+    crc = ((crc << 1) | highBit) >>> 0;
+    crc = (crc + value) >>> 0;
+  }
+  return crc >>> 0;
+}
+
 /** Signed int32 CRC compare — matches MixFileClass::compfunc / remix entry_cmp_crc. */
 function cmpCrcSigned(a: number, b: number): number {
   const ca = a | 0;

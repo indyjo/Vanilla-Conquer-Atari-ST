@@ -67,22 +67,17 @@
     releaseError = '';
 
     try {
-      const { extractReleaseAssets, describeReleaseAssets, readReleaseReadme } = await import(
-        '../lib/release-zip'
-      );
-      const { parseTargetVersionFromReadme } = await import('../lib/target-version');
+      const { extractReleaseAssets, describeReleaseAssets } = await import('../lib/release-zip');
+      const { guessTargetVersionFromFilename } = await import('../lib/target-version');
       const assets = await extractReleaseAssets(file);
       onRelease({
         file,
         assetNames: describeReleaseAssets(assets),
       });
-      const readme = await readReleaseReadme(file);
-      if (readme) {
-        const parsed = parseTargetVersionFromReadme(readme);
-        if (parsed) {
-          onTargetVersionFromRelease({ version: parsed, source: 'release' });
-        }
-      }
+      onTargetVersionFromRelease({
+        version: guessTargetVersionFromFilename(file.name),
+        source: 'release',
+      });
     } catch (err) {
       releaseError = err instanceof Error ? err.message : String(err);
       onRelease(null);
@@ -102,22 +97,22 @@
 <section class="space-y-6">
   <div>
     <h2 class="cnc-step-title">1. Choose install discs</h2>
-    <p class="mt-2 text-sm text-stone-400">
+    <p class="mt-2 text-sm text-[#b0b0b0]">
       Select both GDI and NOD install media from your own copy of Command &amp; Conquer, plus the
       Atari ST release ZIP. Processing stays in your browser — nothing is uploaded.
     </p>
   </div>
 
   <div class="cnc-field space-y-3">
-    <p class="text-sm font-medium">GDI install disc (required)</p>
-    <p class="text-xs text-stone-500">ISO, BIN, IMG, or ZIP with a single disc image inside.</p>
+    <p class="text-sm font-medium">GDI install disc</p>
+    <p class="text-xs text-[#8a8a8a]">ISO, BIN, IMG, or ZIP with a single disc image inside.</p>
     <input
       id="gdi-disc"
       type="file"
       accept={DISC_PICKER_ACCEPT}
+      class="cnc-file"
       disabled={busy}
       onchange={(e) => handleDisc(e.currentTarget, 'GDI')}
-      class="block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-lime-700 file:px-3 file:py-1.5 file:text-stone-950"
     />
     {#if gdi}
       <p class="text-sm text-cnc-gold">
@@ -130,18 +125,18 @@
   </div>
 
   <div class="cnc-field space-y-3">
-    <p class="text-sm font-medium">NOD install disc (required)</p>
-    <p class="text-xs text-stone-500">ISO, BIN, IMG, or ZIP with a single disc image inside.</p>
+    <p class="text-sm font-medium">NOD install disc</p>
+    <p class="text-xs text-[#8a8a8a]">ISO, BIN, IMG, or ZIP with a single disc image inside.</p>
     <input
       id="nod-disc"
       type="file"
       accept={DISC_PICKER_ACCEPT}
+      class="cnc-file"
       disabled={busy}
       onchange={(e) => handleDisc(e.currentTarget, 'NOD')}
-      class="block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-stone-600 file:px-3 file:py-1.5 file:text-stone-100"
     />
     {#if nod}
-      <p class="text-sm text-stone-300">
+      <p class="text-sm text-[#c8c8c8]">
         {discSummary(nod)} ({nod.volumeId})
       </p>
     {/if}
@@ -151,8 +146,8 @@
   </div>
 
   <div class="cnc-field space-y-3">
-    <p class="text-sm font-medium">C&amp;C Atari ST release ZIP (required)</p>
-    <p class="text-xs text-stone-500">
+    <p class="text-sm font-medium">C&amp;C Atari ST release ZIP</p>
+    <p class="text-xs text-[#8a8a8a]">
       Download from
       <a
         class="cnc-link"
@@ -160,20 +155,19 @@
         target="_blank"
         rel="noreferrer">itch.io</a
       >
-      — includes <code class="text-stone-400">cnc.tos</code>,
-      <code class="text-stone-400">*.w16</code> palette weights, and everything needed to convert
-      terrain iconsets to native ST16 format during remix.
+      — includes <code>cnc.tos</code> and
+      <code>*.w16</code> weights for ST16 terrain conversion.
     </p>
     <input
       id="release-zip"
       type="file"
       accept=".zip,application/zip"
+      class="cnc-file"
       disabled={busy}
       onchange={(e) => handleReleaseZip(e.currentTarget)}
-      class="block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-stone-600 file:px-3 file:py-1.5 file:text-stone-100"
     />
     {#if release}
-      <p class="text-sm text-stone-300">
+      <p class="text-sm text-[#c8c8c8]">
         {release.file.name} — {release.assetNames.length} file(s)
         (cnc.tos + {release.assetNames.filter((n) => n.toLowerCase().endsWith('.w16') && !n.startsWith('video/')).length}×
         .w16{#if release.assetNames.some((n) => n.startsWith('video/'))}, {release.assetNames.filter((n) => n.startsWith('video/')).length}× video/*.w16{/if})
@@ -181,7 +175,7 @@
       <button
         type="button"
         onclick={clearRelease}
-        class="text-xs text-stone-500 underline hover:text-stone-300"
+        class="text-xs text-[#8a8a8a] underline hover:text-[#c8c8c8]"
       >
         Remove release ZIP
       </button>
@@ -191,7 +185,7 @@
     {/if}
   </div>
 
-  <p class="text-xs text-stone-500">
+  <p class="text-xs text-[#8a8a8a]">
     You must legally own Command &amp; Conquer. This tool does not distribute Electronic Arts assets.
   </p>
 

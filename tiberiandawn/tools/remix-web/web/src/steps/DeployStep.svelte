@@ -27,16 +27,16 @@
 
   function download() {
     if (!zipBlob) return;
-    downloadBlob(zipBlob, 'cncst-ready.zip');
+    downloadBlob(zipBlob, 'cnc.zip');
   }
 </script>
 
 <section class="space-y-6">
   <div>
     <h2 class="cnc-step-title">4. Checkout</h2>
-    <p class="mt-2 text-sm text-stone-400">
-      Download a ready-to-copy ZIP with repacked MIX files, <code class="text-cnc-gold">cnc.tos</code
-      >, and palette weights from {release.file.name}.
+    <p class="mt-2 text-sm text-[#b0b0b0]">
+      Download a ready-to-copy ZIP with repacked MIX files and
+      <code class="text-cnc-gold">cnc.tos</code> from {release.file.name}.
     </p>
   </div>
 
@@ -56,7 +56,7 @@
       <button
         type="button"
         onclick={() => (showLog = !showLog)}
-        class="text-sm text-stone-400 underline hover:text-stone-200"
+        class="text-sm text-[#b0b0b0] underline hover:text-[#e8e8e8]"
       >
         {showLog ? 'Hide' : 'Show'} process log ({processLog.length} lines)
       </button>

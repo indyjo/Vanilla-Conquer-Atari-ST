@@ -50,72 +50,74 @@
 </script>
 
 <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-4 py-8">
-  <header class="mb-8 border-b border-cnc-bronze/30 pb-6">
-    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-cnc-gold/80">
-      Command &amp; Conquer for the Atari ST
-    </p>
-    <h1 class="cnc-title mt-1">Remix Web</h1>
-    <p class="mt-2 text-sm text-stone-400">
-      Prepare game MIX files locally in your browser — nothing is uploaded.
-    </p>
-    <nav class="mt-4 flex flex-wrap gap-2 text-xs font-semibold tracking-wide">
-      {#each steps as s, i}
-        <span class="cnc-nav-pill {step === s ? 'cnc-nav-pill-active' : ''}">
-          {i + 1}. {stepTabLabels[s]}
-        </span>
-      {/each}
-    </nav>
-  </header>
+  <div class="cnc-shell flex flex-1 flex-col px-5 py-6 sm:px-7 sm:py-8">
+    <header class="mb-8 border-b border-cnc-bronze pb-6">
+      <p class="cnc-eyebrow">Command &amp; Conquer for the Atari ST</p>
+      <h1 class="cnc-title mt-2">Remix Web</h1>
+      <p class="mt-2 text-sm text-[#b0b0b0]">
+        Prepare game MIX files locally in your browser — nothing is uploaded.
+      </p>
+      <nav class="mt-5 flex flex-wrap gap-2 text-xs font-bold tracking-wide">
+        {#each steps as s, i}
+          <span class="cnc-nav-pill {step === s ? 'cnc-nav-pill-active' : ''}">
+            {i + 1}. {stepTabLabels[s]}
+          </span>
+        {/each}
+      </nav>
+    </header>
 
-  <main class="flex-1">
-    {#if step === 'discs'}
-      <AcquireStep
-        {gdi}
-        {nod}
-        {release}
-        onGdi={(d) => (gdi = d)}
-        onNod={(d) => (nod = d)}
-        onRelease={(d) => {
-          release = d;
-        }}
-        onTargetVersionFromRelease={(state) => {
-          targetVersion = state;
-          contentOptions = {
-            ...contentOptions,
-            convertSt16Iconsets: state.version === '0.2.x' || state.version === '0.3.x',
-            convertShpx: state.version === '0.2.x' || state.version === '0.3.x',
-            movieSequences: false,
-          };
-        }}
-        onNext={() => (step = 'customize')}
-      />
-    {:else if step === 'customize'}
-      <ContentStep
-        bind:options={contentOptions}
-        bind:targetVersion
-        onChange={(o) => (contentOptions = o)}
-        onTargetVersionChange={(v) => (targetVersion = v)}
-        onBack={() => (step = 'discs')}
-        onNext={() => (step = 'process')}
-      />
-    {:else if step === 'process' && gdi && nod && release}
-      <ProcessStep
-        {gdi}
-        {nod}
-        {release}
-        {contentOptions}
-        {targetVersion}
-        onBack={() => (step = 'customize')}
-        onContinue={(payload: CheckoutPayload) => {
-          zipBlob = payload.zipBlob;
-          outputFiles = payload.files;
-          fileNames = payload.fileNames;
-          processLog = payload.log;
-          step = 'checkout';
-        }}
-      />
-    {:else if step === 'checkout' && release}
-      <DeployStep {zipBlob} files={outputFiles} {fileNames} {processLog} {release} onRestart={restart} />
-    {/if}
-  </main>
+    <main class="flex-1">
+      {#if step === 'discs'}
+        <AcquireStep
+          {gdi}
+          {nod}
+          {release}
+          onGdi={(d) => (gdi = d)}
+          onNod={(d) => (nod = d)}
+          onRelease={(d) => {
+            release = d;
+          }}
+          onTargetVersionFromRelease={(state) => {
+            targetVersion = state;
+            const v = state.version;
+            contentOptions = {
+              ...contentOptions,
+              convertSt16Iconsets: v === '0.2.x' || v === '0.3.x',
+              convertShpx: v === '0.2.x' || v === '0.3.x',
+              movieSequences: v === '0.3.x',
+              ...(v === '0.3.x' ? { speechAndSfx: true, musicScores: true } : {}),
+            };
+          }}
+          onNext={() => (step = 'customize')}
+        />
+      {:else if step === 'customize'}
+        <ContentStep
+          bind:options={contentOptions}
+          bind:targetVersion
+          onChange={(o) => (contentOptions = o)}
+          onTargetVersionChange={(v) => (targetVersion = v)}
+          onBack={() => (step = 'discs')}
+          onNext={() => (step = 'process')}
+        />
+      {:else if step === 'process' && gdi && nod && release}
+        <ProcessStep
+          {gdi}
+          {nod}
+          {release}
+          {contentOptions}
+          {targetVersion}
+          onBack={() => (step = 'customize')}
+          onContinue={(payload: CheckoutPayload) => {
+            zipBlob = payload.zipBlob;
+            outputFiles = payload.files;
+            fileNames = payload.fileNames;
+            processLog = payload.log;
+            step = 'checkout';
+          }}
+        />
+      {:else if step === 'checkout' && release}
+        <DeployStep {zipBlob} files={outputFiles} {fileNames} {processLog} {release} onRestart={restart} />
+      {/if}
+    </main>
+  </div>
 </div>

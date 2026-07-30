@@ -14,7 +14,6 @@ function isReleaseAsset(relPath: string): boolean {
   if (basename === 'cnc.tos') return true;
   if (basename === 'record.bin') return true;
   if (basename.endsWith('.w16')) return true;
-  if (basename === 'readme.txt' || basename === 'readme.md') return true;
   return false;
 }
 
@@ -77,12 +76,4 @@ export async function extractReleaseAssets(zipFile: File): Promise<ReleaseAssets
 
 export function describeReleaseAssets(assets: ReleaseAssets): string[] {
   return [...assets.files.keys()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-}
-
-export async function readReleaseReadme(zipFile: File): Promise<string | null> {
-  const assets = await extractReleaseAssets(zipFile);
-  const readme =
-    assets.files.get('readme.txt') ?? assets.files.get('readme.md') ?? null;
-  if (!readme) return null;
-  return new TextDecoder().decode(readme);
 }

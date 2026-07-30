@@ -1,10 +1,10 @@
 /*
  * ste_stream_format.h - Abstract STE digitized stream (.AUD in memory).
  *
- * PCM and IMA99 implementations are constructed once in Audio_Init and rebound per play
- * via bind_from_aud(). Each stream advertises whether its logical 8-bit output domain is
- * signed or unsigned; the caller supplies a 256-byte lookup table for pull(), indexed in
- * that domain, so conversion and per-voice scaling can be fused by the format driver.
+ * PCM and IMA99 implementations are constructed once in Audio_Init and rebound per play.
+ * Each stream advertises whether its logical 8-bit output domain is signed or unsigned;
+ * the caller supplies a 256-byte lookup table for pull(), indexed in that domain, so
+ * conversion and per-voice scaling can be fused by the format driver.
  */
 #ifndef STE_STREAM_FORMAT_H
 #define STE_STREAM_FORMAT_H
@@ -35,7 +35,7 @@ public:
 	 */
 	virtual unsigned long skip(unsigned long sample_count) = 0;
 
-	/* Drop current source; instance remains valid for bind_from_aud(). */
+	/* Drop current source; instance remains valid for re-bind. */
 	virtual void reset() = 0;
 
 protected:

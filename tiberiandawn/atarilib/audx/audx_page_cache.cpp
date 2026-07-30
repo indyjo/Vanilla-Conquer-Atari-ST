@@ -50,6 +50,7 @@ void AUDX_Page_Cache_Shutdown(void)
 	delete[] g_audx_page_slab;
 	g_audx_page_slab = 0;
 	g_audx_page_inited = 0;
+	AUDX_Pool_Close_All();
 }
 
 int AUDX_Page_Cache_Init(void)

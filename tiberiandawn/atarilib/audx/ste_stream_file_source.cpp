@@ -137,8 +137,11 @@ unsigned long SteStreamFileSource::read(unsigned char *dst, unsigned long n)
 				want = rem;
 			if (want == 0)
 				break;
-			if (f->Seek((long)abs, SEEK_SET) != (long)abs)
-				break;
+			/* Contiguous refill after exhausting ahead: file cursor is already at abs. */
+			if (!(ahead_len_ > 0 && abs == ahead_file_pos_ + ahead_len_)) {
+				if (f->Seek((long)abs, SEEK_SET) != (long)abs)
+					break;
+			}
 			long const rd = f->Read(ahead_, (long)want);
 			if (rd <= 0)
 				break;

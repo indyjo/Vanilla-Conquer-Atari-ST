@@ -28,11 +28,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 
 - **0.1.1** — baseline (2026-06-25)
 - **0.2.0** — benchmark refresh (2026-07-07)
-
-<!-- Add new lines here as optimizations land, e.g.:
-- 0.3.0 — …
-- 0.4.0 — …
--->
+- **0.3.0-dev** — AUDX pools + page cache; 8-bit PCM stream / LUT path (2026-07-30)
 
 ## Results
 
@@ -44,6 +40,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 |---------|-------|------|-----|
 | 0.1.1 | 161245 | 13:26.22 | 1.9473 |
 | 0.2.0 | 158918 | 13:14.59 | 1.9759 |
+| 0.3.0-dev | 158546 | 13:12.73 | 1.9805 |
 
 `-XYQ`:
 
@@ -51,8 +48,9 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 |---------|-------|------|-----|
 | 0.1.1 | 132919 | 11:04.59 | 2.3623 |
 | 0.2.0 | 131036 | 10:55.18 | 2.3963 |
+| 0.3.0-dev | 130331 | 10:51.65 | 2.4093 |
 
-`0.2.0` improves the 8 MHz STe benchmark by about **1.4%** versus `0.1.1` in both audio and `-XQ` modes.
+`0.3.0-dev` improves the 8 MHz STe benchmark versus `0.2.0` by about **0.2%** with audio (`-XY`) and **0.5%** in `-XYQ`.
 
 ### 16 MHz Atari Falcon (68030), EmuTOS 1.3 512 KB (US), 60 Hz (emulated)
 
@@ -62,6 +60,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 |---------|-------|------|-----|
 | 0.1.1 | 49567 | 4:07.83 | 6.3349 |
 | 0.2.0 | 49253 | 4:06.26 | 6.3752 |
+| 0.3.0-dev | 49790 | 4:08.95 | 6.3065 |
 
 `-XYQ`:
 
@@ -69,8 +68,9 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 |---------|-------|------|-----|
 | 0.1.1 | 47885 | 3:59.42 | 6.5574 |
 | 0.2.0 | 47339 | 3:56.69 | 6.6330 |
+| 0.3.0-dev | 47231 | 3:56.15 | 6.6482 |
 
-`0.2.0` improves the Falcon benchmark by about **0.6%** with audio and **1.1%** in `-XQ` mode versus `0.1.1`.
+`0.3.0-dev` is about **1.1%** slower than `0.2.0` on Falcon `-XY`, and about **0.2%** faster on `-XYQ`.
 
 <!-- Future sections (fill in when measured), e.g.:
 

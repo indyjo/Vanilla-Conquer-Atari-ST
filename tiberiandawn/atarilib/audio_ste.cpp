@@ -1051,8 +1051,7 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 	ste_process_pending_voice_shutdown();
 	(void)stereo;
 	(void)rate;
-	/* Request 8 from startup; 16 is harmless (sources may still be 16-bit in .AUD flags). */
-	(void)bits_per_sample;
+	(void)bits_per_sample; /* STE path is always 8-bit DMA; ignore host request. */
 	ste_audio_vbl_remove();
 	g_ste_dma_ok = ST_Hw_Dma_Audio_Available() ? 1 : 0;
 	if (g_ste_dma_ok && ste_dma_12500_supported()) {

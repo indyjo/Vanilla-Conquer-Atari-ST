@@ -195,6 +195,21 @@ void *Stram_Alloc(unsigned long bytes_to_alloc)
 	return a > 0L ? (void *)a : (void *)0;
 }
 
+/*
+ * MX_PREFTTRAM already falls back to ST-RAM when no alternate RAM is present,
+ * so this needs no fallback of its own. Pre-Mxalloc TOS: Malloc is ST-RAM.
+ */
+void *Pref_Ttram_Alloc(unsigned long bytes_to_alloc)
+{
+	long a;
+
+	if (gemdos_has_mxalloc())
+		a = Mxalloc((long)bytes_to_alloc, MX_PREFTTRAM);
+	else
+		a = Malloc((long)bytes_to_alloc);
+	return a > 0L ? (void *)a : (void *)0;
+}
+
 void Stram_Free(void *pointer)
 {
 	if (pointer) {

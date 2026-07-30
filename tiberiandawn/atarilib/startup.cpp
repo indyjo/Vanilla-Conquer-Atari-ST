@@ -279,15 +279,22 @@ int main(int argc, char *argv[])
 		*/
 		if (ScreenWidth == 320 && ScreenHeight == 200) {
 			/*
-			 * ST shifter uses 256-byte-aligned video base. Hidden planar page in ST-RAM;
-			 * visible buffer is allocated in st_screen.cpp when ST_SEPARATE_DEBUG_SCREEN.
+			 * ST shifter uses 256-byte-aligned video base. Visible buffer is allocated
+			 * in st_screen.cpp when ST_SEPARATE_DEBUG_SCREEN.
+			 *
+			 * The hidden page is a pure back buffer, never a Setscreen() video base, so
+			 * only the BLiTTER constrains it: the chip cannot reach alternate RAM. With
+			 * hardware blits off, every blit is a CPU copy anyway, so prefer TT-RAM and
+			 * leave the scarce ST-RAM to the shifter and STE DMA audio.
 			 */
 			static unsigned char *st_hidden_alloc = NULL;
 			static unsigned char *st_hidden_plane = NULL;
 			if (!st_hidden_alloc) {
-				st_hidden_alloc = (unsigned char *)Stram_Alloc(32768u + 256u);
+				st_hidden_alloc = (unsigned char *)(AllowHardwareBlitFills
+					? Stram_Alloc(32768u + 256u)
+					: Pref_Ttram_Alloc(32768u + 256u));
 				if (!st_hidden_alloc) {
-					printf("C&C - Failed to allocate hidden planar page in ST-RAM.\n");
+					printf("C&C - Failed to allocate hidden planar page.\n");
 					if (Palette) delete [] Palette;
 					ST_Init_Await_Keypress();
 					return (EXIT_FAILURE);

@@ -110,6 +110,14 @@ public:
 	/** Wait until idle, program src/dst/y_count, then kick one plane pass. */
 	virtual void Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr) = 0;
 
+	/**
+	 * Run every bitplane of one prepared job. The hardware genuinely works a
+	 * plane at a time, so the default is four Execute() passes; a software
+	 * backend can override this to walk all four in one pass, where the planes
+	 * of a 16-pixel column are 8 contiguous bytes.
+	 */
+	virtual void Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog);
+
 protected:
 	explicit ST_Blit_Backend(volatile ST_Blitter &regs) : regs_(regs) {}
 
@@ -129,6 +137,7 @@ public:
 	ST_Soft_Backend();
 	void Await() override;
 	void Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr) override;
+	void Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog) override;
 
 private:
 	ST_Blitter state_{};

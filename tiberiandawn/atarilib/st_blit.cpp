@@ -304,6 +304,16 @@ static ST_Blit_Backend &ST_Blit_Pick_Backend(const void *src, const void *dst)
 	return ST_Blit_Soft_Backend();
 }
 
+void ST_Blit_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
+{
+	for (int pl = 0; pl < 4; ++pl) {
+		const void *src_addr = job.src_plane0
+			+ (job.src_addr_per_plane ? (size_t)pl * 2u : 0u);
+		uint8_t *const dst_addr = job.dst_plane0 + (size_t)pl * 2u;
+		Execute(hog, lines, (void *)src_addr, dst_addr);
+	}
+}
+
 static void ST_Blit_Run_4_Planes(
 	ST_Blit_Backend &backend,
 	const ST_Blit_Job &job,
@@ -314,12 +324,7 @@ static void ST_Blit_Run_4_Planes(
 		return;
 	}
 
-	for (int pl = 0; pl < 4; ++pl) {
-		const void *src_addr = job.src_plane0
-			+ (job.src_addr_per_plane ? (size_t)pl * 2u : 0u);
-		uint8_t *const dst_addr = job.dst_plane0 + (size_t)pl * 2u;
-		backend.Execute(hog, (uint16_t)lines, (void *)src_addr, dst_addr);
-	}
+	backend.Run_Planes(job, (uint16_t)lines, hog);
 	backend.Await();
 }
 

@@ -428,15 +428,43 @@ The following MIX files must be present in the same directory as `CNC.TOS`. Thes
 - `pool0003.bin`   — SHPX pool for `DESERT.MIX`
 - `pool0004.bin`   — SHPX pool for `WINTER.MIX`
 - `GENERAL.MIX`    — cutscenes, mission data, title screens (WSA, CPS, INI, BIN)
-- `SCORES.MIX`     — music tracks (in .AUD format)
-- `SOUNDS.MIX`     — sound effects (.AUD and .V00)
-- `SPEECH.MIX`     — EVA speech lines
+- `SCORES.MIX`     — music tracks (AUDX meta when remacked for 0.3.x; payload in `pool0007.bin`)
+- `SOUNDS.MIX`     — sound effects (AUDX meta → `pool0005.bin`)
+- `SPEECH.MIX`     — EVA speech (AUDX meta → `pool0006.bin`)
+- `pool0005.bin`   — AUDX pool for `SOUNDS.MIX` (0.3.x remacked packs)
+- `pool0006.bin`   — AUDX pool for `SPEECH.MIX`
+- `pool0007.bin`   — AUDX pool for `SCORES.MIX` (when music included)
 - Theater asset MIX files (terrain iconsets use `.TEM`, `.WIN`, or `.DES` inside these archives; KeyFrame SHPs → SHPX when repacked):
   - `TEMPERAT.MIX` — temperate theater
   - `WINTER.MIX` — winter theater
   - `DESERT.MIX` — desert theater
 
 Additional .MIX files may be loaded based on mission or expansion content, but the ones above are the minimum required for the core campaign.
+
+## AUDX external-pool audio format
+
+Classic Westwood **AUD** stores a 12-byte little-endian header and sample payload in one MIX entry. **AUDX** (Atari ST, game 0.3.x) keeps a 28-byte big-endian metadata record in the MIX and places PCM (or other) sample bytes in an external `pool%04x.bin` sidecar — the same pool naming scheme as SHPX.
+
+**Detection:** native longword `'AUDX'` (`AUDX_MAGIC_NATIVE` = `0x41554458`) at offset 0. Check before classic AUD heuristics.
+
+### AUDX prefix (28 bytes, BE)
+
+| Offset | Field | Notes |
+|--------|--------|------|
+| +0x00 | magic `'AUDX'` | Literal longword |
+| +0x04 | rate | u16 Hz |
+| +0x06 | flags | u8 (bit0 stereo, bit1 16-bit; ST DUP2X bit2 in RAM) |
+| +0x07 | compression | u8 (`0` PCM, `99` IMA99) |
+| +0x08 | size | u32 logical payload bytes |
+| +0x0C | uncomp | u32 uncompressed size |
+| +0x10 | pool_id | u16 (`5` SOUNDS, `6` SPEECH, `7` SCORES) |
+| +0x12 | reserved | u16, 0 |
+| +0x14 | pool_data_begin | u32 even offset in sidecar |
+| +0x18 | pool_data_size | u32 read span (≥ size, even) |
+
+**Runtime:** `MFCD::Cache` SOUNDS/SPEECH/SCORES (tiny meta). `Play_Sample` on AUDX meta streams via `SteStreamSource`: payloads ≤ 64 KiB through a RankCache page cache (32×6×1024 B = 192 KiB), larger spans via sequential pool-file reads. Page cache is inited explicitly after audio MIX cache when any audio pack is present.
+
+Implementation: `atarilib/audx/`.
 
 ## Preparing MIX files (Remix Web)
 
@@ -447,6 +475,6 @@ make remix-web          # from tiberiandawn/
 # or: cd tools/remix-web && make
 ```
 
-Open `tools/remix-web/web/dist/index.html` via a local static server, or run `npm run dev` in `tools/remix-web/web/` during development. You need both GDI and NOD install disc images (ISO or a ZIP containing one ISO each; volume labels must read `GDI` and `NOD`). Optionally attach the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) to bundle `cnc.tos` and `*.W16` palette weights.
+Open `tools/remix-web/web/dist/index.html` via a local static server, or run `npm run dev` in `tools/remix-web/web/` during development. You need both GDI and NOD install disc images (ISO or a ZIP containing one ISO each; volume labels must read `GDI` and `NOD`) and the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) (`cnc.tos`, `record.bin`, `*.W16`).
 
 See [tools/remix-web/readme.md](tools/remix-web/readme.md) for full usage.

@@ -195,6 +195,12 @@ void remix_print_st_summary(const RemixStats *stats)
 	print_st_summary_row("    ", "Converted:", stats->audio_converted, num_w);
 	if (stats->audio_already_ok > 0)
 		print_st_summary_row("    ", "Unchanged:", stats->audio_already_ok, num_w);
+	if (stats->audx_files > 0 || stats->audx_converted > 0 || stats->audx_errors > 0) {
+		print_st_summary_row("  ", "AUDX files:", stats->audx_files, num_w);
+		print_st_summary_row("    ", "Converted:", stats->audx_converted, num_w);
+		if (stats->audx_errors > 0)
+			print_st_summary_row("    ", "Errors:", stats->audx_errors, num_w);
+	}
 }
 
 void remix_print_host_banner(const char *in_path, const char *out_path, unsigned count, uint32_t data_start)

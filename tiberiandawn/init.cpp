@@ -52,6 +52,7 @@
 #ifdef ATARI_ST
 #include "st_temperat_palette.h"
 #include "st_playback_timing.h"
+#include "audx/audx_page_cache.h"
 #endif
 
 /****************************************
@@ -547,6 +548,24 @@ bool Init_Game(int, char*[])
             MFCD::Cache("SOUNDS.MIX");
 #ifdef ATARI_ST
             MFCD::Cache("SPEECH.MIX"); // ST EVA uses MFCD::Retrieve (RAM).
+            if (CCFileClass("SCORES.MIX").Is_Available()) {
+                MFCD::Cache("SCORES.MIX"); // AUDX meta only when remixed.
+            }
+            {
+                int have_audio = 0;
+                if (CCFileClass("SOUNDS.MIX").Is_Available()) {
+                    have_audio = 1;
+                } else if (CCFileClass("SPEECH.MIX").Is_Available()) {
+                    have_audio = 1;
+                } else if (CCFileClass("SCORES.MIX").Is_Available()) {
+                    have_audio = 1;
+                }
+                if (have_audio) {
+                    if (AUDX_Page_Cache_Init() != 0) {
+                        CCDebugString("C&C ST - AUDX page cache init failed\n");
+                    }
+                }
+            }
 #endif
         }
     }
@@ -616,12 +635,15 @@ bool Init_Game(int, char*[])
     AircraftTypeClass::One_Time();
     HouseClass::One_Time();
 
+#ifndef ATARI_ST
     /*
     **	Speech holding tank buffer. Since speech does not mix, it can be placed
     **	into a custom holding tank only as large as the largest speech file to
     **	be played.
     */
     SpeechBuffer = new char[SPEECH_BUFFER_SIZE];
+#endif
+    /* Atari ST: EVA plays via MFCD::Retrieve from cached SPEECH.MIX (AUDX meta). */
     Call_Back();
 
     /*
@@ -695,7 +717,12 @@ void Uninit_Game(void)
 {
     Map.Free_Cells();
 
+#ifndef ATARI_ST
     delete[] static_cast<char*>(SpeechBuffer);
+#endif
+#ifdef ATARI_ST
+    AUDX_Page_Cache_Shutdown();
+#endif
 
     CCFileClass::Clear_Search_Drives();
     MFCD::Free_All();

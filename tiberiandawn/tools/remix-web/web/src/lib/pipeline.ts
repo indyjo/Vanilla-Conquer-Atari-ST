@@ -5,6 +5,7 @@ import { extractReleaseAssets } from './release-zip';
 import { remixMergeMixBytes, remixMixBytes, type RemixEntry, type RemixMixOptions } from './wasm-bridge';
 import { remixMoviesMix } from './movies-remix';
 import { entrySummary, notableEntryLines } from './entry-log';
+import { audxPoolBasename, audxPoolIdForMix } from './audx';
 import { isShpxEligibleMix, shpxPoolBasename, shpxPoolIdForMix } from './shpx';
 import { isTheaterMix, requiredW16Stems, w16StemForTheaterMix } from './theater-st16';
 import type { ContentOptions, DiscSelection, PipelineResult, ProcessProgress, ReleaseSelection, TargetVersion } from './types';
@@ -14,7 +15,7 @@ import { vqaEncodeWindowForWorkers } from './vqa-encode-pool';
 export interface PipelineRequest {
   gdi: DiscSelection;
   nod: DiscSelection;
-  release?: ReleaseSelection | null;
+  release: ReleaseSelection;
   contentOptions: ContentOptions;
   targetVersion: TargetVersion;
   wasmBaseUrl: string;
@@ -170,29 +171,27 @@ function w16BytesForMix(
 function remixOptionsForMix(
   mixBasename: string,
   contentOptions: ContentOptions,
-  releaseFiles: Map<string, Uint8Array> | null,
+  releaseFiles: Map<string, Uint8Array>,
+  targetVersion: TargetVersion,
 ): RemixMixOptions {
   const theater = isTheaterMix(mixBasename);
-  const st16Enabled = contentOptions.convertSt16Iconsets && theater;
+  const force03 = targetVersion === '0.3.x';
+  const st16Enabled = (force03 || contentOptions.convertSt16Iconsets) && theater;
   const shpxPoolId = shpxPoolIdForMix(mixBasename);
-  const shpxEnabled = contentOptions.convertShpx && shpxPoolId !== null;
+  const shpxEnabled = (force03 || contentOptions.convertShpx) && shpxPoolId !== null;
+  const audxPoolId = audxPoolIdForMix(mixBasename);
+  const audxEnabled =
+    force03 &&
+    contentOptions.speechAndSfx &&
+    audxPoolId !== null &&
+    (mixBasename.toUpperCase() !== 'SCORES.MIX' || contentOptions.musicScores);
   const isMovies = mixBasename.toUpperCase() === 'MOVIES.MIX';
   const convertVqa = contentOptions.movieSequences && isMovies;
   let w16Bytes: Uint8Array | undefined;
   if (st16Enabled) {
-    if (!releaseFiles) {
-      throw new Error(
-        'ST16 iconset conversion requires the itch.io release ZIP with matching *.W16 files',
-      );
-    }
     w16Bytes = w16BytesForMix(mixBasename, releaseFiles);
   }
   if (convertVqa) {
-    if (!releaseFiles) {
-      throw new Error(
-        'Movie encoding requires the itch.io release ZIP with video/*.w16 sidecars',
-      );
-    }
     let videoCount = 0;
     for (const key of releaseFiles.keys()) {
       if (key.startsWith('video/') && key.endsWith('.w16')) videoCount++;
@@ -204,12 +203,14 @@ function remixOptionsForMix(
   return {
     convertSt16Iconsets: st16Enabled,
     convertShpx: shpxEnabled,
+    convertAudx: audxEnabled,
     convertVqa,
     videoQuality: contentOptions.videoQuality,
     videoEffort: contentOptions.videoEffort,
     videoParallelism: contentOptions.videoParallelism,
     mixBasename,
     shpxPoolId: shpxPoolId ?? undefined,
+    audxPoolId: audxPoolId ?? undefined,
     w16Bytes,
     videoW16Files: convertVqa && releaseFiles
       ? [...releaseFiles.entries()].filter(([k]) => k.startsWith('video/') && k.endsWith('.w16'))
@@ -224,6 +225,15 @@ function storeShpxPool(
 ): void {
   if (!pool) return;
   outputFiles.set(shpxPoolBasename(poolId), pool);
+}
+
+function storeAudxPool(
+  outputFiles: Map<string, Uint8Array>,
+  pool: Uint8Array | undefined,
+  poolId: number,
+): void {
+  if (!pool) return;
+  outputFiles.set(audxPoolBasename(poolId), pool);
 }
 
 export async function runPipeline(
@@ -281,30 +291,12 @@ export async function runPipeline(
   onProgress(progress);
   await tick();
 
-  let releaseFiles: Map<string, Uint8Array> | null = null;
-  const needReleaseForSt16 =
-    req.contentOptions.convertSt16Iconsets && selected.some(isTheaterMix);
-  const needReleaseForMovies = req.contentOptions.movieSequences;
-  if (needReleaseForSt16 || needReleaseForMovies) {
-    if (!req.release) {
-      throw new Error(
-        needReleaseForMovies
-          ? 'Movie encoding requires the itch.io release ZIP with video/*.w16 sidecars'
-          : 'ST16 iconset conversion requires the itch.io release ZIP with matching *.W16 files',
-      );
-    }
-    const releaseAssets = await extractReleaseAssets(req.release.file);
-    releaseFiles = releaseAssets.files;
-  }
+  const releaseAssets = await extractReleaseAssets(req.release.file);
+  const releaseFiles = releaseAssets.files;
 
   if (req.contentOptions.convertSt16Iconsets) {
     const theaterMixes = selected.filter(isTheaterMix);
     if (theaterMixes.length > 0) {
-      if (!releaseFiles) {
-        throw new Error(
-          'ST16 iconset conversion requires the itch.io release ZIP with matching *.W16 files',
-        );
-      }
       for (const stem of requiredW16Stems(theaterMixes)) {
         const key = `${stem.toLowerCase()}.w16`;
         if (!releaseFiles.has(key)) {
@@ -324,11 +316,6 @@ export async function runPipeline(
   }
 
   if (req.contentOptions.movieSequences) {
-    if (!releaseFiles) {
-      throw new Error(
-        'Movie encoding requires the itch.io release ZIP with video/*.w16 sidecars',
-      );
-    }
     let videoCount = 0;
     for (const key of releaseFiles.keys()) {
       if (key.startsWith('video/') && key.endsWith('.w16')) videoCount++;
@@ -371,7 +358,7 @@ export async function runPipeline(
     if (shouldMergeDualDisc(base) && gdiMap.has(base) && nodMap.has(base)) {
       const gdiLoc = gdiMap.get(base)!;
       const nodLoc = nodMap.get(base)!;
-      const remixOptsPreview = remixOptionsForMix(base, req.contentOptions, releaseFiles);
+      const remixOptsPreview = remixOptionsForMix(base, req.contentOptions, releaseFiles, req.targetVersion);
       progress = logLine(
         progress,
         'info',
@@ -400,6 +387,7 @@ export async function runPipeline(
       let stats: Awaited<ReturnType<typeof remixMergeMixBytes>>['stats'];
       let entries: RemixEntry[];
       let shpxPool: Uint8Array | undefined;
+      let audxPool: Uint8Array | undefined;
 
       if (remixOpts.convertVqa) {
         const movies = await remixMoviesMix(
@@ -437,6 +425,7 @@ export async function runPipeline(
         stats = remixed.stats;
         entries = remixed.entries;
         shpxPool = remixed.shpxPool;
+        audxPool = remixed.audxPool;
       }
       progress = { ...progress, encodes: undefined };
       progress = logLine(progress, 'info', remixLogLine(base, entries, stats));
@@ -452,6 +441,15 @@ export async function runPipeline(
           progress,
           'info',
           `Wrote ${shpxPoolBasename(poolId)} (${shpxPool.length} bytes)`,
+        );
+      }
+      const audxId = remixOpts.audxPoolId ?? 5;
+      storeAudxPool(outputFiles, audxPool, audxId);
+      if (audxPool) {
+        progress = logLine(
+          progress,
+          'info',
+          `Wrote ${audxPoolBasename(audxId)} (${audxPool.length} bytes)`,
         );
       }
     } else {
@@ -474,12 +472,13 @@ export async function runPipeline(
       await tick();
 
       progress = { ...progress, phase: 'remix', current: base };
-      const remixOpts = remixOptionsForMix(base, req.contentOptions, releaseFiles);
+      const remixOpts = remixOptionsForMix(base, req.contentOptions, releaseFiles, req.targetVersion);
 
       let output: Uint8Array;
       let stats: Awaited<ReturnType<typeof remixMixBytes>>['stats'];
       let entries: RemixEntry[];
       let shpxPool: Uint8Array | undefined;
+      let audxPool: Uint8Array | undefined;
 
       if (remixOpts.convertVqa) {
         progress = logLine(progress, 'info', 'Parallel VQA encode…');
@@ -519,6 +518,7 @@ export async function runPipeline(
         stats = remixed.stats;
         entries = remixed.entries;
         shpxPool = remixed.shpxPool;
+        audxPool = remixed.audxPool;
       }
       progress = { ...progress, encodes: undefined };
       progress = logLine(progress, 'info', remixLogLine(base, entries, stats));
@@ -536,6 +536,15 @@ export async function runPipeline(
           `Wrote ${shpxPoolBasename(poolId)} (${shpxPool.length} bytes)`,
         );
       }
+      const audxId = remixOpts.audxPoolId ?? 5;
+      storeAudxPool(outputFiles, audxPool, audxId);
+      if (audxPool) {
+        progress = logLine(
+          progress,
+          'info',
+          `Wrote ${audxPoolBasename(audxId)} (${audxPool.length} bytes)`,
+        );
+      }
     }
 
     progress = { ...progress, done: progress.done + 1 };
@@ -547,40 +556,37 @@ export async function runPipeline(
   onProgress(progress);
   await tick();
 
-  if (req.release) {
+  progress = logLine(
+    progress,
+    'info',
+    `Adding Atari ST release files from ${req.release.file.name}…`,
+  );
+  onProgress(progress);
+  await tick();
+
+  let skippedVideo = 0;
+  for (const [name, data] of releaseFiles) {
+    if (name.startsWith('video/')) {
+      skippedVideo++;
+      continue;
+    }
+    if (outputFiles.has(name)) {
+      progress = logLine(progress, 'warn', `Skipped release file (already in output): ${name}`);
+    } else {
+      outputFiles.set(name, data);
+      progress = logLine(progress, 'info', `Included ${name} (${data.length} bytes)`);
+    }
+    onProgress(progress);
+    await tick();
+  }
+  if (skippedVideo > 0) {
     progress = logLine(
       progress,
       'info',
-      `Adding Atari ST release files from ${req.release.file.name}…`,
+      `Skipped ${skippedVideo} encode-only video/*.w16 sidecar(s)`,
     );
     onProgress(progress);
     await tick();
-
-    const releaseAssets = await extractReleaseAssets(req.release.file);
-    let skippedVideo = 0;
-    for (const [name, data] of releaseAssets.files) {
-      if (name.startsWith('video/')) {
-        skippedVideo++;
-        continue;
-      }
-      if (outputFiles.has(name)) {
-        progress = logLine(progress, 'warn', `Skipped release file (already in output): ${name}`);
-      } else {
-        outputFiles.set(name, data);
-        progress = logLine(progress, 'info', `Included ${name} (${data.length} bytes)`);
-      }
-      onProgress(progress);
-      await tick();
-    }
-    if (skippedVideo > 0) {
-      progress = logLine(
-        progress,
-        'info',
-        `Skipped ${skippedVideo} encode-only video/*.w16 sidecar(s)`,
-      );
-      onProgress(progress);
-      await tick();
-    }
   }
 
   const output = lowercaseFileMap(outputFiles);

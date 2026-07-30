@@ -5,6 +5,7 @@
 
 #include "st_audio_asset_autotest.h"
 #include "st_audio_mix_test.h"
+#include "st_audx_autotest.h"
 #include "st_autotests.h"
 #include "st_build_frame_assets.h"
 #include "st_font_browser.h"
@@ -80,6 +81,7 @@ static void audio_tests_submenu(void)
 			printf("f First hit in list order\n");
 		}
 		printf("m Dual-sample mix (2 voices, volumes)\n");
+		printf("x AUDX cache SFX + file score\n");
 		printf("0 Back to main menu\n");
 		printf("Choice: ");
 		fflush(stdout);
@@ -90,6 +92,18 @@ static void audio_tests_submenu(void)
 
 		if (ch == '0' || ch == 27) {
 			break;
+		}
+		if (ch == 'x' || ch == 'X') {
+			printf("\n-- AUDX --\n");
+			int r = st_run_audx_autotest();
+			if (r == 1) {
+				printf("AUDX: FAIL\n");
+			} else if (r == 2) {
+				printf("AUDX: SKIP\n");
+			} else {
+				printf("AUDX: PASS\n");
+			}
+			continue;
 		}
 		if (ch >= '1' && ch <= '9') {
 			int pick = ch - '0';

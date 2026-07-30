@@ -98,7 +98,7 @@
         onBack={() => (step = 'discs')}
         onNext={() => (step = 'process')}
       />
-    {:else if step === 'process' && gdi && nod}
+    {:else if step === 'process' && gdi && nod && release}
       <ProcessStep
         {gdi}
         {nod}
@@ -114,7 +114,7 @@
           step = 'checkout';
         }}
       />
-    {:else if step === 'checkout'}
+    {:else if step === 'checkout' && release}
       <DeployStep {zipBlob} files={outputFiles} {fileNames} {processLog} {release} onRestart={restart} />
     {/if}
   </main>

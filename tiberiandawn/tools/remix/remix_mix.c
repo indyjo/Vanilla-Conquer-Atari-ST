@@ -1,6 +1,7 @@
 #include "remix.h"
 
 #include "remix_audio.h"
+#include "remix_audx.h"
 #include "remix_detect.h"
 #include "remix_print.h"
 #include "remix_shpx.h"
@@ -11,6 +12,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 static uint16_t read_le16(const unsigned char *p)
 {
@@ -186,6 +192,22 @@ static int patch_header(FILE *out, const RemixMix *mix)
 	return write_mix_index(out, mix, 1);
 }
 
+/** Shrink output to header + body (AUDX rewrite leaves stale PCM past EOF). */
+static int truncate_mix_out(FILE *out, uint32_t data_start, uint32_t body_bytes)
+{
+	long const final_size = (long)data_start + (long)body_bytes;
+
+	if (final_size < 0)
+		return 0;
+	if (fflush(out) != 0)
+		return 0;
+#ifdef _WIN32
+	return _chsize(_fileno(out), final_size) == 0;
+#else
+	return ftruncate(fileno(out), final_size) == 0;
+#endif
+}
+
 /** If any entries were omitted, rewrite header+body so data_start matches new count. */
 static int finalize_mix_file(FILE *out, RemixMix *mix, uint32_t body_bytes, uint32_t orig_data_start)
 {
@@ -200,8 +222,11 @@ static int finalize_mix_file(FILE *out, RemixMix *mix, uint32_t body_bytes, uint
 	}
 	mix->data_size = body_bytes;
 
-	if (kept == mix->count)
-		return patch_header(out, mix);
+	if (kept == mix->count) {
+		if (!patch_header(out, mix))
+			return 0;
+		return truncate_mix_out(out, mix->data_start, body_bytes);
+	}
 
 	if (kept == 0)
 		return 0;
@@ -226,7 +251,6 @@ static int finalize_mix_file(FILE *out, RemixMix *mix, uint32_t body_bytes, uint
 		goto fail;
 	free(body);
 	body = NULL;
-	/* Trailing bytes past the new EOF are harmless; MIX readers use header sizes. */
 
 	/* Compact in-memory entry list for reporting. */
 	{
@@ -240,7 +264,8 @@ static int finalize_mix_file(FILE *out, RemixMix *mix, uint32_t body_bytes, uint
 		}
 		mix->count = (uint16_t)w;
 	}
-	return 1;
+	mix->data_start = new_data_start;
+	return truncate_mix_out(out, new_data_start, body_bytes);
 
 fail:
 	free(body);
@@ -427,7 +452,7 @@ fail:
 
 static int process_entry(
     FILE *in, FILE *out, RemixMix *mix, unsigned index, uint32_t *body_pos,
-    const RemixConfig *cfg, RemixStats *stats, RemixShpxPool *shpx_pool)
+    const RemixConfig *cfg, RemixStats *stats, RemixShpxPool *shpx_pool, RemixAudxPool *audx_pool)
 {
 	RemixEntry *e = &mix->entries[index];
 	unsigned char probe[REMIX_PROBE_LEN];
@@ -453,6 +478,18 @@ static int process_entry(
 	snprintf(e->type_out, sizeof(e->type_out), "empty");
 
 	if (e->old_size == 0) {
+		if (cfg->entry_report)
+			cfg->entry_report(e, cfg->entry_report_ctx);
+		return 1;
+	}
+
+	if (cfg && remix_audx_should_omit_entry(cfg->mix_basename, e->crc)) {
+		e->omit = 1;
+		e->new_size = 0;
+		snprintf(e->type_in, sizeof(e->type_in), "aud");
+		snprintf(e->type_out, sizeof(e->type_out), "omit");
+		if (cfg->ui == REMIX_UI_HOST)
+			remix_print_host_entry(e);
 		if (cfg->entry_report)
 			cfg->entry_report(e, cfg->entry_report_ctx);
 		return 1;
@@ -617,6 +654,59 @@ static int process_entry(
 		e->new_size = e->old_size;
 	}
 
+	/* After classic AUD is in the output, optionally wrap as AUDX. */
+	if (cfg && cfg->convert_audx && audx_pool && audx_pool->pool_id != 0 && e->new_size >= (uint32_t)REMIX_AUD_HDR_LEN
+	    && remix_audx_is_eligible(cfg->mix_basename)) {
+		unsigned char *aud_blob = NULL;
+		unsigned char *meta = NULL;
+		size_t meta_len = 0;
+		int arc;
+
+		if (stats)
+			++stats->audx_files;
+		aud_blob = (unsigned char *)malloc(e->new_size);
+		if (!aud_blob)
+			return 0;
+		/* Out is opened w+b so we can re-read the PCM AUD just written. */
+		if (fflush(out) != 0 || fseek(out, out_payload_start, SEEK_SET) != 0) {
+			free(aud_blob);
+			return 0;
+		}
+		if (fread(aud_blob, 1, e->new_size, out) != e->new_size) {
+			free(aud_blob);
+			return 0;
+		}
+		arc = remix_audx_convert(aud_blob, e->new_size, &meta, &meta_len, audx_pool);
+		free(aud_blob);
+		if (arc == 1 && meta && meta_len > 0) {
+			if (fseek(out, out_payload_start, SEEK_SET) != 0) {
+				free(meta);
+				return 0;
+			}
+			if (fwrite(meta, 1, meta_len, out) != meta_len) {
+				free(meta);
+				return 0;
+			}
+			e->new_size = (uint32_t)meta_len;
+			snprintf(e->type_out, sizeof(e->type_out), "audx");
+			if (stats)
+				++stats->audx_converted;
+			free(meta);
+		} else if (arc == 0) {
+			if (stats)
+				++stats->audx_errors;
+			free(meta);
+			/* Keep classic AUD already written. */
+			if (fseek(out, out_payload_start + (long)e->new_size, SEEK_SET) != 0)
+				return 0;
+		} else {
+			/* Not PCM — leave as-is. */
+			free(meta);
+			if (fseek(out, out_payload_start + (long)e->new_size, SEEK_SET) != 0)
+				return 0;
+		}
+	}
+
 	*body_pos += e->new_size;
 
 	if (cfg->ui == REMIX_UI_HOST)
@@ -637,6 +727,7 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 	RemixMix mix;
 	RemixConfig active_cfg;
 	RemixShpxPool shpx_pool;
+	RemixAudxPool audx_pool;
 	char mix_base[256];
 	uint32_t body_pos = 0;
 	unsigned i;
@@ -657,13 +748,18 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 
 		active_cfg.shpx_pool_id = from_name ? from_name : REMIX_SHPX_POOL_ID_DEFAULT;
 	}
+	if (active_cfg.audx_pool_id == 0) {
+		active_cfg.audx_pool_id = remix_audx_default_pool_id(active_cfg.mix_basename);
+	}
 	use_cfg = &active_cfg;
 
 	remix_shpx_pool_init(&shpx_pool, use_cfg->shpx_pool_id);
+	remix_audx_pool_init(&audx_pool, use_cfg->audx_pool_id);
 
 	in = fopen(in_path, "rb");
 	if (!in) {
 		remix_shpx_pool_free(&shpx_pool);
+		remix_audx_pool_free(&audx_pool);
 		return 0;
 	}
 
@@ -671,14 +767,16 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 		fclose(in);
 		free_mix(&mix);
 		remix_shpx_pool_free(&shpx_pool);
+		remix_audx_pool_free(&audx_pool);
 		return -1;
 	}
 
-	out = fopen(out_path, "wb");
+	out = fopen(out_path, "w+b");
 	if (!out) {
 		fclose(in);
 		free_mix(&mix);
 		remix_shpx_pool_free(&shpx_pool);
+		remix_audx_pool_free(&audx_pool);
 		return 0;
 	}
 
@@ -696,7 +794,7 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 		remix_print_host_table_header();
 
 	for (i = 0; i < mix.count; ++i) {
-		if (!process_entry(in, out, &mix, i, &body_pos, use_cfg, stats, &shpx_pool))
+		if (!process_entry(in, out, &mix, i, &body_pos, use_cfg, stats, &shpx_pool, &audx_pool))
 			goto fail;
 	}
 
@@ -707,10 +805,15 @@ int remix_mix_file_ex(const char *in_path, const char *out_path, const RemixConf
 		if (!remix_shpx_write_pool(&shpx_pool, out_path))
 			goto fail;
 	}
+	if (use_cfg->convert_audx && audx_pool.size > 0) {
+		if (!remix_audx_write_pool(&audx_pool, out_path))
+			goto fail;
+	}
 
 	fclose(in);
 	fclose(out);
 	remix_shpx_pool_free(&shpx_pool);
+	remix_audx_pool_free(&audx_pool);
 
 	if (use_cfg->ui == REMIX_UI_HOST)
 		remix_print_host_mix_done(out_path, mix.count, mix.data_size);
@@ -724,6 +827,7 @@ fail:
 	fclose(in);
 	fclose(out);
 	remix_shpx_pool_free(&shpx_pool);
+	remix_audx_pool_free(&audx_pool);
 	free_mix(&mix);
 	return 0;
 }

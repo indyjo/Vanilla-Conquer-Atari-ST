@@ -390,7 +390,12 @@ static int ima99_bind_stream(
 		uncomp = read_le32(aud + 6);
 		aud_stride = (flags & REMIX_AUD_FLAG_16BIT) ? 2u : 1u;
 		if (size_file == 0UL || size_file > REMIX_AUD99_MAX_COMPRESSED_PAYLOAD || uncomp == 0UL
-		    || (uncomp & 1UL) != 0UL || uncomp > REMIX_AUD99_MAX_DECODED_PCM_BYTES)
+		    || uncomp > REMIX_AUD99_MAX_DECODED_PCM_BYTES)
+			return 0;
+		/* Some retail tracks store an odd uncomp byte count; drop a trailing odd byte. */
+		if ((uncomp & 1UL) != 0UL)
+			uncomp -= 1UL;
+		if (uncomp < aud_stride)
 			return 0;
 		if (payload_len == 0UL || payload_len > size_file)
 			payload_len = size_file;
@@ -434,11 +439,13 @@ int remix_is_aud99(const unsigned char *data, size_t len)
 	if ((data[10] & REMIX_AUD_FLAG_STEREO) != 0)
 		return 1;
 	{
-		unsigned long const uncomp = read_le32(data + 6);
+		unsigned long uncomp = read_le32(data + 6);
 		unsigned const aud_stride = (data[10] & REMIX_AUD_FLAG_16BIT) ? 2u : 1u;
-		if (uncomp == 0 || (uncomp & 1u) != 0)
+		if (uncomp == 0)
 			return 0;
-		if (uncomp / aud_stride == 0)
+		if ((uncomp & 1u) != 0)
+			uncomp -= 1u;
+		if (uncomp < aud_stride || uncomp / aud_stride == 0)
 			return 0;
 	}
 	return 1;

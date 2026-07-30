@@ -40,13 +40,18 @@
   let st16Touched = $state(false);
   let shpxTouched = $state(false);
 
+  const is03 = $derived(targetVersion.version === '0.3.x');
   const moviesOk = $derived(moviesSupportedForVersion(targetVersion.version));
 
   function toggle(key: keyof ContentOptions, value: boolean) {
     if (key === 'movieSequences' && !moviesOk) return;
     if (key === 'convertSt16Iconsets') st16Touched = true;
     if (key === 'convertShpx') shpxTouched = true;
-    const next = { ...options, [key]: value };
+    let next = { ...options, [key]: value };
+    /* 0.3.x: music is nested under Audio — clearing Audio drops Include music. */
+    if (key === 'speechAndSfx' && !value && targetVersion.version === '0.3.x') {
+      next = { ...next, musicScores: false };
+    }
     options = next;
     onChange(next);
   }
@@ -60,7 +65,10 @@
       ...options,
       ...(!st16Touched ? { convertSt16Iconsets: defaultSt16ForVersion(version) } : {}),
       ...(!shpxTouched ? { convertShpx: defaultShpxForVersion(version) } : {}),
-      movieSequences: movies ? options.movieSequences : false,
+      movieSequences: movies ? (version === '0.3.x' ? true : options.movieSequences) : false,
+      ...(version === '0.3.x'
+        ? { convertSt16Iconsets: true, convertShpx: true, speechAndSfx: true, musicScores: true }
+        : {}),
     };
     options = nextOptions;
     onChange(nextOptions);
@@ -123,94 +131,142 @@
   </div>
 
   <div class="space-y-3">
-    <label class="cnc-field flex items-start gap-3">
-      <input
-        type="checkbox"
-        checked={options.convertSt16Iconsets}
-        onchange={(e) => toggle('convertSt16Iconsets', e.currentTarget.checked)}
-        class="mt-1"
-      />
-      <span>
-        <span class="font-medium">Convert terrain iconsets to ST16</span>
-        <span class="block text-xs text-stone-400"
-          >TEMPERAT, DESERT, WINTER MIX — requires matching *.W16 from release ZIP</span
-        >
-      </span>
-    </label>
-
-    {#if st16Warning}
-      <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
-        {st16Warning}
-      </p>
-    {/if}
-
-    <label class="cnc-field flex items-start gap-3">
-      <input
-        type="checkbox"
-        checked={options.convertShpx}
-        onchange={(e) => toggle('convertShpx', e.currentTarget.checked)}
-        class="mt-1"
-      />
-      <span>
-        <span class="font-medium">Convert shapes to SHPX</span>
-        <span class="block text-xs text-stone-400"
-          >CONQUER / TEMPERAT / DESERT / WINTER — external shape pools; saves RAM; mandatory on
-          4&nbsp;MB Atari STs.</span
-        >
-      </span>
-    </label>
-
-    {#if shpxWarning}
-      <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
-        {shpxWarning}
-      </p>
-    {/if}
-
-    <label class="cnc-field flex items-start gap-3">
-      <input
-        type="checkbox"
-        checked={options.speechAndSfx}
-        onchange={(e) => toggle('speechAndSfx', e.currentTarget.checked)}
-        class="mt-1"
-      />
-      <span>
-        <span class="font-medium">Speech and sound effects</span>
-        <span class="block text-xs text-stone-400">AUD.MIX, SOUNDS.MIX, SPEECH.MIX</span>
-      </span>
-    </label>
-
-    <label class="cnc-field flex items-start gap-3">
-      <input
-        type="checkbox"
-        checked={options.musicScores}
-        onchange={(e) => toggle('musicScores', e.currentTarget.checked)}
-        class="mt-1"
-      />
-      <span>
-        <span class="font-medium">Music</span>
-        <span class="block text-xs text-stone-400">SCORES.MIX (~large)</span>
-      </span>
-    </label>
-
-    <label class="cnc-field flex items-start gap-3" class:opacity-60={!moviesOk}>
-      <input
-        type="checkbox"
-        checked={options.movieSequences}
-        disabled={!moviesOk}
-        onchange={(e) => toggle('movieSequences', e.currentTarget.checked)}
-        class="mt-1"
-      />
-      <span>
-        <span class="font-medium">Movie sequences</span>
-        <span class="block text-xs text-stone-400">
-          {#if moviesOk}
-            MOVIES.MIX — merge GDI+NOD, then encode VQAs in parallel to STVQ (needs video/*.w16)
-          {:else}
-            Requires target version 0.3.x
-          {/if}
+    {#if !is03}
+      <label class="cnc-field flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={options.convertSt16Iconsets}
+          onchange={(e) => toggle('convertSt16Iconsets', e.currentTarget.checked)}
+          class="mt-1"
+        />
+        <span>
+          <span class="font-medium">Convert terrain iconsets to ST16</span>
+          <span class="block text-xs text-stone-400"
+            >TEMPERAT, DESERT, WINTER MIX — requires matching *.W16 from release ZIP</span
+          >
         </span>
-      </span>
-    </label>
+      </label>
+
+      {#if st16Warning}
+        <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+          {st16Warning}
+        </p>
+      {/if}
+
+      <label class="cnc-field flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={options.convertShpx}
+          onchange={(e) => toggle('convertShpx', e.currentTarget.checked)}
+          class="mt-1"
+        />
+        <span>
+          <span class="font-medium">Convert shapes to SHPX</span>
+          <span class="block text-xs text-stone-400"
+            >CONQUER / TEMPERAT / DESERT / WINTER — external shape pools; saves RAM.</span
+          >
+        </span>
+      </label>
+
+      {#if shpxWarning}
+        <p class="rounded border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+          {shpxWarning}
+        </p>
+      {/if}
+
+      <label class="cnc-field flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={options.speechAndSfx}
+          onchange={(e) => toggle('speechAndSfx', e.currentTarget.checked)}
+          class="mt-1"
+        />
+        <span>
+          <span class="font-medium">Speech and sound effects</span>
+          <span class="block text-xs text-stone-400">SOUNDS.MIX, SPEECH.MIX</span>
+        </span>
+      </label>
+
+      <label class="cnc-field flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={options.musicScores}
+          onchange={(e) => toggle('musicScores', e.currentTarget.checked)}
+          class="mt-1"
+        />
+        <span>
+          <span class="font-medium">Music</span>
+          <span class="block text-xs text-stone-400">SCORES.MIX (~large)</span>
+        </span>
+      </label>
+
+      <label class="cnc-field flex items-start gap-3" class:opacity-60={!moviesOk}>
+        <input
+          type="checkbox"
+          checked={options.movieSequences}
+          disabled={!moviesOk}
+          onchange={(e) => toggle('movieSequences', e.currentTarget.checked)}
+          class="mt-1"
+        />
+        <span>
+          <span class="font-medium">Movie sequences</span>
+          <span class="block text-xs text-stone-400">
+            {#if moviesOk}
+              MOVIES.MIX — encode VQAs to STVQ (needs video/*.w16)
+            {:else}
+              Requires target version 0.3.x
+            {/if}
+          </span>
+        </span>
+      </label>
+    {:else}
+      <label class="cnc-field flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={options.speechAndSfx}
+          onchange={(e) => toggle('speechAndSfx', e.currentTarget.checked)}
+          class="mt-1"
+        />
+        <span>
+          <span class="font-medium">Audio</span>
+          <span class="block text-xs text-stone-400"
+            >Speech, sound effects, and optional music — converted for this release.</span
+          >
+        </span>
+      </label>
+
+      {#if options.speechAndSfx}
+        <label class="cnc-field ml-7 flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={options.musicScores}
+            onchange={(e) => toggle('musicScores', e.currentTarget.checked)}
+            class="mt-1"
+          />
+          <span>
+            <span class="font-medium">Include music</span>
+            <span class="block text-xs text-stone-400"
+              >Uncheck to omit SCORES.MIX and save disk space.</span
+            >
+          </span>
+        </label>
+      {/if}
+
+      <label class="cnc-field flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={options.movieSequences}
+          onchange={(e) => toggle('movieSequences', e.currentTarget.checked)}
+          class="mt-1"
+        />
+        <span>
+          <span class="font-medium">Video</span>
+          <span class="block text-xs text-stone-400"
+            >Uncheck to save disk space and encoding time.</span
+          >
+        </span>
+      </label>
+    {/if}
 
     {#if moviesOk && options.movieSequences}
       <div class="ml-7 space-y-3 rounded border border-stone-700/60 bg-stone-900/40 p-3">
@@ -253,20 +309,13 @@
               <option value={opt.value}>{opt.label}</option>
             {/each}
           </select>
-          <span class="mt-1 block text-xs text-stone-500">
-            More workers use more RAM (each loads its own WASM). 4 is a good default.
-          </span>
         </label>
-        <p class="text-xs text-stone-500">
-          Encoding every clip can take a long time in the browser. Prefer a machine that can stay
-          awake until processing finishes.
-        </p>
       </div>
     {/if}
   </div>
 
-  <div class="flex justify-between">
-    <button type="button" onclick={onBack} class="cnc-btn-secondary">Back</button>
-    <button type="button" onclick={onNext} class="cnc-btn-primary">Continue</button>
+  <div class="flex justify-between gap-3 pt-2">
+    <button type="button" class="cnc-btn-secondary" onclick={onBack}>Back</button>
+    <button type="button" class="cnc-btn-primary" onclick={onNext}>Next</button>
   </div>
 </section>

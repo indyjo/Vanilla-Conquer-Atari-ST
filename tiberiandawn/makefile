@@ -430,7 +430,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/libcmini_posix_shim.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/libcmini_posix_shim.cpp $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_cache_source.cpp $(PLATFORM_LIB)/audx/ste_stream_file_source.cpp,)
 
 # Shared STVQ runtime (C) — game + tools/stvqview
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -609,6 +609,23 @@ $(INTDIR)/stvq_player.o: $(PLATFORM_LIB)/stvq/stvq_player.c | $(INTDIR)
 $(INTDIR)/stvq_prof.o: $(PLATFORM_LIB)/stvq/stvq_prof.c | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
+
+# AUDX runtime (atarilib/audx/)
+$(INTDIR)/audx_pool_file.o: $(PLATFORM_LIB)/audx/audx_pool_file.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/audx_page_cache.o: $(PLATFORM_LIB)/audx/audx_page_cache.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/ste_stream_memory_source.o: $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/ste_stream_cache_source.o: $(PLATFORM_LIB)/audx/ste_stream_cache_source.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/ste_stream_file_source.o: $(PLATFORM_LIB)/audx/ste_stream_file_source.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 endif
 
 # Special rule for platform lib alloc.cpp to avoid conflict with root alloc.cpp
@@ -842,7 +859,7 @@ ST_TEST_EXE = $(OUTDIR)/tstcncd.tos
 else
 ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
 endif
-ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
+ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_audx_autotest.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/iconset_ATARILIB.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blit.o $(INTDIR)/st_blitter_hw.o $(INTDIR)/st_soft_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/shpx.o \
 	$(INTDIR)/st_planar_draw.o $(INTDIR)/st_hw_probe.o $(INTDIR)/st_cache.o $(INTDIR)/st_cache_ops.o \
@@ -851,6 +868,8 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTD
 	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
 	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/keyframe.o $(INTDIR)/wsa.o \
 	$(INTDIR)/audio_ste.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
+	$(INTDIR)/audx_pool_file.o $(INTDIR)/audx_page_cache.o $(INTDIR)/ste_stream_memory_source.o \
+	$(INTDIR)/ste_stream_cache_source.o $(INTDIR)/ste_stream_file_source.o \
 	$(INTDIR)/st_load_uncompress.o \
 	$(INTDIR)/buff.o $(INTDIR)/bfiofile.o $(INTDIR)/blwstraw.o $(INTDIR)/blowfish.o \
 	$(INTDIR)/crc.o $(INTDIR)/fading.o $(INTDIR)/file.o $(INTDIR)/file_posix.o \
@@ -931,6 +950,10 @@ $(INTDIR)/st_audio_asset_autotest.o: $(ST_SUITE_DIR)/st_audio_asset_autotest.cpp
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 $(INTDIR)/st_audio_mix_test.o: $(ST_SUITE_DIR)/st_audio_mix_test.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_audx_autotest.o: $(ST_SUITE_DIR)/st_audx_autotest.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 

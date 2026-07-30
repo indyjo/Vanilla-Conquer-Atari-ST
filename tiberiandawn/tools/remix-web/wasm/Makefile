@@ -20,6 +20,7 @@ COMMON_SRCS = \
 	$(REMIX_DIR)/remix_print.c \
 	$(REMIX_DIR)/remix_audio.c \
 	$(REMIX_DIR)/remix_aud.c \
+	$(REMIX_DIR)/remix_audx.c \
 	$(REMIX_DIR)/remix_unzap.c \
 	$(REMIX_DIR)/remix_vqa.c
 
@@ -42,7 +43,7 @@ STVQ_CXX_OBJS = lcw_common.o vqa_lcw_bridge.o unvqbuff.o vqa_unvq_bridge.o
 
 GLUE = remix_wasm.c
 
-EXPORTS = _remix_wasm_process_mix,_remix_wasm_merge_and_process_mix,_remix_wasm_encode_vqa,_remix_wasm_free,_remix_wasm_cleanup_workfiles,_remix_wasm_last_entry_count,_remix_wasm_last_entries,_remix_wasm_set_st16_enabled,_remix_wasm_set_shpx_enabled,_remix_wasm_set_vqa_enabled,_remix_wasm_set_video_quality,_remix_wasm_set_video_effort,_remix_wasm_set_mix_basename,_remix_wasm_install_w16,_remix_wasm_memfs_input,_malloc,_free
+EXPORTS = _remix_wasm_process_mix,_remix_wasm_merge_and_process_mix,_remix_wasm_encode_vqa,_remix_wasm_free,_remix_wasm_cleanup_workfiles,_remix_wasm_last_entry_count,_remix_wasm_last_entries,_remix_wasm_set_st16_enabled,_remix_wasm_set_shpx_enabled,_remix_wasm_set_audx_enabled,_remix_wasm_set_vqa_enabled,_remix_wasm_set_video_quality,_remix_wasm_set_video_effort,_remix_wasm_set_mix_basename,_remix_wasm_install_w16,_remix_wasm_memfs_input,_malloc,_free
 
 .PHONY: all clean
 

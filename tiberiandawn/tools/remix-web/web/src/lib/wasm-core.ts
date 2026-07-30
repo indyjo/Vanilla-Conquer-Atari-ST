@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { w16StemForTheaterMix } from './theater-st16';
+import { audxPoolBasename, audxPoolIdForMix } from './audx';
 import { shpxPoolBasename, shpxPoolIdForMix } from './shpx';
 
 export interface RemixStats {
@@ -20,6 +21,9 @@ export interface RemixStats {
   shpx_converted: number;
   shpx_skipped: number;
   shpx_errors: number;
+  audx_files: number;
+  audx_converted: number;
+  audx_errors: number;
   vqa_files: number;
   vqa_converted: number;
   vqa_omitted: number;
@@ -41,6 +45,7 @@ export interface RemixEntry {
 export interface RemixMixOptions {
   convertSt16Iconsets?: boolean;
   convertShpx?: boolean;
+  convertAudx?: boolean;
   convertVqa?: boolean;
   videoQuality?: 'low' | 'medium' | 'high';
   videoEffort?: 'fast' | 'normal' | 'thorough';
@@ -49,6 +54,8 @@ export interface RemixMixOptions {
   mixBasename?: string;
   /** SHPX pool id; defaults from mixBasename when omitted. */
   shpxPoolId?: number;
+  /** AUDX pool id; defaults from mixBasename when omitted. */
+  audxPoolId?: number;
   w16Bytes?: Uint8Array;
   /** CRC-named FMV sidecars keyed as `video/xxxxxxxx.n.w16`. */
   videoW16Files?: [string, Uint8Array][];
@@ -74,6 +81,7 @@ export interface RemixModule {
   _remix_wasm_encode_vqa?: (crc: number) => number;
   _remix_wasm_set_st16_enabled?: (enabled: number) => void;
   _remix_wasm_set_shpx_enabled?: (enabled: number) => void;
+  _remix_wasm_set_audx_enabled?: (enabled: number) => void;
   _remix_wasm_set_vqa_enabled?: (enabled: number) => void;
   _remix_wasm_set_video_quality?: (quality: number) => void;
   _remix_wasm_set_video_effort?: (effort: number) => void;
@@ -118,7 +126,8 @@ function attachProgressHandler(mod: RemixModule): void {
   };
 }
 
-const STATS_SIZE = 20 * 4;
+/* Must match RemixStats in remix.h (23 × uint32). */
+const STATS_SIZE = 23 * 4;
 const REMIX_ENTRY_SIZE = 88;
 const TYPE_FIELD_LEN = 32;
 const WASM_MEMFS_INPUT = -1;
@@ -279,11 +288,41 @@ function readShpxPool(mod: RemixModule, poolId: number): Uint8Array | undefined 
   }
 }
 
+function resolveAudxPoolId(options?: RemixMixOptions): number {
+  if (options?.audxPoolId && options.audxPoolId > 0) return options.audxPoolId;
+  if (options?.mixBasename) {
+    const fromName = audxPoolIdForMix(options.mixBasename);
+    if (fromName) return fromName;
+  }
+  return 5;
+}
+
+function clearAudxPool(mod: RemixModule, poolId: number): void {
+  if (!mod.FS) return;
+  try {
+    mod.FS.unlink(audxPoolBasename(poolId));
+  } catch {
+    // no prior pool file
+  }
+}
+
+function readAudxPool(mod: RemixModule, poolId: number): Uint8Array | undefined {
+  if (!mod.FS) return undefined;
+  try {
+    const data = mod.FS.readFile(audxPoolBasename(poolId));
+    return data.length > 0 ? data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function configureRemixModule(mod: RemixModule, options?: RemixMixOptions): void {
   const wantSt16 = Boolean(options?.convertSt16Iconsets);
   const wantShpx = Boolean(options?.convertShpx);
+  const wantAudx = Boolean(options?.convertAudx);
   const wantVqa = Boolean(options?.convertVqa);
   const shpxPoolId = resolveShpxPoolId(options);
+  const audxPoolId = resolveAudxPoolId(options);
   if (typeof mod._remix_wasm_set_st16_enabled !== 'function') {
     if (wantSt16) {
       throw new Error(
@@ -304,6 +343,19 @@ function configureRemixModule(mod: RemixModule, options?: RemixMixOptions): void
     mod._remix_wasm_set_shpx_enabled(wantShpx ? 1 : 0);
     if (wantShpx) {
       clearShpxPool(mod, shpxPoolId);
+    }
+  }
+
+  if (typeof mod._remix_wasm_set_audx_enabled !== 'function') {
+    if (wantAudx) {
+      throw new Error(
+        'AUDX conversion is not available in this remix-web build — rebuild remix.wasm',
+      );
+    }
+  } else {
+    mod._remix_wasm_set_audx_enabled(wantAudx ? 1 : 0);
+    if (wantAudx) {
+      clearAudxPool(mod, audxPoolId);
     }
   }
 
@@ -396,10 +448,13 @@ function readStats(mod: RemixModule, statsPtr: number): RemixStats {
     shpx_converted: statsView.getUint32(52, true),
     shpx_skipped: statsView.getUint32(56, true),
     shpx_errors: statsView.getUint32(60, true),
-    vqa_files: statsView.getUint32(64, true),
-    vqa_converted: statsView.getUint32(68, true),
-    vqa_omitted: statsView.getUint32(72, true),
-    vqa_already_stv: statsView.getUint32(76, true),
+    audx_files: statsView.getUint32(64, true),
+    audx_converted: statsView.getUint32(68, true),
+    audx_errors: statsView.getUint32(72, true),
+    vqa_files: statsView.getUint32(76, true),
+    vqa_converted: statsView.getUint32(80, true),
+    vqa_omitted: statsView.getUint32(84, true),
+    vqa_already_stv: statsView.getUint32(88, true),
   };
 }
 
@@ -551,6 +606,7 @@ export async function remixMixBytes(
   stats: RemixStats;
   entries: RemixEntry[];
   shpxPool?: Uint8Array;
+  audxPool?: Uint8Array;
 }> {
   const mod = await loadRemixModule(baseUrl);
   attachProgressHandler(mod);
@@ -589,7 +645,10 @@ export async function remixMixBytes(
     const shpxPool = options?.convertShpx
       ? readShpxPool(mod, resolveShpxPoolId(options))
       : undefined;
-    return { output, stats, entries, shpxPool };
+    const audxPool = options?.convertAudx
+      ? readAudxPool(mod, resolveAudxPoolId(options))
+      : undefined;
+    return { output, stats, entries, shpxPool, audxPool };
   } finally {
     activeProgressHandler = null;
     mod._free(statsPtr);
@@ -603,7 +662,7 @@ export async function remixMergeMixBytes(
   baseUrl = '/',
   options?: RemixMixOptions,
   onProgress?: RemixProgressHandler,
-): Promise<{ output: Uint8Array; stats: RemixStats; entries: RemixEntry[]; shpxPool?: Uint8Array }> {
+): Promise<{ output: Uint8Array; stats: RemixStats; entries: RemixEntry[]; shpxPool?: Uint8Array; audxPool?: Uint8Array }> {
   const mod = await loadRemixModule(baseUrl);
   attachProgressHandler(mod);
   activeProgressHandler = onProgress ?? null;
@@ -636,7 +695,10 @@ export async function remixMergeMixBytes(
     const shpxPool = options?.convertShpx
       ? readShpxPool(mod, resolveShpxPoolId(options))
       : undefined;
-    return { output, stats, entries, shpxPool };
+    const audxPool = options?.convertAudx
+      ? readAudxPool(mod, resolveAudxPoolId(options))
+      : undefined;
+    return { output, stats, entries, shpxPool, audxPool };
   } finally {
     activeProgressHandler = null;
     mod._free(statsPtr);

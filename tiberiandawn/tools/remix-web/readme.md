@@ -73,12 +73,12 @@ Open the URL printed by Vite. Place `remix.js` / `remix.wasm` in `web/public/` (
 
 ## Usage
 
-1. **Discs** — pick **both** GDI and NOD install media (ISO or ZIP with one disc image); optionally the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) for `cnc.tos` + `record.bin` + `*.w16` (+ `video/` for FMV)
+1. **Discs** — pick **both** GDI and NOD install media (ISO or ZIP with one disc image) and the [itch.io release ZIP](https://indyjo.itch.io/commandconquer) (`cnc.tos` + `record.bin` + `*.w16` + `video/` for FMV). All three inputs are required.
 2. **Customize** — target C&C4ST version (0.1.x / 0.2.x / 0.3.x), optional ST16 iconset conversion for theater MIX files, optional SHPX shape conversion for CONQUER / TEMPERAT / DESERT / WINTER, speech/SFX and music toggles; movie sequences (VQA→STVQ) when targeting **0.3.x**
-3. **Process** — streaming ISO extract → merge `GENERAL.MIX` / `MOVIES.MIX` when dual-disc → REMIX each MIX → bundle release files if provided (`video/` sidecars are used for encode then dropped from the download ZIP)
-4. **Checkout** — download ZIP (MIX-only, or full ready-to-play folder if release ZIP was attached)
+3. **Process** — streaming ISO extract → merge `GENERAL.MIX` / `MOVIES.MIX` when dual-disc → REMIX each MIX → bundle release files (`video/` sidecars are used for encode then dropped from the download ZIP)
+4. **Checkout** — download a ready-to-copy ZIP (repacked MIX files + `cnc.tos` + palette weights)
 
-Copy the ZIP contents to a folder on your Atari ST drive. If you skipped the release ZIP, add `cnc.tos`, `record.bin`, and `*.W16` from itch.io manually.
+Copy the ZIP contents to a folder on your Atari ST drive.
 
 ### ST16 iconsets (0.2.x / 0.3.x)
 
@@ -87,6 +87,10 @@ When **Convert terrain iconsets to ST16** is enabled (default for target **0.2.x
 ### SHPX shapes (0.2.x / 0.3.x)
 
 When **Convert shapes to SHPX** is enabled (default for target **0.2.x** / **0.3.x**), remix-web converts KeyFrame SHPs in `CONQUER.MIX`, `TEMPERAT.MIX`, `DESERT.MIX`, and `WINTER.MIX` to the external-pool SHPX format and writes matching sidecars into the output ZIP (`pool0001.bin` … `pool0004.bin`). This saves RAM on the Atari ST and is mandatory on 4 MB machines. It is incompatible with the **0.1.x** line of C&C4ST.
+
+### AUDX audio (0.3.x)
+
+For target **0.3.x**, enabling **Audio** converts SOUNDS/SPEECH (and **Include music** → SCORES) from AUD→PCM→AUDX. Sample payloads go into `pool0005.bin` … `pool0007.bin`; the MIX keeps small AUDX metadata. `AUD.MIX` is never included. On 0.3.x the UI shows Audio / Include music / Video only (ST16 and SHPX are always applied).
 
 ### Movie sequences (0.3.x)
 

@@ -26,6 +26,7 @@ export type RemixResult = {
   stats: RemixStats;
   entries: RemixEntry[];
   shpxPool?: Uint8Array;
+  audxPool?: Uint8Array;
 };
 
 let worker: Worker | null = null;
@@ -66,6 +67,7 @@ function ensureWorker(): Worker {
       stats: msg.stats,
       entries: msg.entries,
       shpxPool: msg.shpxPool ? new Uint8Array(msg.shpxPool) : undefined,
+      audxPool: msg.audxPool ? new Uint8Array(msg.audxPool) : undefined,
     });
   };
   worker.onerror = (ev) => {

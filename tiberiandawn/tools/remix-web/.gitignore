@@ -3,3 +3,4 @@ web/dist/
 dist/
 web/public/remix.js
 web/public/remix.wasm
+wasm/.em_cache/

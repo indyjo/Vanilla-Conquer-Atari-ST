@@ -133,7 +133,8 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 	io.seek = stvq_ccfile_seek;
 
 	if (stvq_player_open(&player, &hw, &io) != 0) {
-		CCDebugString("STVQ: open/init failed\n");
+		DBG_INFO("STVQ: open/init failed (%s)",
+		    stvq_player_open_error ? stvq_player_open_error : "?");
 #ifdef CHEAT_KEYS
 		Mono_Printf("STVQ open fail: %s\n", stvq_player_open_error ? stvq_player_open_error : "?");
 #endif
@@ -146,7 +147,7 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 	}
 
 	if (stvq_hw_init(&hw, player.hdr.width, player.hdr.height, visible0, hidden0, use_audio) != 0) {
-		CCDebugString("STVQ: video init failed (OOM?)\n");
+		DBG_INFO("STVQ: video init failed (OOM?)");
 		stvq_player_close(&player);
 		if (yielded) {
 			Ste_Audio_Reclaim_Dma();
@@ -254,6 +255,13 @@ done:
 		Ste_Audio_Reclaim_Dma();
 	}
 	InMovie = false;
+	if (rc < 0) {
+		DBG_INFO("STVQ: play aborted with error");
+	} else if (rc > 0) {
+		DBG_INFO("STVQ: play skipped (ESC)");
+	} else {
+		DBG_INFO("STVQ: play finished OK");
+	}
 	return rc;
 }
 #endif
@@ -2454,15 +2462,17 @@ void Play_Movie(char const* name, ThemeType theme, bool clrscrn)
 
             if (!file.Is_Available() || !file.Open(READ)) {
                 /* Missing clip: soft-skip. */
+                DBG_INFO("STVQ: skip %s (missing / unavailable)", fullname);
             } else if (file.Read(peek, 12) != 12) {
                 file.Close();
+                DBG_INFO("STVQ: skip %s (short header read)", fullname);
             } else {
                 uint32_t form_id = stvq_read_be32(peek);
                 uint32_t type_id = stvq_read_be32(peek + 8);
                 file.Seek(0, SEEK_SET);
 
                 if (form_id != STVQ_CHUNK_FORM || type_id != STVQ_CHUNK_STVQ) {
-                    CCDebugString("STVQ: not FORM STVQ (skipping non-STV / VQA)\n");
+                    DBG_INFO("STVQ: skip %s (not FORM STVQ)", fullname);
 #ifdef CHEAT_KEYS
                     Mono_Printf("STVQ skip non-STV [%s]\n", fullname);
 #endif

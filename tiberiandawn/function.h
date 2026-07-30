@@ -573,20 +573,6 @@ long __cdecl Buffer_Frame_To_Page_Ex(int x,
 }
 #endif
 
-#ifdef __cplusplus
-inline long Buffer_Frame_To_Page_Ex(int x,
-                                    int y,
-                                    int w,
-                                    int h,
-                                    void* Buffer,
-                                    GraphicViewPortClass& view,
-                                    int flags,
-                                    Bftp_ExArgs const& ex)
-{
-    return Buffer_Frame_To_Page_Ex(x, y, w, h, Buffer, view, flags, &ex);
-}
-#endif
-
 /*
 **	KEYFRAME.CPP
 */

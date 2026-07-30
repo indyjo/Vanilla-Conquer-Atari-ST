@@ -96,15 +96,15 @@
     onRelease(null);
   }
 
-  const canContinue = $derived(Boolean(gdi && nod));
+  const canContinue = $derived(Boolean(gdi && nod && release));
 </script>
 
 <section class="space-y-6">
   <div>
     <h2 class="cnc-step-title">1. Choose install discs</h2>
     <p class="mt-2 text-sm text-stone-400">
-      Select both GDI and NOD install media from your own copy of Command &amp; Conquer for the
-      Atari ST. Processing stays in your browser — nothing is uploaded.
+      Select both GDI and NOD install media from your own copy of Command &amp; Conquer, plus the
+      Atari ST release ZIP. Processing stays in your browser — nothing is uploaded.
     </p>
   </div>
 
@@ -151,7 +151,7 @@
   </div>
 
   <div class="cnc-field space-y-3">
-    <p class="text-sm font-medium">C&amp;C Atari ST release ZIP (recommended)</p>
+    <p class="text-sm font-medium">C&amp;C Atari ST release ZIP (required)</p>
     <p class="text-xs text-stone-500">
       Download from
       <a
@@ -188,11 +188,6 @@
     {/if}
     {#if releaseError}
       <p class="text-sm text-red-400">{releaseError}</p>
-    {:else if !release}
-      <p class="text-xs text-amber-200/90">
-        Without the release ZIP, terrain iconsets stay in standard 8bpp form — ST16 conversion
-        during remix is not available.
-      </p>
     {/if}
   </div>
 

@@ -413,6 +413,23 @@ repack fails.
 
 ---
 
+## AUDX (external-pool audio)
+
+Eligible MIXes: `SOUNDS.MIX`, `SPEECH.MIX`, `SCORES.MIX`. After AUD→PCM, `--audx` wraps each PCM AUD as a 28-byte BE **AUDX** meta record and appends sample bytes to `pool%04x.bin` (pool ids 5 / 6 / 7). See `tiberiandawn/atari.md` for the on-disk layout and runtime page-cache rules.
+
+`SCORES.MIX` omits CRC `0x5CE4DFD8` (`AOI.VAR`) from the output directory (no body, no pool bytes). Runtime already falls back to `AOI.AUD` when the variation file is missing.
+
+### Host CLI flags
+
+| Flag | Meaning |
+|------|---------|
+| `--audx` | Convert PCM AUD → AUDX + pool sidecar |
+| `--audx-pool-id ID` | Override pool id (default from MIX basename) |
+
+`RemixStats` adds: `audx_files`, `audx_converted`, `audx_errors`.
+
+---
+
 ## References
 
 - Westwood AUD: [ModdingWiki](https://moddingwiki.shikadi.net/wiki/Westwood_AUD_Format), [aud3.txt](http://vladan.bato.net/cnc/aud3.txt) (document revision, not codec type 3).

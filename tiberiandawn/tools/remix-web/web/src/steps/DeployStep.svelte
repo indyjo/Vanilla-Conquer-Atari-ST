@@ -8,7 +8,7 @@
     files: Map<string, Uint8Array> | null;
     fileNames: string[];
     processLog: ProcessLogLine[];
-    release: ReleaseSelection | null;
+    release: ReleaseSelection;
     onRestart: () => void;
   }
 
@@ -27,7 +27,7 @@
 
   function download() {
     if (!zipBlob) return;
-    downloadBlob(zipBlob, release ? 'cncst-ready.zip' : 'cncst-mix.zip');
+    downloadBlob(zipBlob, 'cncst-ready.zip');
   }
 </script>
 
@@ -35,15 +35,8 @@
   <div>
     <h2 class="cnc-step-title">4. Checkout</h2>
     <p class="mt-2 text-sm text-stone-400">
-      {#if release}
-        Download a ready-to-copy ZIP with repacked MIX files, <code class="text-cnc-gold">cnc.tos</code
-        >, and palette weights.
-      {:else}
-        Download the repacked MIX files and copy them next to <code class="text-cnc-gold">cnc.tos</code
-        >
-        on your Atari ST drive — add the recommended itch.io release ZIP on step 1 for ST16 terrain
-        conversion and a one-step ready folder.
-      {/if}
+      Download a ready-to-copy ZIP with repacked MIX files, <code class="text-cnc-gold">cnc.tos</code
+      >, and palette weights from {release.file.name}.
     </p>
   </div>
 
@@ -52,10 +45,7 @@
       <p class="text-sm">
         Ready: <strong class="text-cnc-gold">{outputNames.length}</strong> files ({Math.round(
           zipBlob.size / 1024,
-        )} KiB ZIP)
-        {#if release}
-          — {mixCount} MIX + {releaseCount} from release
-        {/if}
+        )} KiB ZIP) — {mixCount} MIX + {releaseCount} from release
       </p>
       <button type="button" onclick={download} class="cnc-btn-primary">Download ZIP</button>
     </div>
@@ -74,20 +64,6 @@
         <ProcessLog log={processLog} maxHeightClass="max-h-72" />
       {/if}
     </div>
-  {/if}
-
-  {#if !release}
-    <p class="text-xs text-stone-500">
-      Tip: attach the recommended
-      <a
-        class="text-cnc-gold underline"
-        href="https://indyjo.itch.io/commandconquer"
-        target="_blank"
-        rel="noreferrer">itch.io release ZIP</a
-      >
-      on step 1 for <code>cnc.tos</code>, <code>*.w16</code> weights, and native ST16 terrain
-      iconsets in your MIX files.
-    </p>
   {/if}
 
   <button type="button" onclick={onRestart} class="cnc-btn-secondary">Start over</button>

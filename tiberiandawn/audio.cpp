@@ -545,17 +545,8 @@ void Speak_AI(void)
 
         SpeakQueue = VOX_NONE;
         snprintf(fname, sizeof(fname), "%s.AUD", Speech[voice]);
+        /* AUDX: SPEECH.MIX is cached; classic disk fallback tank is not allocated. */
         aud = MFCD::Retrieve(fname);
-        if (!aud && SpeechBuffer) {
-            CCFileClass file(fname);
-            if (file.Is_Available() && file.Open(READ)) {
-                long const got = file.Read(SpeechBuffer, SPEECH_BUFFER_SIZE);
-                file.Close();
-                if (got > 0L) {
-                    aud = SpeechBuffer;
-                }
-            }
-        }
         if (aud && Play_Sample(aud, 254, Options.Volume) >= 0) {
             SpeechPlayingPtr = aud;
             CurrentVoice = voice;

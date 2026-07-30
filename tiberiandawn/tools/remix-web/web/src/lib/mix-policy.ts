@@ -2,13 +2,13 @@ import type { ContentOptions } from './types';
 
 /** Uppercase MIX basename sets for optional content toggles. */
 export const OPTIONAL_GROUPS = {
-  speechAndSfx: ['AUD.MIX', 'SOUNDS.MIX', 'SPEECH.MIX'],
+  speechAndSfx: ['SOUNDS.MIX', 'SPEECH.MIX'],
   musicScores: ['SCORES.MIX'],
   movieSequences: ['MOVIES.MIX'],
 } as const;
 
 /** Never extract these from the ISO (even if present). */
-export const NEVER_EXTRACT = new Set(['SETUP.MIX', 'ZOUNDS.MIX']);
+export const NEVER_EXTRACT = new Set(['SETUP.MIX', 'ZOUNDS.MIX', 'AUD.MIX']);
 
 /** Core MIX files always included when present on disc. */
 export const CORE_MIXES = new Set([

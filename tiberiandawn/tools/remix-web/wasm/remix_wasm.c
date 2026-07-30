@@ -26,6 +26,7 @@ static unsigned g_wasm_entry_count;
 static unsigned g_wasm_entry_cap;
 static int g_wasm_convert_st16 = 1;
 static int g_wasm_convert_shpx = 0;
+static int g_wasm_convert_audx = 0;
 static int g_wasm_convert_vqa = 0;
 static RemixVideoQuality g_wasm_video_quality = REMIX_VIDEO_QUALITY_MEDIUM;
 static RemixVideoEffort g_wasm_video_effort = REMIX_VIDEO_EFFORT_NORMAL;
@@ -146,11 +147,13 @@ static void wasm_config_init(RemixConfig *cfg)
 	cfg->fallback_copy_on_convert_fail = 1;
 	cfg->convert_st16_iconsets = g_wasm_convert_st16;
 	cfg->convert_shpx = g_wasm_convert_shpx;
+	cfg->convert_audx = g_wasm_convert_audx;
 	cfg->convert_vqa = g_wasm_convert_vqa;
 	cfg->video_quality = g_wasm_video_quality;
 	cfg->video_effort = g_wasm_video_effort;
-	/* shpx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
+	/* shpx_pool_id / audx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
 	cfg->shpx_pool_id = 0;
+	cfg->audx_pool_id = 0;
 	cfg->mix_basename = g_wasm_mix_basename[0] ? g_wasm_mix_basename : NULL;
 	cfg->w16_dir = (g_wasm_convert_st16 || g_wasm_convert_vqa) ? g_wasm_w16_dir : NULL;
 	cfg->entry_report = wasm_entry_report;
@@ -185,6 +188,12 @@ EMSCRIPTEN_KEEPALIVE
 void remix_wasm_set_shpx_enabled(int enabled)
 {
 	g_wasm_convert_shpx = enabled ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void remix_wasm_set_audx_enabled(int enabled)
+{
+	g_wasm_convert_audx = enabled ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE

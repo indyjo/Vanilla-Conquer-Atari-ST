@@ -633,14 +633,11 @@ void ScoreClass::Presentation(void)
 	if (Special.IsJurassic && AreThingiesEnabled) return;
 
 #ifdef ATARI_ST
-	C2P_Context *c2p_saved = C2P_SaveContext();
-#endif
-
-#ifdef ATARI_ST
 	/* Aliases of HidPage backing store — no separate alloc (320×200 score layout). */
 	PseudoSeenBuff = HidPage.Get_Graphic_Buffer();
 	TextPrintBuffer = HidPage.Get_Graphic_Buffer();
 	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 64, 0);
+	C2P_Context *c2p_saved = C2P_SaveContext();
 #else
 	PseudoSeenBuff = new GraphicBufferClass(320,200,(void*)NULL);
 	TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height(), (void*)NULL);

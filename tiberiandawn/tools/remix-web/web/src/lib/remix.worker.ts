@@ -20,6 +20,7 @@ export type RemixResult = {
   stats: RemixStats;
   entries: RemixEntry[];
   shpxPool?: Uint8Array;
+  audxPool?: Uint8Array;
 };
 
 export type WorkerRequest =
@@ -51,6 +52,7 @@ export type WorkerResponse =
       stats: RemixStats;
       entries: RemixEntry[];
       shpxPool?: ArrayBuffer;
+      audxPool?: ArrayBuffer;
     }
   | {
       id: number;
@@ -131,6 +133,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
 
     const output = toArrayBuffer(result.output);
     const shpxPool = result.shpxPool ? toArrayBuffer(result.shpxPool) : undefined;
+    const audxPool = result.audxPool ? toArrayBuffer(result.audxPool) : undefined;
     const response: WorkerResponse = {
       id: msg.id,
       type: 'ok',
@@ -138,9 +141,11 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
       stats: result.stats,
       entries: result.entries,
       shpxPool,
+      audxPool,
     };
     const transfer: Transferable[] = [output];
     if (shpxPool) transfer.push(shpxPool);
+    if (audxPool) transfer.push(audxPool);
     self.postMessage(response, { transfer });
   } catch (err) {
     const response: WorkerResponse = {

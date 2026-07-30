@@ -6,7 +6,7 @@
   interface Props {
     gdi: DiscSelection;
     nod: DiscSelection;
-    release: ReleaseSelection | null;
+    release: ReleaseSelection;
     contentOptions: ContentOptions;
     targetVersion: TargetVersionState;
     onBack: () => void;

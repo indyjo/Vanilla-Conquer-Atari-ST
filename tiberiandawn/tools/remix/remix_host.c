@@ -108,6 +108,7 @@ static void usage(const char *prog)
 	    "  - convert audio to 11025 Hz 8-bit mono PCM .AUD\n"
 	    "  - convert theater terrain iconsets to ST16 (needs *.W16 in cwd)\n"
 	    "  - convert KeyFrame SHPs to SHPX + poolnnnn.bin sidecar (--shpx)\n"
+	    "  - convert audio to AUDX + pool sidecar (--audx; SOUNDS/SPEECH/SCORES)\n"
 	    "  - convert VQA movies to STVQ (--convert-vqa; needs video/*.w16)\n"
 	    "  - pad payloads to even byte offsets from MIX start\n"
 	    "\n"
@@ -121,6 +122,8 @@ static void usage(const char *prog)
 	    "  --shpx                  convert KeyFrame SHPs to SHPX (CONQUER/TEMPERAT/DESERT/WINTER)\n"
 	    "  --shpx-verbose          per-shape SHPX/clip details on stderr (requires --shpx)\n"
 	    "  --pool-id ID            SHPX pool id (default from MIX name; requires --shpx)\n"
+	    "  --audx                  convert PCM AUD to AUDX (SOUNDS/SPEECH/SCORES)\n"
+	    "  --audx-pool-id ID       AUDX pool id (default from MIX name; requires --audx)\n"
 	    "  --convert-vqa           convert VQA payloads to STVQ (needs video/xxxxxxxx.N.w16)\n"
 	    "  --video-quality Q       low|medium|high (default medium; low suits 8 MHz ST; requires --convert-vqa)\n"
 	    "  --video-effort E        fast|normal|thorough (default normal; requires --convert-vqa)\n"
@@ -220,6 +223,7 @@ int main(int argc, char **argv)
 	int rc;
 	unsigned i;
 	int pool_id_set = 0;
+	int audx_pool_id_set = 0;
 
 	remix_stats_init(&stats);
 	memset(&cfg, 0, sizeof(cfg));
@@ -228,7 +232,7 @@ int main(int argc, char **argv)
 	cfg.convert_st16_iconsets = 1;
 	cfg.video_quality = REMIX_VIDEO_QUALITY_MEDIUM;
 	cfg.video_effort = REMIX_VIDEO_EFFORT_NORMAL;
-	/* shpx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
+	/* shpx_pool_id / audx_pool_id 0 → remix_mix_file_ex picks default from mix basename */
 
 	for (argi = 1; argi < argc; ++argi) {
 		if (!strcmp(argv[argi], "-o") || !strcmp(argv[argi], "--output")) {
@@ -255,6 +259,8 @@ int main(int argc, char **argv)
 			cfg.convert_shpx = 1;
 		} else if (!strcmp(argv[argi], "--shpx-verbose")) {
 			cfg.shpx_verbose = 1;
+		} else if (!strcmp(argv[argi], "--audx")) {
+			cfg.convert_audx = 1;
 		} else if (!strcmp(argv[argi], "--convert-vqa")) {
 			cfg.convert_vqa = 1;
 		} else if (!strcmp(argv[argi], "--video-quality")) {
@@ -306,6 +312,21 @@ int main(int argc, char **argv)
 			}
 			cfg.shpx_pool_id = (uint16_t)id;
 			pool_id_set = 1;
+		} else if (!strcmp(argv[argi], "--audx-pool-id")) {
+			unsigned long id;
+			char *end;
+
+			if (argi + 1 >= argc) {
+				fprintf(stderr, "error: %s requires a value\n", argv[argi]);
+				return 1;
+			}
+			id = strtoul(argv[++argi], &end, 0);
+			if (!argv[argi][0] || (end && *end != '\0') || id == 0 || id > 0xFFFFu) {
+				fprintf(stderr, "error: %s must be 1..65535\n", "--audx-pool-id");
+				return 1;
+			}
+			cfg.audx_pool_id = (uint16_t)id;
+			audx_pool_id_set = 1;
 		} else if (!strcmp(argv[argi], "-h") || !strcmp(argv[argi], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -329,6 +350,11 @@ int main(int argc, char **argv)
 
 	if (pool_id_set && !cfg.convert_shpx) {
 		fprintf(stderr, "error: --pool-id requires --shpx\n");
+		return 1;
+	}
+
+	if (audx_pool_id_set && !cfg.convert_audx) {
+		fprintf(stderr, "error: --audx-pool-id requires --audx\n");
 		return 1;
 	}
 

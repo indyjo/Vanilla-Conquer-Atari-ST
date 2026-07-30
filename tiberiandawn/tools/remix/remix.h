@@ -56,6 +56,9 @@ typedef struct RemixStats {
 	unsigned shpx_converted;
 	unsigned shpx_skipped;
 	unsigned shpx_errors;
+	unsigned audx_files;
+	unsigned audx_converted;
+	unsigned audx_errors;
 	unsigned vqa_files;
 	unsigned vqa_converted;
 	unsigned vqa_omitted;
@@ -95,11 +98,13 @@ typedef struct RemixConfig {
 	int fallback_copy_on_convert_fail;
 	int convert_st16_iconsets;
 	int convert_shpx;
+	int convert_audx;
 	int convert_vqa;
 	RemixVideoQuality video_quality;
 	RemixVideoEffort video_effort;
 	int shpx_verbose;
 	uint16_t shpx_pool_id;
+	uint16_t audx_pool_id;
 	const char *w16_dir;
 	const char *mix_basename;
 	RemixEntryReportFn entry_report;

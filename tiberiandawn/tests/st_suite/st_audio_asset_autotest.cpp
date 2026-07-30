@@ -13,6 +13,8 @@
 #include "misc.h"
 #include "st_mix_minimal.h"
 #include "ste_aud_constants.h"
+#include "audx/audx.h"
+#include "audx/audx_page_cache.h"
 
 #include <mint/osbind.h>
 
@@ -120,6 +122,16 @@ static int st_aud_copy_malloc(void const *sample, unsigned char **out, size_t *o
 		return -1;
 	}
 	unsigned char const *b = (unsigned char const *)sample;
+	if (AUDX_Is_Meta(b)) {
+		unsigned char *buf = (unsigned char *)malloc(AUDX_PREFIX_SIZE);
+		if (!buf) {
+			return -9;
+		}
+		memcpy(buf, b, (size_t)AUDX_PREFIX_SIZE);
+		*out = buf;
+		*out_len = (size_t)AUDX_PREFIX_SIZE;
+		return 0;
+	}
 	unsigned long const aud_bytes = st_aud_payload_bytes(b);
 	if (aud_bytes < (unsigned long)STE_AUD_HDR_LEN) {
 		return -1;
@@ -210,10 +222,29 @@ static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char co
 		return ST_AUDIO_RESULT_SKIP;
 	}
 
+	if (AUDX_Is_Meta(raw)) {
+		AudxPrefix const *pfx = AUDX_As_Prefix(raw);
+		char pool_name[16];
+		if (!AUDX_Format_Pool_Name(pfx->pool_id, pool_name, sizeof(pool_name))
+		    || !CCFileClass(pool_name).Is_Available()) {
+			printf("SKIP audio AUDX pool missing %s:%s\n", hit_mix, hit_aud);
+			Sound_End();
+			free(raw);
+			return ST_AUDIO_RESULT_SKIP;
+		}
+		if (AUDX_Page_Cache_Init() != 0) {
+			printf("FAIL audio AUDX page cache init\n");
+			Sound_End();
+			free(raw);
+			return ST_AUDIO_RESULT_FAIL;
+		}
+	}
+
 	int const play_vol = (volume < 0) ? 0xFF : volume;
 	if (Play_Sample(raw, 255, play_vol, 0) < 0) {
 		printf("FAIL audio Play_Sample %s:%s\n", hit_mix, hit_aud);
 		Sound_End();
+		AUDX_Page_Cache_Shutdown();
 		free(raw);
 		return ST_AUDIO_RESULT_FAIL;
 	}
@@ -223,11 +254,13 @@ static int st_audio_play_loaded(unsigned char *raw, char const *hit_mix, char co
 		printf("FAIL audio playback timeout %s:%s\n", hit_mix, hit_aud);
 		Stop_Sample_Playing(raw);
 		Sound_End();
+		AUDX_Page_Cache_Shutdown();
 		free(raw);
 		return ST_AUDIO_RESULT_FAIL;
 	}
 
 	Sound_End();
+	AUDX_Page_Cache_Shutdown();
 	free(raw);
 	if (verbose) {
 		printf("PASS audio %s from %s\n", hit_aud, hit_mix);

@@ -91,7 +91,22 @@ int WWMessageBox::Process(const char* msg, const char* b1txt, const char* b2txt,
     bool display = false; // display level
     int realval[5] = {0};
 
+#ifdef ATARI_ST
+    /* Planar save matches VisiblePage so Blit is a memcpy, not GetPixel-per-pixel.
+     * Use the same Size as VisiblePage (typically 32768), not just width*height/2. */
+    GraphicBufferClass seen_buff_save;
+    if (VisiblePage.Is_ST_Planar()) {
+        long sz = VisiblePage.Get_Size();
+        if (sz <= 0) {
+            sz = 32768;
+        }
+        seen_buff_save.Init(VisiblePage.Get_Width(), VisiblePage.Get_Height(), NULL, sz, (int)GBC_ST_PLANAR_LORES);
+    } else {
+        seen_buff_save.Init(VisiblePage.Get_Width(), VisiblePage.Get_Height(), NULL, 0, 0);
+    }
+#else
     GraphicBufferClass seen_buff_save(VisiblePage.Get_Width(), VisiblePage.Get_Height(), (void*)NULL);
+#endif
 
     int factor = (SeenBuff.Get_Width() == 320) ? 1 : 2;
 

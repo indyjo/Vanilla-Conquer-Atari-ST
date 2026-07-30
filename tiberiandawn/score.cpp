@@ -649,7 +649,6 @@ void ScoreClass::Presentation(void)
 	ControlQ = 0;
 	FontXSpacing = 0;
 	Map.Override_Mouse_Shape(MOUSE_NORMAL);
-	Theme.Queue_Song(THEME_WIN1);
 
 	VisiblePage.Clear();
 	PseudoSeenBuff->Clear();
@@ -660,14 +659,19 @@ void ScoreClass::Presentation(void)
 
 	Set_Logic_Page(SysMemPage);
 
+	/*
+	** Load the score WSA before starting theme music. AUDX theme streaming
+	** claims ST-RAM; opening the animation first avoids starving that Alloc.
+	*/
+	anim = Open_Animation(ScreenNames[house],NULL,0L,(WSAOpenType)(WSA_OPEN_FROM_MEM | WSA_OPEN_TO_PAGE),Palette);
+#ifdef ATARI_ST
+	Install_Animation_C2P_WeightSet(anim);
+#endif
+	Theme.Queue_Song(THEME_WIN1);
+
 	void const * country4 = MFCD::Retrieve("COUNTRY4.AUD");
 	void const * sfx4 = MFCD::Retrieve("SFX4.AUD");
 	Beepy6 = MFCD::Retrieve("BEEPY6.AUD");
-
-	/*
-	** Load the background for the score screen
-	*/
-	anim = Open_Animation(ScreenNames[house],NULL,0L,(WSAOpenType)(WSA_OPEN_FROM_MEM | WSA_OPEN_TO_PAGE),Palette);
 
 	unsigned minutes = (unsigned)((ElapsedTime / (long)TIMER_MINUTE))+1;
 
@@ -739,6 +743,10 @@ void ScoreClass::Presentation(void)
 	Hide_Mouse();
 	Animate_Frame(anim, SysMemPage, 1);
 	SysMemPage.Blit(*PseudoSeenBuff);
+#ifdef ATARI_ST
+	/* SeenBuff was cleared above; put frame 1 on-screen before the fade. */
+	Blit_Hid_Page_To_Seen_Buff();
+#endif
 	Increase_Palette_Luminance (Palette , 30,30,30,63);
 #ifndef ATARI_ST
 	InterpolationPalette = Palette;
@@ -2023,7 +2031,6 @@ void Multi_Score_Presentation(void)
 
 	FontXSpacing = 0;
 	Map.Override_Mouse_Shape(MOUSE_NORMAL);
-	Theme.Queue_Song(THEME_WIN1);
 
 #ifdef ATARI_ST
 	PseudoSeenBuff = HidPage.Get_Graphic_Buffer();
@@ -2045,7 +2052,12 @@ void Multi_Score_Presentation(void)
 
 	Set_Palette(BlackPalette);
 
+	/* Open WSA before theme music so AUDX streaming does not starve the anim Alloc. */
 	anim = Open_Animation("MLTIPLYR.WSA",NULL,0L,(WSAOpenType)(WSA_OPEN_FROM_MEM | WSA_OPEN_TO_PAGE),Palette);
+#ifdef ATARI_ST
+	Install_Animation_C2P_WeightSet(anim);
+#endif
+	Theme.Queue_Song(THEME_WIN1);
 	Hide_Mouse();
 
 	/*

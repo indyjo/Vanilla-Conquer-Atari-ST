@@ -344,6 +344,28 @@ static bool Build_Frame_DeltaPtrOk(void const *base, size_t blob, void const *sr
 	return (size_t)(s - b) < blob;
 }
 
+/*
+ * Counterpart to Get_Build_Frame_Field. The uncompressed-shape bookkeeping stores
+ * a magic marker and a slot index back into the shape header, so the write must
+ * use the same byte order the read expects — a native store would come back
+ * byte-swapped on 68k and the marker would never match.
+ */
+static inline void Put_Build_Frame_Field(void *dataptr, size_t offset, unsigned short value)
+{
+	if (!dataptr) return;
+#ifdef ATARI_ST
+	if (SHPX_Is_Meta(dataptr)) {
+		ShpxPrefix *pfx = (ShpxPrefix *)dataptr;
+		uint16_t *field = (uint16_t *)((char *)&pfx->kf + offset);
+		*field = value;
+		return;
+	}
+#endif
+	unsigned char *bytes = (unsigned char *)dataptr + offset;
+	bytes[0] = (unsigned char)(value & 0xFFu);
+	bytes[1] = (unsigned char)((value >> 8) & 0xFFu);
+}
+
 unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void *buffptr,
 		size_t blob_size)
 {
@@ -424,14 +446,45 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		**
 		*/
 		if (!BigShapeBufferStart){
-			BigShapeBufferStart = (char*)Alloc(BigShapeBufferLength, MEM_NORMAL);
-			BigShapeBufferPtr = BigShapeBufferStart;
 			/*
-			** Allocate memory for theater specific uncompressed shapes
+			** Alloc calls Memory_Error on failure, which is fatal. Losing this
+			** buffer only costs speed, so silence the handler and fall back to
+			** compressed shapes instead of dying.
 			*/
-			TheaterShapeBufferStart = (char*) Alloc (TheaterShapeBufferLength, MEM_NORMAL);
-			TheaterShapeBufferPtr = TheaterShapeBufferStart;
+			void (*saved_memory_error)(void) = Memory_Error;
+			Memory_Error = NULL;
+			BigShapeBufferStart = (char*)Alloc(BigShapeBufferLength, MEM_NORMAL);
+			if (BigShapeBufferStart){
+				/*
+				** Allocate memory for theater specific uncompressed shapes
+				*/
+				TheaterShapeBufferStart = (char*) Alloc (TheaterShapeBufferLength, MEM_NORMAL);
+			}
+			Memory_Error = saved_memory_error;
+
+			if (!BigShapeBufferStart || !TheaterShapeBufferStart){
+				if (TheaterShapeBufferStart){
+					Free(TheaterShapeBufferStart);
+					TheaterShapeBufferStart = NULL;
+				}
+				if (BigShapeBufferStart){
+					Free(BigShapeBufferStart);
+					BigShapeBufferStart = NULL;
+				}
+				UseBigShapeBuffer = false;
+				OriginalUseBigShapeBuffer = false;
+				DBG_WARN("Shapes: uncompressed buffer alloc failed, staying compressed");
+			}else{
+				BigShapeBufferPtr = BigShapeBufferStart;
+				TheaterShapeBufferPtr = TheaterShapeBufferStart;
+				DBG_INFO("Shapes: uncompressed frame cache at %p (%ld KiB) + theater %p (%ld KiB)",
+				    (void*)BigShapeBufferStart, (long)BigShapeBufferLength / 1024L,
+				    (void*)TheaterShapeBufferStart, (long)TheaterShapeBufferLength / 1024L);
+			}
 		}
+
+		/* Allocation may have just failed; fall through to the compressed path. */
+		if (BigShapeBufferStart){
 
 
 		/*
@@ -463,23 +516,34 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		*/
 		unsigned short keyfr_x = Get_Build_Frame_X(dataptr);
 		if (keyfr_x != UNCOMPRESS_MAGIC_NUMBER){
-			// Write magic number and slot index back - use memcpy for safety
-			unsigned short magic = UNCOMPRESS_MAGIC_NUMBER;
-			memcpy((char*)dataptr + offsetof(KeyFrameHeaderType, x), &magic, sizeof(magic));
-			unsigned short slot_index;
-			if (IsTheaterShape){
-				slot_index = TheaterSlotsUsed;
-				TheaterSlotsUsed++;
-			}else{
-				slot_index = TotalSlotsUsed;
-				TotalSlotsUsed++;
-			}
-			memcpy((char*)dataptr + offsetof(KeyFrameHeaderType, y), &slot_index, sizeof(slot_index));
 			/*
-			** Allocate and clear the memory for the shape info
+			** Slots are split: normal shapes 0..THEATER_SLOT_START-1, theater
+			** shapes above that. Running out is not fatal — drop back to
+			** compressed shapes rather than writing past KeyFrameSlots.
 			*/
-			KeyFrameSlots[slot_index]= new char *[total_frames];
-			memset (KeyFrameSlots[slot_index] , 0 , total_frames*4);
+			int const slot_limit = IsTheaterShape ? MAX_SLOTS : THEATER_SLOT_START;
+			int const next_slot = IsTheaterShape ? TheaterSlotsUsed : TotalSlotsUsed;
+			if (next_slot >= slot_limit){
+				UseBigShapeBuffer = false;
+				OriginalUseBigShapeBuffer = false;
+				DBG_WARN("Shapes: keyframe slots exhausted (%d), back to compressed", next_slot);
+			}else{
+				unsigned short slot_index = (unsigned short)next_slot;
+				if (IsTheaterShape){
+					TheaterSlotsUsed++;
+				}else{
+					TotalSlotsUsed++;
+				}
+				Put_Build_Frame_Field(
+				    (void*)dataptr, offsetof(KeyFrameHeaderType, x), UNCOMPRESS_MAGIC_NUMBER);
+				Put_Build_Frame_Field(
+				    (void*)dataptr, offsetof(KeyFrameHeaderType, y), slot_index);
+				/*
+				** Allocate and clear the memory for the shape info
+				*/
+				KeyFrameSlots[slot_index]= new char *[total_frames];
+				memset (KeyFrameSlots[slot_index] , 0 , total_frames*sizeof(char*));
+			}
 		}
 
 		/*
@@ -487,12 +551,14 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		** a pointer to the raw data
 		*/
 		unsigned short keyfr_y = Get_Build_Frame_Y(dataptr);
-		if (*(KeyFrameSlots[keyfr_y]+framenumber)){
+		if (UseBigShapeBuffer && keyfr_y < MAX_SLOTS && KeyFrameSlots[keyfr_y] != NULL
+		    && *(KeyFrameSlots[keyfr_y]+framenumber)){
 			if (IsTheaterShape){
 				KF_RETURN((unsigned long)TheaterShapeBufferStart + (unsigned long)*(KeyFrameSlots[keyfr_y]+framenumber));
 			}else{
 				KF_RETURN((unsigned long)BigShapeBufferStart + (unsigned long)*(KeyFrameSlots[keyfr_y]+framenumber));
 			}
+		}
 		}
 	}
 
@@ -705,7 +771,16 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 		}
 	}
 
-	if (UseBigShapeBuffer){
+	/*
+	** Must mirror the guard on the slot-allocation block above: SHPX shapes are
+	** excluded there and therefore never get a KeyFrameSlots entry, so storing
+	** into one here would follow an uninitialised index.
+	*/
+	if (UseBigShapeBuffer
+#ifdef ATARI_ST
+	    && !kf.is_shpx
+#endif
+	){
 		/*
 		** Save the uncompressed shape data so we dont have to uncompress it
 		** again next time its drawn.
@@ -732,6 +807,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			((ShapeHeaderType *)TheaterShapeBufferPtr)->shape_data = temp_shape_ptr - (unsigned)TheaterShapeBufferStart;		//pointer to old raw shape data
 			((ShapeHeaderType *)TheaterShapeBufferPtr)->shape_buffer = 1;	//Theater buffer
 			unsigned short y = Get_Build_Frame_Y(dataptr);
+			if (y >= MAX_SLOTS || KeyFrameSlots[y] == NULL){
+				/* No slot for this shape — return the decoded frame uncached. */
+				Length = length;
+				KF_RETURN(return_value);
+			}
 			*(KeyFrameSlots[y]+framenumber) = TheaterShapeBufferPtr - (unsigned)TheaterShapeBufferStart;
 			TheaterShapeBufferPtr = (char*)(length + (unsigned)temp_shape_ptr);
 			/*
@@ -760,6 +840,11 @@ unsigned long Build_Frame(void const *dataptr, unsigned short framenumber, void 
 			((ShapeHeaderType *)BigShapeBufferPtr)->shape_data = temp_shape_ptr - (unsigned)BigShapeBufferStart;		//pointer to old raw shape data
 			((ShapeHeaderType *)BigShapeBufferPtr)->shape_buffer = 0;	//Normal Big Shape Buffer
 			unsigned short y = Get_Build_Frame_Y(dataptr);
+			if (y >= MAX_SLOTS || KeyFrameSlots[y] == NULL){
+				/* No slot for this shape — return the decoded frame uncached. */
+				Length = length;
+				KF_RETURN(return_value);
+			}
 			*(KeyFrameSlots[y]+framenumber) = BigShapeBufferPtr - (unsigned)BigShapeBufferStart;
 			BigShapeBufferPtr = (char*)(length + (unsigned)temp_shape_ptr);
 			// Align the next shape

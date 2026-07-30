@@ -3,7 +3,13 @@
  *
  * These cover the small subset of APIs still referenced by the shared
  * cross-platform code without pulling in the full MiNT libc.
+ *
+ * Mintlib already provides all of these, so the whole file compiles away
+ * unless LIBCMINI is defined (LIBC_RUNTIME=mintlib would otherwise hit
+ * multiple-definition errors at link time, starting with __flshfp).
  */
+
+#ifdef LIBCMINI
 
 #include <mint/osbind.h>
 
@@ -194,3 +200,5 @@ char *realpath(const char *path, char *resolved_path)
 }
 
 }
+
+#endif /* LIBCMINI */

@@ -19,6 +19,7 @@
 
 #include <mint/osbind.h>
 #include <mint/ostruct.h>
+#include <mint/falcon.h>
 
 #include <stdio.h>
 #include <stdint.h>
@@ -72,6 +73,9 @@ static unsigned long Tos_LogBase = 0;
 static unsigned long Tos_PhysBase = 0;
 static int Tos_Rez = 0;
 static int Tos_StateCaptured = 0;
+/* A Falcon keeps its video mode in the VIDEL mode word; Getrez/Setscreen only
+ * describe ST and TT resolutions. -1 means "not a Falcon mode". */
+static int Tos_Videl_Mode = -1;
 
 static void ST_Shifter_Set_Sync_Mode_Only(int rez)
 {
@@ -146,10 +150,11 @@ void ST_Screen_Capture_Tos_Video_State(void)
 	Tos_LogBase = (unsigned long)Logbase();
 	Tos_PhysBase = (unsigned long)Physbase();
 	Tos_Rez = Getrez();
+	Tos_Videl_Mode = ST_Hw_Is_Falcon_Class() ? (int)VsetMode(VM_INQUIRE) : -1;
 	Tos_StateCaptured = 1;
 	Palette_ST_Capture_Hardware_State_Once();
-	DBG_INFO("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d",
-		Tos_LogBase, Tos_PhysBase, Tos_Rez);
+	DBG_INFO("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d videl=$%X",
+		Tos_LogBase, Tos_PhysBase, Tos_Rez, (unsigned)Tos_Videl_Mode);
 }
 
 int ST_Screen_Enter_LoRes_Game_Video(void)
@@ -180,7 +185,12 @@ void ST_Screen_Shutdown_Restore_Tos(void)
 	Restore_Original_Resolution();
 
 	if (Tos_StateCaptured) {
-		if (!ST_Current_Video_Matches((long)Tos_LogBase, (long)Tos_PhysBase, Tos_Rez)) {
+		if (Tos_Videl_Mode >= 0) {
+			/* SCR_MODECODE: fourth argument is the VIDEL mode. No "already there"
+			 * test - Getrez only reports the ST-compatible value. */
+			VsetScreen((long)Tos_LogBase, (long)Tos_PhysBase, SCR_MODECODE,
+			    (short)Tos_Videl_Mode);
+		} else if (!ST_Current_Video_Matches((long)Tos_LogBase, (long)Tos_PhysBase, Tos_Rez)) {
 			ST_Shifter_Set_Sync_Mode_Only(Tos_Rez);
 			ST_Screen_Hardware_Set_Phys_Base((void *)Tos_PhysBase);
 			DBG_INFO("C&C - Restored TOS shifter: phys=$%lX rez=%d (log=$%lX unchanged in OS)",
@@ -272,6 +282,9 @@ static long Tos_LogBase = 0;
 static long Tos_PhysBase = 0;
 static int Tos_Rez = 0;
 static int Tos_StateCaptured = 0;
+/* A Falcon keeps its video mode in the VIDEL mode word; Getrez/Setscreen only
+ * describe ST and TT resolutions. -1 means "not a Falcon mode". */
+static int Tos_Videl_Mode = -1;
 
 void ST_Screen_Capture_Tos_Video_State(void)
 {
@@ -281,10 +294,11 @@ void ST_Screen_Capture_Tos_Video_State(void)
 	Tos_LogBase = Logbase();
 	Tos_PhysBase = Physbase();
 	Tos_Rez = Getrez();
+	Tos_Videl_Mode = ST_Hw_Is_Falcon_Class() ? (int)VsetMode(VM_INQUIRE) : -1;
 	Tos_StateCaptured = 1;
 	Palette_ST_Capture_Hardware_State_Once();
-	DBG_INFO("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d",
-		Tos_LogBase, Tos_PhysBase, Tos_Rez);
+	DBG_INFO("C&C - Saved TOS video: log=$%lX phys=$%lX rez=%d videl=$%X",
+		Tos_LogBase, Tos_PhysBase, Tos_Rez, (unsigned)Tos_Videl_Mode);
 }
 
 int ST_Screen_Enter_LoRes_Game_Video(void)
@@ -313,8 +327,13 @@ void *ST_Screen_Register_Game_Visible(int width, int height)
 void ST_Screen_Shutdown_Restore_Tos(void)
 {
 	if (Tos_StateCaptured) {
-		/* Setscreen clears the framebuffer; skip if already on the saved mode. */
-		if (!ST_Current_Video_Matches(Tos_LogBase, Tos_PhysBase, Tos_Rez)) {
+		if (Tos_Videl_Mode >= 0) {
+			/* SCR_MODECODE: fourth argument is the VIDEL mode. No "already there"
+			 * test - Getrez only reports the ST-compatible value. */
+			VsetScreen((long)Tos_LogBase, (long)Tos_PhysBase, SCR_MODECODE,
+			    (short)Tos_Videl_Mode);
+		} else if (!ST_Current_Video_Matches(Tos_LogBase, Tos_PhysBase, Tos_Rez)) {
+			/* Setscreen clears the framebuffer; skip if already on the saved mode. */
 			Setscreen(Tos_LogBase, Tos_PhysBase, (long)Tos_Rez);
 		}
 	}

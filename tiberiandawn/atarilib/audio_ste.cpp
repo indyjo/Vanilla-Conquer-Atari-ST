@@ -241,6 +241,43 @@ static void ste_falcon_dma_matrix_connect(void)
 	(void)Devconnect(DMAPLAY, DAC, CLK25M, CLKOLD, NO_SHAKE);
 }
 
+/*
+ * TOS sound state, captured before the first change and put back by Sound_End.
+ * Devconnect rewires the Falcon connection matrix and clocks the codec for our
+ * sample rate; the DAC reconstruction filter follows that clock, so leaving it
+ * set makes every later TOS sound - the keyboard click above all - muffled.
+ */
+static unsigned char g_tos_sound_mode;
+static int g_tos_sound_saved;
+
+static void ste_audio_capture_tos_sound(void)
+{
+	if (g_tos_sound_saved) {
+		return;
+	}
+	g_tos_sound_saved = 1;
+	/* Same test as the restore below: a plain ST is neither class and has no
+	 * register at $FF8921 to read. */
+	if (ST_Hw_Is_Ste_Class()) {
+		g_tos_sound_mode = *STE_DMA_SOUND_MODE;
+	}
+}
+
+static void ste_audio_restore_tos_sound(void)
+{
+	if (!g_tos_sound_saved) {
+		return;
+	}
+	g_tos_sound_saved = 0;
+	if (ST_Hw_Is_Falcon_Class()) {
+		/* The codec clock is what made later TOS sounds dull; DMAPLAY -> DAC
+		 * is the routing TOS uses anyway. */
+		(void)Devconnect(DMAPLAY, DAC, CLK25M, CLK50K, NO_SHAKE);
+	} else if (ST_Hw_Is_Ste_Class()) {
+		*STE_DMA_SOUND_MODE = g_tos_sound_mode;
+	}
+}
+
 static void ste_dma_set_address(volatile unsigned char* high_reg, unsigned long phys)
 {
 	high_reg[0] = (unsigned char)((phys >> 16) & 0xFFU);
@@ -1048,6 +1085,7 @@ void Sample_Make_PCM(void* sample)
 
 BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 {
+	ste_audio_capture_tos_sound();
 	ste_process_pending_voice_shutdown();
 	(void)stereo;
 	(void)rate;
@@ -1115,6 +1153,7 @@ void Sound_End(void)
 	free(g_stream_file_buf);
 	g_stream_file_buf = 0;
 	g_stream_file_len = 0;
+	ste_audio_restore_tos_sound();
 }
 
 void Stop_Sample(int)

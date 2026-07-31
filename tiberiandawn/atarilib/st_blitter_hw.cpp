@@ -27,10 +27,33 @@ static_assert(offsetof(ST_Blitter, skew) == 29, "ST_Blitter skew offset");
 
 #define g_Blitter (*(volatile ST_Blitter *)0xFFFF8A20UL)
 
+/*
+ * Wait until the blitter is idle. For non-HOG (shared) blits this is the Atari
+ * "premature restart" loop: each bset re-asserts BUSY so the blitter resumes
+ * after ~7 bus cycles instead of yielding the full 64-cycle CPU slice (~90% of
+ * HOG throughput while still allowing IRQs between restarts).
+ */
 static void ST_Blitter_Wait_Idle(void)
 {
-	while ((g_Blitter.ctrl & 0x80u) != 0) {
+	volatile uint8_t *const ctrl = &g_Blitter.ctrl;
+#if defined(__m68k__)
+	__asm__ volatile(
+		"1:\n\t"
+		"bset.b #7,(%0)\n\t"
+		"nop\n\t"
+		"bne.s 1b"
+		:
+		: "a"(ctrl)
+		: "cc", "memory");
+#else
+	for (;;) {
+		const uint8_t prev = *ctrl;
+		*ctrl = (uint8_t)(prev | 0x80u);
+		if ((prev & 0x80u) == 0) {
+			break;
+		}
 	}
+#endif
 }
 
 static ST_Blitter_Backend g_hw_backend;

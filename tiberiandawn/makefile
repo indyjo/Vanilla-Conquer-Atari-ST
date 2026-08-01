@@ -441,7 +441,7 @@ endif
 # ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp \
-	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st16_iconset.cpp $(PLATFORM_LIB)/st16_draw.cpp $(PLATFORM_LIB)/st16_convert.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blit.cpp $(PLATFORM_LIB)/st_blitter_hw.cpp $(PLATFORM_LIB)/st_soft_blit.cpp $(PLATFORM_LIB)/st_cache.cpp $(PLATFORM_LIB)/st_cache_ops.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/shpx.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st16_iconset.cpp $(PLATFORM_LIB)/st16_draw.cpp $(PLATFORM_LIB)/st16_convert.cpp $(PLATFORM_LIB)/st16_preshift.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blit.cpp $(PLATFORM_LIB)/st_blitter_hw.cpp $(PLATFORM_LIB)/st_soft_blit.cpp $(PLATFORM_LIB)/st_cache.cpp $(PLATFORM_LIB)/st_cache_ops.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/shpx.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp $(PLATFORM_LIB)/ikbd.cpp \
 	$(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/wwkeyboard_st.cpp \
 	$(PLATFORM_LIB)/mouseww.cpp \

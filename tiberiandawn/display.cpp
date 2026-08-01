@@ -76,6 +76,9 @@
  *   DisplayClass::Prev_Object -- Searches for the previous object on the map.                 *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 #include "function.h"
+#ifdef ATARI_ST
+#include "atarilib/st16_preshift.h"
+#endif
 #include "common/fading.h"
 #include "ccini.h"
 #include "atarilib/st_frame_meter.h"
@@ -676,6 +679,10 @@ void DisplayClass::Init_Theater(TheaterType theater)
         }
         TheaterData = new MFCD(fullname);
         TheaterData->Cache();
+#ifdef ATARI_ST
+        /* Pre-shift entries are keyed by iconset address; that memory is gone. */
+        ST16_Preshift_Reset();
+#endif
     }
 
 #endif

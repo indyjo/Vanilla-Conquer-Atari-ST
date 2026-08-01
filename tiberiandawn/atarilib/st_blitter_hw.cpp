@@ -3,6 +3,7 @@
  */
 
 #include "st_blit.h"
+#include "st_hw_probe.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -28,13 +29,28 @@ static_assert(offsetof(ST_Blitter, skew) == 29, "ST_Blitter skew offset");
 #define g_Blitter (*(volatile ST_Blitter *)0xFFFF8A20UL)
 
 /*
- * Wait until the blitter is idle. For non-HOG (shared) blits this is the Atari
- * "premature restart" loop: each bset re-asserts BUSY so the blitter resumes
- * after ~7 bus cycles instead of yielding the full 64-cycle CPU slice (~90% of
- * HOG throughput while still allowing IRQs between restarts).
+ * -1 = unset, 0 = ST/STe premature-restart wait, 1 = Falcon BUSY poll.
+ * Cached so the hot path never calls Getcookie. Bodies stay in this function
+ * (direct BSR from Await/Execute) — cheaper on 68000 than an indirect jsr.
  */
+static signed char g_blitter_wait_falcon = -1;
+
 static void ST_Blitter_Wait_Idle(void)
 {
+	if (g_blitter_wait_falcon < 0) {
+		g_blitter_wait_falcon = ST_Hw_Is_Falcon_Class() ? 1 : 0;
+	}
+
+	if (g_blitter_wait_falcon) {
+		while ((g_Blitter.ctrl & 0x80u) != 0) {
+		}
+		return;
+	}
+
+	/*
+	 * Atari premature-restart wait for shared (non-HOG) blits: re-assert BUSY so
+	 * the chip resumes after ~7 bus cycles instead of a full 64-cycle CPU slice.
+	 */
 	volatile uint8_t *const ctrl = &g_Blitter.ctrl;
 #if defined(__m68k__)
 	__asm__ volatile(

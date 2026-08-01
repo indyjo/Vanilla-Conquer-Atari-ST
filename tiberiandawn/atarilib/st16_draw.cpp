@@ -3,6 +3,12 @@
  */
 
 #include "st16_draw.h"
+#include "st16_preshift.h"
+
+/* Set to 0 to compare against the plain skewed blit. */
+#ifndef ST16_USE_PRESHIFT
+#define ST16_USE_PRESHIFT 1
+#endif
 
 #include "st16_iconset.h"
 #include "st_blit.h"
@@ -221,6 +227,35 @@ BOOL ST16_Blit_Stamp(
 	if (clip_blit_w == 0 || clip_blit_h == 0) {
 		return TRUE;
 	}
+
+	/*
+	 * A pre-shifted variant makes the blit skew free: the tile sits at x=shift
+	 * inside the block, so source and destination share the 16-pixel phase.
+	 * Clipping moves both by the same amount and does not disturb that.
+	 */
+#if ST16_USE_PRESHIFT
+	{
+		ST16_PreshiftView view;
+		if (ST16_Preshift_Lookup(planar, layout.planar_row_bytes, mask,
+			layout.mask_row_bytes, (int)tile_w, (int)tile_h, has_mask ? 1 : 0,
+			(int)(dx_abs & 15), &view)) {
+			return ST16_Blit_Planar_Rect(
+				view.planar,
+				(uint16_t)view.planar_row_bytes,
+				view.mask,
+				(uint16_t)view.mask_row_bytes,
+				has_mask,
+				(int16_t)(view.src_x + clip_src_x),
+				(int16_t)clip_src_y,
+				dst_root,
+				dst_bpl,
+				dx_abs,
+				dy_abs,
+				clip_blit_w,
+				clip_blit_h);
+		}
+	}
+#endif
 
 	return ST16_Blit_Planar_Rect(
 		planar,

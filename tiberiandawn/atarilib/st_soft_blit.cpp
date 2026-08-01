@@ -245,8 +245,31 @@ inline void ST_Soft_Blit_Op(
 		d += dst_x_inc;                                                    \
 	} while (0)
 
+/*
+ * With a pre-shifted source the skew is 0 and the hold register is dead weight:
+ * the output word is just the source word. SHIFT0 is a template constant, so the
+ * swap, the merge and the shift fold away and only the load remains.
+ */
+#define ST_SOFT_P4_DIRECT(MASK, NOTMASK)                                           \
+	do {                                                                       \
+		*(uint16_t *)(d + 0) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 0),   \
+		    *(const uint16_t *)(s + 0), (MASK), (NOTMASK));                 \
+		*(uint16_t *)(d + 2) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 2),   \
+		    *(const uint16_t *)(s + 2), (MASK), (NOTMASK));                 \
+		*(uint16_t *)(d + 4) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 4),   \
+		    *(const uint16_t *)(s + 4), (MASK), (NOTMASK));                 \
+		*(uint16_t *)(d + 6) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 6),   \
+		    *(const uint16_t *)(s + 6), (MASK), (NOTMASK));                 \
+		s += src_x_inc;                                                    \
+		d += dst_x_inc;                                                    \
+	} while (0)
+
 #define ST_SOFT_P4_WORD(MASK, NOTMASK, LAST)                                       \
 	do {                                                                       \
+		if (SHIFT0) {                                                      \
+			ST_SOFT_P4_DIRECT((MASK), (NOTMASK));                      \
+			break;                                                     \
+		}                                                                  \
 		if (!REVERSE) {                                                    \
 			ST_SOFT_P4_SWAP();                                         \
 		}                                                                  \
@@ -272,7 +295,7 @@ inline void ST_Soft_Blit_Op(
  * and takes dst_x_inc off the stack. Run_Planes verifies the assumption and
  * falls back to the generic per-plane loop if it ever fails to hold.
  */
-template <uint8_t OP, bool REVERSE>
+template <uint8_t OP, bool REVERSE, bool SHIFT0>
 void ST_Soft_P4_Planar(
 	const uint8_t *s,
 	uint8_t *d,
@@ -338,7 +361,7 @@ void ST_Soft_P4_Planar(
  * 1bpp mask source shared by all four planes: one source read per column
  * instead of four, and a single hold register.
  */
-template <uint8_t OP>
+template <uint8_t OP, bool SHIFT0>
 void ST_Soft_P4_Broadcast(
 	const uint8_t *s,
 	uint8_t *d,
@@ -364,12 +387,18 @@ void ST_Soft_P4_Broadcast(
 
 #define ST_SOFT_BC_WORD(MASK, NOTMASK, LAST)                                       \
 	do {                                                                       \
-		hold = (hold << 16) | (hold >> 16);                                \
-		if (!nfsr || !(LAST)) {                                            \
-			hold = (hold & 0xFFFF0000u) | *(const uint16_t *)s;         \
+		uint16_t sv;                                                       \
+		if (SHIFT0) {                                                      \
+			sv = *(const uint16_t *)s;                                 \
 			s += src_x_inc;                                            \
+		} else {                                                           \
+			hold = (hold << 16) | (hold >> 16);                        \
+			if (!nfsr || !(LAST)) {                                    \
+				hold = (hold & 0xFFFF0000u) | *(const uint16_t *)s; \
+				s += src_x_inc;                                    \
+			}                                                          \
+			sv = (uint16_t)(hold >> shift);                            \
 		}                                                                  \
-		const uint16_t sv = (uint16_t)(hold >> shift);                     \
 		*(uint16_t *)(d + 0) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 0), sv, (MASK), (NOTMASK)); \
 		*(uint16_t *)(d + 2) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 2), sv, (MASK), (NOTMASK)); \
 		*(uint16_t *)(d + 4) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 4), sv, (MASK), (NOTMASK)); \
@@ -445,20 +474,35 @@ void ST_Soft_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool ho
 		return;
 	}
 
-#define ST_SOFT_P4_DISPATCH(OPV)                                                  \
+	/*
+	 * Pre-shifted sources land here with skew 0. fxsr/nfsr only exist to feed the
+	 * hold register, so they must be clear too before the direct path is valid.
+	 */
+	const bool shift0 = (shift == 0u) && !fxsr && !nfsr;
+
+#define ST_SOFT_P4_CALL(OPV, S0)                                                  \
 	do {                                                                      \
 		if (!job.src_addr_per_plane) {                                    \
-			ST_Soft_P4_Broadcast<OPV>(s, d, src_y_inc, dst_y_inc,      \
+			ST_Soft_P4_Broadcast<OPV, S0>(s, d, src_y_inc, dst_y_inc,  \
 			    x_count, lines, endmask1, endmask2, endmask3, shift,   \
 			    fxsr, nfsr);                                           \
 		} else if (reverse_x) {                                           \
-			ST_Soft_P4_Planar<OPV, true>(s, d, src_y_inc, dst_y_inc,   \
-			    x_count, lines, endmask1, endmask2, endmask3, shift,   \
-			    fxsr, nfsr);                                           \
+			ST_Soft_P4_Planar<OPV, true, S0>(s, d, src_y_inc,          \
+			    dst_y_inc, x_count, lines, endmask1, endmask2,         \
+			    endmask3, shift, fxsr, nfsr);                          \
 		} else {                                                          \
-			ST_Soft_P4_Planar<OPV, false>(s, d, src_y_inc, dst_y_inc,  \
-			    x_count, lines, endmask1, endmask2, endmask3, shift,   \
-			    fxsr, nfsr);                                           \
+			ST_Soft_P4_Planar<OPV, false, S0>(s, d, src_y_inc,         \
+			    dst_y_inc, x_count, lines, endmask1, endmask2,         \
+			    endmask3, shift, fxsr, nfsr);                          \
+		}                                                                 \
+	} while (0)
+
+#define ST_SOFT_P4_DISPATCH(OPV)                                                  \
+	do {                                                                      \
+		if (shift0) {                                                     \
+			ST_SOFT_P4_CALL(OPV, true);                               \
+		} else {                                                          \
+			ST_SOFT_P4_CALL(OPV, false);                              \
 		}                                                                 \
 	} while (0)
 
@@ -477,6 +521,7 @@ void ST_Soft_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool ho
 		break;
 	}
 #undef ST_SOFT_P4_DISPATCH
+#undef ST_SOFT_P4_CALL
 }
 void ST_Soft_Backend::Await()
 {

@@ -282,10 +282,11 @@ int main(int argc, char *argv[])
 			 * ST shifter uses 256-byte-aligned video base. Visible buffer is allocated
 			 * in st_screen.cpp when ST_SEPARATE_DEBUG_SCREEN.
 			 *
-			 * The hidden page is a pure back buffer, never a Setscreen() video base, so
-			 * only the BLiTTER constrains it: the chip cannot reach alternate RAM. With
-			 * hardware blits off, every blit is a CPU copy anyway, so prefer TT-RAM and
-			 * leave the scarce ST-RAM to the shifter and STE DMA audio.
+			 * The hidden page is a back buffer for the game's own drawing, and with
+			 * hardware blits off every blit is a CPU copy, so prefer TT-RAM and leave
+			 * the scarce ST-RAM to the shifter and STE DMA audio. Callers that hand
+			 * this page to the video hardware must check the address first: neither
+			 * the BLiTTER nor the shifter can reach alternate RAM.
 			 */
 			static unsigned char *st_hidden_alloc = NULL;
 			static unsigned char *st_hidden_plane = NULL;

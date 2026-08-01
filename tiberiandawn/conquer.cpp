@@ -122,6 +122,15 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 	StvqFrame frame;
 	uint8_t* visible0 = (uint8_t*)VisiblePage.Get_Buffer();
 	uint8_t* hidden0 = (uint8_t*)HiddenPage.Get_Buffer();
+	/*
+	 * The player makes both pages the video base, and the shifter cannot read
+	 * alternate RAM. Pass neither rather than one it cannot show; it then
+	 * allocates its own ST-RAM screens.
+	 */
+	if (((((unsigned long)visible0) | ((unsigned long)hidden0)) & 0xFF000000UL) != 0UL) {
+		visible0 = NULL;
+		hidden0 = NULL;
+	}
 	int yielded = 0;
 	int first = 1;
 	int have_frame = 0;

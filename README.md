@@ -4,7 +4,7 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 
 ![In-game screenshot (Nod base, 320×200)](docs/atari-st/screenshot-ingame.png)
 
-**Status:** Game is rendered in 16 colors; playable in emulation; performance not great (usually single-digit FPS); saving gamestate works, loading has problems; some graphics glitches.
+**Status:** Game is rendered in 16 colors; playable in emulation; performance not great (usually single-digit FPS); FMV cutscenes supported.
 
 - Upstream Vanilla Conquer (PC, other platforms): **[README-vanilla-conquer.md](README-vanilla-conquer.md)**
 - Open tasks & release prep: **[atari-todo.md](atari-todo.md)**
@@ -12,17 +12,14 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 
 ## Requirements
 
-Since this is a work in progress, system requirements are still a little too high for original Atari ST hardware.
-
-Minimum reliable emulation: **Mega STE, 16 MHz, 10 MB RAM, with BLiTTER _and_ DMA audio** (required). Higher CPU speeds improve framerate.  
-**We lack real hardware datapoints — feedback welcome!** This is a work-in-progress port (WIP).
-> **Goal:** Eventually, the aim is for this port to run on a 4 MB (Mega) STE (or compatible).
+- CPU: Acceptable framerates on Falcon+. FMV also works on 8MHz.
+- RAM: 4MB supported (more RAM is better, especiall TT-RAM)
+- Blitter is supported; if unavailable, software Blitting is used
+- STe/Falcon DMA sound is supported; game remains silent on ST/TT.
 
 ## Run
 
-1. Get C&C Tiberian Dawn data ([C&C Communications Center — downloads](https://cnc-comm.com/command-and-conquer/downloads/the-game)). Use the DOS ("C&C Classic") version, not the Windows 95 ("Gold") version.
-2. One folder: `cnc.tos`, C&C `.MIX` files, and [`tiberiandawn/atari-assets/`](tiberiandawn/atari-assets/readme.md) sidecars (`.W16`).
-3. Repack MIXes before first play with [remix-web](tiberiandawn/tools/remix-web/) (or host [`remix`](tiberiandawn/tools/remix/readme.md) with `./remix -d /path/to/gamedata`) for even-aligned payloads, 11025 Hz mono PCM audio, and optional ST16/SHPX/STVQ conversion.
+See the [itch.io project page](https://indyjo.itch.io/cnc-atari-st).
 
 ## Build
 
@@ -32,12 +29,21 @@ Minimum reliable emulation: **Mega STE, 16 MHz, 10 MB RAM, with BLiTTER _and
 
 | Tool | Description |
 |------|-------------|
-| [remix](tiberiandawn/tools/remix/readme.md) / [remix-web](tiberiandawn/tools/remix-web/) | Repack `.MIX` (even offsets, audio → 11025 Hz PCM, optional ST16/SHPX/STVQ) |
+| [remix](tiberiandawn/tools/remix/readme.md) / [remix-web](tiberiandawn/tools/remix-web/) | Repack `.MIX` (even offsets, audio → 11025 Hz PCM / AUDX, optional ST16/SHPX/STVQ) |
+| [vqatool](tiberiandawn/tools/vqatool/readme.md) | Inspect Westwood VQA; encode FORM `STVQ` (`.stv`) for Atari |
+| [stvqview](tiberiandawn/tools/stvqview/readme.md) | On-target `.stv` player (`stvqview.ttp`) for encode checks |
 | [paltool](tiberiandawn/tools/paltool/paltool.c) | Extract 768-byte `.PAL` from BMP / CPS / WSA |
 | [palette-opt](tiberiandawn/tools/palette-opt/readme.md) | Build `.W16` chunky→planar weight sets |
 | [histtool](tiberiandawn/tools/histtool/readme.md) | Frame histograms for `palette-opt --hist` |
-| [w16fix](tiberiandawn/tools/palette-opt/readme.md) | Reorder `.W16` hardware pen subset |
+| [w16fix](tiberiandawn/tools/w16fix/) | Reorder `.W16` hardware pen subset (identity + greedy remap) |
+| [w16sort](tiberiandawn/tools/w16sort/) | Reorder `.W16` pens by YUV Hamiltonian path (needs `.PAL`) |
+| [wsa_palette_report.py](tiberiandawn/tools/wsa_palette_report.py) | Dump WSA header/palette info; compare against a reference `.PAL` |
 | [list_mix](tiberiandawn/list_mix/readme.md) | List MIX contents (CRC, names) |
+
+## Contributors
+
+- **Jonas Eschenburg** — original Atari ST/STE port author.
+- **Matthias Alles** — Falcon / accelerated-machine performance work.
 
 ## Legal
 

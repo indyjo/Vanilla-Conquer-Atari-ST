@@ -8,6 +8,8 @@
  * Hardware and TOS sysvars are accessed directly — no Supexec.
  */
 #include "stvq_hw.h"
+
+#include "../st_hw_probe.h"
 #include "stvq_prof.h"
 
 #include <mint/cookie.h>
@@ -119,13 +121,23 @@ static void dma_set_address(volatile unsigned char *high_reg, unsigned long phys
 
 static void dma_mixer_connect(void)
 {
+	/* The LMC1992 is STE only; a Falcon routes through Devconnect instead. */
+	if (!ST_Hw_Is_Ste_Class())
+		return;
 	*STE_DMA_MIXER = 0x03;
 }
 
 static void dma_stop_impl(void)
 {
-	*STE_DMA_CTRL = 0;
-	*STE_DMA_MODE = 0;
+	/* A Falcon keeps unrelated bits in these two registers; clear only the
+	 * DMA enable, as audio_ste.cpp does. */
+	if (ST_Hw_Is_Falcon_Class()) {
+		*STE_DMA_CTRL &= (unsigned char)~0x03u;
+		*STE_DMA_MODE &= (unsigned char)~0x03u;
+	} else {
+		*STE_DMA_CTRL = 0;
+		*STE_DMA_MODE = 0;
+	}
 }
 
 /* Arm DMA once to loop the whole ring (start/end not rewritten during play). */

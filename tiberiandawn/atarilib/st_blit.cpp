@@ -575,3 +575,112 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 		false);
 	return TRUE;
 }
+
+BOOL ST_Blit_Mask_Merge_Planar_Rect(
+	const uint8_t *mask_root,
+	int mask_row_bytes,
+	const uint8_t *planar_root,
+	int planar_row_bytes,
+	int sx_abs,
+	int sy_abs,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dx_abs,
+	int dy_abs,
+	int pixel_width,
+	int pixel_height)
+{
+	if (!mask_root || !planar_root || !dst_root) {
+		return FALSE;
+	}
+	if (pixel_width <= 0 || pixel_height <= 0
+		|| mask_row_bytes <= 0 || planar_row_bytes <= 0 || dst_row_bytes <= 0
+		|| mask_row_bytes > ST_BLITTER_SHORT_MAX
+		|| planar_row_bytes > ST_BLITTER_SHORT_MAX
+		|| dst_row_bytes > ST_BLITTER_SHORT_MAX
+		|| pixel_height > ST_BLITTER_SHORT_MAX) {
+		return FALSE;
+	}
+
+	const uint8_t *const mask_src = mask_root + (size_t)sy_abs * (size_t)mask_row_bytes
+		+ (size_t)((sx_abs >> 4) * 2);
+	const uint8_t *const planar_src = planar_root + (size_t)sy_abs * (size_t)planar_row_bytes
+		+ (size_t)(sx_abs >> 4) * 8;
+	uint8_t *const dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
+		+ (size_t)(dx_abs >> 4) * 8;
+
+	const bool two_pass = ST_Blit_Can_Use_Hardware(mask_src, dst)
+		|| ST_Blit_Can_Use_Hardware(planar_src, dst);
+
+	if (!two_pass) {
+		/*
+		 * One prepare, not two. Of everything ST_Blit_Prepare_Impl computes, only
+		 * src_x_inc, src_y_inc and (for reverse only) src_plane0 depend on the
+		 * source stride — endmasks, skew, x_count and the whole destination side
+		 * are identical because both streams sit at the same sx/dx. This path is
+		 * always forward, so the mask stream reduces to two derived values.
+		 */
+		ST_Blitter planar_regs;
+		ST_Blit_Job planar_job;
+
+		const bool ok = ST_Blit_Prepare_88(&planar_regs, &planar_job, planar_src, dst,
+			(short)planar_row_bytes, (short)dst_row_bytes,
+			sx_abs, dx_abs, pixel_width, (short)pixel_height);
+
+		/*
+		 * src_x_inc != 8 means the degenerate single-column case zeroed both
+		 * increments; the merged loop does not cover that.
+		 */
+		const bool mergeable = ok
+			&& planar_regs.src_x_inc == 8
+			&& planar_regs.dst_x_inc == 8
+			&& planar_job.src_addr_per_plane;
+
+		if (mergeable) {
+			const int src_words =
+				((sx_abs + pixel_width - 1) >> 4) - (sx_abs >> 4) + 1;
+			const uint8_t *const mask_plane0 = mask_src;
+			const int16_t mask_y_inc =
+				(int16_t)(mask_row_bytes - (src_words - 1) * 2);
+
+			ST_Blit_Sync_Cache_Before(
+				mask_root, mask_row_bytes, sy_abs, pixel_height,
+				dst_root, dst_row_bytes, dy_abs);
+			ST_Blit_Sync_Cache_Before(
+				planar_root, planar_row_bytes, sy_abs, pixel_height,
+				dst_root, dst_row_bytes, dy_abs);
+			ST_FRAME_BAR_BLIT_BEGIN();
+
+			ST_Soft_Blit_Mask_Merge(
+				mask_plane0,
+				mask_y_inc,
+				planar_job.src_plane0,
+				planar_regs.src_y_inc,
+				planar_job.dst_plane0,
+				planar_regs.dst_y_inc,
+				planar_regs.x_count,
+				(uint16_t)pixel_height,
+				planar_regs.endmask1,
+				planar_regs.endmask2,
+				planar_regs.endmask3,
+				(unsigned)(planar_regs.skew & 15u),
+				(planar_regs.skew & 0x80u) != 0,
+				(planar_regs.skew & 0x40u) != 0);
+
+			ST_FRAME_BAR_BLIT_END();
+			ST_Blit_Sync_Cache_After(
+				planar_root, planar_row_bytes, sy_abs, pixel_height,
+				dst_root, dst_row_bytes, dy_abs,
+				false);
+			return TRUE;
+		}
+	}
+
+	/* Hardware, or a register image the merged loop does not cover. */
+	if (!ST_Blit_Mask_And_Planar_Rect(mask_root, mask_row_bytes, sx_abs, sy_abs,
+		    dst_root, dst_row_bytes, dx_abs, dy_abs, pixel_width, pixel_height)) {
+		return FALSE;
+	}
+	return ST_Blit_Planar_Rect_Blit_Or(planar_root, planar_row_bytes, sx_abs, sy_abs,
+		dst_root, dst_row_bytes, dx_abs, dy_abs, pixel_width, pixel_height);
+}

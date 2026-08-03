@@ -93,6 +93,30 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 	int pixel_width,
 	int pixel_height);
 
+/*
+ * Transparent sprite blit: mask-AND followed by planar-OR, but in a single pass
+ * over the destination when running in software —
+ *
+ *     dest_p = (dest_p & (mask | ~endmask)) | (src_p & endmask)
+ *
+ * which halves destination traffic and needs one setup instead of two. The
+ * BLiTTER cannot merge the two operations, so the hardware path still issues
+ * both passes and stays bit-identical to calling them separately.
+ */
+BOOL ST_Blit_Mask_Merge_Planar_Rect(
+	const uint8_t *mask_root,
+	int mask_row_bytes,
+	const uint8_t *planar_root,
+	int planar_row_bytes,
+	int sx,
+	int sy,
+	uint8_t *dst_root,
+	int dst_row_bytes,
+	int dx,
+	int dy,
+	int pixel_width,
+	int pixel_height);
+
 #ifdef __cplusplus
 }
 #endif
@@ -157,6 +181,27 @@ private:
 
 ST_Blitter_Backend &ST_Blit_HW_Backend();
 ST_Soft_Backend &ST_Blit_Soft_Backend();
+
+/*
+ * Single-pass mask-merge for the software backend. Strides are fixed by the
+ * prepare helpers: mask 2, planar 8, destination 8, forward only. Skew, endmasks
+ * and x_count are shared because both sources sit at the same sx/dx.
+ */
+void ST_Soft_Blit_Mask_Merge(
+	const uint8_t *mask_src,
+	int16_t mask_y_inc,
+	const uint8_t *planar_src,
+	int16_t planar_y_inc,
+	uint8_t *dst,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3,
+	unsigned shift,
+	bool fxsr,
+	bool nfsr);
 
 #endif /* __cplusplus */
 

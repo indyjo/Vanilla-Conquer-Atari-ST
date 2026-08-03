@@ -368,7 +368,26 @@ void ST_Soft_P4_Planar_Long(
 			} else {
 				ST_SOFT_P4_LWORD(em1, nm1);
 				const uint8_t *const dmid_end = d + (int)middle * 8;
-				if (FULL_MID) {
+				if (FULL_MID && OP == 3) {
+					/*
+					 * GCC will not emit the post-increment form here —
+					 * it keeps a displacement plus a separate bump, 44
+					 * cycles per column against 22 (rg-asm, 68030).
+					 */
+					unsigned long cols =
+					    (unsigned long)(dmid_end - d) >> 3;
+					if (cols != 0) {
+						__asm__ volatile(
+						    "1:\n\t"
+						    "move.l (%0)+,(%1)+\n\t"
+						    "move.l (%0)+,(%1)+\n\t"
+						    "subq.l #1,%2\n\t"
+						    "bne 1b\n"
+						    : "+a"(s), "+a"(d), "+d"(cols)
+						    :
+						    : "memory", "cc");
+					}
+				} else if (FULL_MID) {
 					while (d != dmid_end) {
 						ST_SOFT_P4_LWORD_FULL();
 					}

@@ -374,16 +374,18 @@ void ST_Soft_P4_Planar_Long(
 					 * it keeps a displacement plus a separate bump, 44
 					 * cycles per column against 22 (rg-asm, 68030).
 					 */
-					unsigned long cols =
-					    (unsigned long)(dmid_end - d) >> 3;
-					if (cols != 0) {
+					/* dbra runs n+1 times, and middle comes
+					   from a 16-bit x_count, so it always
+					   fits the counter. */
+					if (middle != 0) {
+						unsigned long n =
+						    (unsigned long)middle - 1u;
 						__asm__ volatile(
 						    "1:\n\t"
 						    "move.l (%0)+,(%1)+\n\t"
 						    "move.l (%0)+,(%1)+\n\t"
-						    "subq.l #1,%2\n\t"
-						    "bne 1b\n"
-						    : "+a"(s), "+a"(d), "+d"(cols)
+						    "dbra %2,1b\n"
+						    : "+a"(s), "+a"(d), "+d"(n)
 						    :
 						    : "memory", "cc");
 					}
@@ -622,9 +624,12 @@ void ST_Soft_P4_Broadcast(
 					 * (rg-asm, 68030). Skewed masks keep the C
 					 * path, which feeds the hold register.
 					 */
-					unsigned long cols =
-					    (unsigned long)(dmid_end - d) >> 3;
-					if (cols != 0) {
+					/* dbra runs n+1 times, and middle comes
+					   from a 16-bit x_count, so it always
+					   fits the counter. */
+					if (middle != 0) {
+						unsigned long n =
+						    (unsigned long)middle - 1u;
 						uint32_t t0, t1;
 						__asm__ volatile(
 						    "1:\n\t"
@@ -634,10 +639,9 @@ void ST_Soft_P4_Broadcast(
 						    "move.w %0,%1\n\t"
 						    "and.l %1,(%4)+\n\t"
 						    "and.l %1,(%4)+\n\t"
-						    "subq.l #1,%2\n\t"
-						    "bne 1b\n"
+						    "dbra %2,1b\n"
 						    : "=&d"(t0), "=&d"(t1),
-						      "+d"(cols), "+a"(s), "+a"(d)
+						      "+d"(n), "+a"(s), "+a"(d)
 						    :
 						    : "memory", "cc");
 					}

@@ -840,7 +840,7 @@ static inline uint32_t ST_Pack16(uint16_t hi, uint16_t lo)
  * Destination work drops from 68 cycles per column to 38 (SHIFT0) or 44
  * (skewed), rg-asm 68030.
  */
-template <bool SHIFT0, bool LONG_DST>
+template <bool SHIFT0, bool LONG_DST, bool FULL_MID>
 static void ST_Soft_Merge_Impl(
 	const uint8_t *m,
 	int16_t mask_y_inc,
@@ -889,9 +889,104 @@ static void ST_Soft_Merge_Impl(
 		}                                                                  \
 	} while (0)
 
+/*
+ * Masked edge column, hand-written for the same reason as the middle run.
+ * The endmask and its complement come in as memory operands: five hold
+ * registers plus the shift already fill the data registers.
+ */
+#define ST_MRG_EDGE_SHIFT0(EM, NOTEM)                                              \
+	do {                                                                       \
+		const uint16_t notem_v = (NOTEM);                                  \
+		const uint32_t em_l = ST_Bcast16(EM);                              \
+		uint32_t mv, k, q0, q1, t;                                         \
+		__asm__ volatile(                                                  \
+		    "move.w (%4)+,%0\n\t"                                          \
+		    "or.w %8,%0\n\t"                                               \
+		    "move.l %0,%1\n\t"                                             \
+		    "swap %1\n\t"                                                  \
+		    "move.w %0,%1\n\t"                                             \
+		    "move.l (%5)+,%2\n\t"                                          \
+		    "move.l (%5)+,%3\n\t"                                          \
+		    "and.l %9,%2\n\t"                                              \
+		    "and.l %9,%3\n\t"                                              \
+		    "move.l %1,%7\n\t"                                             \
+		    "and.l (%6),%7\n\t"                                            \
+		    "or.l %2,%7\n\t"                                               \
+		    "move.l %7,(%6)+\n\t"                                          \
+		    "move.l %1,%7\n\t"                                             \
+		    "and.l (%6),%7\n\t"                                            \
+		    "or.l %3,%7\n\t"                                               \
+		    "move.l %7,(%6)+\n"                                            \
+		    : "=&d"(mv), "=&d"(k), "=&d"(q0), "=&d"(q1),                   \
+		      "+a"(m), "+a"(p), "+a"(d), "=&d"(t)                          \
+		    : "m"(notem_v), "m"(em_l)                                      \
+		    : "memory", "cc");                                             \
+	} while (0)
+
+#define ST_MRG_EDGE_SKEW(EM, NOTEM)                                                \
+	do {                                                                       \
+		const uint16_t notem_v = (NOTEM);                                  \
+		const uint32_t em_l = ST_Bcast16(EM);                              \
+		uint32_t t0, t1;                                                   \
+		void *kp;                                                          \
+		__asm__ volatile(                                                  \
+		    "swap %0\n\t"                                                  \
+		    "move.w (%5)+,%0\n\t"                                          \
+		    "swap %1\n\t"                                                  \
+		    "move.w (%6)+,%1\n\t"                                          \
+		    "swap %2\n\t"                                                  \
+		    "move.w (%6)+,%2\n\t"                                          \
+		    "swap %3\n\t"                                                  \
+		    "move.w (%6)+,%3\n\t"                                          \
+		    "swap %4\n\t"                                                  \
+		    "move.w (%6)+,%4\n\t"                                          \
+		    "move.l %0,%8\n\t"                                             \
+		    "lsr.l %13,%8\n\t"                                             \
+		    "or.w %11,%8\n\t"                                              \
+		    "move.l %8,%9\n\t"                                             \
+		    "swap %9\n\t"                                                  \
+		    "move.w %8,%9\n\t"                                             \
+		    "move.l %9,%10\n\t"                                            \
+		    "move.l %1,%8\n\t"                                             \
+		    "lsr.l %13,%8\n\t"                                             \
+		    "swap %8\n\t"                                                  \
+		    "move.l %2,%9\n\t"                                             \
+		    "lsr.l %13,%9\n\t"                                             \
+		    "move.w %9,%8\n\t"                                             \
+		    "and.l %12,%8\n\t"                                             \
+		    "move.l %10,%9\n\t"                                            \
+		    "and.l (%7),%9\n\t"                                            \
+		    "or.l %8,%9\n\t"                                               \
+		    "move.l %9,(%7)+\n\t"                                          \
+		    "move.l %3,%8\n\t"                                             \
+		    "lsr.l %13,%8\n\t"                                             \
+		    "swap %8\n\t"                                                  \
+		    "move.l %4,%9\n\t"                                             \
+		    "lsr.l %13,%9\n\t"                                             \
+		    "move.w %9,%8\n\t"                                             \
+		    "and.l %12,%8\n\t"                                             \
+		    "move.l %10,%9\n\t"                                            \
+		    "and.l (%7),%9\n\t"                                            \
+		    "or.l %8,%9\n\t"                                               \
+		    "move.l %9,(%7)+\n"                                            \
+		    : "+d"(hm), "+d"(h0), "+d"(h1), "+d"(h2), "+d"(h3),            \
+		      "+a"(m), "+a"(p), "+a"(d), "=&d"(t0), "=&d"(t1),             \
+		      "=&a"(kp)                                                    \
+		    : "m"(notem_v), "m"(em_l), "d"(shift)                          \
+		    : "memory", "cc");                                             \
+	} while (0)
+
 #define ST_SOFT_MRG_WORD(EM, NOTEM, LAST)                                          \
 	do {                                                                       \
 		uint16_t mv;                                                       \
+		if (LONG_DST && SHIFT0) {                                          \
+			ST_MRG_EDGE_SHIFT0((EM), (NOTEM));                         \
+			break;                                                     \
+		}                                                                  \
+		if (LONG_DST && (!nfsr || !(LAST))) {                              \
+			ST_MRG_EDGE_SKEW((EM), (NOTEM));                           \
+			break;                                                     \
+		}                                                                  \
 		if (LONG_DST) {                                                    \
 			uint32_t q0, q1;                                           \
 			if (SHIFT0) {                                              \
@@ -959,8 +1054,92 @@ static void ST_Soft_Merge_Impl(
 			} else {
 				ST_SOFT_MRG_WORD(endmask1, notem1, false);
 				const uint8_t *const dmid_end = d + (int)middle * dst_x_inc;
-				while (d != dmid_end) {
-					ST_SOFT_MRG_WORD(endmask2, notem2, false);
+				if (LONG_DST && FULL_MID && SHIFT0 && middle != 0) {
+					unsigned long n = (unsigned long)middle - 1u;
+					uint32_t mv, k, q0, q1, t;
+					__asm__ volatile(
+					    "1:\n\t"
+					    "move.w (%4)+,%0\n\t"
+					    "move.l %0,%1\n\t"
+					    "swap %1\n\t"
+					    "move.w %0,%1\n\t"
+					    "move.l (%5)+,%2\n\t"
+					    "move.l (%5)+,%3\n\t"
+					    "move.l %1,%7\n\t"
+					    "and.l (%6),%7\n\t"
+					    "or.l %2,%7\n\t"
+					    "move.l %7,(%6)+\n\t"
+					    "move.l %1,%7\n\t"
+					    "and.l (%6),%7\n\t"
+					    "or.l %3,%7\n\t"
+					    "move.l %7,(%6)+\n\t"
+					    "dbra %8,1b\n"
+					    : "=&d"(mv), "=&d"(k), "=&d"(q0),
+					      "=&d"(q1), "+a"(m), "+a"(p), "+a"(d),
+					      "=&d"(t), "+d"(n)
+					    :
+					    : "memory", "cc");
+				} else if (LONG_DST && FULL_MID && middle != 0) {
+					/*
+					 * Skewed: five hold registers plus the shift
+					 * fill the data registers, so the loop end is
+					 * a pointer compare and the keep mask parks in
+					 * an address register. 153 cycles per column
+					 * against 246 from GCC, which spills four
+					 * values and spends three instructions on each
+					 * hold update where swap plus move.w does it.
+					 */
+					uint32_t t0, t1;
+					void *kp;
+					__asm__ volatile(
+					    "1:\n\t"
+					    "swap %0\n\t"
+					    "move.w (%5)+,%0\n\t"
+					    "swap %1\n\t"
+					    "move.w (%6)+,%1\n\t"
+					    "swap %2\n\t"
+					    "move.w (%6)+,%2\n\t"
+					    "swap %3\n\t"
+					    "move.w (%6)+,%3\n\t"
+					    "swap %4\n\t"
+					    "move.w (%6)+,%4\n\t"
+					    "move.l %0,%8\n\t"
+					    "lsr.l %12,%8\n\t"
+					    "move.l %8,%9\n\t"
+					    "swap %9\n\t"
+					    "move.w %8,%9\n\t"
+					    "move.l %9,%10\n\t"
+					    "move.l %1,%8\n\t"
+					    "lsr.l %12,%8\n\t"
+					    "swap %8\n\t"
+					    "move.l %2,%9\n\t"
+					    "lsr.l %12,%9\n\t"
+					    "move.w %9,%8\n\t"
+					    "move.l %10,%9\n\t"
+					    "and.l (%7),%9\n\t"
+					    "or.l %8,%9\n\t"
+					    "move.l %9,(%7)+\n\t"
+					    "move.l %3,%8\n\t"
+					    "lsr.l %12,%8\n\t"
+					    "swap %8\n\t"
+					    "move.l %4,%9\n\t"
+					    "lsr.l %12,%9\n\t"
+					    "move.w %9,%8\n\t"
+					    "move.l %10,%9\n\t"
+					    "and.l (%7),%9\n\t"
+					    "or.l %8,%9\n\t"
+					    "move.l %9,(%7)+\n\t"
+					    "cmp.l %7,%11\n\t"
+					    "bne 1b\n"
+					    : "+d"(hm), "+d"(h0), "+d"(h1), "+d"(h2),
+					      "+d"(h3), "+a"(m), "+a"(p), "+a"(d),
+					      "=&d"(t0), "=&d"(t1), "=&a"(kp)
+					    : "a"(dmid_end), "d"(shift)
+					    : "memory", "cc");
+				} else {
+					while (d != dmid_end) {
+						ST_SOFT_MRG_WORD(endmask2, notem2, false);
+					}
 				}
 				ST_SOFT_MRG_WORD(endmask3, notem3, true);
 			}
@@ -972,6 +1151,8 @@ static void ST_Soft_Merge_Impl(
 	}
 #undef ST_SOFT_MRG_WORD
 #undef ST_SOFT_MRG_HOLD
+#undef ST_MRG_EDGE_SKEW
+#undef ST_MRG_EDGE_SHIFT0
 }
 
 void ST_Soft_Blit_Mask_Merge(
@@ -999,20 +1180,30 @@ void ST_Soft_Blit_Mask_Merge(
 		| (unsigned long)(unsigned short)dst_y_inc;
 	const bool long_dst = (mixed & 3u) == 0u;
 
-	if (long_dst && shift0) {
-		ST_Soft_Merge_Impl<true, true>(m, mask_y_inc, p, planar_y_inc, d,
+	const bool full_mid = (endmask2 == 0xFFFFu);
+
+	if (long_dst && shift0 && full_mid) {
+		ST_Soft_Merge_Impl<true, true, true>(m, mask_y_inc, p, planar_y_inc, d,
+		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
+		    shift, fxsr, nfsr);
+	} else if (long_dst && shift0) {
+		ST_Soft_Merge_Impl<true, true, false>(m, mask_y_inc, p, planar_y_inc, d,
+		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
+		    shift, fxsr, nfsr);
+	} else if (long_dst && full_mid) {
+		ST_Soft_Merge_Impl<false, true, true>(m, mask_y_inc, p, planar_y_inc, d,
 		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
 		    shift, fxsr, nfsr);
 	} else if (long_dst) {
-		ST_Soft_Merge_Impl<false, true>(m, mask_y_inc, p, planar_y_inc, d,
+		ST_Soft_Merge_Impl<false, true, false>(m, mask_y_inc, p, planar_y_inc, d,
 		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
 		    shift, fxsr, nfsr);
 	} else if (shift0) {
-		ST_Soft_Merge_Impl<true, false>(m, mask_y_inc, p, planar_y_inc, d,
+		ST_Soft_Merge_Impl<true, false, false>(m, mask_y_inc, p, planar_y_inc, d,
 		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
 		    shift, fxsr, nfsr);
 	} else {
-		ST_Soft_Merge_Impl<false, false>(m, mask_y_inc, p, planar_y_inc, d,
+		ST_Soft_Merge_Impl<false, false, false>(m, mask_y_inc, p, planar_y_inc, d,
 		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
 		    shift, fxsr, nfsr);
 	}

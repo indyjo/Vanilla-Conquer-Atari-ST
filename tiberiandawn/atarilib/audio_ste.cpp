@@ -227,7 +227,7 @@ static int ste_dma_12500_supported(void)
 
 static void ste_dma_mixer_connect(void)
 {
-	if (!g_ste_dma_ok || !ST_Hw_Is_Ste_Class()) {
+	if (!g_ste_dma_ok || !ST_Hw_Is_Ste_Sound_Class()) {
 		return;
 	}
 	*STE_DMA_MIXER = 0x03;
@@ -256,9 +256,9 @@ static void ste_audio_capture_tos_sound(void)
 		return;
 	}
 	g_tos_sound_saved = 1;
-	/* Same test as the restore below: a plain ST is neither class and has no
-	 * register at $FF8921 to read. */
-	if (ST_Hw_Is_Ste_Class()) {
+	/* Same test as the restore below: a plain ST is in neither class and has
+	 * no register at $FF8921 to read. */
+	if (ST_Hw_Is_Ste_Sound_Class()) {
 		g_tos_sound_mode = *STE_DMA_SOUND_MODE;
 	}
 }
@@ -273,7 +273,7 @@ static void ste_audio_restore_tos_sound(void)
 		/* The codec clock is what made later TOS sounds dull; DMAPLAY -> DAC
 		 * is the routing TOS uses anyway. */
 		(void)Devconnect(DMAPLAY, DAC, CLK25M, CLK50K, NO_SHAKE);
-	} else if (ST_Hw_Is_Ste_Class()) {
+	} else if (ST_Hw_Is_Ste_Sound_Class()) {
 		*STE_DMA_SOUND_MODE = g_tos_sound_mode;
 	}
 }

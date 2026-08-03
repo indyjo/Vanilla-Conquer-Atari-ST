@@ -26,6 +26,13 @@ int ST_Hw_Is_Falcon_Class(void)
 	return ST_Hw_Machine_Major() == 3 ? 1 : 0;
 }
 
+int ST_Hw_Is_Ste_Sound_Class(void)
+{
+	int const hw = ST_Hw_Machine_Major();
+
+	return (hw == 1 || hw == 2) ? 1 : 0;
+}
+
 int ST_Hw_Dma_Audio_Available(void)
 {
 	int const hw = ST_Hw_Machine_Major();

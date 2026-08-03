@@ -435,13 +435,12 @@ void ST_Soft_P4_Broadcast(
 
 } // namespace
 
-void ST_Soft_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
+void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
+    uint16_t lines, bool hog)
 {
 	(void)hog;
-	volatile ST_Blitter &r = Regs();
-	r.src_addr = (void *)job.src_plane0;
-	r.dst_addr = job.dst_plane0;
-	r.y_count = lines;
+	/* Read straight from the caller's plan: no copy, no volatile. */
+	const ST_Blitter &r = plan;
 
 	const int16_t src_x_inc = r.src_x_inc;
 	const int16_t dst_x_inc = r.dst_x_inc;
@@ -470,7 +469,7 @@ void ST_Soft_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool ho
 		? (src_x_inc == (reverse_x ? -8 : 8) && dst_x_inc == (reverse_x ? -8 : 8))
 		: (!reverse_x && src_x_inc == 2 && dst_x_inc == 8);
 	if (!strides_ok) {
-		ST_Blit_Backend::Run_Planes(job, lines, hog);
+		ST_Blit_Backend::Run_Planes(plan, job, lines, hog);
 		return;
 	}
 
@@ -530,7 +529,7 @@ void ST_Soft_Backend::Await()
 void ST_Soft_Backend::Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr)
 {
 	(void)hog;
-	volatile ST_Blitter &r = Regs();
+	ST_Blitter &r = plan_;
 	r.src_addr = src_addr;
 	r.dst_addr = dst_addr;
 	r.y_count = lines;

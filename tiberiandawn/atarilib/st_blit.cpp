@@ -627,14 +627,56 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 			(short)planar_row_bytes, (short)dst_row_bytes,
 			sx_abs, dx_abs, pixel_width, (short)pixel_height);
 
-		/*
-		 * src_x_inc != 8 means the degenerate single-column case zeroed both
-		 * increments; the merged loop does not cover that.
-		 */
 		const bool mergeable = ok
 			&& planar_regs.src_x_inc == 8
 			&& planar_regs.dst_x_inc == 8
 			&& planar_job.src_addr_per_plane;
+
+		/*
+		 * Both increments zeroed is the degenerate single-word geometry. It has
+		 * its own merged loop; without it the two-pass fallback below would run
+		 * eight single-plane passes instead of one.
+		 */
+		const bool degenerate = ok
+			&& planar_regs.src_x_inc == 0
+			&& planar_regs.dst_x_inc == 0
+			&& planar_regs.x_count == 1
+			&& planar_job.src_addr_per_plane
+			/* Long accesses on both sides: on a 68000 an odd address
+			   here would be an address error, not just slow. */
+			&& ((((unsigned long)(uintptr_t)planar_job.src_plane0
+			      | (unsigned long)(uintptr_t)planar_job.dst_plane0
+			      | (unsigned long)(unsigned short)planar_regs.src_y_inc
+			      | (unsigned long)(unsigned short)planar_regs.dst_y_inc)
+			     & 3u) == 0u);
+
+		if (degenerate) {
+			ST_Blit_Sync_Cache_Before(
+				mask_root, mask_row_bytes, sy_abs, pixel_height,
+				dst_root, dst_row_bytes, dy_abs);
+			ST_Blit_Sync_Cache_Before(
+				planar_root, planar_row_bytes, sy_abs, pixel_height,
+				dst_root, dst_row_bytes, dy_abs);
+			ST_FRAME_BAR_BLIT_BEGIN();
+
+			ST_Soft_Blit_Merge_Degenerate(
+				mask_src,
+				(int16_t)mask_row_bytes,
+				planar_job.src_plane0,
+				planar_regs.src_y_inc,
+				planar_job.dst_plane0,
+				planar_regs.dst_y_inc,
+				(uint16_t)pixel_height,
+				planar_regs.endmask1,
+				(unsigned)(planar_regs.skew & 15u));
+
+			ST_FRAME_BAR_BLIT_END();
+			ST_Blit_Sync_Cache_After(
+				planar_root, planar_row_bytes, sy_abs, pixel_height,
+				dst_root, dst_row_bytes, dy_abs,
+				false);
+			return TRUE;
+		}
 
 		if (mergeable) {
 			const int src_words =

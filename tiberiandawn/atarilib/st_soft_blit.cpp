@@ -325,14 +325,56 @@ inline uint32_t ST_Soft_Op_Long_Full(uint32_t d, uint32_t s)
 		d += 8;                                                            \
 	} while (0)
 
+/*
+ * Masked column, hand-written: post-increment on both sides instead of a
+ * displacement pair plus two bumps, 42 cycles against 64 from GCC. OP 3 keeps
+ * the eor/and/eor merge; OP 1 and 7 reduce to one memory-destination op each.
+ */
 #define ST_SOFT_P4_LWORD(MASK, NOTMASK)                                            \
 	do {                                                                       \
-		*(uint32_t *)(d + 0) = ST_Soft_Op_Long<OP>(*(const uint32_t *)(d + 0), \
-		    *(const uint32_t *)(s + 0), (MASK), (NOTMASK));                 \
-		*(uint32_t *)(d + 4) = ST_Soft_Op_Long<OP>(*(const uint32_t *)(d + 4), \
-		    *(const uint32_t *)(s + 4), (MASK), (NOTMASK));                 \
-		s += 8;                                                            \
-		d += 8;                                                            \
+		if (OP == 3) {                                                     \
+			uint32_t t0, t1;                                           \
+			__asm__ volatile(                                          \
+			    "move.l (%3),%0\n\t"                                   \
+			    "move.l (%2)+,%1\n\t"                                  \
+			    "eor.l %0,%1\n\t"                                      \
+			    "and.l %4,%1\n\t"                                      \
+			    "eor.l %0,%1\n\t"                                      \
+			    "move.l %1,(%3)+\n\t"                                  \
+			    "move.l (%3),%0\n\t"                                   \
+			    "move.l (%2)+,%1\n\t"                                  \
+			    "eor.l %0,%1\n\t"                                      \
+			    "and.l %4,%1\n\t"                                      \
+			    "eor.l %0,%1\n\t"                                      \
+			    "move.l %1,(%3)+\n"                                    \
+			    : "=&d"(t0), "=&d"(t1), "+a"(s), "+a"(d)               \
+			    : "d"((uint32_t)(MASK))                                \
+			    : "memory", "cc");                                     \
+		} else if (OP == 1) {                                              \
+			uint32_t t1;                                               \
+			__asm__ volatile(                                          \
+			    "move.l (%1)+,%0\n\t"                                  \
+			    "or.l %3,%0\n\t"                                       \
+			    "and.l %0,(%2)+\n\t"                                   \
+			    "move.l (%1)+,%0\n\t"                                  \
+			    "or.l %3,%0\n\t"                                       \
+			    "and.l %0,(%2)+\n"                                     \
+			    : "=&d"(t1), "+a"(s), "+a"(d)                          \
+			    : "d"((uint32_t)(NOTMASK))                             \
+			    : "memory", "cc");                                     \
+		} else {                                                           \
+			uint32_t t1;                                               \
+			__asm__ volatile(                                          \
+			    "move.l (%1)+,%0\n\t"                                  \
+			    "and.l %3,%0\n\t"                                      \
+			    "or.l %0,(%2)+\n\t"                                    \
+			    "move.l (%1)+,%0\n\t"                                  \
+			    "and.l %3,%0\n\t"                                      \
+			    "or.l %0,(%2)+\n"                                      \
+			    : "=&d"(t1), "+a"(s), "+a"(d)                          \
+			    : "d"((uint32_t)(MASK))                                \
+			    : "memory", "cc");                                     \
+		}                                                                  \
 	} while (0)
 
 /*

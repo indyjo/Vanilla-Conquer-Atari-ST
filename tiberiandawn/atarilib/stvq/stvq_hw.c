@@ -121,8 +121,9 @@ static void dma_set_address(volatile unsigned char *high_reg, unsigned long phys
 
 static void dma_mixer_connect(void)
 {
-	/* The LMC1992 is STE only; a Falcon routes through Devconnect instead. */
-	if (!ST_Hw_Is_Ste_Class())
+	/* STE and TT drive the LMC1992 directly; a Falcon routes through
+	 * Devconnect instead. */
+	if (!ST_Hw_Is_Ste_Sound_Class())
 		return;
 	*STE_DMA_MIXER = 0x03;
 }

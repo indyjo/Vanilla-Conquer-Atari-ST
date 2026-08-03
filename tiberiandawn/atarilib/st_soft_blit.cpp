@@ -522,6 +522,90 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 #undef ST_SOFT_P4_DISPATCH
 #undef ST_SOFT_P4_CALL
 }
+void ST_Soft_Blit_Mask_Merge(
+	const uint8_t *m,
+	int16_t mask_y_inc,
+	const uint8_t *p,
+	int16_t planar_y_inc,
+	uint8_t *d,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3,
+	unsigned shift,
+	bool fxsr,
+	bool nfsr)
+{
+	const int mask_x_inc = 2;
+	const int planar_x_inc = 8;
+	const int dst_x_inc = 8;
+
+	const uint16_t notem1 = (uint16_t)~endmask1;
+	const uint16_t notem2 = (uint16_t)~endmask2;
+	const uint16_t notem3 = (uint16_t)~endmask3;
+	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
+
+	uint32_t hm = 0;
+	uint32_t h0 = 0, h1 = 0, h2 = 0, h3 = 0;
+
+#define ST_SOFT_MRG_WORD(EM, NOTEM, LAST)                                          \
+	do {                                                                       \
+		hm = (hm << 16) | (hm >> 16);                                      \
+		h0 = (h0 << 16) | (h0 >> 16);                                      \
+		h1 = (h1 << 16) | (h1 >> 16);                                      \
+		h2 = (h2 << 16) | (h2 >> 16);                                      \
+		h3 = (h3 << 16) | (h3 >> 16);                                      \
+		if (!nfsr || !(LAST)) {                                            \
+			hm = (hm & 0xFFFF0000u) | *(const uint16_t *)m;              \
+			m += mask_x_inc;                                            \
+			h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(p + 0);        \
+			h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(p + 2);        \
+			h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(p + 4);        \
+			h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(p + 6);        \
+			p += planar_x_inc;                                          \
+		}                                                                  \
+		const uint16_t a_keep = (uint16_t)((uint16_t)(hm >> shift) | (NOTEM)); \
+		uint16_t *const dw = (uint16_t *)d;                                \
+		dw[0] = (uint16_t)((dw[0] & a_keep) | ((uint16_t)(h0 >> shift) & (EM))); \
+		dw[1] = (uint16_t)((dw[1] & a_keep) | ((uint16_t)(h1 >> shift) & (EM))); \
+		dw[2] = (uint16_t)((dw[2] & a_keep) | ((uint16_t)(h2 >> shift) & (EM))); \
+		dw[3] = (uint16_t)((dw[3] & a_keep) | ((uint16_t)(h3 >> shift) & (EM))); \
+		d += dst_x_inc;                                                    \
+	} while (0)
+
+	for (uint16_t line = 0; line < y_count; ++line) {
+		if (x_count > 0) {
+			if (fxsr) {
+				hm = (hm & 0xFFFF0000u) | *(const uint16_t *)m;
+				m += mask_x_inc;
+				h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(p + 0);
+				h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(p + 2);
+				h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(p + 4);
+				h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(p + 6);
+				p += planar_x_inc;
+			}
+
+			if (x_count == 1) {
+				ST_SOFT_MRG_WORD(endmask1, notem1, true);
+			} else {
+				ST_SOFT_MRG_WORD(endmask1, notem1, false);
+				const uint8_t *const dmid_end = d + (int)middle * dst_x_inc;
+				while (d != dmid_end) {
+					ST_SOFT_MRG_WORD(endmask2, notem2, false);
+				}
+				ST_SOFT_MRG_WORD(endmask3, notem3, true);
+			}
+		}
+
+		m += mask_y_inc - mask_x_inc;
+		p += planar_y_inc - planar_x_inc;
+		d += dst_y_inc - dst_x_inc;
+	}
+#undef ST_SOFT_MRG_WORD
+}
+
 void ST_Soft_Backend::Await()
 {
 }

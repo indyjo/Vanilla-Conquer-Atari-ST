@@ -710,9 +710,12 @@ static BOOL sprite_cache_do_blitter(
 	int blit_h)
 {
 	if (use_trans_merge) {
-		if (!ST_Blit_Mask_And_Planar_Rect(
+		/* One destination pass in software; still two passes on the BLiTTER. */
+		return ST_Blit_Mask_Merge_Planar_Rect(
 			maskbm,
 			mask_rowb,
+			planar,
+			planar_rowb,
 			sx_abs,
 			sy_abs,
 			dst_root_fb,
@@ -720,20 +723,7 @@ static BOOL sprite_cache_do_blitter(
 			dx_abs,
 			dy_abs,
 			blit_w,
-			blit_h))
-			return FALSE;
-		if (!ST_Blit_Planar_Rect_Blit_Or(planar,
-				planar_rowb,
-				sx_abs,
-				sy_abs,
-				dst_root_fb,
-				dst_row_bytes,
-				dx_abs,
-				dy_abs,
-				blit_w,
-			blit_h))
-			return FALSE;
-		return TRUE;
+			blit_h);
 	}
 	return ST_Blit_Planar_Rect_Blit(planar,
 		   planar_rowb,

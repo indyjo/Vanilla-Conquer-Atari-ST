@@ -503,8 +503,27 @@ void ST_Soft_P4_Planar(
 /*
  * 1bpp mask source shared by all four planes: one source read per column
  * instead of four, and a single hold register.
+ *
+ * LONG_DST pairs the four destination planes into two long accesses. The skew
+ * only ever touches the source word, so unlike the planar path this does not
+ * depend on SHIFT0 — a shifted mask reaches it too.
  */
-template <uint8_t OP, bool SHIFT0>
+/*
+ * Duplicate a mask word into both halves of a long. Written as a union because
+ * `(v << 16) | v` makes GCC emit muls.l #65537 — 53 cycles against 19.
+ */
+inline uint32_t ST_Bcast16(uint16_t v)
+{
+	union {
+		uint16_t w[2];
+		uint32_t l;
+	} u;
+	u.w[0] = v;
+	u.w[1] = v;
+	return u.l;
+}
+
+template <uint8_t OP, bool SHIFT0, bool LONG_DST, bool FULL_MID>
 void ST_Soft_P4_Broadcast(
 	const uint8_t *s,
 	uint8_t *d,
@@ -526,11 +545,18 @@ void ST_Soft_P4_Broadcast(
 	const uint16_t notmask2 = (uint16_t)~endmask2;
 	const uint16_t notmask3 = (uint16_t)~endmask3;
 	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
+	const uint32_t em1_l = ((uint32_t)endmask1 << 16) | endmask1;
+	const uint32_t em2_l = ((uint32_t)endmask2 << 16) | endmask2;
+	const uint32_t em3_l = ((uint32_t)endmask3 << 16) | endmask3;
+	const uint32_t nm1_l = ~em1_l;
+	const uint32_t nm2_l = ~em2_l;
+	const uint32_t nm3_l = ~em3_l;
 	uint32_t hold = 0;
 
-#define ST_SOFT_BC_WORD(MASK, NOTMASK, LAST)                                       \
+/* Pull one mask word, honouring the hold register when the source is skewed. */
+#define ST_SOFT_BC_SRC(LAST)                                                       \
+	uint16_t sv;                                                               \
 	do {                                                                       \
-		uint16_t sv;                                                       \
 		if (SHIFT0) {                                                      \
 			sv = *(const uint16_t *)s;                                 \
 			s += src_x_inc;                                            \
@@ -542,10 +568,38 @@ void ST_Soft_P4_Broadcast(
 			}                                                          \
 			sv = (uint16_t)(hold >> shift);                            \
 		}                                                                  \
-		*(uint16_t *)(d + 0) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 0), sv, (MASK), (NOTMASK)); \
-		*(uint16_t *)(d + 2) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 2), sv, (MASK), (NOTMASK)); \
-		*(uint16_t *)(d + 4) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 4), sv, (MASK), (NOTMASK)); \
-		*(uint16_t *)(d + 6) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 6), sv, (MASK), (NOTMASK)); \
+	} while (0)
+
+#define ST_SOFT_BC_WORD(MASK, NOTMASK, MASK_L, NOTMASK_L, LAST)                    \
+	do {                                                                       \
+		ST_SOFT_BC_SRC(LAST);                                              \
+		if (LONG_DST) {                                                    \
+			const uint32_t sv_l = ST_Bcast16(sv);                      \
+			*(uint32_t *)(d + 0) = ST_Soft_Op_Long<OP>(                \
+			    *(const uint32_t *)(d + 0), sv_l, (MASK_L), (NOTMASK_L)); \
+			*(uint32_t *)(d + 4) = ST_Soft_Op_Long<OP>(                \
+			    *(const uint32_t *)(d + 4), sv_l, (MASK_L), (NOTMASK_L)); \
+		} else {                                                           \
+			*(uint16_t *)(d + 0) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 0), sv, (MASK), (NOTMASK)); \
+			*(uint16_t *)(d + 2) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 2), sv, (MASK), (NOTMASK)); \
+			*(uint16_t *)(d + 4) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 4), sv, (MASK), (NOTMASK)); \
+			*(uint16_t *)(d + 6) = ST_Soft_Op<OP>(*(const uint16_t *)(d + 6), sv, (MASK), (NOTMASK)); \
+		}                                                                  \
+		d += dst_x_inc;                                                    \
+	} while (0)
+
+/*
+ * Unmasked middle run. The constant mask is what lets the op become a
+ * memory-destination and.l/or.l instead of load, compute, store.
+ */
+#define ST_SOFT_BC_WORD_FULL()                                                     \
+	do {                                                                       \
+		ST_SOFT_BC_SRC(false);                                             \
+		const uint32_t sv_l = ST_Bcast16(sv);                              \
+		*(uint32_t *)(d + 0) = ST_Soft_Op_Long_Full<OP>(                   \
+		    *(const uint32_t *)(d + 0), sv_l);                             \
+		*(uint32_t *)(d + 4) = ST_Soft_Op_Long_Full<OP>(                   \
+		    *(const uint32_t *)(d + 4), sv_l);                             \
 		d += dst_x_inc;                                                    \
 	} while (0)
 
@@ -556,14 +610,20 @@ void ST_Soft_P4_Broadcast(
 				s += src_x_inc;
 			}
 			if (x_count == 1) {
-				ST_SOFT_BC_WORD(endmask1, notmask1, true);
+				ST_SOFT_BC_WORD(endmask1, notmask1, em1_l, nm1_l, true);
 			} else {
-				ST_SOFT_BC_WORD(endmask1, notmask1, false);
+				ST_SOFT_BC_WORD(endmask1, notmask1, em1_l, nm1_l, false);
 				const uint8_t *const dmid_end = d + (int)middle * dst_x_inc;
-				while (d != dmid_end) {
-					ST_SOFT_BC_WORD(endmask2, notmask2, false);
+				if (LONG_DST && FULL_MID) {
+					while (d != dmid_end) {
+						ST_SOFT_BC_WORD_FULL();
+					}
+				} else {
+					while (d != dmid_end) {
+						ST_SOFT_BC_WORD(endmask2, notmask2, em2_l, nm2_l, false);
+					}
 				}
-				ST_SOFT_BC_WORD(endmask3, notmask3, true);
+				ST_SOFT_BC_WORD(endmask3, notmask3, em3_l, nm3_l, true);
 			}
 		}
 		s += src_y_inc - src_x_inc;
@@ -622,12 +682,29 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 	 */
 	const bool shift0 = (shift == 0u) && !fxsr && !nfsr;
 
+	/* The broadcast pairs only the destination, so the source needs no alignment. */
+	const bool long_dst =
+	    ((((unsigned long)(uintptr_t)d) | (unsigned long)(unsigned short)dst_y_inc) & 3u) == 0u;
+
 #define ST_SOFT_P4_CALL(OPV, S0)                                                  \
 	do {                                                                      \
 		if (!job.src_addr_per_plane) {                                    \
-			ST_Soft_P4_Broadcast<OPV, S0>(s, d, src_y_inc, dst_y_inc,  \
-			    x_count, lines, endmask1, endmask2, endmask3, shift,   \
-			    fxsr, nfsr);                                           \
+			if (long_dst && endmask2 == 0xFFFFu) {                    \
+				ST_Soft_P4_Broadcast<OPV, S0, true, true>(s, d,    \
+				    src_y_inc, dst_y_inc, x_count, lines,          \
+				    endmask1, endmask2, endmask3, shift,           \
+				    fxsr, nfsr);                                   \
+			} else if (long_dst) {                                    \
+				ST_Soft_P4_Broadcast<OPV, S0, true, false>(s, d,   \
+				    src_y_inc, dst_y_inc, x_count, lines,          \
+				    endmask1, endmask2, endmask3, shift,           \
+				    fxsr, nfsr);                                   \
+			} else {                                                  \
+				ST_Soft_P4_Broadcast<OPV, S0, false, false>(s, d,  \
+				    src_y_inc, dst_y_inc, x_count, lines,          \
+				    endmask1, endmask2, endmask3, shift,           \
+				    fxsr, nfsr);                                   \
+			}                                                         \
 		} else if (reverse_x) {                                           \
 			ST_Soft_P4_Planar<OPV, true, S0>(s, d, src_y_inc,          \
 			    dst_y_inc, x_count, lines, endmask1, endmask2,         \

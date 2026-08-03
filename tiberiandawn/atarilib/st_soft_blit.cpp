@@ -614,7 +614,34 @@ void ST_Soft_P4_Broadcast(
 			} else {
 				ST_SOFT_BC_WORD(endmask1, notmask1, em1_l, nm1_l, false);
 				const uint8_t *const dmid_end = d + (int)middle * dst_x_inc;
-				if (LONG_DST && FULL_MID) {
+				if (LONG_DST && FULL_MID && OP == 1 && SHIFT0) {
+					/*
+					 * Post-increment on both sides and a swap
+					 * broadcast: 39 cycles per column against 59
+					 * for what GCC emits and 63 for the word path
+					 * (rg-asm, 68030). Skewed masks keep the C
+					 * path, which feeds the hold register.
+					 */
+					unsigned long cols =
+					    (unsigned long)(dmid_end - d) >> 3;
+					if (cols != 0) {
+						uint32_t t0, t1;
+						__asm__ volatile(
+						    "1:\n\t"
+						    "move.w (%3)+,%0\n\t"
+						    "move.l %0,%1\n\t"
+						    "swap %1\n\t"
+						    "move.w %0,%1\n\t"
+						    "and.l %1,(%4)+\n\t"
+						    "and.l %1,(%4)+\n\t"
+						    "subq.l #1,%2\n\t"
+						    "bne 1b\n"
+						    : "=&d"(t0), "=&d"(t1),
+						      "+d"(cols), "+a"(s), "+a"(d)
+						    :
+						    : "memory", "cc");
+					}
+				} else if (LONG_DST && FULL_MID) {
 					while (d != dmid_end) {
 						ST_SOFT_BC_WORD_FULL();
 					}

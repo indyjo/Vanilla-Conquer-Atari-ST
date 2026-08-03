@@ -820,7 +820,28 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 #undef ST_SOFT_P4_DISPATCH
 #undef ST_SOFT_P4_CALL
 }
-void ST_Soft_Blit_Mask_Merge(
+/* Two 16-bit values into one long, high word first. Union for the same reason
+ * as ST_Bcast16: the shift/or form compiles to muls.l. */
+static inline uint32_t ST_Pack16(uint16_t hi, uint16_t lo)
+{
+	union {
+		uint16_t w[2];
+		uint32_t l;
+	} u;
+	u.w[0] = hi;
+	u.w[1] = lo;
+	return u.l;
+}
+
+/*
+ * One merged mask+planar column. LONG_DST pairs the four destination planes
+ * into two long accesses; with SHIFT0 the planar source is two long loads too,
+ * otherwise each plane keeps its own hold register and the pairs are packed.
+ * Destination work drops from 68 cycles per column to 38 (SHIFT0) or 44
+ * (skewed), rg-asm 68030.
+ */
+template <bool SHIFT0, bool LONG_DST>
+static void ST_Soft_Merge_Impl(
 	const uint8_t *m,
 	int16_t mask_y_inc,
 	const uint8_t *p,
@@ -848,7 +869,9 @@ void ST_Soft_Blit_Mask_Merge(
 	uint32_t hm = 0;
 	uint32_t h0 = 0, h1 = 0, h2 = 0, h3 = 0;
 
-#define ST_SOFT_MRG_WORD(EM, NOTEM, LAST)                                          \
+/* Rotate every hold register and pull the next word, unless nfsr suppresses
+ * the read on the final column. */
+#define ST_SOFT_MRG_HOLD(LAST)                                                     \
 	do {                                                                       \
 		hm = (hm << 16) | (hm >> 16);                                      \
 		h0 = (h0 << 16) | (h0 >> 16);                                      \
@@ -856,20 +879,66 @@ void ST_Soft_Blit_Mask_Merge(
 		h2 = (h2 << 16) | (h2 >> 16);                                      \
 		h3 = (h3 << 16) | (h3 >> 16);                                      \
 		if (!nfsr || !(LAST)) {                                            \
-			hm = (hm & 0xFFFF0000u) | *(const uint16_t *)m;              \
-			m += mask_x_inc;                                            \
-			h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(p + 0);        \
-			h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(p + 2);        \
-			h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(p + 4);        \
-			h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(p + 6);        \
-			p += planar_x_inc;                                          \
+			hm = (hm & 0xFFFF0000u) | *(const uint16_t *)m;            \
+			h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(p + 0);      \
+			h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(p + 2);      \
+			h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(p + 4);      \
+			h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(p + 6);      \
+			m += mask_x_inc;                                           \
+			p += planar_x_inc;                                         \
 		}                                                                  \
-		const uint16_t a_keep = (uint16_t)((uint16_t)(hm >> shift) | (NOTEM)); \
-		uint16_t *const dw = (uint16_t *)d;                                \
-		dw[0] = (uint16_t)((dw[0] & a_keep) | ((uint16_t)(h0 >> shift) & (EM))); \
-		dw[1] = (uint16_t)((dw[1] & a_keep) | ((uint16_t)(h1 >> shift) & (EM))); \
-		dw[2] = (uint16_t)((dw[2] & a_keep) | ((uint16_t)(h2 >> shift) & (EM))); \
-		dw[3] = (uint16_t)((dw[3] & a_keep) | ((uint16_t)(h3 >> shift) & (EM))); \
+	} while (0)
+
+#define ST_SOFT_MRG_WORD(EM, NOTEM, LAST)                                          \
+	do {                                                                       \
+		uint16_t mv;                                                       \
+		if (LONG_DST) {                                                    \
+			uint32_t q0, q1;                                           \
+			if (SHIFT0) {                                              \
+				mv = *(const uint16_t *)m;                         \
+				q0 = *(const uint32_t *)(p + 0);                   \
+				q1 = *(const uint32_t *)(p + 4);                   \
+				m += mask_x_inc;                                   \
+				p += planar_x_inc;                                 \
+			} else {                                                   \
+				ST_SOFT_MRG_HOLD(LAST);                            \
+				mv = (uint16_t)(hm >> shift);                      \
+				q0 = ST_Pack16((uint16_t)(h0 >> shift),            \
+				    (uint16_t)(h1 >> shift));                      \
+				q1 = ST_Pack16((uint16_t)(h2 >> shift),            \
+				    (uint16_t)(h3 >> shift));                      \
+			}                                                          \
+			const uint32_t keep_l =                                    \
+			    ST_Bcast16((uint16_t)(mv | (NOTEM)));                  \
+			const uint32_t em_l = ST_Bcast16(EM);                      \
+			uint32_t *const dl = (uint32_t *)d;                        \
+			dl[0] = (dl[0] & keep_l) | (q0 & em_l);                    \
+			dl[1] = (dl[1] & keep_l) | (q1 & em_l);                    \
+		} else {                                                           \
+			uint16_t v0, v1, v2, v3;                                   \
+			if (SHIFT0) {                                              \
+				mv = *(const uint16_t *)m;                         \
+				v0 = *(const uint16_t *)(p + 0);                   \
+				v1 = *(const uint16_t *)(p + 2);                   \
+				v2 = *(const uint16_t *)(p + 4);                   \
+				v3 = *(const uint16_t *)(p + 6);                   \
+				m += mask_x_inc;                                   \
+				p += planar_x_inc;                                 \
+			} else {                                                   \
+				ST_SOFT_MRG_HOLD(LAST);                            \
+				mv = (uint16_t)(hm >> shift);                      \
+				v0 = (uint16_t)(h0 >> shift);                      \
+				v1 = (uint16_t)(h1 >> shift);                      \
+				v2 = (uint16_t)(h2 >> shift);                      \
+				v3 = (uint16_t)(h3 >> shift);                      \
+			}                                                          \
+			const uint16_t a_keep = (uint16_t)(mv | (NOTEM));          \
+			uint16_t *const dw = (uint16_t *)d;                        \
+			dw[0] = (uint16_t)((dw[0] & a_keep) | (v0 & (EM)));        \
+			dw[1] = (uint16_t)((dw[1] & a_keep) | (v1 & (EM)));        \
+			dw[2] = (uint16_t)((dw[2] & a_keep) | (v2 & (EM)));        \
+			dw[3] = (uint16_t)((dw[3] & a_keep) | (v3 & (EM)));        \
+		}                                                                  \
 		d += dst_x_inc;                                                    \
 	} while (0)
 
@@ -902,6 +971,51 @@ void ST_Soft_Blit_Mask_Merge(
 		d += dst_y_inc - dst_x_inc;
 	}
 #undef ST_SOFT_MRG_WORD
+#undef ST_SOFT_MRG_HOLD
+}
+
+void ST_Soft_Blit_Mask_Merge(
+	const uint8_t *m,
+	int16_t mask_y_inc,
+	const uint8_t *p,
+	int16_t planar_y_inc,
+	uint8_t *d,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3,
+	unsigned shift,
+	bool fxsr,
+	bool nfsr)
+{
+	const bool shift0 = (shift == 0u) && !fxsr && !nfsr;
+	/* Long loads on the planar side and long stores on the destination both
+	   need 4-byte alignment, and the row strides have to preserve it. */
+	const unsigned long mixed = (unsigned long)(uintptr_t)p
+		| (unsigned long)(uintptr_t)d
+		| (unsigned long)(unsigned short)planar_y_inc
+		| (unsigned long)(unsigned short)dst_y_inc;
+	const bool long_dst = (mixed & 3u) == 0u;
+
+	if (long_dst && shift0) {
+		ST_Soft_Merge_Impl<true, true>(m, mask_y_inc, p, planar_y_inc, d,
+		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
+		    shift, fxsr, nfsr);
+	} else if (long_dst) {
+		ST_Soft_Merge_Impl<false, true>(m, mask_y_inc, p, planar_y_inc, d,
+		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
+		    shift, fxsr, nfsr);
+	} else if (shift0) {
+		ST_Soft_Merge_Impl<true, false>(m, mask_y_inc, p, planar_y_inc, d,
+		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
+		    shift, fxsr, nfsr);
+	} else {
+		ST_Soft_Merge_Impl<false, false>(m, mask_y_inc, p, planar_y_inc, d,
+		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
+		    shift, fxsr, nfsr);
+	}
 }
 
 void ST_Soft_Backend::Await()

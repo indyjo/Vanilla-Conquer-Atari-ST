@@ -1435,6 +1435,82 @@ static void ST_Soft_Merge_Impl(
 #undef ST_MRG_EDGE_SHIFT0
 }
 
+/*
+ * Degenerate geometry: source and destination each fit inside a single 16-pixel
+ * word but sit at different phases, so ST_Blit_Prepare_Impl zeroes both x
+ * increments. The BLiTTER handles it with FXSR; in software the hold register
+ * ends up holding the same word twice, which makes the shifted result a plain
+ * 16-bit rotate — one ror.w per plane.
+ *
+ * Without this the merge cannot run and the caller falls back to two separate
+ * blits, eight single-plane passes in total: 376 cycles per row against 135.
+ */
+void ST_Soft_Blit_Merge_Degenerate(
+	const uint8_t *m,
+	int16_t mask_y_inc,
+	const uint8_t *p,
+	int16_t planar_y_inc,
+	uint8_t *d,
+	int16_t dst_y_inc,
+	uint16_t y_count,
+	uint16_t endmask,
+	unsigned shift)
+{
+	if (y_count == 0u) {
+		return;
+	}
+
+	const uint32_t em = ST_Bcast16(endmask);
+	const uint32_t nem = ~em;
+	unsigned long n = (unsigned long)y_count - 1u;
+	uint32_t t0, keep, t1;
+	/* The three row strides live in address registers: seven data registers
+	   are already spoken for. Planar and destination walk their two long
+	   halves by post-increment, so their strides come in 8 short. The mask
+	   pointer does not move inside a row — x_inc is zero here. */
+	void *const minc = (void *)(intptr_t)mask_y_inc;
+	void *const pinc = (void *)(intptr_t)(planar_y_inc - 8);
+	void *const dinc = (void *)(intptr_t)(dst_y_inc - 8);
+
+	__asm__ volatile(
+	    "1:\n\t"
+	    "move.w (%3),%0\n\t"
+	    "ror.w %10,%0\n\t"
+	    "move.l %0,%1\n\t"
+	    "swap %1\n\t"
+	    "move.w %0,%1\n\t"
+	    "or.l %12,%1\n\t"
+	    "move.l (%4)+,%2\n\t"
+	    "ror.w %10,%2\n\t"
+	    "swap %2\n\t"
+	    "ror.w %10,%2\n\t"
+	    "swap %2\n\t"
+	    "and.l %11,%2\n\t"
+	    "move.l (%5),%0\n\t"
+	    "and.l %1,%0\n\t"
+	    "or.l %2,%0\n\t"
+	    "move.l %0,(%5)+\n\t"
+	    "move.l (%4)+,%2\n\t"
+	    "ror.w %10,%2\n\t"
+	    "swap %2\n\t"
+	    "ror.w %10,%2\n\t"
+	    "swap %2\n\t"
+	    "and.l %11,%2\n\t"
+	    "move.l (%5),%0\n\t"
+	    "and.l %1,%0\n\t"
+	    "or.l %2,%0\n\t"
+	    "move.l %0,(%5)+\n\t"
+	    "adda.l %7,%3\n\t"
+	    "adda.l %8,%4\n\t"
+	    "adda.l %9,%5\n\t"
+	    "dbra %6,1b\n"
+	    : "=&d"(t0), "=&d"(keep), "=&d"(t1),
+	      "+a"(m), "+a"(p), "+a"(d), "+d"(n)
+	    : "a"(minc), "a"(pinc), "a"(dinc),
+	      "d"(shift), "d"(em), "d"(nem)
+	    : "memory", "cc");
+}
+
 void ST_Soft_Blit_Mask_Merge(
 	const uint8_t *m,
 	int16_t mask_y_inc,

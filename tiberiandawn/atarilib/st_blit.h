@@ -187,6 +187,17 @@ ST_Soft_Backend &ST_Blit_Soft_Backend();
  * prepare helpers: mask 2, planar 8, destination 8, forward only. Skew, endmasks
  * and x_count are shared because both sources sit at the same sx/dx.
  */
+void ST_Soft_Blit_Merge_Degenerate(
+	const uint8_t *m,
+	int16_t mask_y_inc,
+	const uint8_t *p,
+	int16_t planar_y_inc,
+	uint8_t *d,
+	int16_t dst_y_inc,
+	uint16_t y_count,
+	uint16_t endmask,
+	unsigned shift);
+
 void ST_Soft_Blit_Mask_Merge(
 	const uint8_t *mask_src,
 	int16_t mask_y_inc,

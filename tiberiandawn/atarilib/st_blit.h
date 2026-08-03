@@ -105,6 +105,13 @@ public:
 
 	volatile ST_Blitter &Regs() { return regs_; }
 
+	/*
+	 * Hand over a prepared register image. Only the hardware needs the volatile
+	 * stores; a software backend keeps it in ordinary memory, where the compiler
+	 * may hold the fields in registers.
+	 */
+	virtual void Program(const ST_Blitter &plan);
+
 	/** Wait until the backend is idle (after the last kick of a multi-pass blit). */
 	virtual void Await() = 0;
 	/** Wait until idle, program src/dst/y_count, then kick one plane pass. */
@@ -116,7 +123,8 @@ public:
 	 * backend can override this to walk all four in one pass, where the planes
 	 * of a 16-pixel column are 8 contiguous bytes.
 	 */
-	virtual void Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog);
+	virtual void Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
+	    uint16_t lines, bool hog);
 
 protected:
 	explicit ST_Blit_Backend(volatile ST_Blitter &regs) : regs_(regs) {}
@@ -137,10 +145,14 @@ public:
 	ST_Soft_Backend();
 	void Await() override;
 	void Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr) override;
-	void Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog) override;
+	void Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
+	    uint16_t lines, bool hog) override;
+	/* Plain memory, no hardware behind it. */
+	void Program(const ST_Blitter &plan) override { plan_ = plan; }
 
 private:
 	ST_Blitter state_{};
+	ST_Blitter plan_{};
 };
 
 ST_Blitter_Backend &ST_Blit_HW_Backend();

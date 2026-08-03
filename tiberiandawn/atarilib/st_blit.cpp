@@ -95,7 +95,7 @@ static bool ST_Blit_Should_Use_Hog(int pixel_width, int pixel_height)
 }
 
 static bool ST_Blit_Prepare_Impl(
-	volatile ST_Blitter *regs,
+	ST_Blitter *regs,
 	ST_Blit_Job *job,
 	const uint8_t *src_base,
 	uint8_t *dst_base,
@@ -197,7 +197,7 @@ static bool ST_Blit_Prepare_Impl(
 }
 
 static bool ST_Blit_Prepare_88(
-	volatile ST_Blitter *regs,
+	ST_Blitter *regs,
 	ST_Blit_Job *job,
 	const uint8_t *src_base,
 	uint8_t *dst_base,
@@ -229,7 +229,7 @@ static bool ST_Blit_Prepare_88(
 }
 
 static bool ST_Blit_Prepare_88_Scroll(
-	volatile ST_Blitter *regs,
+	ST_Blitter *regs,
 	ST_Blit_Job *job,
 	const uint8_t *src_base,
 	uint8_t *dst_base,
@@ -265,7 +265,7 @@ static bool ST_Blit_Prepare_88_Scroll(
 }
 
 static bool ST_Blit_Prepare_28(
-	volatile ST_Blitter *regs,
+	ST_Blitter *regs,
 	ST_Blit_Job *job,
 	const uint8_t *src_base,
 	uint8_t *dst_base,
@@ -304,8 +304,11 @@ static ST_Blit_Backend &ST_Blit_Pick_Backend(const void *src, const void *dst)
 	return ST_Blit_Soft_Backend();
 }
 
-void ST_Blit_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
+void ST_Blit_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
+    uint16_t lines, bool hog)
 {
+	/* Only here does the plan reach real registers. */
+	Program(plan);
 	for (int pl = 0; pl < 4; ++pl) {
 		const void *src_addr = job.src_plane0
 			+ (job.src_addr_per_plane ? (size_t)pl * 2u : 0u);
@@ -314,8 +317,27 @@ void ST_Blit_Backend::Run_Planes(const ST_Blit_Job &job, uint16_t lines, bool ho
 	}
 }
 
+void ST_Blit_Backend::Program(const ST_Blitter &plan)
+{
+	volatile ST_Blitter &r = regs_;
+	r.src_x_inc = plan.src_x_inc;
+	r.src_y_inc = plan.src_y_inc;
+	r.src_addr = plan.src_addr;
+	r.endmask1 = plan.endmask1;
+	r.endmask2 = plan.endmask2;
+	r.endmask3 = plan.endmask3;
+	r.dst_x_inc = plan.dst_x_inc;
+	r.dst_y_inc = plan.dst_y_inc;
+	r.dst_addr = plan.dst_addr;
+	r.x_count = plan.x_count;
+	r.hop = plan.hop;
+	r.op = plan.op;
+	r.skew = plan.skew;
+}
+
 static void ST_Blit_Run_4_Planes(
 	ST_Blit_Backend &backend,
+	const ST_Blitter &plan,
 	const ST_Blit_Job &job,
 	short lines,
 	bool hog)
@@ -324,7 +346,7 @@ static void ST_Blit_Run_4_Planes(
 		return;
 	}
 
-	backend.Run_Planes(job, (uint16_t)lines, hog);
+	backend.Run_Planes(plan, job, (uint16_t)lines, hog);
 	backend.Await();
 }
 
@@ -367,7 +389,8 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 	ST_FRAME_BAR_BLIT_BEGIN();
 
 	ST_Blit_Backend &backend = ST_Blit_Pick_Backend(src, dst);
-	volatile ST_Blitter &regs = backend.Regs();
+	ST_Blitter plan{};
+	ST_Blitter &regs = plan;
 	backend.Await();
 
 	const bool prepared = same_surface
@@ -404,6 +427,7 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 	regs.op = blit_op;
 	ST_Blit_Run_4_Planes(
 		backend,
+		plan,
 		job,
 		(short)pixel_height,
 		hog);
@@ -516,7 +540,8 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 	ST_FRAME_BAR_BLIT_BEGIN();
 
 	ST_Blit_Backend &backend = ST_Blit_Pick_Backend(src, dst);
-	volatile ST_Blitter &regs = backend.Regs();
+	ST_Blitter plan{};
+	ST_Blitter &regs = plan;
 	backend.Await();
 
 	if (!ST_Blit_Prepare_28(
@@ -538,6 +563,7 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 	regs.op = 1;
 	ST_Blit_Run_4_Planes(
 		backend,
+		plan,
 		job,
 		(short)pixel_height,
 		hog);

@@ -23,6 +23,35 @@ ST_Soft_Backend &ST_Blit_Soft_Backend()
 
 namespace {
 
+/* Two 16-bit values into one long, high word first. Union for the same reason
+ * as ST_Bcast16: the shift/or form compiles to muls.l. */
+/*
+ * Duplicate a mask word into both halves of a long. Written as a union because
+ * `(v << 16) | v` makes GCC emit muls.l #65537 — 53 cycles against 19.
+ */
+inline uint32_t ST_Bcast16(uint16_t v)
+{
+	union {
+		uint16_t w[2];
+		uint32_t l;
+	} u;
+	u.w[0] = v;
+	u.w[1] = v;
+	return u.l;
+}
+
+static inline uint32_t ST_Pack16(uint16_t hi, uint16_t lo)
+{
+	union {
+		uint16_t w[2];
+		uint32_t l;
+	} u;
+	u.w[0] = hi;
+	u.w[1] = lo;
+	return u.l;
+}
+
+
 /*
  * BLIT_iT ops, with the destination bits outside the endmask preserved.
  * mask/notmask are passed in because the caller hoists them per segment.
@@ -321,8 +350,8 @@ inline uint32_t ST_Soft_Op_Long_Full(uint32_t d, uint32_t s)
 		    *(const uint32_t *)(d + 0), *(const uint32_t *)(s + 0));        \
 		*(uint32_t *)(d + 4) = ST_Soft_Op_Long_Full<OP>(                   \
 		    *(const uint32_t *)(d + 4), *(const uint32_t *)(s + 4));        \
-		s += 8;                                                            \
-		d += 8;                                                            \
+		s += REVERSE ? -8 : 8;                                             \
+		d += REVERSE ? -8 : 8;                                             \
 	} while (0)
 
 /*
@@ -332,6 +361,17 @@ inline uint32_t ST_Soft_Op_Long_Full(uint32_t d, uint32_t s)
  */
 #define ST_SOFT_P4_LWORD(MASK, NOTMASK)                                            \
 	do {                                                                       \
+		if (REVERSE) {                                                     \
+			/* Rare enough (needs a scroll delta that is an exact       \
+			   multiple of 16) not to warrant six asm variants. */      \
+			const uint32_t *const sl = (const uint32_t *)s;            \
+			uint32_t *const dl = (uint32_t *)d;                        \
+			dl[0] = ST_Soft_Op_Long<OP>(dl[0], sl[0], (MASK), (NOTMASK)); \
+			dl[1] = ST_Soft_Op_Long<OP>(dl[1], sl[1], (MASK), (NOTMASK)); \
+			s -= 8;                                                    \
+			d -= 8;                                                    \
+			break;                                                     \
+		}                                                                  \
 		if (OP == 3) {                                                     \
 			uint32_t t0, t1;                                           \
 			__asm__ volatile(                                          \
@@ -383,7 +423,7 @@ inline uint32_t ST_Soft_Op_Long_Full(uint32_t d, uint32_t s)
  * full endmask the notmask is 0 and the destination read drops out entirely.
  * The caller guarantees both pointers and both row strides are 4-byte aligned.
  */
-template <uint8_t OP, bool FULL_MID>
+template <uint8_t OP, bool FULL_MID, bool REVERSE>
 void ST_Soft_P4_Planar_Long(
 	const uint8_t *s,
 	uint8_t *d,
@@ -409,8 +449,25 @@ void ST_Soft_P4_Planar_Long(
 				ST_SOFT_P4_LWORD(em1, nm1);
 			} else {
 				ST_SOFT_P4_LWORD(em1, nm1);
-				const uint8_t *const dmid_end = d + (int)middle * 8;
-				if (FULL_MID && OP == 3) {
+				const uint8_t *const dmid_end =
+				    d + (int)middle * (REVERSE ? -8 : 8);
+				if (FULL_MID && OP == 3 && REVERSE) {
+					if (middle != 0) {
+						unsigned long n = (unsigned long)middle - 1u;
+						const uint8_t *sp = s + 8;
+						uint8_t *dp = d + 8;
+						__asm__ volatile(
+						    "1:\n\t"
+						    "move.l -(%0),-(%1)\n\t"
+						    "move.l -(%0),-(%1)\n\t"
+						    "dbra %2,1b\n"
+						    : "+a"(sp), "+a"(dp), "+d"(n)
+						    :
+						    : "memory", "cc");
+						s = sp - 8;
+						d = dp - 8;
+					}
+				} else if (FULL_MID && OP == 3) {
 					/*
 					 * GCC will not emit the post-increment form here —
 					 * it keeps a displacement plus a separate bump, 44
@@ -444,9 +501,197 @@ void ST_Soft_P4_Planar_Long(
 			}
 		}
 
-		s += src_y_inc - 8;
-		d += dst_y_inc - 8;
+		s += src_y_inc - (REVERSE ? -8 : 8);
+		d += dst_y_inc - (REVERSE ? -8 : 8);
 	}
+}
+
+/*
+ * Skewed planar source with a long destination. Each plane needs its own hold
+ * register and its own 16-bit shift — a 32-bit shift across two planes does not
+ * produce two independent skews — so the source stays word-granular and the
+ * pairs are packed before the store.
+ *
+ * The scroll block copy lands here: only a pure vertical scroll has sx == dx,
+ * so anything with a horizontal component was running the full word path.
+ * 182 cycles per column before, 102 now (rg-asm 68030), and the destination
+ * reads disappear entirely in the unmasked middle run.
+ */
+template <uint8_t OP, bool FULL_MID, bool REVERSE>
+void ST_Soft_P4_Planar_Skew_Long(
+	const uint8_t *s,
+	uint8_t *d,
+	int16_t src_y_inc,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3,
+	unsigned shift,
+	bool fxsr,
+	bool nfsr)
+{
+	const uint32_t em1 = ST_Bcast16(endmask1);
+	const uint32_t em2 = ST_Bcast16(endmask2);
+	const uint32_t em3 = ST_Bcast16(endmask3);
+	const uint32_t nm1 = ~em1;
+	const uint32_t nm2 = ~em2;
+	const uint32_t nm3 = ~em3;
+	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
+	uint32_t h0 = 0, h1 = 0, h2 = 0, h3 = 0;
+
+#define ST_P4_SKEW_SWAP()                                                          \
+	do {                                                                       \
+		h0 = (h0 << 16) | (h0 >> 16);                                      \
+		h1 = (h1 << 16) | (h1 >> 16);                                      \
+		h2 = (h2 << 16) | (h2 >> 16);                                      \
+		h3 = (h3 << 16) | (h3 >> 16);                                      \
+	} while (0)
+
+/* Forward rotates before the read so the high half holds the word to the left;
+   reverse rotates after, because there the neighbour lies to the right. */
+#define ST_P4_SKEW_COL(EM_L, NOTEM_L, LAST)                                        \
+	do {                                                                       \
+		if (!REVERSE) {                                                    \
+			ST_P4_SKEW_SWAP();                                         \
+		}                                                                  \
+		if (!nfsr || !(LAST)) {                                            \
+			h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(s + 0);      \
+			h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(s + 2);      \
+			h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(s + 4);      \
+			h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(s + 6);      \
+			s += REVERSE ? -8 : 8;                                     \
+		}                                                                  \
+		if (REVERSE) {                                                     \
+			ST_P4_SKEW_SWAP();                                         \
+		}                                                                  \
+		const uint32_t q0 = ST_Pack16((uint16_t)(h0 >> shift),             \
+		    (uint16_t)(h1 >> shift));                                      \
+		const uint32_t q1 = ST_Pack16((uint16_t)(h2 >> shift),             \
+		    (uint16_t)(h3 >> shift));                                      \
+		uint32_t *const dl = (uint32_t *)d;                                \
+		dl[0] = ST_Soft_Op_Long<OP>(dl[0], q0, (EM_L), (NOTEM_L));         \
+		dl[1] = ST_Soft_Op_Long<OP>(dl[1], q1, (EM_L), (NOTEM_L));         \
+		d += REVERSE ? -8 : 8;                                             \
+	} while (0)
+
+	for (uint16_t line = 0; line < y_count; ++line) {
+		if (x_count > 0) {
+			if (fxsr) {
+				/* Reverse rotates after the read, so the primed word
+				   has to start in the high half to end up below. */
+				if (REVERSE) {
+					h0 = (h0 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 0) << 16);
+					h1 = (h1 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 2) << 16);
+					h2 = (h2 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 4) << 16);
+					h3 = (h3 & 0x0000FFFFu) | ((uint32_t) * (const uint16_t *)(s + 6) << 16);
+				} else {
+					h0 = (h0 & 0xFFFF0000u) | *(const uint16_t *)(s + 0);
+					h1 = (h1 & 0xFFFF0000u) | *(const uint16_t *)(s + 2);
+					h2 = (h2 & 0xFFFF0000u) | *(const uint16_t *)(s + 4);
+					h3 = (h3 & 0xFFFF0000u) | *(const uint16_t *)(s + 6);
+				}
+				s += REVERSE ? -8 : 8;
+			}
+
+			if (x_count == 1) {
+				ST_P4_SKEW_COL(em1, nm1, true);
+			} else {
+				ST_P4_SKEW_COL(em1, nm1, false);
+				if (FULL_MID && OP == 3 && middle != 0 && REVERSE) {
+					/*
+					 * Backwards: pre-decrement walks the column
+					 * from its far end, so both pointers enter one
+					 * column past and leave one column short.
+					 */
+					unsigned long n = (unsigned long)middle - 1u;
+					uint32_t t0, t1;
+					const uint8_t *sp = s + 8;
+					uint8_t *dp = d + 8;
+					__asm__ volatile(
+					    "1:\n\t"
+					    "move.w -(%4),%3\n\t"
+					    "move.w -(%4),%2\n\t"
+					    "move.w -(%4),%1\n\t"
+					    "move.w -(%4),%0\n\t"
+					    "swap %0\n\t"
+					    "swap %1\n\t"
+					    "swap %2\n\t"
+					    "swap %3\n\t"
+					    "move.l %2,%6\n\t"
+					    "lsr.l %9,%6\n\t"
+					    "swap %6\n\t"
+					    "move.l %3,%7\n\t"
+					    "lsr.l %9,%7\n\t"
+					    "move.w %7,%6\n\t"
+					    "move.l %6,-(%5)\n\t"
+					    "move.l %0,%6\n\t"
+					    "lsr.l %9,%6\n\t"
+					    "swap %6\n\t"
+					    "move.l %1,%7\n\t"
+					    "lsr.l %9,%7\n\t"
+					    "move.w %7,%6\n\t"
+					    "move.l %6,-(%5)\n\t"
+					    "dbra %8,1b\n"
+					    : "+d"(h0), "+d"(h1), "+d"(h2), "+d"(h3),
+					      "+a"(sp), "+a"(dp), "=&d"(t0), "=&d"(t1),
+					      "+d"(n)
+					    : "d"(shift)
+					    : "memory", "cc");
+					s = sp - 8;
+					d = dp - 8;
+				} else if (FULL_MID && OP == 3 && middle != 0) {
+					/* Unmasked copy: no destination read at all.
+					   Four hold registers, two temporaries, the
+					   counter and the shift fill d0-d7 exactly. */
+					unsigned long n = (unsigned long)middle - 1u;
+					uint32_t t0, t1;
+					__asm__ volatile(
+					    "1:\n\t"
+					    "swap %0\n\t"
+					    "move.w (%4)+,%0\n\t"
+					    "swap %1\n\t"
+					    "move.w (%4)+,%1\n\t"
+					    "swap %2\n\t"
+					    "move.w (%4)+,%2\n\t"
+					    "swap %3\n\t"
+					    "move.w (%4)+,%3\n\t"
+					    "move.l %0,%6\n\t"
+					    "lsr.l %9,%6\n\t"
+					    "swap %6\n\t"
+					    "move.l %1,%7\n\t"
+					    "lsr.l %9,%7\n\t"
+					    "move.w %7,%6\n\t"
+					    "move.l %6,(%5)+\n\t"
+					    "move.l %2,%6\n\t"
+					    "lsr.l %9,%6\n\t"
+					    "swap %6\n\t"
+					    "move.l %3,%7\n\t"
+					    "lsr.l %9,%7\n\t"
+					    "move.w %7,%6\n\t"
+					    "move.l %6,(%5)+\n\t"
+					    "dbra %8,1b\n"
+					    : "+d"(h0), "+d"(h1), "+d"(h2), "+d"(h3),
+					      "+a"(s), "+a"(d), "=&d"(t0), "=&d"(t1),
+					      "+d"(n)
+					    : "d"(shift)
+					    : "memory", "cc");
+				} else {
+					const uint8_t *const dmid_end = d + (int)middle * 8;
+					while (d != dmid_end) {
+						ST_P4_SKEW_COL(em2, nm2, false);
+					}
+				}
+				ST_P4_SKEW_COL(em3, nm3, true);
+			}
+		}
+
+		s += src_y_inc - (REVERSE ? -8 : 8);
+		d += dst_y_inc - (REVERSE ? -8 : 8);
+	}
+#undef ST_P4_SKEW_COL
+#undef ST_P4_SKEW_SWAP
 }
 
 /*
@@ -486,7 +731,28 @@ void ST_Soft_P4_Planar(
 	 * preserve that. Misalignment is legal on the 68020+ but costs more than the
 	 * pairing saves, so an unaligned surface stays on the word path.
 	 */
-	if (SHIFT0 && !REVERSE) {
+	/*
+	 * Skewed and forward: the destination still pairs into longs even though
+	 * the source cannot. Only d needs alignment; the source is read wordwise.
+	 */
+	if (!SHIFT0) {
+		const unsigned long dmix = (unsigned long)(uintptr_t)d
+			| (unsigned long)(unsigned short)dst_y_inc;
+		if ((dmix & 3u) == 0u) {
+			if (endmask2 == 0xFFFFu) {
+				ST_Soft_P4_Planar_Skew_Long<OP, true, REVERSE>(s, d,
+				    src_y_inc, dst_y_inc, x_count, y_count, endmask1,
+				    endmask2, endmask3, shift, fxsr, nfsr);
+			} else {
+				ST_Soft_P4_Planar_Skew_Long<OP, false, REVERSE>(s, d,
+				    src_y_inc, dst_y_inc, x_count, y_count, endmask1,
+				    endmask2, endmask3, shift, fxsr, nfsr);
+			}
+			return;
+		}
+	}
+
+	if (SHIFT0) {
 		const unsigned long mixed = (unsigned long)(uintptr_t)s
 			| (unsigned long)(uintptr_t)d
 			| (unsigned long)(unsigned short)src_y_inc
@@ -495,10 +761,10 @@ void ST_Soft_P4_Planar(
 			/* endmask2 is a runtime value; only as a constant can OP 3 drop
 			   the destination read in the middle run. */
 			if (endmask2 == 0xFFFFu) {
-				ST_Soft_P4_Planar_Long<OP, true>(s, d, src_y_inc,
+				ST_Soft_P4_Planar_Long<OP, true, REVERSE>(s, d, src_y_inc,
 				    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3);
 			} else {
-				ST_Soft_P4_Planar_Long<OP, false>(s, d, src_y_inc,
+				ST_Soft_P4_Planar_Long<OP, false, REVERSE>(s, d, src_y_inc,
 				    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3);
 			}
 			return;
@@ -552,21 +818,6 @@ void ST_Soft_P4_Planar(
  * only ever touches the source word, so unlike the planar path this does not
  * depend on SHIFT0 — a shifted mask reaches it too.
  */
-/*
- * Duplicate a mask word into both halves of a long. Written as a union because
- * `(v << 16) | v` makes GCC emit muls.l #65537 — 53 cycles against 19.
- */
-inline uint32_t ST_Bcast16(uint16_t v)
-{
-	union {
-		uint16_t w[2];
-		uint32_t l;
-	} u;
-	u.w[0] = v;
-	u.w[1] = v;
-	return u.l;
-}
-
 /*
  * Masked edge word of the AND pass: d &= (sv | ~mask), both plane pairs, then
  * step d one column. Saves 6 cycles over what GCC emits — swap instead of bfins
@@ -862,19 +1113,6 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 #undef ST_SOFT_P4_DISPATCH
 #undef ST_SOFT_P4_CALL
 }
-/* Two 16-bit values into one long, high word first. Union for the same reason
- * as ST_Bcast16: the shift/or form compiles to muls.l. */
-static inline uint32_t ST_Pack16(uint16_t hi, uint16_t lo)
-{
-	union {
-		uint16_t w[2];
-		uint32_t l;
-	} u;
-	u.w[0] = hi;
-	u.w[1] = lo;
-	return u.l;
-}
-
 /*
  * One merged mask+planar column. LONG_DST pairs the four destination planes
  * into two long accesses; with SHIFT0 the planar source is two long loads too,

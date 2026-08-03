@@ -286,6 +286,106 @@ inline void ST_Soft_Blit_Op(
 		ST_SOFT_P4_STORE((MASK), (NOTMASK));                               \
 	} while (0)
 
+/* Same three ops at 32 bits, with the endmask duplicated into both halves. */
+template <uint8_t OP>
+inline uint32_t ST_Soft_Op_Long(uint32_t d, uint32_t s, uint32_t mask, uint32_t notmask)
+{
+	const uint32_t sm = s & mask;
+	const uint32_t keep = d & notmask;
+
+	if (OP == 1) {
+		return (d & sm) | keep;
+	}
+	if (OP == 3) {
+		return sm | keep;
+	}
+	return ((d | s) & mask) | keep;
+}
+
+/* Same three ops at 32 bits with the mask folded away; OP 3 loses its dest read. */
+template <uint8_t OP>
+inline uint32_t ST_Soft_Op_Long_Full(uint32_t d, uint32_t s)
+{
+	if (OP == 1) {
+		return d & s;
+	}
+	if (OP == 3) {
+		return s;
+	}
+	return d | s;
+}
+
+#define ST_SOFT_P4_LWORD_FULL()                                                    \
+	do {                                                                       \
+		*(uint32_t *)(d + 0) = ST_Soft_Op_Long_Full<OP>(                   \
+		    *(const uint32_t *)(d + 0), *(const uint32_t *)(s + 0));        \
+		*(uint32_t *)(d + 4) = ST_Soft_Op_Long_Full<OP>(                   \
+		    *(const uint32_t *)(d + 4), *(const uint32_t *)(s + 4));        \
+		s += 8;                                                            \
+		d += 8;                                                            \
+	} while (0)
+
+#define ST_SOFT_P4_LWORD(MASK, NOTMASK)                                            \
+	do {                                                                       \
+		*(uint32_t *)(d + 0) = ST_Soft_Op_Long<OP>(*(const uint32_t *)(d + 0), \
+		    *(const uint32_t *)(s + 0), (MASK), (NOTMASK));                 \
+		*(uint32_t *)(d + 4) = ST_Soft_Op_Long<OP>(*(const uint32_t *)(d + 4), \
+		    *(const uint32_t *)(s + 4), (MASK), (NOTMASK));                 \
+		s += 8;                                                            \
+		d += 8;                                                            \
+	} while (0)
+
+/*
+ * Pre-shifted and forward: the four planes of a 16-pixel column are 8 contiguous
+ * bytes, so two long accesses replace four word accesses on each side. With a
+ * full endmask the notmask is 0 and the destination read drops out entirely.
+ * The caller guarantees both pointers and both row strides are 4-byte aligned.
+ */
+template <uint8_t OP, bool FULL_MID>
+void ST_Soft_P4_Planar_Long(
+	const uint8_t *s,
+	uint8_t *d,
+	int16_t src_y_inc,
+	int16_t dst_y_inc,
+	uint16_t x_count,
+	uint16_t y_count,
+	uint16_t endmask1,
+	uint16_t endmask2,
+	uint16_t endmask3)
+{
+	const uint32_t em1 = ((uint32_t)endmask1 << 16) | endmask1;
+	const uint32_t em2 = ((uint32_t)endmask2 << 16) | endmask2;
+	const uint32_t em3 = ((uint32_t)endmask3 << 16) | endmask3;
+	const uint32_t nm1 = ~em1;
+	const uint32_t nm2 = ~em2;
+	const uint32_t nm3 = ~em3;
+	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
+
+	for (uint16_t line = 0; line < y_count; ++line) {
+		if (x_count > 0) {
+			if (x_count == 1) {
+				ST_SOFT_P4_LWORD(em1, nm1);
+			} else {
+				ST_SOFT_P4_LWORD(em1, nm1);
+				const uint8_t *const dmid_end = d + (int)middle * 8;
+				if (FULL_MID) {
+					while (d != dmid_end) {
+						ST_SOFT_P4_LWORD_FULL();
+					}
+				} else {
+					while (d != dmid_end) {
+						ST_SOFT_P4_LWORD(em2, nm2);
+					}
+				}
+				ST_SOFT_P4_LWORD(em3, nm3);
+			}
+		}
+
+		s += src_y_inc - 8;
+		d += dst_y_inc - 8;
+	}
+}
+
 /*
  * Planar source (one source plane per destination plane).
  *
@@ -317,6 +417,30 @@ void ST_Soft_P4_Planar(
 	const uint16_t notmask3 = (uint16_t)~endmask3;
 	const uint16_t middle = (x_count > 2) ? (uint16_t)(x_count - 2) : 0;
 	uint32_t h0 = 0, h1 = 0, h2 = 0, h3 = 0;
+
+	/*
+	 * Long accesses need both sides 4-byte aligned, and the row strides have to
+	 * preserve that. Misalignment is legal on the 68020+ but costs more than the
+	 * pairing saves, so an unaligned surface stays on the word path.
+	 */
+	if (SHIFT0 && !REVERSE) {
+		const unsigned long mixed = (unsigned long)(uintptr_t)s
+			| (unsigned long)(uintptr_t)d
+			| (unsigned long)(unsigned short)src_y_inc
+			| (unsigned long)(unsigned short)dst_y_inc;
+		if ((mixed & 3u) == 0u) {
+			/* endmask2 is a runtime value; only as a constant can OP 3 drop
+			   the destination read in the middle run. */
+			if (endmask2 == 0xFFFFu) {
+				ST_Soft_P4_Planar_Long<OP, true>(s, d, src_y_inc,
+				    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3);
+			} else {
+				ST_Soft_P4_Planar_Long<OP, false>(s, d, src_y_inc,
+				    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3);
+			}
+			return;
+		}
+	}
 
 	for (uint16_t line = 0; line < y_count; ++line) {
 		if (x_count > 0) {

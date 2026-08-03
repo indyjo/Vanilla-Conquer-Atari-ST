@@ -525,6 +525,26 @@ inline uint32_t ST_Bcast16(uint16_t v)
 	return u.l;
 }
 
+/*
+ * Masked edge word of the AND pass: d &= (sv | ~mask), both plane pairs, then
+ * step d one column. Saves 6 cycles over what GCC emits — swap instead of bfins
+ * for the broadcast, post-increment instead of a displacement.
+ */
+inline void ST_BC_Edge_And(uint8_t *&d, uint16_t sv, uint32_t notmask_l)
+{
+	uint32_t t;
+	__asm__ volatile(
+	    "move.w %2,%0\n\t"
+	    "swap %0\n\t"
+	    "move.w %2,%0\n\t"
+	    "or.l %3,%0\n\t"
+	    "and.l %0,(%1)+\n\t"
+	    "and.l %0,(%1)+\n"
+	    : "=&d"(t), "+a"(d)
+	    : "d"(sv), "d"(notmask_l)
+	    : "memory", "cc");
+}
+
 template <uint8_t OP, bool SHIFT0, bool LONG_DST, bool FULL_MID>
 void ST_Soft_P4_Broadcast(
 	const uint8_t *s,
@@ -575,6 +595,10 @@ void ST_Soft_P4_Broadcast(
 #define ST_SOFT_BC_WORD(MASK, NOTMASK, MASK_L, NOTMASK_L, LAST)                    \
 	do {                                                                       \
 		ST_SOFT_BC_SRC(LAST);                                              \
+		if (LONG_DST && OP == 1) {                                         \
+			ST_BC_Edge_And(d, sv, (NOTMASK_L));                        \
+			break;                                                     \
+		}                                                                  \
 		if (LONG_DST) {                                                    \
 			const uint32_t sv_l = ST_Bcast16(sv);                      \
 			*(uint32_t *)(d + 0) = ST_Soft_Op_Long<OP>(                \
@@ -616,34 +640,57 @@ void ST_Soft_P4_Broadcast(
 			} else {
 				ST_SOFT_BC_WORD(endmask1, notmask1, em1_l, nm1_l, false);
 				const uint8_t *const dmid_end = d + (int)middle * dst_x_inc;
-				if (LONG_DST && FULL_MID && OP == 1 && SHIFT0) {
+				if (LONG_DST && FULL_MID && OP == 1) {
 					/*
-					 * Post-increment on both sides and a swap
-					 * broadcast: 39 cycles per column against 59
-					 * for what GCC emits and 63 for the word path
-					 * (rg-asm, 68030). Skewed masks keep the C
-					 * path, which feeds the hold register.
+					 * Per column, rg-asm 68030: 39 cycles here
+					 * against 63 for the word path when the mask
+					 * is aligned, 49 against 77 when it is skewed.
+					 * LAST is false throughout the middle run, so
+					 * the nfsr test folds away and the source word
+					 * is always consumed.
+					 *
+					 * dbra runs n+1 times, and middle comes from a
+					 * 16-bit x_count, so it always fits the counter.
 					 */
-					/* dbra runs n+1 times, and middle comes
-					   from a 16-bit x_count, so it always
-					   fits the counter. */
 					if (middle != 0) {
 						unsigned long n =
 						    (unsigned long)middle - 1u;
 						uint32_t t0, t1;
-						__asm__ volatile(
-						    "1:\n\t"
-						    "move.w (%3)+,%0\n\t"
-						    "move.l %0,%1\n\t"
-						    "swap %1\n\t"
-						    "move.w %0,%1\n\t"
-						    "and.l %1,(%4)+\n\t"
-						    "and.l %1,(%4)+\n\t"
-						    "dbra %2,1b\n"
-						    : "=&d"(t0), "=&d"(t1),
-						      "+d"(n), "+a"(s), "+a"(d)
-						    :
-						    : "memory", "cc");
+						if (SHIFT0) {
+							__asm__ volatile(
+							    "1:\n\t"
+							    "move.w (%3)+,%0\n\t"
+							    "move.l %0,%1\n\t"
+							    "swap %1\n\t"
+							    "move.w %0,%1\n\t"
+							    "and.l %1,(%4)+\n\t"
+							    "and.l %1,(%4)+\n\t"
+							    "dbra %2,1b\n"
+							    : "=&d"(t0), "=&d"(t1),
+							      "+d"(n), "+a"(s), "+a"(d)
+							    :
+							    : "memory", "cc");
+						} else {
+							/* swap is the 32-bit rotate the
+							   hold register needs. */
+							__asm__ volatile(
+							    "1:\n\t"
+							    "swap %0\n\t"
+							    "move.w (%4)+,%0\n\t"
+							    "move.l %0,%1\n\t"
+							    "lsr.l %6,%1\n\t"
+							    "move.l %1,%2\n\t"
+							    "swap %2\n\t"
+							    "move.w %1,%2\n\t"
+							    "and.l %2,(%5)+\n\t"
+							    "and.l %2,(%5)+\n\t"
+							    "dbra %3,1b\n"
+							    : "+d"(hold), "=&d"(t0),
+							      "=&d"(t1), "+d"(n),
+							      "+a"(s), "+a"(d)
+							    : "d"(shift)
+							    : "memory", "cc");
+						}
 					}
 				} else if (LONG_DST && FULL_MID) {
 					while (d != dmid_end) {

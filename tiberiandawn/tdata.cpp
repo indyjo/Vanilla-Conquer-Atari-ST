@@ -810,8 +810,13 @@ void TerrainTypeClass::Init(TheaterType theater)
                 ((void const*&)terrain.ImageData) = MFCD::Retrieve(fullname);
 
                 IsTheaterShape = true;
+#ifdef ATARI_ST
+                /* Storage lives in ST_Radar_Icon_Arena (reset on theater change). */
+                ((void const*&)terrain.RadarIcon) = NULL;
+#else
                 if (terrain.RadarIcon)
                     delete[](char*) terrain.RadarIcon;
+#endif
                 ((void const*&)terrain.RadarIcon) = Get_Radar_Icon(terrain.Get_Image_Data(), 0, 1, 3);
                 IsTheaterShape = false;
             }

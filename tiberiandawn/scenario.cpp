@@ -576,8 +576,8 @@ void Do_Win(void)
                 Map_Selection();
 #ifdef ATARI_ST
                 /*
-                ** Map_Selection (and early returns) leave the post-score minimal sprite cache;
-                ** restore gameplay defaults before the next scenario load.
+                ** Ensure gameplay sprite-cache defaults after Map_Selection (early
+                ** returns / WSA path may have temporarily reconfigured).
                 */
                 ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
                 ST_Log_Free_Memory("Do_Win after Map_Selection");

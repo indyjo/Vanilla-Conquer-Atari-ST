@@ -1055,13 +1055,9 @@ void ScoreClass::Presentation(void)
 	Fade_Palette_To(BlackPalette, FADE_PALETTE_FAST, NULL);
 	VisiblePage.Clear();
 	#ifdef ATARI_ST
-	/*
-	** Keep a minimal sprite cache through Map_Selection (next in Do_Win). Restoring the
-	** full ~125 KiB slab here was starving the four WSA opens that follow.
-	*/
-	ST_Log_Free_Memory("Score:Presentation before sprite reconfigure (8,0,0,0)");
-	ST_SPRITE_CACHE_Reconfigure_TierCapacities(8, 0, 0, 0);
-	ST_Log_Free_Memory("Score:Presentation after sprite reconfigure (8,0,0,0)");
+	ST_Log_Free_Memory("Score:Presentation before sprite reconfigure (defaults)");
+	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
+	ST_Log_Free_Memory("Score:Presentation after sprite reconfigure (defaults)");
 	if (c2p_saved) {
 		C2P_RestoreContext(c2p_saved);
 		C2P_FreeContext(c2p_saved);
@@ -2055,7 +2051,8 @@ void Multi_Score_Presentation(void)
 #endif
 #ifdef ATARI_ST
 	TextPrintBuffer = HidPage.Get_Graphic_Buffer();
-	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 32, 32);
+	/* Fit within the resident default-sized slab (~163 KiB); (32,32) does not. */
+	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 24, 16);
 #else
 	TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height(), (void*)NULL);
 #endif

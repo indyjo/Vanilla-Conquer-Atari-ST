@@ -151,7 +151,7 @@ static void walk_gemdos_free_pool(int is_tt, int do_log, const char *pool_name, 
 
 	if (is_tt && !gemdos_has_mxalloc()) {
 		if (do_log) {
-			DBG_INFO("C&C ST - %s free: (no Mxalloc / TT-RAM)", pool_name);
+			DBG_LOG("%s free: (no Mxalloc / TT-RAM)", pool_name);
 		}
 		return;
 	}
@@ -187,7 +187,7 @@ static void walk_gemdos_free_pool(int is_tt, int do_log, const char *pool_name, 
 		if (n >= MAX_BLOCKS) {
 			Mfree(p);
 			if (do_log) {
-				DBG_INFO("C&C ST - %s free: truncated after %d blocks", pool_name, MAX_BLOCKS);
+				DBG_LOG("%s free: truncated after %d blocks", pool_name, MAX_BLOCKS);
 			}
 			break;
 		}
@@ -202,7 +202,7 @@ static void walk_gemdos_free_pool(int is_tt, int do_log, const char *pool_name, 
 	}
 
 	if (do_log) {
-		DBG_INFO("C&C ST - %s free: %d block(s), total %ld b (~%ld KiB), largest %ld b (~%ld KiB)",
+		DBG_LOG("%s free: %d block(s), total %ld b (~%ld KiB), largest %ld b (~%ld KiB)",
 		    pool_name,
 		    n,
 		    total,
@@ -210,8 +210,7 @@ static void walk_gemdos_free_pool(int is_tt, int do_log, const char *pool_name, 
 		    largest,
 		    (largest > 0L) ? (largest / 1024L) : 0L);
 		for (i = 0; i < n; i++) {
-			DBG_INFO("C&C ST - %s free[%d]: %ld b (~%ld KiB) @ %p",
-			    pool_name,
+			DBG_LOG("  free[%d]: %ld b (~%ld KiB) @ %p",
 			    i,
 			    sizes[i],
 			    (sizes[i] > 0L) ? (sizes[i] / 1024L) : 0L,
@@ -236,6 +235,7 @@ long Ram_Free(MemoryFlagType flag)
 	StFreePoolStats st;
 
 	(void)flag;
+	DBG_LOG("Ram_Free:");
 	walk_gemdos_free_pool(0, 1, "ST-RAM", &st);
 	return st.largest;
 }
@@ -269,10 +269,10 @@ void ST_Log_Free_Memory(const char *label)
 	StFreePoolStats tt;
 	const char *tag = (label != NULL && label[0] != '\0') ? label : "free memory";
 
-	DBG_INFO("C&C ST - %s:", tag);
+	DBG_LOG("%s:", tag);
 	walk_gemdos_free_pool(0, 1, "ST-RAM", &st);
 	walk_gemdos_free_pool(1, 1, "TT-RAM", &tt);
-	DBG_INFO("C&C ST - %s summary: ST total %ld b (~%ld KiB) largest %ld b, TT total %ld b (~%ld KiB) largest %ld b, grand total %ld b (~%ld KiB)",
+	DBG_LOG("%s summary: ST total %ld b (~%ld KiB) largest %ld b, TT total %ld b (~%ld KiB) largest %ld b, grand total %ld b (~%ld KiB)",
 	    tag,
 	    st.total,
 	    (st.total > 0L) ? (st.total / 1024L) : 0L,

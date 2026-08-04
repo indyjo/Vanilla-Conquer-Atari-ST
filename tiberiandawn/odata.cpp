@@ -870,8 +870,13 @@ void OverlayTypeClass::Init(TheaterType theater)
             ((void const*&)overlay.ImageData) = MFCD::Retrieve(fullname);
 
             IsTheaterShape = overlay.IsTheater;
+#ifdef ATARI_ST
+            /* Storage lives in ST_Radar_Icon_Arena (reset on theater change). */
+            ((void const*&)overlay.RadarIcon) = NULL;
+#else
             if (overlay.RadarIcon)
                 delete[](char*) overlay.RadarIcon;
+#endif
             ((void const*&)overlay.RadarIcon) = Get_Radar_Icon(overlay.Get_Image_Data(), 0, -1, 3);
             IsTheaterShape = false;
         }

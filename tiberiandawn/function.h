@@ -335,6 +335,11 @@ SourceType Source_From_Name(char const* name);
 char const* Name_From_Source(SourceType source);
 FacingType KN_To_Facing(int input);
 void const* Get_Radar_Icon(void const* shapefile, int shapenum, int frames, int zoomfactor);
+#ifdef ATARI_ST
+/* Bump arena for Get_Radar_Icon — reserve before theater MIX Cache so Cache stays last Alloc. */
+int ST_Radar_Icon_Arena_Ensure(void);
+void ST_Radar_Icon_Arena_Reset(void);
+#endif
 void CC_Draw_Shape(void const* shapefile,
                    int shapenum,
                    int x,

@@ -84,6 +84,7 @@
 #include "st_blit.h"
 #include "c2p.h"
 #include "st16_convert.h"
+#include "st_sprite_cache.h"
 #include "memflag.h"
 
 #include <stdint.h>
@@ -513,6 +514,15 @@ void DisplayClass::One_Time(void)
     **	Load the generic transparent icon set.
     */
     TransIconset = MFCD::Retrieve("TRANS.ICN");
+#ifdef ATARI_ST
+    /*
+    ** Keep a pre-ST16 copy so Init_Theater can restore + reconvert with each
+    ** theater's W16 (CONQUER.MIX cache is otherwise converted in place once).
+    */
+    if (TransIconset && !ST16_Trans_Iconset_Capture(TransIconset)) {
+        printf("ST16: TRANS.ICN original capture failed\n");
+    }
+#endif
 
     ShadowShapes = MFCD::Retrieve("SHADOW.SHP");
 #ifdef ATARI_ST
@@ -679,7 +689,27 @@ void DisplayClass::Init_Theater(TheaterType theater)
     if (Theater != LastTheater) {
         if (TheaterData) {
             delete TheaterData;
+            TheaterData = NULL;
         }
+#ifdef ATARI_ST
+        /*
+        ** Reserve long-lived caches before TheaterData->Cache so the theater MIX
+        ** is the last large contiguous Alloc before gameplay. Sprite cache may
+        ** have been shrunk for score/mapsel — restore defaults here.
+        */
+        ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
+        (void)ST_Radar_Icon_Arena_Ensure();
+        ST_Radar_Icon_Arena_Reset();
+        if (theater >= THEATER_FIRST && theater < THEATER_COUNT)
+            C2P_Load_WeightSet(Theaters[theater].Root, "Theater");
+        /*
+        ** TRANS.ICN is the only runtime ST16 convert (theater MIX is remixed).
+        ** Restore chunky original, convert with stack scratch + this theater's W16.
+        ** No heap chunky scratch is held during gameplay.
+        */
+        ST16_Trans_Iconset_Restore_And_Convert((void *)TransIconset);
+        ST_Log_Free_Memory("Before TheaterData->Cache");
+#endif
         TheaterData = new MFCD(fullname);
         TheaterData->Cache();
     }
@@ -713,12 +743,6 @@ void DisplayClass::Init_Theater(TheaterType theater)
     Mem_Copy((void*)ptr, GamePalette, 768);
 
     Mem_Copy(GamePalette, OriginalPalette, 768);
-
-#ifdef ATARI_ST
-    if (theater >= THEATER_FIRST && theater < THEATER_COUNT)
-        C2P_Load_WeightSet(Theaters[theater].Root, "Theater");
-    ST16_Prewarm_Iconset(TransIconset);
-#endif
 
 #ifndef _RETRIEVE
     /*

@@ -206,6 +206,7 @@ struct SpriteCacheTierStats {
 
 static SpriteCacheTier g_sprite_cache_tiers[SPRITE_CACHE_TIER_COUNT];
 static uint8_t *g_sprite_cache_slab = nullptr;
+static size_t g_sprite_cache_slab_bytes = 0; /* fixed Alloc at first init; never Free until process end */
 static bool g_sprite_cache_inited = false;
 static int g_sprite_cache_cap[SPRITE_CACHE_TIER_COUNT] = {
 	ST_SPRITE_CACHE_CAPACITY_16,
@@ -500,9 +501,15 @@ static void sprite_cache_scan_crop_bounds(const uint8_t *src,
 	sprite_cache_scan_transparent_crop_edges(src, full_w, full_h, stride, out_x, out_y, out_w, out_h);
 }
 
-/* Lazy one-time cache slab and per-tier allocator init. */
+/* Lazy one-time cache slab; reconfigure only reshards within it. */
 static void sprite_cache_apply_default_caps(void);
-static void sprite_cache_shutdown(void);
+static void sprite_cache_teardown_shards(void);
+static void sprite_cache_compute_slot_sizes(int payload_sz[SPRITE_CACHE_TIER_COUNT],
+	int slot_sz[SPRITE_CACHE_TIER_COUNT]);
+static size_t sprite_cache_bytes_for_caps(const int caps[SPRITE_CACHE_TIER_COUNT],
+	const int slot_sz[SPRITE_CACHE_TIER_COUNT]);
+static int sprite_cache_layout_tiers(void);
+static void sprite_cache_ensure_slab(void);
 static void sprite_cache_maybe_init(void);
 
 static void sprite_cache_reseed_tier_rank(SpriteCacheTier &tr, int tier_index)
@@ -561,7 +568,33 @@ static void sprite_cache_apply_default_caps(void)
 	g_sprite_cache_cap[3] = ST_SPRITE_CACHE_CAPACITY_96;
 }
 
-static void sprite_cache_shutdown(void)
+static void sprite_cache_compute_slot_sizes(int payload_sz[SPRITE_CACHE_TIER_COUNT],
+	int slot_sz[SPRITE_CACHE_TIER_COUNT])
+{
+	const size_t hdr_bytes = sprite_slot_hdr_bytes();
+	for (int t = 0; t < SPRITE_CACHE_TIER_COUNT; ++t) {
+		const int d = g_sprite_cache_dims[t];
+		/* Byte budget from a d×d reference square (not a max width/height). */
+		const int planar_bpl = ((d + 15) >> 4) * 8;
+		const int mask_bpl = ((d + 15) >> 4) * 2;
+		payload_sz[t] = planar_bpl * d + mask_bpl * d;
+		slot_sz[t] = (int)hdr_bytes + payload_sz[t];
+	}
+}
+
+static size_t sprite_cache_bytes_for_caps(const int caps[SPRITE_CACHE_TIER_COUNT],
+	const int slot_sz[SPRITE_CACHE_TIER_COUNT])
+{
+	size_t total = 0;
+	for (int t = 0; t < SPRITE_CACHE_TIER_COUNT; ++t) {
+		if (caps[t] > 0)
+			total += (size_t)caps[t] * (size_t)slot_sz[t];
+	}
+	return total;
+}
+
+/* Drop RankCache directories only — slab stays resident for the process lifetime. */
+static void sprite_cache_teardown_shards(void)
 {
 	for (int t = 0; t < SPRITE_CACHE_TIER_COUNT; ++t) {
 		SpriteCacheTier &tr = g_sprite_cache_tiers[t];
@@ -579,42 +612,23 @@ static void sprite_cache_shutdown(void)
 		tr.payload_sz = 0;
 		tr.slot_sz = 0;
 	}
-	Free(g_sprite_cache_slab);
-	g_sprite_cache_slab = nullptr;
 	g_sprite_cache_inited = false;
 	sprite_cache_reset_stats();
 }
 
-static void sprite_cache_maybe_init(void)
+/*
+ * Partition g_sprite_cache_slab for g_sprite_cache_cap. Caller must ensure the
+ * layout fits in g_sprite_cache_slab_bytes and that shards are torn down.
+ */
+static int sprite_cache_layout_tiers(void)
 {
-	if (g_sprite_cache_inited)
-		return;
-
 	int payload_sz[SPRITE_CACHE_TIER_COUNT];
 	int slot_sz[SPRITE_CACHE_TIER_COUNT];
-	size_t total = 0;
-	const size_t hdr_bytes = sprite_slot_hdr_bytes();
+	sprite_cache_compute_slot_sizes(payload_sz, slot_sz);
 
-	for (int t = 0; t < SPRITE_CACHE_TIER_COUNT; ++t) {
-		const int d = g_sprite_cache_dims[t];
-		/* Byte budget from a d×d reference square (not a max width/height). */
-		const int planar_bpl = ((d + 15) >> 4) * 8;
-		const int mask_bpl = ((d + 15) >> 4) * 2;
-		payload_sz[t] = planar_bpl * d + mask_bpl * d;
-		slot_sz[t] = (int)hdr_bytes + payload_sz[t];
-		const int cap = g_sprite_cache_cap[t];
-		if (cap > 0)
-			total += (size_t)cap * (size_t)slot_sz[t];
-	}
-
-	if (total == 0)
-		return;
-
-	g_sprite_cache_slab = (uint8_t *)Alloc((unsigned long)total, MEM_NORMAL);
-	if (!g_sprite_cache_slab) {
-		/* Alloc already invoked Memory_Error; do not continue without a slab. */
-		return;
-	}
+	const size_t need = sprite_cache_bytes_for_caps(g_sprite_cache_cap, slot_sz);
+	if (need == 0 || need > g_sprite_cache_slab_bytes || !g_sprite_cache_slab)
+		return -1;
 
 	uint8_t *walk = g_sprite_cache_slab;
 	for (int t = 0; t < SPRITE_CACHE_TIER_COUNT; ++t) {
@@ -659,9 +673,56 @@ static void sprite_cache_maybe_init(void)
 	}
 
 	g_sprite_cache_inited = true;
-	return;
+	return 0;
 fail:
-	sprite_cache_shutdown();
+	sprite_cache_teardown_shards();
+	return -1;
+}
+
+/* One Alloc for compile-time default capacity bytes; retained until process exit. */
+static void sprite_cache_ensure_slab(void)
+{
+	if (g_sprite_cache_slab)
+		return;
+
+	int payload_sz[SPRITE_CACHE_TIER_COUNT];
+	int slot_sz[SPRITE_CACHE_TIER_COUNT];
+	sprite_cache_compute_slot_sizes(payload_sz, slot_sz);
+
+	const int def_caps[SPRITE_CACHE_TIER_COUNT] = {
+		ST_SPRITE_CACHE_CAPACITY_16,
+		ST_SPRITE_CACHE_CAPACITY_32,
+		ST_SPRITE_CACHE_CAPACITY_64,
+		ST_SPRITE_CACHE_CAPACITY_96
+	};
+	const size_t total = sprite_cache_bytes_for_caps(def_caps, slot_sz);
+	if (total == 0)
+		return;
+
+	g_sprite_cache_slab = (uint8_t *)Alloc((unsigned long)total, MEM_NORMAL);
+	if (!g_sprite_cache_slab) {
+		/* Alloc already invoked Memory_Error; do not continue without a slab. */
+		return;
+	}
+	g_sprite_cache_slab_bytes = total;
+}
+
+static void sprite_cache_maybe_init(void)
+{
+	if (g_sprite_cache_inited)
+		return;
+
+	sprite_cache_ensure_slab();
+	if (!g_sprite_cache_slab)
+		return;
+
+	int payload_sz[SPRITE_CACHE_TIER_COUNT];
+	int slot_sz[SPRITE_CACHE_TIER_COUNT];
+	sprite_cache_compute_slot_sizes(payload_sz, slot_sz);
+	if (sprite_cache_bytes_for_caps(g_sprite_cache_cap, slot_sz) > g_sprite_cache_slab_bytes)
+		return;
+
+	(void)sprite_cache_layout_tiers();
 }
 
 extern "C" int ST_SPRITE_CACHE_Reconfigure_TierCapacities(int c16, int c32, int c64, int c96)
@@ -684,18 +745,28 @@ extern "C" int ST_SPRITE_CACHE_Reconfigure_TierCapacities(int c16, int c32, int 
 	if (sum <= 0)
 		return -1;
 
-	sprite_cache_shutdown();
+	sprite_cache_ensure_slab();
+	if (!g_sprite_cache_slab)
+		return -1;
+
+	int payload_sz[SPRITE_CACHE_TIER_COUNT];
+	int slot_sz[SPRITE_CACHE_TIER_COUNT];
+	sprite_cache_compute_slot_sizes(payload_sz, slot_sz);
+	if (sprite_cache_bytes_for_caps(caps, slot_sz) > g_sprite_cache_slab_bytes)
+		return -1;
+
+	sprite_cache_teardown_shards();
 	for (int i = 0; i < SPRITE_CACHE_TIER_COUNT; ++i)
 		g_sprite_cache_cap[i] = caps[i];
-	sprite_cache_maybe_init();
-	return g_sprite_cache_inited ? 0 : -1;
+	return sprite_cache_layout_tiers();
 }
 
 extern "C" void ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults(void)
 {
+	sprite_cache_ensure_slab();
 	sprite_cache_apply_default_caps();
-	sprite_cache_shutdown();
-	sprite_cache_maybe_init();
+	sprite_cache_teardown_shards();
+	(void)sprite_cache_layout_tiers();
 }
 
 void ST_Sprite_Cache_Stats_Debug_Service(void)

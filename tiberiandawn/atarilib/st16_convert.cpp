@@ -10,36 +10,96 @@
 #include <stdio.h>
 #include <string.h>
 
-static uint8_t *g_st16_chunky_scratch = NULL;
-static BOOL g_st16_chunky_scratch_init_attempted = FALSE;
+/* Per-icon chunky scratch for the only runtime convert we keep (TRANS / 24×24). */
+#define ST16_RUNTIME_CHUNKY_SCRATCH_BYTES ((size_t)ST16_TILE_W * (size_t)ST16_TILE_H)
 
-BOOL ST16_Ensure_Chunky_Scratch(void)
+static uint8_t *g_trans_icn_original = NULL;
+static size_t g_trans_icn_original_size = 0;
+
+static BOOL ST16_Convert_With_Stack_Scratch(uint8_t *base, size_t blob_size)
 {
-	if (g_st16_chunky_scratch) {
+	uint8_t scratch[ST16_RUNTIME_CHUNKY_SCRATCH_BYTES];
+	ST16_IControlView ic;
+
+	if (!ST16_Parse_IControl(base, blob_size, &ic)) {
+		return FALSE;
+	}
+	if ((size_t)ic.width * (size_t)ic.height > ST16_RUNTIME_CHUNKY_SCRATCH_BYTES) {
+		return FALSE;
+	}
+	return ST16_Convert_InPlace(base, blob_size, scratch);
+}
+
+BOOL ST16_Trans_Iconset_Capture(const void *icondata)
+{
+	const uint8_t *base;
+	size_t size;
+
+	if (!icondata) {
+		return FALSE;
+	}
+	if (g_trans_icn_original) {
 		return TRUE;
 	}
-	if (g_st16_chunky_scratch_init_attempted) {
+
+	base = (const uint8_t *)icondata;
+	if (ST16_Has_Native_Chunk((const IControl_Type *)icondata)) {
+		printf("ST16: TRANS.ICN already ST16; cannot capture original\n");
 		return FALSE;
 	}
 
-	g_st16_chunky_scratch_init_attempted = TRUE;
-	g_st16_chunky_scratch =
-		(uint8_t *)Alloc((unsigned long)ST16_CHUNKY_ICON_MAX_BYTES, MEM_NORMAL);
-	if (!g_st16_chunky_scratch) {
-		printf("ST16: failed to allocate chunky conversion scratch\n");
+	size = (size_t)ST16_Read_LE32(base + 8);
+	if (size < ST16_ICONTROL_SIZE || size > 64u * 1024u) {
+		return FALSE;
 	}
-	return g_st16_chunky_scratch != NULL;
+	if (!ST16_Is_Standard(base, size) || !ST16_Iconset_Should_Convert(base, size)) {
+		printf("ST16: TRANS.ICN not convertible; capture skipped\n");
+		return FALSE;
+	}
+
+	g_trans_icn_original = (uint8_t *)Alloc((unsigned long)size, MEM_NORMAL);
+	if (!g_trans_icn_original) {
+		printf("ST16: failed to allocate TRANS.ICN original (%lu bytes)\n", (unsigned long)size);
+		return FALSE;
+	}
+	memcpy(g_trans_icn_original, base, size);
+	g_trans_icn_original_size = size;
+	return TRUE;
+}
+
+void ST16_Trans_Iconset_Restore_And_Convert(void *icondata)
+{
+	if (!icondata || !g_trans_icn_original || g_trans_icn_original_size == 0) {
+		return;
+	}
+	if (!C2P_Weights_Are_Ready()) {
+		return;
+	}
+
+	memcpy(icondata, g_trans_icn_original, g_trans_icn_original_size);
+	if (!ST16_Convert_With_Stack_Scratch((uint8_t *)icondata, g_trans_icn_original_size)) {
+		printf("ST16: TRANS.ICN restore/convert failed\n");
+	}
 }
 
 void ST16_Prewarm_Iconset(const void *icondata)
 {
+	const uint8_t *base;
+	size_t blob_size;
+
 	if (!icondata || !C2P_Weights_Are_Ready()) {
 		return;
 	}
-	if (!ST16_Ensure_Chunky_Scratch()) {
+	if (ST16_Has_Native_Chunk((const IControl_Type *)icondata)) {
 		return;
 	}
-	(void)ST16_Iconset_Resolve(icondata, g_st16_chunky_scratch);
+
+	base = (const uint8_t *)icondata;
+	blob_size = (size_t)ST16_Read_LE32(base + 8);
+	if (!ST16_Iconset_Should_Convert(base, blob_size)) {
+		return;
+	}
+	(void)ST16_Convert_With_Stack_Scratch((uint8_t *)icondata, blob_size);
 }
 
 static uint32_t ST16_Adjust_Tail_Offset(uint32_t off, size_t tail_old, size_t shrink)
@@ -171,6 +231,11 @@ BOOL ST16_Convert_InPlace(uint8_t *base, size_t size, uint8_t *scratch_chunky)
 		const uint8_t *chunky_src_base = base + icons_old;
 
 		if (has_mask) {
+			/*
+			 * Temporary snapshot only when converting masked standard ICN.
+			 * Remixed ST16 packs hit the native fast path and never reach here;
+			 * do not pre-reserve this (it cost 128 KiB ST-RAM and OOMed theater Cache).
+			 */
 			chunky_snapshot = (uint8_t *)Alloc((unsigned long)chunky_bytes, MEM_NORMAL);
 			if (!chunky_snapshot) {
 				printf("ST16: convert failed: chunky snapshot alloc (%lu bytes)\n",
@@ -328,15 +393,13 @@ const void *ST16_Iconset_Resolve(const void *icondata, uint8_t *scratch_chunky)
 	if (!C2P_Weights_Are_Ready()) {
 		return NULL;
 	}
-	if (!scratch_chunky) {
-		if (!ST16_Ensure_Chunky_Scratch()) {
-			return NULL;
-		}
-		scratch_chunky = g_st16_chunky_scratch;
-	}
 
 	writable = (uint8_t *)icondata;
-	if (!ST16_Convert_InPlace(writable, blob_size, scratch_chunky)) {
+	if (scratch_chunky) {
+		if (!ST16_Convert_InPlace(writable, blob_size, scratch_chunky)) {
+			return NULL;
+		}
+	} else if (!ST16_Convert_With_Stack_Scratch(writable, blob_size)) {
 		return NULL;
 	}
 

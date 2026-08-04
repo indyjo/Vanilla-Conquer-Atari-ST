@@ -40,6 +40,7 @@
 #ifdef ATARI_ST
 #include "st_sprite_cache.h"
 #include "memflag.h"
+#include "c2p.h"
 #endif
 
 #ifndef DEMO
@@ -292,6 +293,11 @@ void Map_Selection(void)
 	*/
 	PseudoSeenBuff = SeenBuff.Get_Graphic_Buffer();
 	TextPrintBuffer = SeenBuff.Get_Graphic_Buffer();
+	/*
+	** Map WSA weight installs (greyearth / progress) must not stick into the next
+	** mission when Theater == LastTheater (Init_Theater skips C2P_Load_WeightSet).
+	*/
+	C2P_Context *c2p_saved = C2P_SaveContext();
 	ST_Log_Free_Memory("Map_Selection start");
 #else
 	PseudoSeenBuff = new GraphicBufferClass(320,200,(void*)NULL);
@@ -981,6 +987,11 @@ void Map_Selection(void)
 	TextPrintBuffer = NULL;
 	BlitList.Clear();
 #ifdef ATARI_ST
+	if (c2p_saved) {
+		C2P_RestoreContext(c2p_saved);
+		C2P_FreeContext(c2p_saved);
+		c2p_saved = NULL;
+	}
 	ST_Log_Free_Memory("Map_Selection end");
 #endif
 }

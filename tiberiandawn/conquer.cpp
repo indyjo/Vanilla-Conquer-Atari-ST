@@ -587,6 +587,20 @@ void Main_Game(int argc, char* argv[])
             PlaybackGame = 0;
         }
 
+#ifdef ATARI_ST
+        /*
+        ** Drop the theater MIX cache before the title menu / Choose_Side.
+        ** Leaving it resident starves CHOOSE.WSA after the side-select AUDs load.
+        ** LastTheater = NONE forces Init_Theater to Cache again on the next mission.
+        */
+        if (TheaterData) {
+            delete TheaterData;
+            TheaterData = NULL;
+        }
+        LastTheater = THEATER_NONE;
+        ST_Log_Free_Memory("After unload TheaterData (return to menu)");
+#endif
+
 #endif // DEMO
     }
 
@@ -2684,6 +2698,47 @@ char const* Fading_Table_Name(char const* base, TheaterType theater)
  *   04/12/1995 PWG : Created.                                                                 *
  *   05/10/1995 JLB : Handles a null shapefile pointer.                                        *
  *=============================================================================================*/
+#ifdef ATARI_ST
+#ifndef ST_RADAR_ICON_ARENA_BYTES
+/* Overlay+terrain radar icons are small; 32 KiB covers typical theaters with headroom.
+ * (96 KiB + the old 128 KiB ST16 convert workspace OOMed temperat.mix Cache.) */
+#define ST_RADAR_ICON_ARENA_BYTES (32u * 1024u)
+#endif
+static char* g_radar_icon_arena;
+static unsigned long g_radar_icon_arena_used;
+static unsigned long g_radar_icon_arena_cap;
+
+int ST_Radar_Icon_Arena_Ensure(void)
+{
+    if (g_radar_icon_arena) {
+        return 0;
+    }
+    g_radar_icon_arena = (char*)Alloc((unsigned long)ST_RADAR_ICON_ARENA_BYTES, MEM_NORMAL);
+    if (!g_radar_icon_arena) {
+        return -1;
+    }
+    g_radar_icon_arena_cap = (unsigned long)ST_RADAR_ICON_ARENA_BYTES;
+    g_radar_icon_arena_used = 0;
+    return 0;
+}
+
+void ST_Radar_Icon_Arena_Reset(void)
+{
+    g_radar_icon_arena_used = 0;
+}
+
+static char* ST_Radar_Icon_Arena_Alloc(unsigned long nbytes)
+{
+    unsigned long n = (nbytes + 1UL) & ~1UL;
+    if (!g_radar_icon_arena || g_radar_icon_arena_used + n > g_radar_icon_arena_cap) {
+        return NULL;
+    }
+    char* p = g_radar_icon_arena + g_radar_icon_arena_used;
+    g_radar_icon_arena_used += n;
+    return p;
+}
+#endif
+
 void const* Get_Radar_Icon(void const* shapefile, int shapenum, int frames, int zoomfactor)
 {
     static int _offx[] = {0, 0, -1, 1, 0, -1, 1, -1, 1};
@@ -2727,7 +2782,11 @@ void const* Get_Radar_Icon(void const* shapefile, int shapenum, int frames, int 
     ** Allocate a position to store our icons.  If the alloc fails then
     ** we dont add these icons to the set.
     **/
+#ifdef ATARI_ST
+    buffer = ST_Radar_Icon_Arena_Alloc((unsigned long)((icon_width * icon_height * 9 * frames) + 2));
+#else
     buffer = new char[(icon_width * icon_height * 9 * frames) + 2];
+#endif
     if (!buffer)
         return (NULL);
 

@@ -3,6 +3,8 @@
 
 #include "ste_stream_source.h"
 
+#include "ccfile.h"
+
 #include <stdint.h>
 
 class SteStreamFileSource final : public SteStreamSource {
@@ -32,7 +34,8 @@ private:
 	uint32_t begin_;
 	uint32_t size_;
 	uint32_t pos_;
-	void *file_; /* CCFileClass* */
+	int file_open_;
+	CCFileClass file_;
 	unsigned char ahead_[READAHEAD];
 	uint32_t ahead_file_pos_; /* absolute file offset of ahead_[0] */
 	uint32_t ahead_len_;

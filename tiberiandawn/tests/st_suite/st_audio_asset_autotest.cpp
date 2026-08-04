@@ -1,7 +1,7 @@
 /*
  * Automated: load a real .AUD from game MIX archives, decode/play via audio_ste Play_Sample.
- * Servicing matches in-game ATARI_ST: VBL hook installed by Audio_Init; wait on Wait_Vert_Blank
- * and Sound_Maintenance (deferred teardown only, no main-thread ring refill).
+ * Servicing: VBL hook (DMA mix) from Audio_Init; main thread Sound_Callback for AUDX
+ * page-ring refill and deferred teardown.
  *
  * Key-click muting uses TOS conterm ($484) bit 0 via Supexec (MiNT user-mode $484 bus-errors).
  */
@@ -207,7 +207,7 @@ static void st_audio_wait_vbl_until_done(void const* sample)
 {
 	for (int i = 0; i < ST_AUDIO_MAX_VBL_WAIT && Is_Sample_Playing(sample); i++) {
 		Wait_Vert_Blank();
-		Sound_Maintenance();
+		Sound_Callback();
 	}
 }
 

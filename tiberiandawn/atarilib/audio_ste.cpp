@@ -19,11 +19,12 @@
  * read the DMA frame counter ($FF8909/B/D), then cyclically decode/mix into the ring from
  * `g_ring_write_pos` up to the current DMA read offset. Pull counts are always even. VBL does not
  * call malloc/free/delete; DMA-off teardown is deferred via `g_pending_voice_shutdown`.
- * `Sound_Callback` polls the same core on the main thread (legacy / Win32); **ATARI_ST** game
- * code omits that polling (`THEME.CPP`) so servicing is VBL-only. ST tests wait on VBL and call
- * `Sound_Maintenance` for deferred teardown. The VBL hook never raises IPL
- * (MFP/IKBD at level 6 must stay serviceable during IMA decode). `Play_Sample` uses brief IPL-5
- * sections only on the main thread (blocks VBL at 4, not IKBD).
+ * `Sound_Callback` (main thread, via `Theme.AI`) refills AUDX page-pointer rings (GEMDOS OK)
+ * and runs `Sound_Maintenance`. DMA-ring mix stays on the **VBL** path only — never
+ * `AUDX_Pool_Read` / `CCFileClass` from VBL. ST tests should call `Sound_Callback` so rings
+ * refill. The VBL hook never raises IPL (MFP/IKBD at level 6 must stay serviceable during
+ * IMA decode). `Play_Sample` uses brief IPL-5 sections only on the main thread (blocks VBL
+ * at 4, not IKBD).
  *
  * **Mixing**: Up to **two** simultaneous streams are decoded to signed-linear temps, attenuated by
  * each voice's volume, then summed into the ring (32-bit lanes, no per-sample saturation); a single
@@ -41,7 +42,7 @@
 #include "audx/audx.h"
 #include "audx/audx_page_cache.h"
 #include "audx/ste_stream_memory_source.h"
-#include "audx/ste_stream_cache_source.h"
+#include "audx/ste_stream_page_ring_source.h"
 #include "audx/ste_stream_file_source.h"
 #include "ccfile.h"
 #include "audio.h"
@@ -172,7 +173,7 @@ static struct SteStreamState g_voice_ss[STE_MIX_VOICES];
 static SteStreamPcmFormat g_voice_pcm[STE_MIX_VOICES];
 static SteStreamIma99Format g_voice_ima[STE_MIX_VOICES];
 static SteStreamMemorySource g_voice_mem_src[STE_MIX_VOICES];
-static SteStreamCacheSource g_voice_cache_src[STE_MIX_VOICES];
+static SteStreamPageRingSource g_voice_page_src[STE_MIX_VOICES];
 static SteStreamFileSource g_voice_file_src[STE_MIX_VOICES];
 static unsigned char g_mix_pull[STE_MIX_VOICES][STE_AUDIO_PULL_BLOCK];
 static unsigned char* g_dma_pool;
@@ -373,7 +374,7 @@ static void ste_voice_reset_sources(int vi)
 		return;
 	}
 	g_voice_mem_src[vi].reset();
-	g_voice_cache_src[vi].reset();
+	g_voice_page_src[vi].reset();
 	g_voice_file_src[vi].reset();
 }
 
@@ -401,13 +402,14 @@ static void ste_process_pending_voice_shutdown(void)
 
 /*
  * Open stream: bind pre-allocated PCM or IMA instance for this voice (no heap).
- * AUDX meta uses cache (<=64 KiB) or file (>64 KiB) sources; legacy AUD uses memory / IMA path.
+ * AUDX meta uses a page-pointer ring (RankCache <=64 KiB, stream slabs above);
+ * legacy AUD uses memory / IMA; named classic PCM still uses SteStreamFileSource.
  */
 static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char const* b, unsigned long aud_bytes, int volume)
 {
 	ste_stream_shutdown_one(ss);
 	g_voice_mem_src[vi].reset();
-	g_voice_cache_src[vi].reset();
+	g_voice_page_src[vi].reset();
 	g_voice_file_src[vi].reset();
 	if (vi < 0 || vi >= STE_MIX_VOICES || !b) {
 		return 0;
@@ -420,21 +422,15 @@ static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char cons
 		AudxPrefix const* pfx = AUDX_As_Prefix(b);
 		SteStreamSource* src = 0;
 		uint32_t const span = pfx->pool_data_size ? pfx->pool_data_size : pfx->size;
+		int const use_stream = (pfx->size > AUDX_PAGE_CACHE_MAX) ? 1 : 0;
 
 		if (pfx->pool_id == 0 || pfx->size == 0 || span == 0) {
 			return 0;
 		}
-		if (pfx->size <= AUDX_PAGE_CACHE_MAX) {
-			if (!g_voice_cache_src[vi].bind(pfx->pool_id, pfx->pool_data_begin, span)) {
-				return 0;
-			}
-			src = &g_voice_cache_src[vi];
-		} else {
-			if (!g_voice_file_src[vi].bind(pfx->pool_id, pfx->pool_data_begin, span)) {
-				return 0;
-			}
-			src = &g_voice_file_src[vi];
+		if (!g_voice_page_src[vi].bind(pfx->pool_id, pfx->pool_data_begin, span, use_stream)) {
+			return 0;
 		}
+		src = &g_voice_page_src[vi];
 		if (pfx->compression == STE_AUD_COMP_PCM
 		    && g_voice_pcm[vi].bind_source(pfx->rate, pfx->flags, pfx->compression, pfx->size, pfx->uncomp, src)) {
 			f = &g_voice_pcm[vi];
@@ -476,7 +472,7 @@ static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char cons
 			f->reset();
 		}
 		g_voice_mem_src[vi].reset();
-		g_voice_cache_src[vi].reset();
+		g_voice_page_src[vi].reset();
 		g_voice_file_src[vi].reset();
 		return 0;
 	}
@@ -486,6 +482,15 @@ static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char cons
 	ss->volume = Bound(volume, 0, 0xFF);
 	ste_volume_lut_build(ss->vol_lut, ss->volume, f->sample_domain());
 	return 1;
+}
+
+static void ste_page_ring_service_all(void)
+{
+	for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
+		if (g_voice_ss[vi].active) {
+			g_voice_page_src[vi].service();
+		}
+	}
 }
 
 /* Arm DMA once: loop `len` bytes at `first` in ST-RAM (start/end not rewritten during play). */
@@ -752,7 +757,8 @@ void Sound_Maintenance(void)
 void Sound_Callback(void)
 {
 	Sound_Maintenance();
-	ste_audio_service_core();
+	/* GEMDOS-safe page-ring refill on main thread; DMA mix stays on VBL. */
+	ste_page_ring_service_all();
 }
 
 /*
@@ -1279,6 +1285,9 @@ int Play_Sample(void const* sample, int priority, int volume, signed short)
 	if (sample == (void const*)g_stream_file_buf) {
 		g_stream_file_voice = vi;
 	}
+
+	/* Prefill page-pointer ring before VBL can pull (main thread; may GEMDOS). */
+	g_voice_page_src[vi].service();
 
 	if (!cold_arm) {
 		/*

@@ -1,8 +1,9 @@
 /*
  * audx_pool_file.cpp — Read spans from pool%04x.bin sidecars.
  *
- * Keep a few pool files open across page-cache misses so VBL refill does not
- * Set_Name/Open/Close per 1 KiB page.
+ * Main thread only (page-ring service / Play_Sample). Never call from VBL.
+ * Keep a few pool files open across page-cache misses. CCFileClass objects are
+ * embedded and reused (Close + Open) — no heap new/delete on the play path.
  */
 
 #include "audx_pool_file.h"
@@ -10,14 +11,15 @@
 #include "audx.h"
 #include "function.h"
 
-#include <new>
+#include <string.h>
 
 enum { AUDX_POOL_OPEN_SLOTS = 4 };
 
 struct AudxPoolSlot {
 	uint16_t pool_id;
 	uint32_t next_off; /* absolute file offset after last successful Read (0 = unknown) */
-	CCFileClass *file;
+	int in_use;
+	CCFileClass file;
 };
 
 static AudxPoolSlot g_audx_pools[AUDX_POOL_OPEN_SLOTS];
@@ -33,12 +35,11 @@ int AUDX_Format_Pool_Name(uint16_t pool_id, char *out, size_t out_cap)
 
 static void audx_pool_slot_close(AudxPoolSlot *slot)
 {
-	if (!slot || !slot->file)
+	if (!slot || !slot->in_use)
 		return;
-	if (slot->file->Is_Open())
-		slot->file->Close();
-	delete slot->file;
-	slot->file = 0;
+	if (slot->file.Is_Open())
+		slot->file.Close();
+	slot->in_use = 0;
 	slot->pool_id = 0;
 	slot->next_off = 0;
 }
@@ -52,7 +53,7 @@ void AUDX_Pool_Close_All(void)
 static AudxPoolSlot *audx_pool_find(uint16_t pool_id)
 {
 	for (int i = 0; i < AUDX_POOL_OPEN_SLOTS; ++i) {
-		if (g_audx_pools[i].pool_id == pool_id && g_audx_pools[i].file)
+		if (g_audx_pools[i].in_use && g_audx_pools[i].pool_id == pool_id)
 			return &g_audx_pools[i];
 	}
 	return 0;
@@ -62,7 +63,6 @@ static AudxPoolSlot *audx_pool_open(uint16_t pool_id)
 {
 	char name[16];
 	AudxPoolSlot *slot;
-	CCFileClass *f;
 	int i;
 
 	slot = audx_pool_find(pool_id);
@@ -75,7 +75,7 @@ static AudxPoolSlot *audx_pool_open(uint16_t pool_id)
 	/* Prefer an empty slot; otherwise recycle slot 0 (simple, rare with 3 pools). */
 	slot = 0;
 	for (i = 0; i < AUDX_POOL_OPEN_SLOTS; ++i) {
-		if (!g_audx_pools[i].file) {
+		if (!g_audx_pools[i].in_use) {
 			slot = &g_audx_pools[i];
 			break;
 		}
@@ -85,15 +85,12 @@ static AudxPoolSlot *audx_pool_open(uint16_t pool_id)
 		audx_pool_slot_close(slot);
 	}
 
-	f = new (std::nothrow) CCFileClass(name);
-	if (!f)
+	if (slot->file.Is_Open())
+		slot->file.Close();
+	if (!slot->file.Open(name, READ))
 		return 0;
-	if (!f->Is_Available() || !f->Open(READ)) {
-		delete f;
-		return 0;
-	}
 	slot->pool_id = pool_id;
-	slot->file = f;
+	slot->in_use = 1;
 	slot->next_off = 0;
 	return slot;
 }
@@ -107,9 +104,9 @@ int AUDX_Pool_Read(uint16_t pool_id, uint32_t begin, uint32_t size, void *dst)
 		return 0;
 
 	slot = audx_pool_open(pool_id);
-	if (!slot || !slot->file)
+	if (!slot || !slot->in_use)
 		return 0;
-	f = slot->file;
+	f = &slot->file;
 
 	/* Sequential page fills can skip Seek when the file cursor is already at begin. */
 	if (slot->next_off != begin) {

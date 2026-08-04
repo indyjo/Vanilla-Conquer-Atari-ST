@@ -20,8 +20,10 @@ extern "C" {
 
 #define AUDX_PAGE_SIZE 1024u
 #define AUDX_PAGE_CACHE_SHARDS 32u
-#define AUDX_PAGE_CACHE_SHARD_SIZE 6u /* 32×6×1024 = 192 KiB slab */
-#define AUDX_PAGE_CACHE_MAX 65536u /* payload size threshold: <= cache, > file */
+#define AUDX_PAGE_CACHE_SHARD_SIZE 6u /* 32×6×1024 = 192 KiB RankCache slabs */
+#define AUDX_PAGE_STREAM_COUNT 16u   /* reserved stream slabs for > AUDX_PAGE_CACHE_MAX */
+#define AUDX_PAGE_CACHE_MAX 65536u   /* payload size threshold: <= RankCache, > stream slabs */
+#define AUDX_PAGE_RING_SLOTS 8u      /* per-voice page-pointer ring (~0.5 s @ 12.5 kHz) */
 
 #define AUDX_POOL_ID_SOUNDS 0x0005u
 #define AUDX_POOL_ID_SPEECH 0x0006u

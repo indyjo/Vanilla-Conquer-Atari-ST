@@ -1,8 +1,8 @@
 /*
  * Interactive: mix two .AUD samples through the production STE DMA path (audio_ste.cpp).
  *
- * Servicing matches the main game on ATARI_ST: Audio_Init installs the VBL hook;
- * the main thread waits on Wait_Vert_Blank + Sound_Maintenance only (no Sound_Callback).
+ * Servicing: Audio_Init installs the VBL hook for DMA-ring mix; the main thread
+ * calls Sound_Callback (page-ring refill + Sound_Maintenance) each wait tick.
  *
  * Voice 0 is started first (cold DMA arm), voice 1 overlays — same order as theme +
  * EVA speech (File_Stream / theme uses PRIORITY_MAX 255, EVA Play_Sample 254).
@@ -85,7 +85,7 @@ static int st_wait_dual(void const *a, void const *b)
 
 	for (int i = 0; i < ST_DUAL_MIX_MAX_VBL; i++) {
 		Wait_Vert_Blank();
-		Sound_Maintenance();
+		Sound_Callback();
 
 		if (Bconstat(2) != 0) {
 			long w = Cnecin();

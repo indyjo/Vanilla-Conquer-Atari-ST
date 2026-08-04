@@ -1,13 +1,11 @@
 #include "ste_stream_file_source.h"
 
 #include "audx.h"
-#include "function.h"
 
-#include <new>
 #include <string.h>
 
 SteStreamFileSource::SteStreamFileSource()
-    : pool_id_(0), begin_(0), size_(0), pos_(0), file_(0), ahead_file_pos_(0), ahead_len_(0)
+    : pool_id_(0), begin_(0), size_(0), pos_(0), file_open_(0), ahead_file_pos_(0), ahead_len_(0)
 {
 	named_[0] = '\0';
 }
@@ -19,12 +17,10 @@ SteStreamFileSource::~SteStreamFileSource()
 
 void SteStreamFileSource::close_()
 {
-	if (file_) {
-		CCFileClass *f = (CCFileClass *)file_;
-		if (f->Is_Open())
-			f->Close();
-		delete f;
-		file_ = 0;
+	if (file_open_) {
+		if (file_.Is_Open())
+			file_.Close();
+		file_open_ = 0;
 	}
 	ahead_len_ = 0;
 }
@@ -33,9 +29,8 @@ int SteStreamFileSource::ensure_open_()
 {
 	char name[16];
 	char const *open_name;
-	CCFileClass *f;
 
-	if (file_)
+	if (file_open_)
 		return 1;
 	if (named_[0] != '\0') {
 		open_name = named_;
@@ -44,14 +39,11 @@ int SteStreamFileSource::ensure_open_()
 			return 0;
 		open_name = name;
 	}
-	f = new (std::nothrow) CCFileClass(open_name);
-	if (!f)
+	if (file_.Is_Open())
+		file_.Close();
+	if (!file_.Open(open_name, READ))
 		return 0;
-	if (!f->Is_Available() || !f->Open(READ)) {
-		delete f;
-		return 0;
-	}
-	file_ = f;
+	file_open_ = 1;
 	return 1;
 }
 
@@ -118,14 +110,12 @@ unsigned long SteStreamFileSource::size() const
 unsigned long SteStreamFileSource::read(unsigned char *dst, unsigned long n)
 {
 	unsigned long got = 0UL;
-	CCFileClass *f;
 
-	if (!dst || !file_ || n == 0UL || pos_ >= size_)
+	if (!dst || !file_open_ || n == 0UL || pos_ >= size_)
 		return 0UL;
 	if (n > (unsigned long)(size_ - pos_))
 		n = (unsigned long)(size_ - pos_);
 
-	f = (CCFileClass *)file_;
 	while (got < n) {
 		uint32_t const abs = begin_ + pos_ + (uint32_t)got;
 		unsigned long take;
@@ -139,10 +129,10 @@ unsigned long SteStreamFileSource::read(unsigned char *dst, unsigned long n)
 				break;
 			/* Contiguous refill after exhausting ahead: file cursor is already at abs. */
 			if (!(ahead_len_ > 0 && abs == ahead_file_pos_ + ahead_len_)) {
-				if (f->Seek((long)abs, SEEK_SET) != (long)abs)
+				if (file_.Seek((long)abs, SEEK_SET) != (long)abs)
 					break;
 			}
-			long const rd = f->Read(ahead_, (long)want);
+			long const rd = file_.Read(ahead_, (long)want);
 			if (rd <= 0)
 				break;
 			ahead_file_pos_ = abs;
@@ -164,7 +154,7 @@ unsigned long SteStreamFileSource::read(unsigned char *dst, unsigned long n)
 
 unsigned long SteStreamFileSource::skip(unsigned long n)
 {
-	if (!file_ || n == 0UL || pos_ >= size_)
+	if (!file_open_ || n == 0UL || pos_ >= size_)
 		return 0UL;
 	if (n > (unsigned long)(size_ - pos_))
 		n = (unsigned long)(size_ - pos_);

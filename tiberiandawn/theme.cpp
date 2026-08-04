@@ -207,9 +207,7 @@ void ThemeClass::AI(void)
                 Pending = THEME_NONE;
             }
         }
-#ifndef ATARI_ST
         Sound_Callback();
-#endif
     }
 }
 

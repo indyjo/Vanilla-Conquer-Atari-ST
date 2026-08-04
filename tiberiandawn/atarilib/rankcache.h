@@ -125,6 +125,48 @@ public:
 		return true;
 	}
 
+	/*
+	 * Like retarget_oldest, but only rekeys a node whose Value passes can_evict
+	 * (e.g. pin_count == 0). Scans from LRU toward MRU; swaps the chosen node
+	 * into the LRU slot, then rotates it to MRU.
+	 */
+	template <typename CanEvict>
+	bool retarget_oldest_evictable(const Key &key, Value &value_out, CanEvict can_evict)
+	{
+		if (!nodes_ || capacity_ == 0)
+			return false;
+
+		for (uint16_t logical = 0; logical < capacity_; ++logical) {
+			const uint16_t p = phys(logical);
+			if (nodes_[p].key == key)
+				return false;
+		}
+
+		int chosen = -1;
+		for (int logical = (int)capacity_ - 1; logical >= 0; --logical) {
+			const uint16_t p = phys((uint16_t)logical);
+			if (can_evict(nodes_[p].value)) {
+				chosen = logical;
+				break;
+			}
+		}
+		if (chosen < 0)
+			return false;
+
+		const uint16_t lru = phys((uint16_t)(capacity_ - 1));
+		if ((uint16_t)chosen != (uint16_t)(capacity_ - 1)) {
+			const uint16_t p = phys((uint16_t)chosen);
+			Node tmp = nodes_[p];
+			nodes_[p] = nodes_[lru];
+			nodes_[lru] = tmp;
+		}
+
+		head_ = (head_ == 0) ? (uint16_t)(capacity_ - 1) : (uint16_t)(head_ - 1);
+		nodes_[head_].key = key;
+		value_out = nodes_[head_].value;
+		return true;
+	}
+
 	Node const *nodes() const { return nodes_; }
 	Node *nodes() { return nodes_; }
 

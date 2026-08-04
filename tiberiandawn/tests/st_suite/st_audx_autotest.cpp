@@ -1,6 +1,7 @@
 /*
- * AUDX on-target smoke: small SFX via page cache; one score via file stream.
- * Skips when remacked packs / pool*.bin are absent.
+ * AUDX on-target smoke: small SFX via page-pointer ring + RankCache; large score via
+ * stream slabs. Concurrent GEMDOS stress while playing. Skips when remacked packs /
+ * pool*.bin are absent.
  */
 
 #include "st_audx_autotest.h"
@@ -9,6 +10,7 @@
 #include "audio.h"
 #include "audx/audx.h"
 #include "audx/audx_page_cache.h"
+#include "audx/audx_pool_file.h"
 #include "st_mix_minimal.h"
 #include "st_mix_register.h"
 #include "st_audio_asset_autotest.h"
@@ -39,16 +41,33 @@ static int st_audx_pool_available(uint16_t pool_id)
 	return CCFileClass(name).Is_Available() ? 1 : 0;
 }
 
-static void st_audx_wait_sample(void const *sample, int max_vbl)
+static void st_audx_gemdos_stress_tick(void)
+{
+	/* Concurrent main-thread GEMDOS while VBL mixes from pinned pages. */
+	char name[16];
+	unsigned char scratch[64];
+	if (AUDX_Format_Pool_Name(AUDX_POOL_ID_SOUNDS, name, sizeof(name))) {
+		CCFileClass f(name);
+		if (f.Is_Available() && f.Open(READ)) {
+			(void)f.Read(scratch, (long)sizeof(scratch));
+			f.Close();
+		}
+	}
+	(void)AUDX_Pool_Read(AUDX_POOL_ID_SOUNDS, 0, (uint32_t)sizeof(scratch), scratch);
+}
+
+static void st_audx_wait_sample(void const *sample, int max_vbl, int stress_gemdos)
 {
 	for (int i = 0; i < max_vbl && Is_Sample_Playing(sample); i++) {
 		Wait_Vert_Blank();
-		Sound_Maintenance();
+		Sound_Callback();
+		if (stress_gemdos)
+			st_audx_gemdos_stress_tick();
 	}
 }
 
 /*
- * Small SFX: AUDX meta from SOUNDS.MIX, payload via page cache (pool0005.bin).
+ * Small SFX: AUDX meta from SOUNDS.MIX, payload via page-pointer ring (pool0005.bin).
  */
 static int st_audx_test_sfx_cache(void)
 {
@@ -107,13 +126,13 @@ static int st_audx_test_sfx_cache(void)
 	}
 
 	if (Play_Sample(raw, 255, 0xFF, 0) < 0) {
-		printf("FAIL AUDX Play_Sample cache %s\n", hit);
+		printf("FAIL AUDX Play_Sample page-ring %s\n", hit);
 		Sound_End();
 		AUDX_Page_Cache_Shutdown();
 		free(raw);
 		return ST_AUDX_FAIL;
 	}
-	st_audx_wait_sample(raw, 45000);
+	st_audx_wait_sample(raw, 45000, 1);
 	if (Is_Sample_Playing(raw)) {
 		printf("FAIL AUDX SFX timeout %s\n", hit);
 		Stop_Sample_Playing(raw);
@@ -126,12 +145,12 @@ static int st_audx_test_sfx_cache(void)
 	Sound_End();
 	AUDX_Page_Cache_Shutdown();
 	free(raw);
-	printf("PASS AUDX SFX page-cache %s\n", hit);
+	printf("PASS AUDX SFX page-ring %s (with GEMDOS stress)\n", hit);
 	return ST_AUDX_PASS;
 }
 
 /*
- * Score: Cache SCORES.MIX meta, stream large AUDX via File_Stream (pool0007.bin).
+ * Score: Cache SCORES.MIX meta, stream large AUDX via page-ring stream slabs.
  * Smoke: start playback, service VBLs briefly, then stop.
  */
 static int st_audx_test_score_file(void)
@@ -179,7 +198,7 @@ static int st_audx_test_score_file(void)
 	{
 		AudxPrefix const *pfx = AUDX_As_Prefix(meta);
 		if (pfx->size <= AUDX_PAGE_CACHE_MAX) {
-			printf("SKIP AUDX score %s (size <= 64KiB; want file path)\n", hit);
+			printf("SKIP AUDX score %s (size <= 64KiB; want stream-slab path)\n", hit);
 			return ST_AUDX_SKIP;
 		}
 	}
@@ -199,14 +218,14 @@ static int st_audx_test_score_file(void)
 		return ST_AUDX_FAIL;
 	}
 
-	st_audx_wait_sample(meta, ST_AUDX_SCORE_SMOKE_VBL);
+	st_audx_wait_sample(meta, ST_AUDX_SCORE_SMOKE_VBL, 1);
 	if (Is_Sample_Playing(meta)) {
 		Stop_Sample_Playing(meta);
 	}
 
 	Sound_End();
 	AUDX_Page_Cache_Shutdown();
-	printf("PASS AUDX score file-stream %s\n", hit);
+	printf("PASS AUDX score stream-slab %s (with GEMDOS stress)\n", hit);
 	return ST_AUDX_PASS;
 }
 

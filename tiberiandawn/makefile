@@ -269,6 +269,10 @@ else
 DEFINES += NDEBUG
 # e.g. make CXX_OPT_REL=-O3 CONFIG=release ...
 CXX_OPT_REL ?= -O3
+# Cold-path translation units: compile with -Os to reclaim ST-RAM while the
+# hot path (blit/AI/audio) keeps CXX_OPT_REL. Basenames only (no path/ext).
+# Override: make SIZE_OPT_OBJS='score cdata' ...  or SIZE_OPT_OBJS= to disable.
+SIZE_OPT_OBJS ?= score cdata bdata blowfish init mapsel scenario options expand msgbox
 WITH_SYMBOLS ?= 1
 CXXFLAGS = $(CXXFLAGS_COMMON) $(CXX_OPT_REL) -DNDEBUG
 CXXFLAGS += -ffunction-sections -fdata-sections
@@ -285,6 +289,9 @@ endif
 # Note: --gc-sections may not be supported for m68k
 # LDFLAGS += -Wl,--gc-sections -Wl,--strip-all
 LIBS = $(PLATFORM_LIBS)
+# Per-object -Os override (must follow final CXXFLAGS).
+CXXFLAGS_SIZE = $(filter-out $(CXX_OPT_REL),$(CXXFLAGS)) -Os
+$(foreach _o,$(SIZE_OPT_OBJS),$(eval $(INTDIR)/$(_o).o: CXXFLAGS := $(CXXFLAGS_SIZE)))
 endif
 
 # Convert defines to compiler flags
@@ -816,6 +823,9 @@ endif
 	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"
 	@echo "  FRAME_POINTERS=1 - Keep A6 frame chain (-fno-omit-frame-pointer); default: 0"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
+	@echo "  SIZE_OPT_OBJS=…  - Release only: basenames compiled with -Os (cold path;"
+	@echo "                     default: score cdata bdata blowfish init mapsel"
+	@echo "                     scenario options expand msgbox; empty disables)"
 	@echo "  FASTCALL=0       - Disable -mfastcall on compile and link (default: 1)"
 	@echo "  M68K_CPU=68020-60 - Atari-only: build for 68020..68060 (default: empty = 68000)"
 	@echo "  LIBC_RUNTIME=libcmini|mintlib|auto - Atari-only C runtime (default: libcmini)"

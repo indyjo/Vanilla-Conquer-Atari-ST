@@ -1,7 +1,9 @@
 /*
  * alloc.cpp - Memory allocation functions for Atari ST/MiNT
- * 
- * This provides portable implementations of Alloc, Free, and Resize_Alloc
+ *
+ * Alloc/Free/Resize_Alloc use libcmini malloc (one GEMDOS block for the C
+ * heap). Direct GEMDOS Mxalloc/Malloc is reserved for Stram_Alloc when the
+ * BLiTTER / STE DMA / shifter need chip RAM.
  */
 
 #include "memflag.h"
@@ -15,14 +17,6 @@
 
 /*=========================================================================*/
 /* Mem_Copy -- Copies memory from source to destination                   */
-/*                                                                         */
-/* INPUT:                                                                  */
-/*   source         -- Source memory pointer                               */
-/*   dest           -- Destination memory pointer                        */
-/*   bytes_to_copy  -- Number of bytes to copy                            */
-/*                                                                         */
-/* OUTPUT:                                                                 */
-/*   none                                                                  */
 /*=========================================================================*/
 extern "C" void Mem_Copy(void const *source, void *dest, unsigned long bytes_to_copy)
 {
@@ -36,46 +30,32 @@ unsigned long MinRam = 0;
 unsigned long MaxRam = 0;
 
 /*=========================================================================*/
-/* Alloc -- Allocates system RAM                                           */
-/*                                                                         */
-/* INPUT:                                                                  */
-/*   bytes_to_alloc -- Number of bytes to allocate                        */
-/*   flags          -- Memory allocation control flags                    */
-/*                                                                         */
-/* OUTPUT:                                                                 */
-/*   Returns pointer to allocated block, or NULL on failure               */
+/* Alloc -- Allocates system RAM (libc heap)                               */
 /*=========================================================================*/
 void *Alloc(unsigned long bytes_to_alloc, MemoryFlagType flags)
 {
-	void *retval = NULL;
-	
-	// Allocate memory using standard malloc
-	retval = malloc(bytes_to_alloc);
-	
-	// If allocation failed, call error handler
+	void *retval = malloc(bytes_to_alloc);
+
 	if (retval == NULL) {
+		DBG_ERROR("Alloc failed: %lu bytes (~%lu KiB)",
+		    bytes_to_alloc,
+		    bytes_to_alloc / 1024UL);
+		ST_Log_Free_Memory("Alloc failed");
 		if (Memory_Error != NULL) {
 			Memory_Error();
 		}
 		return NULL;
 	}
-	
-	// Clear memory if MEM_CLEAR flag is set
+
 	if (flags & MEM_CLEAR) {
 		memset(retval, 0, bytes_to_alloc);
 	}
-	
+
 	return retval;
 }
 
 /*=========================================================================*/
 /* Free -- Free an Alloc'ed block of RAM                                   */
-/*                                                                         */
-/* INPUT:                                                                  */
-/*   pointer -- Pointer to block of RAM from Alloc                         */
-/*                                                                         */
-/* OUTPUT:                                                                 */
-/*   None                                                                  */
 /*=========================================================================*/
 void Free(void const *pointer)
 {
@@ -86,33 +66,26 @@ void Free(void const *pointer)
 
 /*=========================================================================*/
 /* Resize_Alloc -- Change the size of an allocated block                  */
-/*                                                                         */
-/* INPUT:                                                                  */
-/*   original_ptr      -- Pointer to previously allocated block           */
-/*   new_size_in_bytes -- New size in bytes                               */
-/*                                                                         */
-/* OUTPUT:                                                                 */
-/*   Returns pointer to resized block, or NULL on failure                 */
 /*=========================================================================*/
 void *Resize_Alloc(void const *original_ptr, unsigned long new_size_in_bytes)
 {
-	void *retval = NULL;
-	
+	void *retval;
+
 	if (original_ptr == NULL) {
-		// If original pointer is NULL, just allocate new block
 		return Alloc(new_size_in_bytes, MEM_NORMAL);
 	}
-	
-	// Use realloc to resize the block
+
 	retval = realloc((void *)original_ptr, new_size_in_bytes);
-	
-	// If reallocation failed, call error handler
 	if (retval == NULL) {
+		DBG_ERROR("Resize_Alloc failed: %lu bytes (~%lu KiB)",
+		    new_size_in_bytes,
+		    new_size_in_bytes / 1024UL);
+		ST_Log_Free_Memory("Resize_Alloc failed");
 		if (Memory_Error != NULL) {
 			Memory_Error();
 		}
 	}
-	
+
 	return retval;
 }
 
@@ -130,81 +103,12 @@ static int gemdos_has_mxalloc(void)
 	return cached;
 }
 
-static long stram_query_largest(void)
-{
-	long n;
-
-	if (gemdos_has_mxalloc())
-		n = Mxalloc(-1L, MX_STRAM);
-	else
-		n = Malloc(-1L);
-	return (n > 0L) ? n : 0L;
-}
-
-/*=========================================================================*/
-/* Ram_Free -- Determines the largest free chunk of RAM                    */
-/*=========================================================================*/
-long Ram_Free(MemoryFlagType flag)
-{
-	(void)flag;
-	/*
-	 * size -1 = largest free block. Prefer ST-RAM (chip/blitter-visible).
-	 */
-	return stram_query_largest();
-}
-
-/*=========================================================================*/
-/* Heap_Size -- Size of the heap we have                                   */
-/*=========================================================================*/
-long Heap_Size(MemoryFlagType flag)
-{
-	// Stub implementation
-	(void)flag; // Unused parameter
-	return 0;
-}
-
-/*=========================================================================*/
-/* Total_Ram_Free -- Total amount of free RAM                              */
-/*=========================================================================*/
-long Total_Ram_Free(MemoryFlagType flag)
-{
-	(void)flag;
-	/*
-	 * No single call sums all fragments; report largest ST block plus largest TT block
-	 * (two pools — not one contiguous region). Pre-Mxalloc TOS: ST only.
-	 */
-	long st = stram_query_largest();
-	long tt = 0L;
-
-	if (gemdos_has_mxalloc()) {
-		tt = Mxalloc(-1L, MX_TTRAM);
-		if (tt < 0L)
-			tt = 0L;
-	}
-	return st + tt;
-}
-
 void *Stram_Alloc(unsigned long bytes_to_alloc)
 {
 	long a;
 
 	if (gemdos_has_mxalloc())
 		a = Mxalloc((long)bytes_to_alloc, MX_STRAM);
-	else
-		a = Malloc((long)bytes_to_alloc);
-	return a > 0L ? (void *)a : (void *)0;
-}
-
-/*
- * MX_PREFTTRAM already falls back to ST-RAM when no alternate RAM is present,
- * so this needs no fallback of its own. Pre-Mxalloc TOS: Malloc is ST-RAM.
- */
-void *Pref_Ttram_Alloc(unsigned long bytes_to_alloc)
-{
-	long a;
-
-	if (gemdos_has_mxalloc())
-		a = Mxalloc((long)bytes_to_alloc, MX_PREFTTRAM);
 	else
 		a = Malloc((long)bytes_to_alloc);
 	return a > 0L ? (void *)a : (void *)0;
@@ -217,17 +121,165 @@ void Stram_Free(void *pointer)
 	}
 }
 
-void ST_Log_Free_Memory(const char *label)
-{
-	long const st_largest = Ram_Free(MEM_NORMAL);
-	long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
-	const char *tag = (label != NULL && label[0] != '\0') ? label : "free memory";
+typedef struct StFreePoolStats {
+	long largest;
+	long total;
+	int nblocks;
+} StFreePoolStats;
 
-	DBG_INFO("C&C ST - %s: ST-RAM %ld b (~%ld KiB), TT-RAM %ld b (~%ld KiB)",
-	    tag,
-	    st_largest,
-	    (st_largest > 0L) ? (st_largest / 1024L) : 0L,
-	    tt_largest,
-	    (tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
+/*
+ * Enumerate GEMDOS free blocks by claiming each largest chunk then releasing.
+ * Holds every fragment until the walk finishes so adjacent blocks do not merge
+ * mid-pass. Logs each block (and totals) when do_log != 0.
+ *
+ * Diagnostic only — game Alloc uses the C heap, so these figures can differ
+ * from what malloc can still satisfy.
+ */
+static void walk_gemdos_free_pool(int is_tt, int do_log, const char *pool_name, StFreePoolStats *out)
+{
+	enum { MAX_BLOCKS = 96 };
+	void *hold[MAX_BLOCKS];
+	long sizes[MAX_BLOCKS];
+	int n = 0;
+	long largest = 0L;
+	long total = 0L;
+	int i;
+
+	out->largest = 0L;
+	out->total = 0L;
+	out->nblocks = 0;
+
+	if (is_tt && !gemdos_has_mxalloc()) {
+		if (do_log) {
+			DBG_INFO("C&C ST - %s free: (no Mxalloc / TT-RAM)", pool_name);
+		}
+		return;
+	}
+
+	for (;;) {
+		long sz;
+		long a;
+		void *p;
+
+		if (is_tt) {
+			sz = Mxalloc(-1L, MX_TTRAM);
+		} else if (gemdos_has_mxalloc()) {
+			sz = Mxalloc(-1L, MX_STRAM);
+		} else {
+			sz = Malloc(-1L);
+		}
+		if (sz <= 0L) {
+			break;
+		}
+
+		if (is_tt) {
+			a = Mxalloc(sz, MX_TTRAM);
+		} else if (gemdos_has_mxalloc()) {
+			a = Mxalloc(sz, MX_STRAM);
+		} else {
+			a = Malloc(sz);
+		}
+		if (a <= 0L) {
+			break;
+		}
+		p = (void *)a;
+
+		if (n >= MAX_BLOCKS) {
+			Mfree(p);
+			if (do_log) {
+				DBG_INFO("C&C ST - %s free: truncated after %d blocks", pool_name, MAX_BLOCKS);
+			}
+			break;
+		}
+
+		hold[n] = p;
+		sizes[n] = sz;
+		total += sz;
+		if (sz > largest) {
+			largest = sz;
+		}
+		n++;
+	}
+
+	if (do_log) {
+		DBG_INFO("C&C ST - %s free: %d block(s), total %ld b (~%ld KiB), largest %ld b (~%ld KiB)",
+		    pool_name,
+		    n,
+		    total,
+		    (total > 0L) ? (total / 1024L) : 0L,
+		    largest,
+		    (largest > 0L) ? (largest / 1024L) : 0L);
+		for (i = 0; i < n; i++) {
+			DBG_INFO("C&C ST - %s free[%d]: %ld b (~%ld KiB) @ %p",
+			    pool_name,
+			    i,
+			    sizes[i],
+			    (sizes[i] > 0L) ? (sizes[i] / 1024L) : 0L,
+			    hold[i]);
+		}
+	}
+
+	for (i = 0; i < n; i++) {
+		Mfree(hold[i]);
+	}
+
+	out->largest = largest;
+	out->total = total;
+	out->nblocks = n;
 }
 
+/*=========================================================================*/
+/* Ram_Free -- Determines the largest free chunk of RAM                    */
+/*=========================================================================*/
+long Ram_Free(MemoryFlagType flag)
+{
+	StFreePoolStats st;
+
+	(void)flag;
+	walk_gemdos_free_pool(0, 1, "ST-RAM", &st);
+	return st.largest;
+}
+
+/*=========================================================================*/
+/* Heap_Size -- Size of the heap we have                                   */
+/*=========================================================================*/
+long Heap_Size(MemoryFlagType flag)
+{
+	(void)flag;
+	return 0;
+}
+
+/*=========================================================================*/
+/* Total_Ram_Free -- Total amount of free RAM                              */
+/*=========================================================================*/
+long Total_Ram_Free(MemoryFlagType flag)
+{
+	StFreePoolStats st;
+	StFreePoolStats tt;
+
+	(void)flag;
+	walk_gemdos_free_pool(0, 0, "ST-RAM", &st);
+	walk_gemdos_free_pool(1, 0, "TT-RAM", &tt);
+	return st.total + tt.total;
+}
+
+void ST_Log_Free_Memory(const char *label)
+{
+	StFreePoolStats st;
+	StFreePoolStats tt;
+	const char *tag = (label != NULL && label[0] != '\0') ? label : "free memory";
+
+	DBG_INFO("C&C ST - %s:", tag);
+	walk_gemdos_free_pool(0, 1, "ST-RAM", &st);
+	walk_gemdos_free_pool(1, 1, "TT-RAM", &tt);
+	DBG_INFO("C&C ST - %s summary: ST total %ld b (~%ld KiB) largest %ld b, TT total %ld b (~%ld KiB) largest %ld b, grand total %ld b (~%ld KiB)",
+	    tag,
+	    st.total,
+	    (st.total > 0L) ? (st.total / 1024L) : 0L,
+	    st.largest,
+	    tt.total,
+	    (tt.total > 0L) ? (tt.total / 1024L) : 0L,
+	    tt.largest,
+	    st.total + tt.total,
+	    ((st.total + tt.total) > 0L) ? ((st.total + tt.total) / 1024L) : 0L);
+}

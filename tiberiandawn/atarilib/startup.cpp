@@ -143,13 +143,7 @@ int main(int argc, char *argv[])
 
 	DBG_INFO("C&C - Starting up");
 
-	{
-		long const st_largest = Ram_Free(MEM_NORMAL);
-		long const tt_largest = Total_Ram_Free(MEM_NORMAL) - st_largest;
-		DBG_INFO("C&C ST - At program start: ST-RAM %ld b (~%ld KiB), TT-RAM %ld b (~%ld KiB)",
-		    st_largest, (st_largest > 0L) ? (st_largest / 1024L) : 0L,
-		    tt_largest, (tt_largest > 0L) ? (tt_largest / 1024L) : 0L);
-	}
+	ST_Log_Free_Memory("At program start");
 
 	/*
 	** Enable supervisor mode early for Atari ST
@@ -283,8 +277,8 @@ int main(int argc, char *argv[])
 			 * in st_screen.cpp when ST_SEPARATE_DEBUG_SCREEN.
 			 *
 			 * The hidden page is a back buffer for the game's own drawing, and with
-			 * hardware blits off every blit is a CPU copy, so prefer TT-RAM and leave
-			 * the scarce ST-RAM to the shifter and STE DMA audio. Callers that hand
+			 * hardware blits off every blit is a CPU copy, so use Alloc (C heap) and leave
+			 * scarce ST-RAM to the shifter and STE DMA audio. Callers that hand
 			 * this page to the video hardware must check the address first: neither
 			 * the BLiTTER nor the shifter can reach alternate RAM.
 			 */
@@ -293,7 +287,7 @@ int main(int argc, char *argv[])
 			if (!st_hidden_alloc) {
 				st_hidden_alloc = (unsigned char *)(AllowHardwareBlitFills
 					? Stram_Alloc(32768u + 256u)
-					: Pref_Ttram_Alloc(32768u + 256u));
+					: Alloc(32768u + 256u, MEM_NORMAL));
 				if (!st_hidden_alloc) {
 					printf("C&C - Failed to allocate hidden planar page.\n");
 					if (Palette) delete [] Palette;

@@ -107,6 +107,7 @@ namespace {
 	};
 
 	static uint8_t *STShadowPlanarCache = 0;
+	static int STShadowPlanarCacheViaStram = 0;
 	static char STShadowPlanarCacheError[128];
 
 	/*
@@ -124,8 +125,12 @@ namespace {
 	 */
 	static void ST_Free_Shadow_Planar_Cache(void)
 	{
-		Stram_Free(STShadowPlanarCache);
+		if (STShadowPlanarCacheViaStram)
+			Stram_Free(STShadowPlanarCache);
+		else
+			Free(STShadowPlanarCache);
 		STShadowPlanarCache = 0;
+		STShadowPlanarCacheViaStram = 0;
 	}
 
 	/*
@@ -242,11 +247,11 @@ namespace {
 		/*
 		 * Only the BLiTTER forces this into ST-RAM — it reads the mask slots and
 		 * cannot address alternate RAM. With hardware blits off the CPU reads them
-		 * instead, so prefer TT-RAM. Stram_Free/Mfree releases either pool.
+		 * instead, so the normal C heap (Alloc) is fine.
 		 */
 		void *const cache = AllowHardwareBlitFills
 			? Stram_Alloc((unsigned long)ST_SHADOW_CACHE_BYTES)
-			: Pref_Ttram_Alloc((unsigned long)ST_SHADOW_CACHE_BYTES);
+			: Alloc((unsigned long)ST_SHADOW_CACHE_BYTES, MEM_NORMAL);
 		if (cache == NULL) {
 			sprintf(STShadowPlanarCacheError,
 				"Failed to build ST shadow mask cache: alloc(%u) failed",
@@ -254,6 +259,7 @@ namespace {
 			return false;
 		}
 		STShadowPlanarCache = (uint8_t *)cache;
+		STShadowPlanarCacheViaStram = AllowHardwareBlitFills ? 1 : 0;
 
 		for (short frame = 0; frame < ST_SHADOW_FRAME_COUNT; frame++) {
 			if (!ST_Build_Shadow_Planar_Frame(shapes, frame)) {

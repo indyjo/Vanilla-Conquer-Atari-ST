@@ -67,10 +67,11 @@ long Total_Ram_Free(MemoryFlagType flag);
 void *Stram_Alloc(unsigned long bytes_to_alloc);
 void Stram_Free(void *pointer);
 
-/* Prefers TT-RAM, falls back to ST-RAM. Not for BLiTTER or DMA targets. */
-void *Pref_Ttram_Alloc(unsigned long bytes_to_alloc);
-
-/* Log largest free ST-RAM and TT-RAM blocks to stdout (label may be NULL). */
+/*
+ * Log all GEMDOS free ST-RAM / TT-RAM blocks (sizes + total + largest).
+ * label may be NULL. Ram_Free() also dumps the ST-RAM block list when called.
+ * Diagnostic only — Alloc uses the C heap, which may not match these figures.
+ */
 void ST_Log_Free_Memory(const char *label);
 
 /*=========================================================================

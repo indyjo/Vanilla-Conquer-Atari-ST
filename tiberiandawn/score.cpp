@@ -636,8 +636,14 @@ void ScoreClass::Presentation(void)
 	/* Aliases of HidPage backing store — no separate alloc (320×200 score layout). */
 	PseudoSeenBuff = HidPage.Get_Graphic_Buffer();
 	TextPrintBuffer = HidPage.Get_Graphic_Buffer();
+	/*
+	** Hot spot for desert OOM: rebuilds sprite slab as 64×64px slots (~162 KiB).
+	*/
+	ST_Log_Free_Memory("Score:Presentation before sprite reconfigure (0,0,64,0)");
 	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 64, 0);
+	ST_Log_Free_Memory("Score:Presentation after sprite reconfigure");
 	C2P_Context *c2p_saved = C2P_SaveContext();
+	ST_Log_Free_Memory("Score:Presentation after C2P_SaveContext");
 #else
 	PseudoSeenBuff = new GraphicBufferClass(320,200,(void*)NULL);
 	TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height(), (void*)NULL);
@@ -663,11 +669,19 @@ void ScoreClass::Presentation(void)
 	** Load the score WSA before starting theme music. AUDX theme streaming
 	** claims ST-RAM; opening the animation first avoids starving that Alloc.
 	*/
+#ifdef ATARI_ST
+	ST_Log_Free_Memory("Score:Presentation before Open_Animation");
+#endif
 	anim = Open_Animation(ScreenNames[house],NULL,0L,(WSAOpenType)(WSA_OPEN_FROM_MEM | WSA_OPEN_TO_PAGE),Palette);
 #ifdef ATARI_ST
+	ST_Log_Free_Memory("Score:Presentation after Open_Animation");
 	Install_Animation_C2P_WeightSet(anim);
+	ST_Log_Free_Memory("Score:Presentation before Theme.Queue_Song(WIN1)");
 #endif
 	Theme.Queue_Song(THEME_WIN1);
+#ifdef ATARI_ST
+	ST_Log_Free_Memory("Score:Presentation after Theme.Queue_Song(WIN1)");
+#endif
 
 	void const * country4 = MFCD::Retrieve("COUNTRY4.AUD");
 	void const * sfx4 = MFCD::Retrieve("SFX4.AUD");
@@ -1045,7 +1059,9 @@ void ScoreClass::Presentation(void)
 	** Keep a minimal sprite cache through Map_Selection (next in Do_Win). Restoring the
 	** full ~125 KiB slab here was starving the four WSA opens that follow.
 	*/
+	ST_Log_Free_Memory("Score:Presentation before sprite reconfigure (8,0,0,0)");
 	ST_SPRITE_CACHE_Reconfigure_TierCapacities(8, 0, 0, 0);
+	ST_Log_Free_Memory("Score:Presentation after sprite reconfigure (8,0,0,0)");
 	if (c2p_saved) {
 		C2P_RestoreContext(c2p_saved);
 		C2P_FreeContext(c2p_saved);

@@ -48,6 +48,7 @@
 #ifdef ATARI_ST
 #include "atarilib/ikbd.h"
 #include "atarilib/st_screen.h"
+#include "atarilib/memflag.h"
 #include <mint/osbind.h>
 #include <stdlib.h>
 #endif
@@ -726,9 +727,12 @@ void Memory_Error_Handler(void)
 {
 #ifdef ATARI_ST
     Memory_Error = NULL;
+    /*
+     * Alloc/Resize_Alloc already logged the failed size and a free-RAM dump.
+     * Keep a single short line here so the halt is visible in cnc.log.
+     */
+    DBG_ERROR("Out of memory.");
     ST_Screen_Shutdown_Restore_Tos();
-    fputs("Out of memory.\n", stderr);
-    fflush(stderr);
     if (ST_Game_Still_Initializing()) {
         ST_Init_Await_Keypress();
         exit(1);
@@ -741,8 +745,8 @@ void Memory_Error_Handler(void)
         unsigned short sr;
         __asm__ volatile("move.w %%sr, %0" : "=d"(sr));
         if (sr & 0x2000u) {
-            fputs("System halted - reset or enter debugger.", stderr);
-            fflush(stderr);
+            DBG_ERROR("System halted.");
+            DBG_ERROR("Reset or enter debugger.");
             for (;;) {
                 __asm__ volatile("stop #0x2700");
             }

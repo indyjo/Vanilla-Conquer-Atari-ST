@@ -27,18 +27,33 @@
 #include <new>
 
 /*
- * Each tier is a set of independent RankCache rings ("shards") of fixed length.
- * Defaults: 16/4/2/1 shards × 8 slots → capacities 128/32/16/8 (dims 16/32/64/96).
+ * Each tier is a set of independent RankCache rings ("shards").
+ * Defaults: 32/8/2/1 shards × (8/6/8/8) slots → capacities 256/48/16/8 (dims 16/32/64/96).
+ * On 4MB machines the default slab must stay larger than the score-screen reconfigure
+ * (~64×64-tier slots): GEMDOS free RAM is fragmented, so a later Alloc of a similar
+ * contiguous size can fail even when total free looks sufficient.
  * Shard index comes only from shape address + frame, never remap/fade/ghost.
  */
 #ifndef ST_SPRITE_CACHE_SHARD_SIZE
 #define ST_SPRITE_CACHE_SHARD_SIZE 8
 #endif
+#ifndef ST_SPRITE_CACHE_SHARD_SIZE_16
+#define ST_SPRITE_CACHE_SHARD_SIZE_16 ST_SPRITE_CACHE_SHARD_SIZE
+#endif
+#ifndef ST_SPRITE_CACHE_SHARD_SIZE_32
+#define ST_SPRITE_CACHE_SHARD_SIZE_32 6
+#endif
+#ifndef ST_SPRITE_CACHE_SHARD_SIZE_64
+#define ST_SPRITE_CACHE_SHARD_SIZE_64 ST_SPRITE_CACHE_SHARD_SIZE
+#endif
+#ifndef ST_SPRITE_CACHE_SHARD_SIZE_96
+#define ST_SPRITE_CACHE_SHARD_SIZE_96 ST_SPRITE_CACHE_SHARD_SIZE
+#endif
 #ifndef ST_SPRITE_CACHE_SHARDS_16
-#define ST_SPRITE_CACHE_SHARDS_16 16
+#define ST_SPRITE_CACHE_SHARDS_16 32
 #endif
 #ifndef ST_SPRITE_CACHE_SHARDS_32
-#define ST_SPRITE_CACHE_SHARDS_32 4
+#define ST_SPRITE_CACHE_SHARDS_32 8
 #endif
 #ifndef ST_SPRITE_CACHE_SHARDS_64
 #define ST_SPRITE_CACHE_SHARDS_64 2
@@ -47,16 +62,16 @@
 #define ST_SPRITE_CACHE_SHARDS_96 1
 #endif
 #ifndef ST_SPRITE_CACHE_CAPACITY_16
-#define ST_SPRITE_CACHE_CAPACITY_16 (ST_SPRITE_CACHE_SHARDS_16 * ST_SPRITE_CACHE_SHARD_SIZE)
+#define ST_SPRITE_CACHE_CAPACITY_16 (ST_SPRITE_CACHE_SHARDS_16 * ST_SPRITE_CACHE_SHARD_SIZE_16)
 #endif
 #ifndef ST_SPRITE_CACHE_CAPACITY_32
-#define ST_SPRITE_CACHE_CAPACITY_32 (ST_SPRITE_CACHE_SHARDS_32 * ST_SPRITE_CACHE_SHARD_SIZE)
+#define ST_SPRITE_CACHE_CAPACITY_32 (ST_SPRITE_CACHE_SHARDS_32 * ST_SPRITE_CACHE_SHARD_SIZE_32)
 #endif
 #ifndef ST_SPRITE_CACHE_CAPACITY_64
-#define ST_SPRITE_CACHE_CAPACITY_64 (ST_SPRITE_CACHE_SHARDS_64 * ST_SPRITE_CACHE_SHARD_SIZE)
+#define ST_SPRITE_CACHE_CAPACITY_64 (ST_SPRITE_CACHE_SHARDS_64 * ST_SPRITE_CACHE_SHARD_SIZE_64)
 #endif
 #ifndef ST_SPRITE_CACHE_CAPACITY_96
-#define ST_SPRITE_CACHE_CAPACITY_96 (ST_SPRITE_CACHE_SHARDS_96 * ST_SPRITE_CACHE_SHARD_SIZE)
+#define ST_SPRITE_CACHE_CAPACITY_96 (ST_SPRITE_CACHE_SHARDS_96 * ST_SPRITE_CACHE_SHARD_SIZE_96)
 #endif
 /* Hard clamp for per-tier slot count (RankCache uses uint16_t ranks). */
 #ifndef ST_SPRITE_CACHE_TIER_CAP_MAX
@@ -172,7 +187,7 @@ struct SpriteCacheTier {
 	int dim = 0;
 	int capacity = 0; /* total slots across all shards */
 	int shard_count = 0; /* independent RankCache rings */
-	int shard_size = 0; /* slots per shard (normally ST_SPRITE_CACHE_SHARD_SIZE) */
+	int shard_size = 0; /* slots per shard (see ST_SPRITE_CACHE_SHARD_SIZE_*) */
 	uint8_t *slot_base = nullptr; /* capacity × slot_sz */
 	int payload_sz = 0; /* max packed planar+mask bytes per slot */
 	int slot_sz = 0; /* header + payload_sz */
@@ -204,6 +219,12 @@ static bool g_sprite_cache_stats_key_prev = false;
 static const int g_sprite_cache_dims[SPRITE_CACHE_TIER_COUNT] = {
 	SPRITE_CACHE_D16, SPRITE_CACHE_D32, SPRITE_CACHE_D64, SPRITE_CACHE_D96
 };
+static const int g_sprite_cache_shard_size[SPRITE_CACHE_TIER_COUNT] = {
+	ST_SPRITE_CACHE_SHARD_SIZE_16,
+	ST_SPRITE_CACHE_SHARD_SIZE_32,
+	ST_SPRITE_CACHE_SHARD_SIZE_64,
+	ST_SPRITE_CACHE_SHARD_SIZE_96
+};
 
 /*
  * Pick shard from shape address + frame only.
@@ -214,7 +235,7 @@ static inline unsigned sprite_cache_shard_index(uint32_t shape_id, uint16_t fram
 	if (shard_count <= 1)
 		return 0u;
 	const uint32_t bits = shape_id ^ (uint32_t)frame;
-	/* Default shard counts are powers of two (16/4/2/1). */
+	/* Default shard counts are powers of two (32/8/2/1). */
 	if ((shard_count & (shard_count - 1)) == 0)
 		return (unsigned)bits & (unsigned)(shard_count - 1);
 	return (unsigned)(bits % (uint32_t)shard_count);
@@ -611,8 +632,8 @@ static void sprite_cache_maybe_init(void)
 			continue;
 		}
 
-		/* Capacity is always a multiple of SHARD_SIZE after reconfigure/defaults. */
-		tr.shard_size = ST_SPRITE_CACHE_SHARD_SIZE;
+		/* Capacity is a multiple of that tier's shard size after reconfigure/defaults. */
+		tr.shard_size = g_sprite_cache_shard_size[t];
 		tr.shard_count = tr.capacity / tr.shard_size;
 		if (tr.shard_count <= 0) {
 			tr.slot_base = nullptr;
@@ -651,9 +672,11 @@ extern "C" int ST_SPRITE_CACHE_Reconfigure_TierCapacities(int c16, int c32, int 
 			return -1;
 		if (caps[i] > ST_SPRITE_CACHE_TIER_CAP_MAX)
 			caps[i] = ST_SPRITE_CACHE_TIER_CAP_MAX;
-		/* Round down to whole shards of ST_SPRITE_CACHE_SHARD_SIZE. */
-		if (caps[i] > 0)
-			caps[i] = (caps[i] / ST_SPRITE_CACHE_SHARD_SIZE) * ST_SPRITE_CACHE_SHARD_SIZE;
+		/* Round down to whole shards for that tier's shard length. */
+		if (caps[i] > 0) {
+			const int ss = g_sprite_cache_shard_size[i];
+			caps[i] = (caps[i] / ss) * ss;
+		}
 	}
 	int sum = 0;
 	for (int i = 0; i < SPRITE_CACHE_TIER_COUNT; ++i)

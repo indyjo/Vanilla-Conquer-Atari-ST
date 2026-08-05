@@ -109,7 +109,6 @@ int SteStreamPageRingSource::fill_one_slot_()
 	uint32_t remain;
 	uint32_t valid;
 	uint8_t const *page = 0;
-	uint8_t *stream_page;
 	uint8_t wi;
 	Slot *slot;
 
@@ -125,31 +124,49 @@ int SteStreamPageRingSource::fill_one_slot_()
 	if (valid == 0)
 		return 0;
 
+	/*
+	 * write_i_ is outside the live [read_i_, count_) window whenever count_ < SLOTS,
+	 * so its prior page (if any) is fully spent and safe to reclaim/recycle here.
+	 */
+	wi = write_i_;
+	slot = &slots_[wi];
+
 	if (use_stream_) {
 		uint32_t const page_begin = (file_off / AUDX_PAGE_SIZE) * AUDX_PAGE_SIZE;
-		stream_page = AUDX_Stream_Page_Acquire();
-		if (!stream_page)
-			return 0;
-		if (!AUDX_Pool_Read(pool_id_, page_begin, AUDX_PAGE_SIZE, stream_page)) {
-			memset(stream_page, 0, AUDX_PAGE_SIZE);
+		uint8_t *dst;
+		int recycled;
+
+		if (slot->page) {
+			/* Recycle the spent stream slab in place — no global Acquire. */
+			dst = const_cast<uint8_t *>(slot->page);
+			recycled = 1;
+		} else {
+			dst = AUDX_Stream_Page_Acquire();
+			if (!dst)
+				return 0;
+			AUDX_Page_Pin(dst);
+			recycled = 0;
+		}
+		if (!AUDX_Pool_Read(pool_id_, page_begin, AUDX_PAGE_SIZE, dst)) {
+			memset(dst, 0, AUDX_PAGE_SIZE);
+			if (!recycled) {
+				AUDX_Page_Unpin(dst);
+			}
 			return 0;
 		}
-		page = stream_page;
+		page = dst;
 	} else {
+		/* RankCache: drop the spent pin before Get so eviction can reuse it. */
+		if (slot->page) {
+			AUDX_Page_Unpin(slot->page);
+			slot->page = 0;
+		}
 		page = AUDX_Page_Get(pool_id_, file_off);
 		if (!page)
 			return 0;
+		AUDX_Page_Pin(page);
 	}
 
-	AUDX_Page_Pin(page);
-
-	wi = write_i_;
-	slot = &slots_[wi];
-	/* Reclaim prior occupant of this physical slot (already consumed). */
-	if (slot->page) {
-		AUDX_Page_Unpin(slot->page);
-		slot->page = 0;
-	}
 	slot->data_off = (uint16_t)page_off;
 	slot->valid_len = (uint16_t)valid;
 	slot->consumed = 0;

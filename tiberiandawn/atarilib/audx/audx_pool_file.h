@@ -8,8 +8,9 @@ extern "C" {
 #endif
 
 /**
- * Read `size` bytes from pool%04x.bin at file offset `begin` into `dst`.
- * Returns 1 on success, 0 on failure.
+ * Read up to `size` bytes from pool%04x.bin at file offset `begin` into `dst`.
+ * Short reads at EOF succeed with the remainder zero-filled.
+ * Returns 1 on success, 0 on failure (including a zero-byte read past EOF).
  * Keeps a few pool files open between calls (see AUDX_Pool_Close_All).
  */
 int AUDX_Pool_Read(uint16_t pool_id, uint32_t begin, uint32_t size, void *dst);

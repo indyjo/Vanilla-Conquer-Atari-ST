@@ -99,6 +99,7 @@ int AUDX_Pool_Read(uint16_t pool_id, uint32_t begin, uint32_t size, void *dst)
 {
 	AudxPoolSlot *slot;
 	CCFileClass *f;
+	long got;
 
 	if (!dst || size == 0 || pool_id == 0)
 		return 0;
@@ -115,10 +116,20 @@ int AUDX_Pool_Read(uint16_t pool_id, uint32_t begin, uint32_t size, void *dst)
 			return 0;
 		}
 	}
-	if (f->Read(dst, (long)size) != (long)size) {
+	got = f->Read(dst, (long)size);
+	if (got < 0) {
 		slot->next_off = 0;
 		return 0;
 	}
-	slot->next_off = begin + size;
+	if ((uint32_t)got < size) {
+		/* EOF short read: pad so callers always get a full page buffer. */
+		memset((unsigned char *)dst + got, 0, (size_t)(size - (uint32_t)got));
+	}
+	if (got == 0 && size != 0) {
+		/* Past EOF — nothing to deliver. */
+		slot->next_off = 0;
+		return 0;
+	}
+	slot->next_off = begin + (uint32_t)got;
 	return 1;
 }

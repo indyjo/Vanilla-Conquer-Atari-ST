@@ -29,7 +29,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 - **0.1.1** — baseline (2026-06-25)
 - **0.2.0** — benchmark refresh (2026-07-07)
 - **0.3.0** — AUDX pools + page cache; 8-bit PCM stream / LUT path (2026-07-30)
-- **0.3.1** — soft/HW blit from [PR #7](https://github.com/indyjo/Vanilla-Conquer-Atari-ST/pull/7); AUDX fix (no GEMDOS in VBL)
+- **0.3.1** — soft/HW blit from [PR #7](https://github.com/indyjo/Vanilla-Conquer-Atari-ST/pull/7); AUDX fix (no GEMDOS in VBL) (2026-08-05)
 
 ## Results
 
@@ -53,7 +53,7 @@ Same 1570-frame playback recording (software blits only):
 | 0.1.1 | 161245 | 13:26.22 | 1.9473 |
 | 0.2.0 | 158918 | 13:14.59 | 1.9759 |
 | 0.3.0 | 158546 | 13:12.73 | 1.9805 |
-| 0.3.1 | 150986 | 12:34.93 | 2.0797 |
+| 0.3.1 | 158929 | 13:14.64 | 1.9757 |
 
 `-XYQ`:
 

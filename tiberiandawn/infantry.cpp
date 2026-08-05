@@ -1435,28 +1435,19 @@ void InfantryClass::AI(void)
             **	the infantry to the destination location and mark this path step
             **	as complete.
             */
-            Mark(MARK_UP);
-            if (Distance(Head_To_Coord()) < 0x0010) {
+            /*
+            **	Work out the destination before lifting the infantry out of the
+            **	world. A step is a fraction of a cell, so the cell usually does
+            **	not change, and the pick-up/put-down pair then takes the threat
+            **	off the same nine regions of every house and puts it straight
+            **	back. Suppress that half. The occupier lists still churn - their
+            **	order decides target selection and has to stay as it was.
+            */
+            bool const arriving = (Distance(Head_To_Coord()) < 0x0010);
+            COORDINATE newcoord = Coord;
+            int movespeed = Speed;
 
-                memmove(&Path[0], &Path[1], sizeof(Path) - sizeof(Path[0]));
-                Path[(sizeof(Path) / sizeof(Path[0])) - 1] = FACING_NONE;
-                Coord = Head_To_Coord();
-                Stop_Driver();
-                Per_Cell_Process(true);
-
-                if (!IsActive || IsInLimbo)
-                    return;
-
-                if (Coord_Cell(Coord) == As_Cell(NavCom)) {
-                    NavCom = TARGET_NONE;
-                    if (Mission == MISSION_MOVE) {
-                        Enter_Idle_Mode();
-                    }
-                    // Stop_Driver();
-                    Path[0] = FACING_NONE;
-                }
-            } else {
-                int movespeed = Speed;
+            if (!arriving) {
 
                 /*
                 **	When prone, the infantry moves at half speed or double
@@ -1472,17 +1463,46 @@ void InfantryClass::AI(void)
                     }
                 }
 
+                /*
+                **	Work out how far the infantry would advance this frame.
+                */
+                MPHType maxspeed =
+                    MPHType(min((unsigned)(Class->MaxSpeed * House->GroundspeedBias), MPH_LIGHT_SPEED));
+                newcoord = Coord_Move(Coord, Direction(Head_To_Coord()), Fixed_To_Cardinal(maxspeed, movespeed));
+            }
+
+            Suppress_Threat_Adjust(IsDown && !arriving && (Coord_Cell(newcoord) == Coord_Cell(Coord)));
+
+            Mark(MARK_UP);
+            if (arriving) {
+
+                memmove(&Path[0], &Path[1], sizeof(Path) - sizeof(Path[0]));
+                Path[(sizeof(Path) / sizeof(Path[0])) - 1] = FACING_NONE;
+                Coord = Head_To_Coord();
+                Stop_Driver();
+                Per_Cell_Process(true);
+
+                if (!IsActive || IsInLimbo) {
+                    Suppress_Threat_Adjust(false);
+                    return;
+                }
+
+                if (Coord_Cell(Coord) == As_Cell(NavCom)) {
+                    NavCom = TARGET_NONE;
+                    if (Mission == MISSION_MOVE) {
+                        Enter_Idle_Mode();
+                    }
+                    // Stop_Driver();
+                    Path[0] = FACING_NONE;
+                }
+            } else {
                 if (IsTethered) {
                     Transmit_Message(RADIO_REDRAW);
                 }
-
-                /*
-                **	Advance the infantry as far as it should go.
-                */
-                MPHType maxspeed = MPHType(min((unsigned)(Class->MaxSpeed * House->GroundspeedBias), MPH_LIGHT_SPEED));
-                Coord = Coord_Move(Coord, Direction(Head_To_Coord()), Fixed_To_Cardinal(maxspeed, movespeed));
+                Coord = newcoord;
             }
             Mark(MARK_DOWN);
+            Suppress_Threat_Adjust(false);
         }
         IsNewNavCom = false;
     }

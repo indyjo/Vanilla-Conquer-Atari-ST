@@ -205,6 +205,13 @@ public:
     virtual void Look(bool = false);
     virtual bool Mark(MarkType);
 
+    /*
+    **	A MARK_UP/MARK_DOWN pair that lands in the same threat region takes the
+    **	threat off nine regions of every house and puts it straight back. A
+    **	caller that knows this sets the guard around the pair.
+    */
+    static void Suppress_Threat_Adjust(bool on);
+
 private:
     virtual void Mark_For_Redraw(void);
 

@@ -1557,6 +1557,13 @@ ResultType ObjectClass::Take_Damage(int& damage, int distance, WarheadType warhe
  * HISTORY:                                                                                    *
  *   01/23/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
+static bool g_suppress_threat_adjust = false;
+
+void ObjectClass::Suppress_Threat_Adjust(bool on)
+{
+    g_suppress_threat_adjust = on;
+}
+
 bool ObjectClass::Mark(MarkType mark)
 {
     TechnoClass* tech;
@@ -1617,7 +1624,7 @@ bool ObjectClass::Mark(MarkType mark)
         **	placed down.
         */
         if (mark == MARK_DOWN && !IsDown) {
-            if (tech && GameToPlay == GAME_NORMAL) {
+            if (tech && GameToPlay == GAME_NORMAL && !g_suppress_threat_adjust) {
                 Map[cell].Adjust_Threat(house, threat);
             }
             IsDown = true;
@@ -1630,7 +1637,7 @@ bool ObjectClass::Mark(MarkType mark)
         **	lifted up from the map.
         */
         if (mark == MARK_UP && IsDown) {
-            if (tech && GameToPlay == GAME_NORMAL) {
+            if (tech && GameToPlay == GAME_NORMAL && !g_suppress_threat_adjust) {
                 Map[cell].Adjust_Threat(house, -threat);
             }
             Map.Overlap_Up(Coord_Cell(Coord), this);

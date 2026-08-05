@@ -5,9 +5,10 @@
 #include "st16_draw.h"
 #include "st16_preshift.h"
 
-/* Set to 0 to compare against the plain skewed blit. */
+/* Terrain pre-shift cache (see st16_preshift). Makefile sets this: default 0 on
+ * 68000, 1 when M68K_CPU=68020-60; override with ST16_USE_PRESHIFT=0|1. */
 #ifndef ST16_USE_PRESHIFT
-#define ST16_USE_PRESHIFT 1
+#define ST16_USE_PRESHIFT 0
 #endif
 
 #include "st16_iconset.h"

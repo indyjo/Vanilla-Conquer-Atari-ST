@@ -163,6 +163,20 @@ CPU_FLAGS = -m$(M68K_CPU) -msoft-float
 ASM_CPU_FLAGS = -m68020
 endif
 
+# Terrain tile pre-shift cache (ST16_USE_PRESHIFT). Helps the software blitter
+# on 68020+; on STe with HW BLiTTER it was a measurable -XYQ regression.
+# Default: on when M68K_CPU is 68020-60 (or any 68020* value), else off.
+# Override: make ST16_USE_PRESHIFT=0|1
+ST16_USE_PRESHIFT ?=
+ifeq ($(strip $(ST16_USE_PRESHIFT)),)
+ifeq ($(findstring 68020,$(M68K_CPU)),68020)
+ST16_USE_PRESHIFT := 1
+else
+ST16_USE_PRESHIFT := 0
+endif
+endif
+DEFINES += ST16_USE_PRESHIFT=$(ST16_USE_PRESHIFT)
+
 LIBC_RUNTIME ?= libcmini
 
 # Keep frame pointer chain for Hatari profiler / backtraces (-O3 omits by default).
@@ -828,6 +842,7 @@ endif
 	@echo "                     scenario options expand msgbox; empty disables)"
 	@echo "  FASTCALL=0       - Disable -mfastcall on compile and link (default: 1)"
 	@echo "  M68K_CPU=68020-60 - Atari-only: build for 68020..68060 (default: empty = 68000)"
+	@echo "  ST16_USE_PRESHIFT=0|1 - Terrain pre-shift cache (default: 1 iff M68K_CPU has 68020)"
 	@echo "  LIBC_RUNTIME=libcmini|mintlib|auto - Atari-only C runtime (default: libcmini)"
 	@echo "    mintlib: paths_posix.cpp; libcmini: paths_tos.cpp (-DLIBCMINI)"
 	@echo "  LIBCMINI_PREFIX  - Atari-only libcmini install prefix ending in /usr"

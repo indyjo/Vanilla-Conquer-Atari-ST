@@ -77,7 +77,9 @@ static bool FullRedraw = false;
 #define _MAX_NAME 13
 
 static GraphicBufferClass _IconStage(3, 3);
+#ifndef ATARI_ST
 static GraphicBufferClass _TileStage(24, 24);
+#endif
 
 /***********************************************************************************************
  * RadarClass::RadarClass -- Default constructor for RadarClass object.                        *
@@ -281,9 +283,15 @@ bool RadarClass::Radar_Activate(int control)
         break;
 
     case 3:
+#ifdef ATARI_ST
+        if (GameToPlay == GAME_NORMAL) {
+            Map.Zoom->Disable();
+        }
+#else
         if (GameToPlay == GAME_NORMAL) {
             Map.Zoom->Enable();
         }
+#endif
         IsRadarActive = true;
         IsRadarActivating = false;
         IsRadarDeactivating = false;
@@ -443,10 +451,12 @@ void RadarClass::Draw_It(bool forced)
                 }
 
                 /*
-                ** Draw the entire radar map.
+                ** Draw only cells currently visible on the radar (not MAP_CELL_TOTAL).
                 */
-                for (int index = 0; index < MAP_CELL_TOTAL; index++) {
-                    Plot_Radar_Pixel(index);
+                for (unsigned ry = 0; ry < RadarCellHeight; ry++) {
+                    for (unsigned rx = 0; rx < RadarCellWidth; rx++) {
+                        Plot_Radar_Pixel(XY_Cell(RadarX + rx, RadarY + ry));
+                    }
                 }
                 Radar_Cursor(true);
                 FullRedraw = false;
@@ -671,7 +681,12 @@ void RadarClass::Zoom_Mode(CELL cell)
     ** Set all of the initial zoom mode variables to the correct
     ** setting.
     */
+#ifdef ATARI_ST
+    /* Always full-map view; sidebar map button stays disabled. */
+    IsZoomed = false;
+#else
     IsZoomed = !IsZoomed;
+#endif
     BaseX = 0;
     BaseY = 0;
 
@@ -812,8 +827,14 @@ void RadarClass::Plot_Radar_Pixel(CELL cell)
         */
         if (color == TBLACK) {
             if (ZoomFactor > 1) {
+#ifdef ATARI_ST
+                /*
+                **	Skip ST16 stamp sampling when zoomed — Fat_Put_Pixel land/house colors
+                **	are fast enough for an 8 MHz STE; stamps made zoom toggles multi-second.
+                */
+                Fat_Put_Pixel(x, y, cellptr->Cell_Color(false), ZoomFactor, *LogicPage);
+#else
                 void const* ptr;
-                int32_t offset;
                 unsigned char icon;
 
                 if (cellptr->TType != TEMPLATE_NONE) {
@@ -823,6 +844,8 @@ void RadarClass::Plot_Radar_Pixel(CELL cell)
                     ptr = TemplateTypeClass::As_Reference(TEMPLATE_CLEAR1).Get_Image_Data();
                     icon = cellptr->Clear_Icon();
                 }
+
+                int32_t offset;
 
                 /*
                 **	Convert the logical icon number into the actual icon number.
@@ -838,6 +861,7 @@ void RadarClass::Plot_Radar_Pixel(CELL cell)
                 unsigned char* data = (unsigned char*)ptr;
                 Buffer_To_Page(0, 0, 24, 24, data, _TileStage);
                 _TileStage.Scale(*LogicPage, 0, 0, x, y, 24, 24, ZoomFactor, ZoomFactor, true);
+#endif
 
             } else {
                 if (LogicPage->Lock()) {
@@ -1517,9 +1541,11 @@ int RadarClass::TacticalClass::Action(unsigned flags, KeyNumType& key)
                 /*
                 **	A right mouse button press toggles the zoom mode.
                 */
+#ifndef ATARI_ST
                 if (flags & RIGHTPRESS) {
                     Map.Zoom_Mode(cell);
                 }
+#endif
             }
         }
     }

@@ -206,10 +206,14 @@ extern "C" void Fat_Put_Pixel(int x, int y, int color, int siz, GraphicViewPortC
 	if (x < 0 || x >= gpage.Get_Width()) return;
 
 	if (VP_Is_Planar(&gpage)) {
-		unsigned char c4 = (unsigned char)(color & 15);
+		/*
+		 * Full 8-bit VGA palette index — Buffer_Put_Pixel runs C2P_Map8ToPlanar4.
+		 * Do not mask to 4 bits first (that mapped e.g. Ground[].Color 66 as index 2).
+		 */
+		unsigned char palidx = (unsigned char)color;
 		for (int row = 0; row < siz && (y + row) < gpage.Get_Height(); row++) {
 			for (int col = 0; col < siz && (x + col) < gpage.Get_Width(); col++) {
-				Buffer_Put_Pixel(&gpage, x + col, y + row, c4);
+				Buffer_Put_Pixel(&gpage, x + col, y + row, palidx);
 			}
 		}
 		return;

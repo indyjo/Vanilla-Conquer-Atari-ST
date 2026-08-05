@@ -399,11 +399,19 @@ void SidebarClass::Init_IO(void)
         Zoom->ID = BUTTON_ZOOM;
         Zoom->IsPressed = false;
 
+#ifdef ATARI_ST
+        /*
+        ** Zoomed radar (terrain stamps / fat pixels) is too expensive on STE —
+        ** keep the map button visible but disabled and stay unzoomed.
+        */
+        Zoom->Disable();
+#else
         if (IsRadarActive || GameToPlay != GAME_NORMAL) {
             Zoom->Enable();
         } else {
             Zoom->Disable();
         }
+#endif
 
         Set_Font(oldfont);
         FontXSpacing = oldx;
@@ -2626,6 +2634,10 @@ bool SidebarClass::StripClass::Abandon_Production(int factory)
  *=============================================================================================*/
 void SidebarClass::Zoom_Mode_Control(void)
 {
+#ifdef ATARI_ST
+    /* Map button is disabled; zoom stays off. */
+    return;
+#else
     /*
     ** If radar is active, cycle as follows:
     ** Zoomed => not zoomed
@@ -2648,6 +2660,7 @@ void SidebarClass::Zoom_Mode_Control(void)
             Player_Names(Is_Player_Names() == 0);
         }
     }
+#endif
 }
 
 SidebarClass::~SidebarClass()

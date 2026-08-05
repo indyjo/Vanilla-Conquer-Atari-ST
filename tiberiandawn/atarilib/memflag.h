@@ -60,6 +60,8 @@ void *Alloc(unsigned long bytes_to_alloc, MemoryFlagType flags);
 void Free(void const *pointer);
 void *Resize_Alloc(void const *original_ptr, unsigned long new_size_in_bytes);
 long Ram_Free(MemoryFlagType flag);
+/** Largest free alternate-RAM block, 0 on machines without any. */
+long Alt_Ram_Free(void);
 long Heap_Size(MemoryFlagType flag);
 long Total_Ram_Free(MemoryFlagType flag);
 

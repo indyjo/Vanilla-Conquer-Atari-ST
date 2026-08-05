@@ -90,6 +90,27 @@ static void Probe_ST_Blitter(void)
 		return;
 	}
 	DBG_INFO("Atari BLiTTER chip available");
+
+	/*
+	 * Alternate RAM means an accelerator board or a TT, and on those the
+	 * software blitter wins. Two reasons, and the second is the bigger one:
+	 *
+	 *  - The CPU is a 68030 or better, fast enough that walking four bitplanes
+	 *    as long words beats handing single-plane passes to a chip that runs at
+	 *    bus speed and has to be waited for between planes.
+	 *  - The BLiTTER can only reach 24-bit addresses, so every buffer it touches
+	 *    is pinned to ST-RAM. Turning it off lets those buffers move (see the
+	 *    shadow mask cache in display.cpp), and on an accelerated machine ST-RAM
+	 *    is the slow, contended memory.
+	 *
+	 * So this is a default, not a capability test: the chip is there and works,
+	 * it is simply not the faster path on such a machine.
+	 */
+	if (AllowHardwareBlitFills && Alt_Ram_Free() > 0L) {
+		AllowHardwareBlitFills = FALSE;
+		DBG_INFO("Alternate RAM present; defaulting to software blits");
+	}
+
 	/* Only force hardware mode when hardware blits are enabled in config. */
 	if (AllowHardwareBlitFills) {
 		Blitmode(BLIT_HARD);

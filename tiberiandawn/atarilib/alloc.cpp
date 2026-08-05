@@ -230,6 +230,23 @@ static void walk_gemdos_free_pool(int is_tt, int do_log, const char *pool_name, 
 /*=========================================================================*/
 /* Ram_Free -- Determines the largest free chunk of RAM                    */
 /*=========================================================================*/
+/*
+ * Largest free alternate-RAM (TT-RAM) block, or 0 when the machine has none.
+ * Cheap enough for startup: Mxalloc with a size of -1 only reports the largest
+ * free block, it does not allocate, so this does not disturb the heap the way
+ * walking the whole free pool would.
+ */
+long Alt_Ram_Free(void)
+{
+	long sz;
+
+	if (!gemdos_has_mxalloc()) {
+		return 0L;
+	}
+	sz = Mxalloc(-1L, MX_TTRAM);
+	return (sz > 0L) ? sz : 0L;
+}
+
 long Ram_Free(MemoryFlagType flag)
 {
 	StFreePoolStats st;

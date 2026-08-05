@@ -352,7 +352,11 @@ static void ste_voice_pull_padded(struct SteStreamState* ss, unsigned char* dst,
 	if (got < (unsigned long)nsamp) {
 		memset(dst + got, 0, (size_t)(nsamp - (unsigned)got));
 	}
-	if (got == 0UL) {
+	/*
+	 * pull==0 can be true EOF or a temporary page-ring underrun. Only tear the voice
+	 * down on EOF so Theme.AI does not treat a stall as "song finished" and pick another.
+	 */
+	if (got == 0UL && ss->format->at_end()) {
 		ste_stream_shutdown_one(ss);
 	}
 }

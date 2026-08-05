@@ -97,6 +97,11 @@ unsigned long SteStreamPageRingSource::size() const
 	return (unsigned long)size_;
 }
 
+int SteStreamPageRingSource::at_end() const
+{
+	return size_ == 0 || read_pos_ >= size_;
+}
+
 int SteStreamPageRingSource::fill_one_slot_()
 {
 	uint32_t file_off;

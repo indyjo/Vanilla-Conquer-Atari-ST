@@ -23,6 +23,7 @@ public:
 	void reset() override;
 	void rewind() override;
 	unsigned long size() const override;
+	int at_end() const override;
 	unsigned long read(unsigned char *dst, unsigned long n) override;
 	unsigned long skip(unsigned long n) override;
 

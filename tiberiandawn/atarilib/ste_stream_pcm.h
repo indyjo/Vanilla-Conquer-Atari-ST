@@ -28,6 +28,7 @@ public:
 	}
 	unsigned long pull(unsigned char *dst, unsigned long sample_count, unsigned char const lut[256]) override;
 	unsigned long skip(unsigned long sample_count) override;
+	int at_end() const override;
 
 private:
 	SteStreamSource *source_;
@@ -40,7 +41,8 @@ private:
 
 	unsigned long pull_dup2x_(unsigned char *dst, unsigned long sample_count, unsigned char const lut[256]);
 	unsigned long skip_dup2x_(unsigned long sample_count);
-	int fill_scratch_(unsigned long nbytes);
+	/* Read into scratch_; returns bytes obtained (0 = stall or EOF). */
+	unsigned long fill_scratch_(unsigned long nbytes);
 };
 
 #endif /* STE_STREAM_PCM_H */

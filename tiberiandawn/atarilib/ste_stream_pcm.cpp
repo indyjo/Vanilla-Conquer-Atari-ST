@@ -95,13 +95,17 @@ int SteStreamPcmFormat::bind_source(unsigned short, unsigned char flags, unsigne
 	return 1;
 }
 
-int SteStreamPcmFormat::fill_scratch_(unsigned long nbytes)
+unsigned long SteStreamPcmFormat::fill_scratch_(unsigned long nbytes)
 {
 	if (!source_ || nbytes == 0UL || nbytes > sizeof(scratch_)) {
-		return 0;
+		return 0UL;
 	}
 	unsigned long const got = source_->read(scratch_, nbytes);
-	return got == nbytes ? 1 : 0;
+	if (got == 0UL && source_->at_end()) {
+		bytes_left_ = 0UL;
+		repeat_pending_ = 0;
+	}
+	return got;
 }
 
 unsigned long SteStreamPcmFormat::pull_dup2x_(unsigned char *dst, unsigned long sample_count,
@@ -117,7 +121,7 @@ unsigned long SteStreamPcmFormat::pull_dup2x_(unsigned char *dst, unsigned long 
 	while (written < sample_count && bytes_left_ >= 1UL) {
 		unsigned long const pair_cap = (sample_count - written) >> 1;
 		if (pair_cap == 0UL) {
-			if (!fill_scratch_(1UL)) {
+			if (fill_scratch_(1UL) != 1UL) {
 				break;
 			}
 			unsigned char const s = scratch_[0];
@@ -133,17 +137,18 @@ unsigned long SteStreamPcmFormat::pull_dup2x_(unsigned char *dst, unsigned long 
 			pairs = bytes_left_;
 		}
 		unsigned long const batch_pairs = pairs > 256UL ? 256UL : pairs;
-		if (!fill_scratch_(batch_pairs)) {
+		unsigned long const got = fill_scratch_(batch_pairs);
+		if (got == 0UL) {
 			break;
 		}
 		unsigned char *d = dst + written;
-		for (unsigned long i = 0; i < batch_pairs; ++i) {
+		for (unsigned long i = 0; i < got; ++i) {
 			unsigned char const out = lut[scratch_[i]];
 			*d++ = out;
 			*d++ = out;
 		}
-		bytes_left_ -= batch_pairs;
-		written += batch_pairs << 1;
+		bytes_left_ -= got;
+		written += got << 1;
 	}
 
 	return written;
@@ -166,12 +171,13 @@ unsigned long SteStreamPcmFormat::pull(unsigned char *dst, unsigned long sample_
 		if (n > sizeof(scratch_)) {
 			n = sizeof(scratch_);
 		}
-		if (!fill_scratch_(n)) {
+		unsigned long const got = fill_scratch_(n);
+		if (got == 0UL) {
 			break;
 		}
-		pcm_linear_lut(scratch_, (unsigned)n, lut, dst + written);
-		bytes_left_ -= n;
-		written += n;
+		pcm_linear_lut(scratch_, (unsigned)got, lut, dst + written);
+		bytes_left_ -= got;
+		written += got;
 	}
 	return written;
 }
@@ -189,6 +195,10 @@ unsigned long SteStreamPcmFormat::skip_dup2x_(unsigned long sample_count)
 		unsigned long const pair_cap = (sample_count - skipped) >> 1;
 		if (pair_cap == 0UL) {
 			if (source_->skip(1UL) != 1UL) {
+				if (source_->at_end()) {
+					bytes_left_ = 0UL;
+					repeat_pending_ = 0;
+				}
 				break;
 			}
 			bytes_left_ -= 1UL;
@@ -202,6 +212,10 @@ unsigned long SteStreamPcmFormat::skip_dup2x_(unsigned long sample_count)
 			pairs = bytes_left_;
 		}
 		if (source_->skip(pairs) != pairs) {
+			if (source_->at_end()) {
+				bytes_left_ = 0UL;
+				repeat_pending_ = 0;
+			}
 			break;
 		}
 		bytes_left_ -= pairs;
@@ -223,8 +237,16 @@ unsigned long SteStreamPcmFormat::skip(unsigned long sample_count)
 		skip_amt = bytes_left_;
 	}
 	if (source_->skip(skip_amt) != skip_amt) {
+		if (source_->at_end()) {
+			bytes_left_ = 0UL;
+		}
 		return 0UL;
 	}
 	bytes_left_ -= skip_amt;
 	return skip_amt;
+}
+
+int SteStreamPcmFormat::at_end() const
+{
+	return !source_ || (bytes_left_ == 0UL && !repeat_pending_);
 }

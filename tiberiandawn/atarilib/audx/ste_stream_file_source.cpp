@@ -107,6 +107,11 @@ unsigned long SteStreamFileSource::size() const
 	return (unsigned long)size_;
 }
 
+int SteStreamFileSource::at_end() const
+{
+	return size_ == 0 || pos_ >= size_;
+}
+
 unsigned long SteStreamFileSource::read(unsigned char *dst, unsigned long n)
 {
 	unsigned long got = 0UL;

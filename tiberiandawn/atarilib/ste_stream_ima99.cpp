@@ -170,3 +170,14 @@ unsigned long SteStreamIma99Format::skip(unsigned long sample_count)
 	}
 	return skipped;
 }
+
+int SteStreamIma99Format::at_end() const
+{
+	if (ima_.pay == nullptr || ima_.pay_len == 0UL) {
+		return 1;
+	}
+	if (ima_.frame_samples_emitted < ima_.frame_samples_total) {
+		return 0;
+	}
+	return ima_.next_hdr + 8 > ima_.pay + ima_.pay_len;
+}

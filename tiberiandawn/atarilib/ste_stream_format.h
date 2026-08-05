@@ -26,6 +26,7 @@ public:
 	 * Decode up to `sample_count` mono 8-bit samples into `dst`, mapping each logical sample
 	 * through `lut[256]`. The stream's `sample_domain()` specifies how the LUT is indexed.
 	 * Returns how many samples were written (no zero-fill past that; caller pads if needed).
+	 * A return of 0 may mean true EOF (`at_end()`) or a temporary stall (prefetch underrun).
 	 */
 	virtual unsigned long pull(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256]) = 0;
 
@@ -34,6 +35,9 @@ public:
 	 * Returns how many samples were skipped (may be less if the stream ends first).
 	 */
 	virtual unsigned long skip(unsigned long sample_count) = 0;
+
+	/* True when no more logical output samples remain (not a temporary underrun). */
+	virtual int at_end() const = 0;
 
 	/* Drop current source; instance remains valid for re-bind. */
 	virtual void reset() = 0;

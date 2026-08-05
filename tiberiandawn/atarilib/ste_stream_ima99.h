@@ -24,6 +24,7 @@ public:
 	}
 	unsigned long pull(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256]) override;
 	unsigned long skip(unsigned long sample_count) override;
+	int at_end() const override;
 
 private:
 	struct Ima99Core {

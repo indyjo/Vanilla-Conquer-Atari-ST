@@ -33,6 +33,11 @@ unsigned long SteStreamMemorySource::size() const
 	return size_;
 }
 
+int SteStreamMemorySource::at_end() const
+{
+	return size_ == 0UL || pos_ >= size_;
+}
+
 unsigned long SteStreamMemorySource::read(unsigned char *dst, unsigned long n)
 {
 	if (!base_ || !dst || n == 0UL || pos_ >= size_) {

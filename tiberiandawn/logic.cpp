@@ -199,6 +199,10 @@ void LogicClass::AI(void)
         Teams.Ptr(index)->AI();
     }
 
+#ifdef ATARI_ST
+    Call_Back();
+#endif
+
     //	Heap_Dump_Check( "After Team AI" );
 
     /*
@@ -219,6 +223,10 @@ void LogicClass::AI(void)
             index += count_diff;
         }
     }
+
+#ifdef ATARI_ST
+    Call_Back();
+#endif
 
     //	Heap_Dump_Check( "After Object AI" );
 
@@ -262,6 +270,10 @@ void LogicClass::AI(void)
         }
     }
 
+#ifdef ATARI_ST
+    Call_Back();
+#endif
+
     //	Heap_Dump_Check( "After Object AI 2" );
 
 #ifdef USE_RA_AI
@@ -276,6 +288,10 @@ void LogicClass::AI(void)
     */
     Map.Logic();
 
+#ifdef ATARI_ST
+    Call_Back();
+#endif
+
     //	Heap_Dump_Check( "After Map.Logic" );
 
     /*
@@ -284,6 +300,10 @@ void LogicClass::AI(void)
     for (index = 0; index < Factories.Count(); index++) {
         Factories.Ptr(index)->AI();
     }
+
+#ifdef ATARI_ST
+    Call_Back();
+#endif
 
     //	Heap_Dump_Check( "After Factory AI" );
 

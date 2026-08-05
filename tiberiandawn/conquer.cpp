@@ -1467,6 +1467,41 @@ void Call_Back(void)
 #endif
 
 #ifdef ATARI_ST
+    /*
+    **	Track gaps between Call_Back entries via _hz200 (200 Hz). Log to cnc.log only
+    **	when a gap exceeds 150 ticks (0.75 s), rate-limited to once per 10 seconds.
+    */
+    {
+        enum {
+            ST_CB_HZ200_ADDR = 0x4BA,
+            ST_CB_GAP_WARN_TICKS = 150,     /* 0.75 s */
+            ST_CB_GAP_REPORT_TICKS = 2000   /* 10 s */
+        };
+        static unsigned long s_cb_last_hz200 = 0;
+        static unsigned long s_cb_last_report_hz200 = 0;
+        static unsigned long s_cb_gap_count = 0;
+
+        unsigned long const now = *(volatile unsigned long*)ST_CB_HZ200_ADDR;
+        if (s_cb_last_hz200 != 0) {
+            unsigned long const gap = now - s_cb_last_hz200;
+            if (gap > (unsigned long)ST_CB_GAP_WARN_TICKS) {
+                s_cb_gap_count++;
+                bool const can_report =
+                    (s_cb_last_report_hz200 == 0)
+                    || ((now - s_cb_last_report_hz200) >= (unsigned long)ST_CB_GAP_REPORT_TICKS);
+                if (can_report) {
+                    DBG_LOG("Call_Back: gap %lu ticks (>%d); %lu occurrence(s) since last report",
+                             gap,
+                             ST_CB_GAP_WARN_TICKS,
+                             s_cb_gap_count);
+                    s_cb_gap_count = 0;
+                    s_cb_last_report_hz200 = now;
+                }
+            }
+        }
+        s_cb_last_hz200 = now;
+    }
+
     if (WWMouse) {
         WWMouse->Process_Mouse();
     }

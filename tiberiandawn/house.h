@@ -534,10 +534,15 @@ public:
     };
     TeamTypeClass const* Suggested_New_Team(bool alertcheck = false);
     void Adjust_Threat(int region, int threat);
+    void Flush_Threat_Pending(void);
+    static void Flush_All_Threat_Pending(void);
+    static void Clear_Threat_Pending(void);
 
     static void Init(void);
     static void One_Time(void);
     static HouseClass* As_Pointer(HousesType house);
+    /* After load: Houses.Ptr(i)->Class->House == i for all active houses. */
+    static void Assert_Heap_Type_Invariant(void);
 
     /*
     **	File I/O.

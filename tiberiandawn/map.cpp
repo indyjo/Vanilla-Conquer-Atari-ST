@@ -1096,7 +1096,12 @@ int MapClass::Cell_Region(CELL cell)
  *=========================================================================*/
 int MapClass::Cell_Threat(CELL cell, HousesType house)
 {
-	int threat = HouseClass::As_Pointer(house)->Regions[Map.Cell_Region(Map[cell].Cell_Number())].Threat_Value();
+	HouseClass* hptr = HouseClass::As_Pointer(house);
+	if (hptr == NULL) {
+		return (0);
+	}
+	hptr->Flush_Threat_Pending();
+	int threat = hptr->Regions[Map.Cell_Region(cell)].Threat_Value();
 	//using function for IsVisible so we have different results for different players - JAS 2019/09/30
 	if (!threat && Map[cell].Is_Visible(house)) {
 		threat = 1;

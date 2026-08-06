@@ -182,6 +182,9 @@ private:
 ST_Blitter_Backend &ST_Blit_HW_Backend();
 ST_Soft_Backend &ST_Blit_Soft_Backend();
 
+/* Call once after AllowHardwareBlitFills is final (Probe_ST_Blitter). */
+void ST_Blit_Init_Backend(void);
+
 /*
  * Single-pass mask-merge for the software backend. Strides are fixed by the
  * prepare helpers: mask 2, planar 8, destination 8, forward only. Skew, endmasks

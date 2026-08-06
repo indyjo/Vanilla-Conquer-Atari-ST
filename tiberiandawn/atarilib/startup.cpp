@@ -45,10 +45,11 @@
 #include	<mint/linea.h>  // For LINE-A initialization (linea2, __aline)
 #include	"gbuffer.h"  // GBC_ST_PLANAR_LORES, Uses_ST_LoRes_Planar_Layout
 #include	"ikbd.h"
-#include	"st_cache.h"
+#include	"st_blit.h"
 #include	"st_screen.h"
 #include	"palette.h"
 #include	"../../common/timer_st_vbl.h"
+#include	<mint/cookie.h>
 
 static bool Game_Still_Initializing = true;
 static bool Init_Keypress_Shown = false;
@@ -81,6 +82,33 @@ void ST_Init_Await_Keypress(void)
 	}
 }
 
+/*
+ * Hardware BLiTTER on 68000–030 with no TT-RAM (typical STe / Falcon ST-RAM).
+ * 040+ copyback D-cache is not coherent with the chip; we skip cache sync and
+ * force soft blit instead. TT-RAM cannot be addressed by the BLiTTER, so when
+ * it is present we prefer soft blit and keep game buffers out of scarce ST-RAM.
+ * 030 write-through is left alone (no sync): BLiTTER wins the Falcon ST-RAM path.
+ */
+static int ST_Blitter_Cpu_Needs_Soft_Blit(void)
+{
+	long cpu = 0;
+
+	if (Getcookie(C__CPU, &cpu) != C_FOUND) {
+		return 0;
+	}
+	cpu &= 0xFFFFL;
+	return (cpu >= 40L) ? 1 : 0;
+}
+
+static int ST_Blitter_Has_Ttram(void)
+{
+	/* Mxalloc needs GEMDOS >= 0.19; older TOS has no alternate RAM. */
+	if (Sversion() < 0x1900) {
+		return 0;
+	}
+	return Mxalloc(-1L, MX_TTRAM) > 0L ? 1 : 0;
+}
+
 static void Probe_ST_Blitter(void)
 {
 	short cfg = Blitmode(-1);
@@ -90,13 +118,24 @@ static void Probe_ST_Blitter(void)
 		return;
 	}
 	DBG_INFO("Atari BLiTTER chip available");
-	/* Only force hardware mode when hardware blits are enabled in config. */
-	if (AllowHardwareBlitFills) {
-		Blitmode(BLIT_HARD);
-		DBG_INFO("Using hardware blits");
-	} else {
+
+	if (!AllowHardwareBlitFills) {
 		DBG_INFO("Using software blits due to config");
+		return;
 	}
+	if (ST_Blitter_Cpu_Needs_Soft_Blit()) {
+		AllowHardwareBlitFills = FALSE;
+		DBG_INFO("Using software blits (68040+ copyback cache)");
+		return;
+	}
+	if (ST_Blitter_Has_Ttram()) {
+		AllowHardwareBlitFills = FALSE;
+		DBG_INFO("Using software blits (TT-RAM present)");
+		return;
+	}
+
+	Blitmode(BLIT_HARD);
+	DBG_INFO("Using hardware blits");
 }
 
 // Local function declarations (not in headers)
@@ -262,7 +301,7 @@ int main(int argc, char *argv[])
 			return (EXIT_FAILURE);
 		}
 		Probe_ST_Blitter();
-		ST_Cache_Init();
+		ST_Blit_Init_Backend();
 
 		DBG_INFO("C&C - Initialising video surfaces (%dx%d)", ScreenWidth, ScreenHeight);
 

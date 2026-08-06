@@ -30,6 +30,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 - **0.2.0** — benchmark refresh (2026-07-07)
 - **0.3.0** — AUDX pools + page cache; 8-bit PCM stream / LUT path (2026-07-30)
 - **0.3.1** — soft/HW blit from [PR #7](https://github.com/indyjo/Vanilla-Conquer-Atari-ST/pull/7); AUDX fix (no GEMDOS in VBL) (2026-08-05)
+- **0.3.2-dev** — drop BLiTTER cache-sync; soft blit on 040+ / TT-RAM; keep HW blit on 030 (2026-08-07)
 
 ## Results
 
@@ -54,6 +55,7 @@ Same 1570-frame playback recording (software blits only):
 | 0.2.0 | 158918 | 13:14.59 | 1.9759 |
 | 0.3.0 | 158546 | 13:12.73 | 1.9805 |
 | 0.3.1 | 158929 | 13:14.64 | 1.9757 |
+| 0.3.2-dev | 156058 | 13:00.29 | 2.0121 |
 
 `-XYQ`:
 
@@ -63,6 +65,7 @@ Same 1570-frame playback recording (software blits only):
 | 0.2.0 | 131036 | 10:55.18 | 2.3963 |
 | 0.3.0 | 130331 | 10:51.65 | 2.4093 |
 | 0.3.1 | 130657 | 10:53.28 | 2.4032 |
+| 0.3.2-dev | 128066 | 10:40.33 | 2.4519 |
 
 STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on plain ST.
 
@@ -85,6 +88,7 @@ STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on pl
 | 0.2.0 | 47339 | 3:56.69 | 6.6330 |
 | 0.3.0 | 47231 | 3:56.15 | 6.6482 |
 | 0.3.1 | 47990 | 3:59.95 | 6.5430 |
+| 0.3.2-dev | 47293 | 3:56.46 | 6.6395 |
 
 #### Same Falcon, TT-RAM, no BLiTTER (software blits)
 
@@ -93,4 +97,5 @@ EmuTOS reports no blitter (`AllowHardwareBlitFills` forced off → software path
 | Version | Ticks | Time | FPS |
 |---------|-------|------|-----|
 | 0.3.1 | 33843 | 2:49.21 | 9.2781 |
+| 0.3.2-dev | 33671 | 2:48.35 | 9.3255 |
 

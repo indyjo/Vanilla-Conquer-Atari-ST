@@ -6,7 +6,6 @@
 #include "st_blit.h"
 
 #include "drawbuff.h"
-#include "st_cache.h"
 #include "st_frame_meter.h"
 
 #include <stddef.h>
@@ -33,56 +32,10 @@ static const unsigned char k_skew_fxsr_nfsr[8] = {
 	0x00u
 };
 
-static void ST_Blit_Cache_Rect_Span(
-	const uint8_t *base, int row_bytes, int y_abs, int pixel_height,
-	const void **out_start, size_t *out_len)
+static bool ST_Blit_Can_Use_Hardware(void)
 {
-	const uint8_t *row0 = base + (size_t)y_abs * (size_t)row_bytes;
-	*out_start = row0;
-	*out_len = (size_t)row_bytes * (size_t)pixel_height;
-}
-
-static void ST_Blit_Sync_Cache_Before(
-	const uint8_t *src_root, int src_row_bytes, int sy_abs, int pixel_height,
-	uint8_t *dst_root, int dst_row_bytes, int dy_abs)
-{
-	const void *src_start = NULL;
-	const void *dst_start = NULL;
-	size_t src_len = 0;
-	size_t dst_len = 0;
-	ST_Blit_Cache_Rect_Span(src_root, src_row_bytes, sy_abs, pixel_height, &src_start, &src_len);
-	ST_Blit_Cache_Rect_Span(dst_root, dst_row_bytes, dy_abs, pixel_height, &dst_start, &dst_len);
-	ST_Cache_Push_Range(src_start, src_len);
-	ST_Cache_Push_Range(dst_start, dst_len);
-}
-
-static void ST_Blit_Sync_Cache_After(
-	const uint8_t *src_root, int src_row_bytes, int sy_abs, int pixel_height,
-	uint8_t *dst_root, int dst_row_bytes, int dy_abs,
-	bool same_surface)
-{
-	const void *dst_start = NULL;
-	size_t dst_len = 0;
-	ST_Blit_Cache_Rect_Span(dst_root, dst_row_bytes, dy_abs, pixel_height, &dst_start, &dst_len);
-	ST_Cache_Invalidate_Range(dst_start, dst_len);
-	if (same_surface) {
-		const void *src_start = NULL;
-		size_t src_len = 0;
-		ST_Blit_Cache_Rect_Span(src_root, src_row_bytes, sy_abs, pixel_height, &src_start, &src_len);
-		ST_Cache_Invalidate_Range(src_start, src_len);
-	}
-}
-
-static bool ST_Blit_Addr_24bit_OK(const void *addr)
-{
-	return ((uintptr_t)addr & 0xFF000000u) == 0u;
-}
-
-static bool ST_Blit_Can_Use_Hardware(const void *src, const void *dst)
-{
-	return AllowHardwareBlitFills
-		&& ST_Blit_Addr_24bit_OK(src)
-		&& ST_Blit_Addr_24bit_OK(dst);
+	/* Same policy as g_blit_backend; kept for the HW two-pass merge path. */
+	return AllowHardwareBlitFills;
 }
 
 static bool ST_Blit_Should_Use_Hog(int pixel_width, int pixel_height)
@@ -296,12 +249,22 @@ static bool ST_Blit_Prepare_28(
 		false);
 }
 
-static ST_Blit_Backend &ST_Blit_Pick_Backend(const void *src, const void *dst)
+static ST_Blit_Backend *g_blit_backend;
+
+void ST_Blit_Init_Backend(void)
 {
-	if (ST_Blit_Can_Use_Hardware(src, dst)) {
-		return ST_Blit_HW_Backend();
+	g_blit_backend = AllowHardwareBlitFills
+		? static_cast<ST_Blit_Backend *>(&ST_Blit_HW_Backend())
+		: static_cast<ST_Blit_Backend *>(&ST_Blit_Soft_Backend());
+}
+
+static ST_Blit_Backend &ST_Blit_Active_Backend(void)
+{
+	if (!g_blit_backend) {
+		/* Soft until Probe / ST_Blit_Init_Backend (tests, early callers). */
+		g_blit_backend = &ST_Blit_Soft_Backend();
 	}
-	return ST_Blit_Soft_Backend();
+	return *g_blit_backend;
 }
 
 void ST_Blit_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
@@ -383,12 +346,9 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 		+ (size_t)(dx_abs >> 4) * 8;
 	ST_Blit_Job job;
 
-	ST_Blit_Sync_Cache_Before(
-		src_root, src_row_bytes, sy_abs, pixel_height,
-		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
 
-	ST_Blit_Backend &backend = ST_Blit_Pick_Backend(src, dst);
+	ST_Blit_Backend &backend = ST_Blit_Active_Backend();
 	ST_Blitter plan{};
 	ST_Blitter &regs = plan;
 	backend.Await();
@@ -433,10 +393,6 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 		hog);
 
 	ST_FRAME_BAR_BLIT_END();
-	ST_Blit_Sync_Cache_After(
-		src_root, src_row_bytes, sy_abs, pixel_height,
-		dst_root, dst_row_bytes, dy_abs,
-		same_surface);
 	return TRUE;
 }
 
@@ -534,12 +490,9 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 		+ (size_t)((dst_word_left >> 4) * 8);
 	ST_Blit_Job job;
 
-	ST_Blit_Sync_Cache_Before(
-		mask_root, mask_row_bytes, sy_abs, pixel_height,
-		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
 
-	ST_Blit_Backend &backend = ST_Blit_Pick_Backend(src, dst);
+	ST_Blit_Backend &backend = ST_Blit_Active_Backend();
 	ST_Blitter plan{};
 	ST_Blitter &regs = plan;
 	backend.Await();
@@ -569,10 +522,6 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 		hog);
 
 	ST_FRAME_BAR_BLIT_END();
-	ST_Blit_Sync_Cache_After(
-		mask_root, mask_row_bytes, sy_abs, pixel_height,
-		dst_root, dst_row_bytes, dy_abs,
-		false);
 	return TRUE;
 }
 
@@ -609,8 +558,7 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 	uint8_t *const dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
 		+ (size_t)(dx_abs >> 4) * 8;
 
-	const bool two_pass = ST_Blit_Can_Use_Hardware(mask_src, dst)
-		|| ST_Blit_Can_Use_Hardware(planar_src, dst);
+	const bool two_pass = ST_Blit_Can_Use_Hardware();
 
 	if (!two_pass) {
 		/*
@@ -651,12 +599,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 			     & 3u) == 0u);
 
 		if (degenerate) {
-			ST_Blit_Sync_Cache_Before(
-				mask_root, mask_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
-			ST_Blit_Sync_Cache_Before(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
 			ST_FRAME_BAR_BLIT_BEGIN();
 
 			ST_Soft_Blit_Merge_Degenerate(
@@ -671,10 +613,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 				(unsigned)(planar_regs.skew & 15u));
 
 			ST_FRAME_BAR_BLIT_END();
-			ST_Blit_Sync_Cache_After(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs,
-				false);
 			return TRUE;
 		}
 
@@ -685,12 +623,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 			const int16_t mask_y_inc =
 				(int16_t)(mask_row_bytes - (src_words - 1) * 2);
 
-			ST_Blit_Sync_Cache_Before(
-				mask_root, mask_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
-			ST_Blit_Sync_Cache_Before(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
 			ST_FRAME_BAR_BLIT_BEGIN();
 
 			ST_Soft_Blit_Mask_Merge(
@@ -710,10 +642,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 				(planar_regs.skew & 0x40u) != 0);
 
 			ST_FRAME_BAR_BLIT_END();
-			ST_Blit_Sync_Cache_After(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs,
-				false);
 			return TRUE;
 		}
 	}

@@ -108,6 +108,88 @@
 #include "ccini.h"
 #include "common/fixed.h"
 
+/*
+**	Per-house deferred Adjust_Threat (length-1 queue). Stored outside HouseClass so
+**	Houses.Save/Load sizeof stays unchanged. Indexed by HousesType; BSS-zeroed at startup.
+**	Size is 8 so g_threat_pending[ht] is a shift on m68k (not ×12).
+*/
+struct HouseThreatPending
+{
+    int threat;
+    short region;
+    bool active;
+};
+
+static_assert(sizeof(HouseThreatPending) == 8, "HouseThreatPending must be power-of-two sized");
+
+static HouseThreatPending g_threat_pending[HOUSE_COUNT];
+
+static void Apply_Threat_Immediate(HouseClass* house, int region, int threat)
+{
+    static int const _val[] = {-MAP_REGION_WIDTH - 1,
+                               -MAP_REGION_WIDTH,
+                               -MAP_REGION_WIDTH + 1,
+                               -1,
+                               0,
+                               1,
+                               MAP_REGION_WIDTH - 1,
+                               MAP_REGION_WIDTH,
+                               MAP_REGION_WIDTH + 1};
+    static int const _thr[] = {2, 1, 2, 1, 0, 1, 2, 1, 2};
+    int neg;
+
+    if (threat < 0) {
+        threat = -threat;
+        neg = true;
+    } else {
+        neg = false;
+    }
+
+    /*
+    **	Unrolled 9-neighbour paint (fixed offsets / shift amounts).
+    */
+    house->Regions[region + _val[0]].Adjust_Threat(threat >> _thr[0], neg);
+    house->Regions[region + _val[1]].Adjust_Threat(threat >> _thr[1], neg);
+    house->Regions[region + _val[2]].Adjust_Threat(threat >> _thr[2], neg);
+    house->Regions[region + _val[3]].Adjust_Threat(threat >> _thr[3], neg);
+    house->Regions[region + _val[4]].Adjust_Threat(threat >> _thr[4], neg);
+    house->Regions[region + _val[5]].Adjust_Threat(threat >> _thr[5], neg);
+    house->Regions[region + _val[6]].Adjust_Threat(threat >> _thr[6], neg);
+    house->Regions[region + _val[7]].Adjust_Threat(threat >> _thr[7], neg);
+    house->Regions[region + _val[8]].Adjust_Threat(threat >> _thr[8], neg);
+}
+
+void HouseClass::Clear_Threat_Pending(void)
+{
+    memset(g_threat_pending, 0, sizeof(g_threat_pending));
+}
+
+void HouseClass::Flush_Threat_Pending(void)
+{
+    HousesType const ht = Class->House;
+    HouseThreatPending& pending = g_threat_pending[ht];
+
+    if (pending.active) {
+        Apply_Threat_Immediate(this, pending.region, pending.threat);
+        pending.active = false;
+    }
+}
+
+void HouseClass::Flush_All_Threat_Pending(void)
+{
+    for (HousesType h = HOUSE_FIRST; h < HOUSE_COUNT; h++) {
+        if (!g_threat_pending[h].active) {
+            continue;
+        }
+        HouseClass* ptr = As_Pointer(h);
+        if (ptr) {
+            ptr->Flush_Threat_Pending();
+        } else {
+            g_threat_pending[h].active = false;
+        }
+    }
+}
+
 /***********************************************************************************************
  * HouseClass::Validate -- validates house pointer															  *
  *                                                                                             *
@@ -179,12 +261,28 @@ HouseClass::operator HousesType(void) const
  *=============================================================================================*/
 HouseClass* HouseClass::As_Pointer(HousesType house)
 {
-    for (int index = 0; index < Houses.Count(); index++) {
-        if (Houses.Ptr(index)->Class->House == house) {
-            return (Houses.Ptr(index));
-        }
+    /*
+    **	Invariant: scenario creation allocates HOUSE_FIRST..HOUSE_COUNT-1 in enum
+    **	order into Houses ActivePointers, so Ptr(house) is the house of that type.
+    **	Checked after savegame load via Assert_Heap_Type_Invariant().
+    */
+    if ((unsigned)house >= (unsigned)HOUSE_COUNT) {
+        return (0);
     }
-    return (0);
+    if ((unsigned)house >= (unsigned)Houses.Count()) {
+        return (0);
+    }
+    return (Houses.Ptr((int)house));
+}
+
+void HouseClass::Assert_Heap_Type_Invariant(void)
+{
+    for (int index = 0; index < Houses.Count(); index++) {
+        HouseClass* house = Houses.Ptr(index);
+        assert(house != NULL);
+        assert(house->Class != NULL);
+        assert(house->Class->House == (HousesType)index);
+    }
 }
 
 /***********************************************************************************************
@@ -332,7 +430,11 @@ void* HouseClass::operator new(size_t) noexcept
 void HouseClass::operator delete(void* ptr)
 {
     if (ptr) {
-        ((HouseClass*)ptr)->IsActive = false;
+        HouseClass* house = (HouseClass*)ptr;
+        if (house->Class != NULL) {
+            g_threat_pending[house->Class->House].active = false;
+        }
+        house->IsActive = false;
     }
     Houses.Free((HouseClass*)ptr);
 }
@@ -861,6 +963,7 @@ bool HouseClass::Can_Build(AircraftType aircraft, HousesType house) const
 void HouseClass::Init(void)
 {
     Houses.Free_All();
+    Clear_Threat_Pending();
 
     for (HousesType index = HOUSE_FIRST; index < HOUSE_COUNT; index++) {
         HouseTriggers[index].Clear();
@@ -1905,6 +2008,8 @@ void HouseClass::Read_INI(CCINIClass& ini)
     char const* hname; //	Pointer to house name.
     char buf[128];
 
+    Clear_Threat_Pending();
+
     for (HousesType index = HOUSE_FIRST; index < HOUSE_COUNT; index++) {
         hname = HouseTypeClass::As_Reference(index).IniName;
         int maxunit = ini.Get_Int(hname, "MaxUnit", EACH_UNIT_MAX);
@@ -2263,32 +2368,26 @@ TeamTypeClass const* HouseClass::Suggested_New_Team(bool alertcheck)
 void HouseClass::Adjust_Threat(int region, int threat)
 {
     Validate();
-    static int _val[] = {-MAP_REGION_WIDTH - 1,
-                         -MAP_REGION_WIDTH,
-                         -MAP_REGION_WIDTH + 1,
-                         -1,
-                         0,
-                         1,
-                         MAP_REGION_WIDTH - 1,
-                         MAP_REGION_WIDTH,
-                         MAP_REGION_WIDTH + 1};
-    static int _thr[] = {2, 1, 2, 1, 0, 1, 2, 1, 2};
-    int neg;
-    int* val = &_val[0];
-    int* thr = &_thr[0];
 
-    if (threat < 0) {
-        threat = -threat;
-        neg = true;
-    } else {
-        neg = false;
+    HousesType const ht = Class->House;
+    HouseThreatPending& pending = g_threat_pending[ht];
+
+    /*
+    **	Length-1 deferral queue: cancel when the new op is the exact opposite
+    **	of the deferred one (same region, negated threat). Otherwise apply the
+    **	deferred paint and remember the new op.
+    */
+    if (pending.active) {
+        if (pending.region == region && pending.threat == -threat) {
+            pending.active = false;
+            return;
+        }
+        Apply_Threat_Immediate(this, pending.region, pending.threat);
     }
 
-    for (int lp = 0; lp < 9; lp++) {
-        Regions[region + *val].Adjust_Threat(threat >> *thr, neg);
-        val++;
-        thr++;
-    }
+    pending.region = region;
+    pending.threat = threat;
+    pending.active = true;
 }
 
 /***********************************************************************************************

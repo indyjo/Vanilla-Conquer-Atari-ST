@@ -129,6 +129,13 @@ bool Save_Game(const char* file_name, const char* descr)
     house = PlayerPtr->Class->House; // get current house
 
     /*
+    **	Apply any deferred regional threat paints so saved HouseClass blobs match
+    **	a fully-applied threat map (pending state is not part of the save format).
+    **	Must run before Code_All_Pointers() — that codes Class into an integer.
+    */
+    HouseClass::Flush_All_Threat_Pending();
+
+    /*
     **	Code everybody's pointers
     */
     Code_All_Pointers();
@@ -877,6 +884,8 @@ void Decode_All_Pointers(void)
     ** House pointers
     */
     Houses.Decode_Pointers();
+    HouseClass::Assert_Heap_Type_Invariant();
+    HouseClass::Clear_Threat_Pending();
 #ifdef REMASTER_BUILD
     /*
     ** DLL data

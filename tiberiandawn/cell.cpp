@@ -1864,12 +1864,13 @@ CellClass const * CellClass::Adjacent_Cell(FacingType face) const
  * HISTORY:                                                                *
  *   04/24/1995 PWG : Created.                                             *
  *=========================================================================*/
-void CellClass::Adjust_Threat(HousesType house, int threat_value)
+void CellClass::Adjust_Threat(HousesType house, int threat_value, CELL cell)
 {
 	Validate();
-	int region = Map.Cell_Region(Cell_Number());
+	int region = Map.Cell_Region(cell);
 
-	for (HousesType lp = HOUSE_FIRST; lp < HOUSE_COUNT; lp ++) {
+	/* Only reached in GAME_NORMAL (see ObjectClass::Mark); MULTI houses are unused there. */
+	for (HousesType lp = HOUSE_FIRST; lp < HOUSE_MULTI1; lp++) {
 		if (lp == house) continue;
 
 		HouseClass *house_ptr = HouseClass::As_Pointer(lp);

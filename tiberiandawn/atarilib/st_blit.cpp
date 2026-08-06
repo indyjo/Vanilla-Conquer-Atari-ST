@@ -42,10 +42,21 @@ static void ST_Blit_Cache_Rect_Span(
 	*out_len = (size_t)row_bytes * (size_t)pixel_height;
 }
 
+/*
+ * Only the blitter needs this: it reads and writes RAM behind the CPU's back.
+ * For a CPU-only blit the pair is not merely redundant, it is destructive --
+ * cinvl drops the very lines the software blit just wrote on a copyback 040/060.
+ * Both helpers therefore take the backend decision as their first argument.
+ */
 static void ST_Blit_Sync_Cache_Before(
+	bool hardware,
 	const uint8_t *src_root, int src_row_bytes, int sy_abs, int pixel_height,
 	uint8_t *dst_root, int dst_row_bytes, int dy_abs)
 {
+	if (!hardware) {
+		return;
+	}
+
 	const void *src_start = NULL;
 	const void *dst_start = NULL;
 	size_t src_len = 0;
@@ -57,10 +68,15 @@ static void ST_Blit_Sync_Cache_Before(
 }
 
 static void ST_Blit_Sync_Cache_After(
+	bool hardware,
 	const uint8_t *src_root, int src_row_bytes, int sy_abs, int pixel_height,
 	uint8_t *dst_root, int dst_row_bytes, int dy_abs,
 	bool same_surface)
 {
+	if (!hardware) {
+		return;
+	}
+
 	const void *dst_start = NULL;
 	size_t dst_len = 0;
 	ST_Blit_Cache_Rect_Span(dst_root, dst_row_bytes, dy_abs, pixel_height, &dst_start, &dst_len);
@@ -382,8 +398,9 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
 		+ (size_t)(dx_abs >> 4) * 8;
 	ST_Blit_Job job;
+	const bool hardware = ST_Blit_Can_Use_Hardware(src, dst);
 
-	ST_Blit_Sync_Cache_Before(
+	ST_Blit_Sync_Cache_Before(hardware,
 		src_root, src_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
@@ -433,7 +450,7 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 		hog);
 
 	ST_FRAME_BAR_BLIT_END();
-	ST_Blit_Sync_Cache_After(
+	ST_Blit_Sync_Cache_After(hardware,
 		src_root, src_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs,
 		same_surface);
@@ -533,8 +550,9 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
 		+ (size_t)((dst_word_left >> 4) * 8);
 	ST_Blit_Job job;
+	const bool hardware = ST_Blit_Can_Use_Hardware(src, dst);
 
-	ST_Blit_Sync_Cache_Before(
+	ST_Blit_Sync_Cache_Before(hardware,
 		mask_root, mask_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs);
 	ST_FRAME_BAR_BLIT_BEGIN();
@@ -569,7 +587,7 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 		hog);
 
 	ST_FRAME_BAR_BLIT_END();
-	ST_Blit_Sync_Cache_After(
+	ST_Blit_Sync_Cache_After(hardware,
 		mask_root, mask_row_bytes, sy_abs, pixel_height,
 		dst_root, dst_row_bytes, dy_abs,
 		false);
@@ -651,12 +669,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 			     & 3u) == 0u);
 
 		if (degenerate) {
-			ST_Blit_Sync_Cache_Before(
-				mask_root, mask_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
-			ST_Blit_Sync_Cache_Before(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
 			ST_FRAME_BAR_BLIT_BEGIN();
 
 			ST_Soft_Blit_Merge_Degenerate(
@@ -671,10 +683,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 				(unsigned)(planar_regs.skew & 15u));
 
 			ST_FRAME_BAR_BLIT_END();
-			ST_Blit_Sync_Cache_After(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs,
-				false);
 			return TRUE;
 		}
 
@@ -685,12 +693,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 			const int16_t mask_y_inc =
 				(int16_t)(mask_row_bytes - (src_words - 1) * 2);
 
-			ST_Blit_Sync_Cache_Before(
-				mask_root, mask_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
-			ST_Blit_Sync_Cache_Before(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs);
 			ST_FRAME_BAR_BLIT_BEGIN();
 
 			ST_Soft_Blit_Mask_Merge(
@@ -710,10 +712,6 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 				(planar_regs.skew & 0x40u) != 0);
 
 			ST_FRAME_BAR_BLIT_END();
-			ST_Blit_Sync_Cache_After(
-				planar_root, planar_row_bytes, sy_abs, pixel_height,
-				dst_root, dst_row_bytes, dy_abs,
-				false);
 			return TRUE;
 		}
 	}

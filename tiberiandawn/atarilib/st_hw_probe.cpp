@@ -5,6 +5,7 @@
 #include "st_hw_probe.h"
 
 #include <mint/cookie.h>
+#include <mint/osbind.h>
 
 int ST_Hw_Machine_Major(void)
 {
@@ -50,4 +51,21 @@ int ST_Hw_Dma_Audio_Available(void)
 	}
 	/* Pre-_SND TOS on STE only. */
 	return hw == 1 ? 1 : 0;
+}
+
+/* phystop: top of ST-RAM. ST-RAM is contiguous from 0, so this is the whole
+   test. Read under Supexec because callers need not be supervisor. */
+static long ST_Hw_Read_Phystop(void)
+{
+	return *(const volatile long *)0x42EL;
+}
+
+int ST_Hw_Is_St_Ram(const void *addr)
+{
+	static unsigned long phystop = 0uL;
+
+	if (phystop == 0uL) {
+		phystop = (unsigned long)Supexec(ST_Hw_Read_Phystop);
+	}
+	return (unsigned long)addr < phystop ? 1 : 0;
 }

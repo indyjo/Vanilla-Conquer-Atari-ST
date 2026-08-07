@@ -83,6 +83,7 @@
 #include "atarilib/stvq/stvq_hw.h"
 #include "atarilib/stvq/stvq_io.h"
 #include "atarilib/stvq/stvq_player.h"
+#include "atarilib/st_hw_probe.h"
 #include "st_sprite_cache.h"
 #include <limits.h>
 
@@ -122,7 +123,7 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 	 * alternate RAM. Pass neither rather than one it cannot show; it then
 	 * allocates its own ST-RAM screens.
 	 */
-	if (((((unsigned long)visible0) | ((unsigned long)hidden0)) & 0xFF000000UL) != 0UL) {
+	if (!ST_Hw_Is_St_Ram(visible0) || !ST_Hw_Is_St_Ram(hidden0)) {
 		visible0 = NULL;
 		hidden0 = NULL;
 	}

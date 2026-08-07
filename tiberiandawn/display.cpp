@@ -361,21 +361,37 @@ namespace {
 namespace {
 	/*
 	 * Snap an arbitrary lepton coordinate onto the exact lepton positions that
-	 * survive Lepton_To_Pixel followed by Pixel_To_Lepton, without the /24.
+	 * survive Lepton_To_Pixel followed by Pixel_To_Lepton, without a /24.
+	 *
+	 * Indexed by the lepton fraction byte. Values are the old 25-entry grid
+	 * expanded across each fraction that rounded to that pixel (incl. 256).
 	 */
+	static unsigned short const snap_table[256] = {
+		  0,   0,   0,   0,   0,   0,  11,  11,  11,  11,  11,  11,  11,  11,  11,  11,
+		 21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  32,  32,  32,  32,  32,
+		 32,  32,  32,  32,  32,  32,  43,  43,  43,  43,  43,  43,  43,  43,  43,  43,
+		 53,  53,  53,  53,  53,  53,  53,  53,  53,  53,  53,  64,  64,  64,  64,  64,
+		 64,  64,  64,  64,  64,  64,  75,  75,  75,  75,  75,  75,  75,  75,  75,  75,
+		 85,  85,  85,  85,  85,  85,  85,  85,  85,  85,  85,  96,  96,  96,  96,  96,
+		 96,  96,  96,  96,  96,  96, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107,
+		117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 128, 128, 128, 128, 128,
+		128, 128, 128, 128, 128, 128, 139, 139, 139, 139, 139, 139, 139, 139, 139, 139,
+		149, 149, 149, 149, 149, 149, 149, 149, 149, 149, 149, 160, 160, 160, 160, 160,
+		160, 160, 160, 160, 160, 160, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171,
+		181, 181, 181, 181, 181, 181, 181, 181, 181, 181, 181, 192, 192, 192, 192, 192,
+		192, 192, 192, 192, 192, 192, 203, 203, 203, 203, 203, 203, 203, 203, 203, 203,
+		213, 213, 213, 213, 213, 213, 213, 213, 213, 213, 213, 224, 224, 224, 224, 224,
+		224, 224, 224, 224, 224, 224, 235, 235, 235, 235, 235, 235, 235, 235, 235, 235,
+		245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 256, 256, 256, 256, 256,
+	};
+
 	static inline int Snap_Lepton_To_Pixel_Grid(int lepton)
 	{
-		static unsigned short const snap_table[25] = {
-			0, 11, 21, 32, 43, 53, 64, 75, 85, 96, 107, 117, 128,
-			139, 149, 160, 171, 181, 192, 203, 213, 224, 235, 245, 256
-		};
-
 		unsigned short const value = (unsigned short)lepton;
 		int const base = (short)(value & 0xFF00u);
 		unsigned const fraction = value & 0x00FFu;
-		unsigned const pixel = ((fraction * ICON_PIXEL_W) + (ICON_LEPTON_W / 2)) >> 8;
 
-		return base + (int)snap_table[pixel];
+		return base + (int)snap_table[fraction];
 	}
 }
 

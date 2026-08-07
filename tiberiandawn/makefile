@@ -342,7 +342,7 @@ RUNTIME_LINKFLAGS += -L$(GCC_LIB_DIR)
 LIBS += -Wl,--start-group -lgcc -lsupc++ -lstdc++ -lcmini -lm -lgcc -Wl,--end-group
 LINK_PRE_OBJS += $(LIBCMINI_CRT0)
 else
-ifeq ($(filter help clean cleanall remix-web remix-web-itch,$(MAKECMDGOALS)),)
+ifeq ($(filter help clean cleanall tests host-tests remix-web remix-web-itch,$(MAKECMDGOALS)),)
 ifeq ($(LIBC_RUNTIME),libcmini)
 $(error LIBC_RUNTIME=libcmini requested, but libcmini was not found. Expected $(LIBCMINI_CRT0) and $(LIBCMINI_LIB_DIR)/libcmini.a)
 endif
@@ -556,7 +556,7 @@ endif
 # BUILD RULES
 #=============================================================================
 
-.PHONY: all clean cleanall help st-tests itch-release
+.PHONY: all clean cleanall help tests host-tests st-tests itch-release
 
 .DEFAULT_GOAL := all
 
@@ -796,6 +796,7 @@ clean:
 	@rm -f $(OUTDIR)/cnc_st_tests.tos
 	@rm -f $(OUTDIR)/tstcnc.tos
 	@rm -f $(OUTDIR)/tstcncd.tos
+	@rm -rf $(OUTDIR)/host
 	@rm -f $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_cps_browser.o $(INTDIR)/title_pcx_load_st_tests.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/st_blit.o $(INTDIR)/st_blitter_hw.o $(INTDIR)/st_soft_blit.o
 
 # Clean all configurations
@@ -814,10 +815,12 @@ help:
 	@echo "Targets:"
 ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  all          - Build the TOS executable (default)"
+	@echo "  tests        - Build and run all host tests (alias: host-tests)"
 	@echo "  st-tests     - Build tstcnc(.d).tos (on-machine / interactive suite)"
 	@echo "  itch-release - Tagged clean-tree release zips for itch.io (see below)"
 else
 	@echo "  all      - Build the DLL (default)"
+	@echo "  tests    - Build and run all host tests (alias: host-tests)"
 endif
 	@echo "  clean    - Remove build artifacts for current configuration"
 	@echo "  cleanall - Remove all build artifacts"
@@ -856,6 +859,7 @@ endif
 	@echo "  make clean               - Clean current configuration"
 	@echo "  make cleanall            - Clean everything"
 ifeq ($(PLATFORM_LIB),ATARILIB)
+	@echo "  make tests               - Build and run host tests (tests/host)"
 	@echo "  make st-tests            - Build tstcnc(.d).tos (ST on-machine suite)"
 	@echo "  make USE_ATARILIB=1 CONFIG=release CXX_OPT_REL=-O3 WITH_SYMBOLS=1 FRAME_POINTERS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/ -j4"
 	@echo "  make LIBC_RUNTIME=mintlib -j4"
@@ -890,6 +894,30 @@ endif
 		echo "  - Windows libraries (winmm, ws2_32) required"; \
 	fi
 	@echo "  - Resource files require windres (may not be available)"
+
+#=============================================================================
+# Host tests (macOS / Linux — tests/host; no cross toolchain)
+#=============================================================================
+HOST_TEST_DIR = tests/host
+HOST_TEST_OUTDIR = $(OUTDIR)/host
+HOST_CXX ?= c++
+HOST_CXXFLAGS ?= -O2 -Wall -Wextra
+HOST_TEST_SRCS = \
+	$(HOST_TEST_DIR)/main.cpp \
+	$(HOST_TEST_DIR)/test_snap_lepton_to_pixel_grid.cpp
+HOST_TEST_EXE = $(HOST_TEST_OUTDIR)/host_tests
+
+$(HOST_TEST_OUTDIR):
+	@mkdir -p $(HOST_TEST_OUTDIR)
+
+$(HOST_TEST_EXE): $(HOST_TEST_SRCS) | $(HOST_TEST_OUTDIR)
+	@echo "Building host tests: $(HOST_TEST_EXE)..."
+	$(HOST_CXX) $(HOST_CXXFLAGS) -o $(HOST_TEST_EXE) $(HOST_TEST_SRCS)
+
+# Build and run every host test via the single runner binary.
+tests host-tests: $(HOST_TEST_EXE)
+	@echo "Running $(HOST_TEST_EXE)..."
+	$(HOST_TEST_EXE)
 
 #=============================================================================
 # Atari ST on-machine test harness (tstcnc(.d).tos — own main(), not the game)

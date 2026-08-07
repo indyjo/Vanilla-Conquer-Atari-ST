@@ -23,7 +23,7 @@ See the [itch.io project page](https://indyjo.itch.io/cnc-atari-st).
 
 ## Build
 
-`m68k-atari-mint` toolchain; then `cd tiberiandawn && make` → `bin/AtariST/cnc.tos`. On-target tests: `make st-tests` ([readme](tiberiandawn/tests/st_suite/readme.md)).
+`m68k-atari-mint` toolchain; then `cd tiberiandawn && make` → `bin/AtariST/cnc.tos`. Host tests: `make tests` ([tests/README](tiberiandawn/tests/README.md)). On-target tests: `make st-tests` ([st_suite readme](tiberiandawn/tests/st_suite/readme.md)).
 
 ## Host tools
 

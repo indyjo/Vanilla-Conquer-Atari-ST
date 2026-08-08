@@ -583,7 +583,7 @@ static bool Load_Private_Config_From_INI(RawFileClass &cfile)
 			profile_data = (char *)profile_alloc;
 		}
 	} else {
-		DBG_INFO("C&C - CONQUER.INI not found; using defaults");
+		DBG_INFO("C&C - CONQUER.INI not found; creating with defaults");
 	}
 
 	Read_Private_Config_Struct(profile_data, &NewConfig);
@@ -611,18 +611,21 @@ static bool Load_Private_Config_From_INI(RawFileClass &cfile)
  *=============================================================================================*/
 void Read_Setup_Options( RawFileClass *config_file )
 {
-	char *buffer = new char [config_file->Size()];
-
-	if (config_file->Is_Available()){
-
-		config_file->Read (buffer, config_file->Size());
-
-		VideoBackBufferAllowed = WWGetPrivateProfileInt ("Options", "VideoBackBuffer", 1, buffer);
-		AllowHardwareBlitFills = WWGetPrivateProfileInt ("Options", "HardwareFills", 1, buffer);
-		//ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
-		IsV107 = WWGetPrivateProfileInt ("Options", "Compatibility", 0, buffer);
+	/*
+	** Missing CONQUER.INI is normal on a fresh install. Do not call Size()/Open
+	** first — that would log a RawFileClass ERROR for a missing file.
+	*/
+	if (!config_file->Is_Available()) {
+		return;
 	}
 
+	char *buffer = new char [config_file->Size()];
+	config_file->Read (buffer, config_file->Size());
+
+	VideoBackBufferAllowed = WWGetPrivateProfileInt ("Options", "VideoBackBuffer", 1, buffer);
+	AllowHardwareBlitFills = WWGetPrivateProfileInt ("Options", "HardwareFills", 1, buffer);
+	//ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
+	IsV107 = WWGetPrivateProfileInt ("Options", "Compatibility", 0, buffer);
 
 	delete [] buffer;
 }

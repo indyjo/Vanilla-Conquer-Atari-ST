@@ -43,7 +43,6 @@
 #include "audx/audx_page_cache.h"
 #include "audx/ste_stream_memory_source.h"
 #include "audx/ste_stream_page_ring_source.h"
-#include "audx/ste_stream_file_source.h"
 #include "ccfile.h"
 #include "audio.h"
 #include "memflag.h"
@@ -174,7 +173,6 @@ static SteStreamPcmFormat g_voice_pcm[STE_MIX_VOICES];
 static SteStreamIma99Format g_voice_ima[STE_MIX_VOICES];
 static SteStreamMemorySource g_voice_mem_src[STE_MIX_VOICES];
 static SteStreamPageRingSource g_voice_page_src[STE_MIX_VOICES];
-static SteStreamFileSource g_voice_file_src[STE_MIX_VOICES];
 static unsigned char g_mix_pull[STE_MIX_VOICES][STE_AUDIO_PULL_BLOCK];
 static unsigned char* g_dma_pool;
 static volatile int g_pending_voice_shutdown;
@@ -379,7 +377,6 @@ static void ste_voice_reset_sources(int vi)
 	}
 	g_voice_mem_src[vi].reset();
 	g_voice_page_src[vi].reset();
-	g_voice_file_src[vi].reset();
 }
 
 static void ste_shutdown_all_voices_core(int release_file_buf)
@@ -407,14 +404,13 @@ static void ste_process_pending_voice_shutdown(void)
 /*
  * Open stream: bind pre-allocated PCM or IMA instance for this voice (no heap).
  * AUDX meta uses a page-pointer ring (RankCache <=64 KiB, stream slabs above);
- * legacy AUD uses memory / IMA; named classic PCM still uses SteStreamFileSource.
+ * legacy in-memory AUD uses memory / IMA sources (no GEMDOS on the pull path).
  */
 static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char const* b, unsigned long aud_bytes, int volume)
 {
 	ste_stream_shutdown_one(ss);
 	g_voice_mem_src[vi].reset();
 	g_voice_page_src[vi].reset();
-	g_voice_file_src[vi].reset();
 	if (vi < 0 || vi >= STE_MIX_VOICES || !b) {
 		return 0;
 	}
@@ -477,7 +473,6 @@ static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char cons
 		}
 		g_voice_mem_src[vi].reset();
 		g_voice_page_src[vi].reset();
-		g_voice_file_src[vi].reset();
 		return 0;
 	}
 	ss->active = 1;
@@ -802,113 +797,9 @@ int File_Stream_Sample(char const* filename, BOOL real_time_start)
 
 /*
  * Theme scores (THEME.CPP) call this for "*.AUD". Prefer MIX Retrieve (AUDX meta in
- * cached SCORES.MIX); fall back to streaming classic PCM from the named file without
- * malloc'ing the whole track (MAP1.AUD in TRANSIT.MIX is ~650 KiB).
+ * cached SOUNDS/SCORES/SPEECH). Uncached AUDX meta may be loaded (28 bytes, main thread).
+ * Classic PCM/IMA named files are not streamed — no CCFile/GEMDOS on the VBL pull path.
  */
-static int ste_arm_voice_pcm_source(int vi, int volume, int priority, int cold_arm)
-{
-	g_voice_ss[vi].active = 1;
-	g_voice_ss[vi].kind = STE_STREAM_PCM;
-	g_voice_ss[vi].format = &g_voice_pcm[vi];
-	g_voice_ss[vi].volume = Bound(volume, 0, 0xFF);
-	g_voice_ss[vi].play_priority = priority;
-	ste_volume_lut_build(
-	    g_voice_ss[vi].vol_lut, g_voice_ss[vi].volume, g_voice_pcm[vi].sample_domain());
-
-	if (!cold_arm) {
-		return 1;
-	}
-
-	ste_dma_stop();
-	memset(g_dma_pool, 0, (size_t)STE_DMA_RING_SAMPLES);
-	g_ring_write_pos = 0;
-	g_stream_samples_written = 0UL;
-	unsigned const prefill = (unsigned)STE_DMA_RING_SAMPLES / 2U;
-	ste_ring_write_mixed(0, prefill);
-	g_ring_write_pos = prefill % (unsigned)STE_DMA_RING_SAMPLES;
-	ste_dma_arm_loop(g_dma_pool, STE_DMA_RING_SAMPLES);
-	g_ste_suppress_dma_off_cleanup = 0;
-	return 1;
-}
-
-static int ste_play_pcm_named_file(char const* filename, unsigned char const* hdr, long file_size, int volume)
-{
-	unsigned long const size = read_le32(hdr + 2);
-	unsigned long const uncomp = read_le32(hdr + 6);
-	unsigned long payload;
-	int vi;
-	int cold_arm = 0;
-
-	if (!g_ste_dma_ok || !filename || !hdr || !g_dma_pool || file_size < (long)STE_AUD_HDR_LEN) {
-		return -1;
-	}
-	if (hdr[11] != (unsigned char)STE_AUD_COMP_PCM) {
-		return -1;
-	}
-	payload = (unsigned long)file_size - (unsigned long)STE_AUD_HDR_LEN;
-	if (size > 0UL && size < payload) {
-		payload = size;
-	}
-	if (payload == 0UL) {
-		return -1;
-	}
-
-	ste_process_pending_voice_shutdown();
-	vi = ste_pick_voice_for_play(PRIORITY_MAX);
-	if (vi < 0) {
-		return -1;
-	}
-
-	{
-		unsigned short const sr = ste_sr_lock_ipl5();
-		if (g_voice_ss[vi].active) {
-			ste_voice_release_file_heap(vi);
-			ste_stream_shutdown_one(&g_voice_ss[vi]);
-			ste_voice_reset_sources(vi);
-			g_voice_src[vi] = 0;
-		}
-		cold_arm = 1;
-		for (int i = 0; i < STE_MIX_VOICES; ++i) {
-			if (g_voice_ss[i].active) {
-				cold_arm = 0;
-				break;
-			}
-		}
-		if (cold_arm) {
-			g_ste_suppress_dma_off_cleanup = 1;
-		}
-		ste_sr_restore(sr);
-	}
-
-	ste_stream_shutdown_one(&g_voice_ss[vi]);
-	ste_voice_reset_sources(vi);
-	if (!g_voice_file_src[vi].bind_named(filename, (uint32_t)STE_AUD_HDR_LEN, (uint32_t)payload)) {
-		if (cold_arm) {
-			g_ste_suppress_dma_off_cleanup = 0;
-		}
-		return -1;
-	}
-	if (!g_voice_pcm[vi].bind_source(
-	        read_le16(hdr), hdr[10], hdr[11], size, uncomp, &g_voice_file_src[vi])) {
-		ste_voice_reset_sources(vi);
-		if (cold_arm) {
-			g_ste_suppress_dma_off_cleanup = 0;
-		}
-		return -1;
-	}
-	if (g_voice_pcm[vi].total_output_samples() == 0UL) {
-		g_voice_pcm[vi].reset();
-		ste_voice_reset_sources(vi);
-		if (cold_arm) {
-			g_ste_suppress_dma_off_cleanup = 0;
-		}
-		return -1;
-	}
-
-	g_voice_src[vi] = (void const*)filename;
-	return ste_arm_voice_pcm_source(vi, volume, PRIORITY_MAX, cold_arm);
-}
-
 int File_Stream_Sample_Vol(char const* filename, int volume, BOOL)
 {
 	if (!g_ste_dma_ok || !filename) {
@@ -940,62 +831,30 @@ int File_Stream_Sample_Vol(char const* filename, int volume, BOOL)
 		return 1;
 	}
 
-	/* Classic AUD via CCFile (MIX or loose file) — stream PCM; tiny AUDX meta load. */
+	/* Uncached AUDX meta only — classic AUD is not played via File_Stream. */
 	CCFileClass file(filename);
 	if (!file.Is_Available()) {
 		return -1;
 	}
 	long const sz = file.Size();
-	if (sz < (long)STE_AUD_HDR_LEN) {
+	if (sz != (long)AUDX_PREFIX_SIZE) {
 		return -1;
 	}
-	unsigned char hdr[STE_AUD_HDR_LEN];
-	if (!file.Open(READ) || file.Read(hdr, (long)STE_AUD_HDR_LEN) != (long)STE_AUD_HDR_LEN) {
-		return -1;
-	}
-	file.Close();
-
-	if (AUDX_Is_Meta(hdr) && sz == (long)AUDX_PREFIX_SIZE) {
-		unsigned char* buf = (unsigned char*)malloc((unsigned long)AUDX_PREFIX_SIZE);
-		if (!buf) {
-			return -1;
-		}
-		CCFileClass file2(filename);
-		if (!file2.Open(READ) || file2.Read(buf, (long)AUDX_PREFIX_SIZE) != (long)AUDX_PREFIX_SIZE) {
-			free(buf);
-			return -1;
-		}
-		file2.Close();
-		g_stream_file_buf = buf;
-		g_stream_file_len = AUDX_PREFIX_SIZE;
-		if (Play_Sample(buf, PRIORITY_MAX, volume, 0) < 0) {
-			free(g_stream_file_buf);
-			g_stream_file_buf = 0;
-			g_stream_file_len = 0;
-			return -1;
-		}
-		return 1;
-	}
-
-	if (hdr[11] == (unsigned char)STE_AUD_COMP_PCM) {
-		return ste_play_pcm_named_file(filename, hdr, sz, volume);
-	}
-
-	/* IMA99 (and anything else): keep small full-buffer load path. */
-	if (sz < 12 || sz > (long)(STE_AUD99_MAX_COMPRESSED_PAYLOAD + (long)STE_AUD_HDR_LEN)) {
-		return -1;
-	}
-	unsigned char* buf = (unsigned char*)malloc((unsigned long)sz);
+	unsigned char* buf = (unsigned char*)malloc((unsigned long)AUDX_PREFIX_SIZE);
 	if (!buf) {
 		return -1;
 	}
-	if (!file.Open(READ) || file.Read(buf, sz) != sz) {
+	if (!file.Open(READ) || file.Read(buf, (long)AUDX_PREFIX_SIZE) != (long)AUDX_PREFIX_SIZE) {
 		free(buf);
 		return -1;
 	}
 	file.Close();
+	if (!AUDX_Is_Meta(buf)) {
+		free(buf);
+		return -1;
+	}
 	g_stream_file_buf = buf;
-	g_stream_file_len = (unsigned long)sz;
+	g_stream_file_len = AUDX_PREFIX_SIZE;
 	if (Play_Sample(buf, PRIORITY_MAX, volume, 0) < 0) {
 		free(g_stream_file_buf);
 		g_stream_file_buf = 0;

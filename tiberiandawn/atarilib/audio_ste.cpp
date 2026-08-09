@@ -162,11 +162,15 @@ static void ste_stram_free(void* p)
 struct SteStreamState {
 	int active;
 	int play_priority;
-	int volume;
+	int volume; /* Per-play base 0..255 (Theme passes 0xFF). */
+	int is_score; /* Set for File_Stream_Sample_Vol (theme) voices. */
 	unsigned char vol_lut[256];
 	SteStreamKind kind;
 	SteStreamFormat* format;
 };
+
+/* Global score scale (Options -> Set_Score_Vol); mirrors LockedData.ScoreVolume. */
+static int g_score_volume = 0xFF;
 
 static struct SteStreamState g_voice_ss[STE_MIX_VOICES];
 static SteStreamPcmFormat g_voice_pcm[STE_MIX_VOICES];
@@ -337,6 +341,31 @@ static void ste_volume_lut_build(unsigned char lut[256], int vol, SteStreamSampl
 	}
 }
 
+/* Score voices: (base * g_score_volume) >> 8, same idea as LockedData.ScoreVolume * st->Volume. */
+static int ste_voice_scaled_volume(struct SteStreamState const* ss)
+{
+	int vol = ss->volume;
+	if (ss->is_score) {
+		vol = (vol * g_score_volume) >> 8;
+	}
+	return vol;
+}
+
+static void ste_voice_rebuild_vol_lut(struct SteStreamState* ss)
+{
+	if (!ss->format) {
+		return;
+	}
+	ste_volume_lut_build(ss->vol_lut, ste_voice_scaled_volume(ss), ss->format->sample_domain());
+}
+
+/* Tag/untag a voice as score and rebuild its LUT (vanilla SampleTracker::IsScore). */
+static void ste_voice_set_score(struct SteStreamState* ss, int is_score)
+{
+	ss->is_score = is_score ? 1 : 0;
+	ste_voice_rebuild_vol_lut(ss);
+}
+
 static void ste_stream_shutdown_one(struct SteStreamState* ss);
 static void ste_voice_release_file_heap(int vi);
 
@@ -368,6 +397,7 @@ static void ste_stream_shutdown_one(struct SteStreamState* ss)
 	ss->format = 0;
 	ss->active = 0;
 	ss->play_priority = 0;
+	ss->is_score = 0;
 }
 
 static void ste_voice_reset_sources(int vi)
@@ -478,8 +508,9 @@ static int ste_stream_open(struct SteStreamState* ss, int vi, unsigned char cons
 	ss->active = 1;
 	ss->kind = kind;
 	ss->format = f;
+	ss->is_score = 0;
 	ss->volume = Bound(volume, 0, 0xFF);
-	ste_volume_lut_build(ss->vol_lut, ss->volume, f->sample_domain());
+	ste_voice_rebuild_vol_lut(ss);
 	return 1;
 }
 
@@ -795,6 +826,8 @@ int File_Stream_Sample(char const* filename, BOOL real_time_start)
 	return File_Stream_Sample_Vol(filename, 0xFF, real_time_start);
 }
 
+static int ste_play_sample(void const* sample, int priority, int volume, int as_score);
+
 /*
  * Theme scores (THEME.CPP) call this for "*.AUD". Prefer MIX Retrieve (AUDX meta in
  * cached SOUNDS/SCORES/SPEECH). Uncached AUDX meta may be loaded (28 bytes, main thread).
@@ -825,10 +858,7 @@ int File_Stream_Sample_Vol(char const* filename, int volume, BOOL)
 
 	void const* retrieved = MFCD::Retrieve(filename);
 	if (retrieved) {
-		if (Play_Sample(retrieved, PRIORITY_MAX, volume, 0) < 0) {
-			return -1;
-		}
-		return 1;
+		return ste_play_sample(retrieved, PRIORITY_MAX, volume, 1);
 	}
 
 	/* Uncached AUDX meta only — classic AUD is not played via File_Stream. */
@@ -855,7 +885,7 @@ int File_Stream_Sample_Vol(char const* filename, int volume, BOOL)
 	}
 	g_stream_file_buf = buf;
 	g_stream_file_len = AUDX_PREFIX_SIZE;
-	if (Play_Sample(buf, PRIORITY_MAX, volume, 0) < 0) {
+	if (ste_play_sample(buf, PRIORITY_MAX, volume, 1) < 0) {
 		free(g_stream_file_buf);
 		g_stream_file_buf = 0;
 		g_stream_file_len = 0;
@@ -1068,7 +1098,11 @@ void Stop_Sample_Playing(void const* sample)
 	ste_sr_restore(sr);
 }
 
-int Play_Sample(void const* sample, int priority, int volume, signed short)
+/*
+ * Start a voice. as_score marks theme/file-stream voices for g_score_volume scaling
+ * (must be set before ring prefill so the first buffers use the score gain).
+ */
+static int ste_play_sample(void const* sample, int priority, int volume, int as_score)
 {
 	if (!g_ste_dma_ok || !sample) {
 		return -1;
@@ -1143,6 +1177,9 @@ int Play_Sample(void const* sample, int priority, int volume, signed short)
 		}
 		return -1;
 	}
+	if (as_score) {
+		ste_voice_set_score(&g_voice_ss[vi], 1);
+	}
 	g_voice_ss[vi].play_priority = priority;
 	g_voice_src[vi] = sample;
 	if (sample == (void const*)g_stream_file_buf) {
@@ -1173,13 +1210,37 @@ int Play_Sample(void const* sample, int priority, int volume, signed short)
 	return 1;
 }
 
+int Play_Sample(void const* sample, int priority, int volume, signed short)
+{
+	return ste_play_sample(sample, priority, volume, 0);
+}
+
 int Play_Sample_Handle(void const* sample, int priority, int volume, signed short panloc, int)
 {
 	return Play_Sample(sample, priority, volume, panloc);
 }
 
 int Set_Sound_Vol(int) { return 0; }
-int Set_Score_Vol(int) { return 0; }
+
+int Set_Score_Vol(int volume)
+{
+	int const old = g_score_volume;
+	g_score_volume = Bound(volume, 0, 0xFF);
+
+	/*
+	 * Live update: rebuild LUTs for active score voices so the next VBL mix
+	 * pulls at the new level (ring latency may leave a short tail at the old gain).
+	 */
+	unsigned short const sr = ste_sr_lock_ipl5();
+	for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
+		struct SteStreamState* ss = &g_voice_ss[vi];
+		if (ss->active && ss->is_score) {
+			ste_voice_rebuild_vol_lut(ss);
+		}
+	}
+	ste_sr_restore(sr);
+	return old;
+}
 void Fade_Sample(int handle, int)
 {
 	/* TODO: replace this temporary Atari behavior with a real per-handle fade. */

@@ -230,7 +230,7 @@
         <span>
           <span class="font-medium">Audio</span>
           <span class="block text-xs text-[#b0b0b0]"
-            >Speech, sound effects, and optional music — converted for this release.</span
+            >Speech, SFX, and transit AUDs → AUDX in SOUNDS/SPEECH (optional music → SCORES).</span
           >
         </span>
       </label>

@@ -9,6 +9,7 @@ import { entrySummary, notableEntryLines } from './entry-log';
 import { audxPoolBasename, audxPoolIdForMix } from './audx';
 import { isShpxEligibleMix, shpxPoolBasename, shpxPoolIdForMix } from './shpx';
 import { isTheaterMix, requiredW16Stems, w16StemForTheaterMix } from './theater-st16';
+import { harvestTransitAuds, injectAudsIntoMix } from './transit-aud';
 import type { ContentOptions, DiscSelection, PipelineResult, ProcessProgress, ReleaseSelection, TargetVersion } from './types';
 import { clampVideoParallelism } from './target-version';
 import { vqaEncodeWindowForWorkers } from './vqa-encode-pool';
@@ -383,6 +384,48 @@ export async function runPipeline(
     }
   }
 
+  /*
+   * 0.3.x + Audio: move TRANSIT.MIX AUDs into SOUNDS.MIX before AUDX rempack so
+   * metas land in the cached MIX (TRANSIT itself cannot be cached).
+   * Only strip TRANSIT after SOUNDS has accepted the inject (SOUNDS sorts first).
+   */
+  let transitAudInject: AssemblePayload[] = [];
+  let transitRawOriginal: Uint8Array | null = null;
+  let strippedTransitMix: Uint8Array | null = null;
+  let transitAudsMoved = false;
+  const wantTransitAudMove =
+    req.targetVersion === '0.3.x' &&
+    req.contentOptions.speechAndSfx &&
+    selected.includes('SOUNDS.MIX') &&
+    selected.includes('TRANSIT.MIX');
+
+  if (wantTransitAudMove) {
+    const transitLoc = gdiMap.get('TRANSIT.MIX') ?? nodMap.get('TRANSIT.MIX');
+    if (transitLoc) {
+      progress = logLine(progress, 'info', 'Extracting TRANSIT.MIX for AUD→SOUNDS harvest…');
+      onProgress(progress);
+      await tick();
+      transitRawOriginal = await extractFile(
+        transitLoc.source.file,
+        transitLoc.lba,
+        transitLoc.size,
+      );
+      const harvested = harvestTransitAuds(transitRawOriginal);
+      if (harvested.auds.length > 0) {
+        transitAudInject = harvested.auds;
+        strippedTransitMix = harvested.stripped;
+        progress = logLine(
+          progress,
+          'info',
+          `TRANSIT→SOUNDS: will move ${harvested.auds.length} AUD file(s) ` +
+            `(${formatKb(harvested.audBytes)} KB) into SOUNDS for AUDX`,
+        );
+        onProgress(progress);
+        await tick();
+      }
+    }
+  }
+
   const outputFiles = new Map<string, Uint8Array>();
 
   for (const base of selected) {
@@ -518,14 +561,51 @@ export async function runPipeline(
         continue;
       }
 
-      const raw = await extractFile(loc.source.file, loc.lba, loc.size);
-      progress = logLine(
-        progress,
-        'info',
-        `Extracted ${base} from ${loc.source.label} (${raw.length} bytes)`,
-      );
+      let raw: Uint8Array;
+      if (base === 'TRANSIT.MIX' && transitRawOriginal) {
+        if (transitAudsMoved && strippedTransitMix) {
+          raw = strippedTransitMix;
+          progress = logLine(
+            progress,
+            'info',
+            `Using stripped ${base} (${raw.length} bytes; AUDs moved to SOUNDS.MIX)`,
+          );
+        } else {
+          raw = transitRawOriginal;
+          progress = logLine(
+            progress,
+            'info',
+            `Using ${base} (${raw.length} bytes` +
+              (transitAudInject.length > 0
+                ? '; AUD move skipped — keeping AUDs in TRANSIT'
+                : '') +
+              ')',
+          );
+        }
+      } else {
+        raw = await extractFile(loc.source.file, loc.lba, loc.size);
+        progress = logLine(
+          progress,
+          'info',
+          `Extracted ${base} from ${loc.source.label} (${raw.length} bytes)`,
+        );
+      }
       onProgress(progress);
       await tick();
+
+      if (base === 'SOUNDS.MIX' && transitAudInject.length > 0) {
+        const injected = injectAudsIntoMix(raw, transitAudInject);
+        raw = injected.mix;
+        transitAudsMoved = injected.added > 0;
+        progress = logLine(
+          progress,
+          'info',
+          `Injected ${injected.added} TRANSIT AUD(s) into ${base}` +
+            (injected.skipped > 0 ? ` (${injected.skipped} CRC already present)` : ''),
+        );
+        onProgress(progress);
+        await tick();
+      }
 
       progress = { ...progress, phase: 'remix', current: base };
       const remixOpts = remixOptionsForMix(base, req.contentOptions, releaseFiles, req.targetVersion);

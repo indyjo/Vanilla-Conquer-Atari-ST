@@ -417,6 +417,8 @@ repack fails.
 
 Eligible MIXes: `SOUNDS.MIX`, `SPEECH.MIX`, `SCORES.MIX`. After AUD→PCM, `--audx` wraps each PCM AUD as a 28-byte BE **AUDX** meta record and appends sample bytes to `pool%04x.bin` (pool ids 5 / 6 / 7). See `tiberiandawn/atari.md` for the on-disk layout and runtime page-cache rules.
 
+`remix-web` (0.3.x + Audio) additionally moves classic AUD entries out of `TRANSIT.MIX` into `SOUNDS.MIX` before rempack, so AUDX metas land in the cached SFX MIX. `TRANSIT.MIX` cannot be MFCD-cached (WSA/VQA/RECORD).
+
 `SCORES.MIX` omits CRC `0x5CE4DFD8` (`AOI.VAR`) from the output directory (no body, no pool bytes). Runtime already falls back to `AOI.AUD` when the variation file is missing.
 
 ### Host CLI flags

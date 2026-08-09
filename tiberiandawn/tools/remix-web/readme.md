@@ -92,6 +92,8 @@ When **Convert shapes to SHPX** is enabled (default for target **0.2.x** / **0.3
 
 For target **0.3.x**, enabling **Audio** converts SOUNDS/SPEECH (and **Include music** → SCORES) from AUD→PCM→AUDX. Sample payloads go into `pool0005.bin` … `pool0007.bin`; the MIX keeps small AUDX metadata. `AUD.MIX` is never included. On 0.3.x the UI shows Audio / Include music / Video only (ST16 and SHPX are always applied).
 
+Classic AUD entries in `TRANSIT.MIX` (side-select, map theme, Kane ending clips, etc.) are moved into `SOUNDS.MIX` before AUDX rempack so their metas live in the MIX that is `Cache()`’d at runtime. `TRANSIT.MIX` itself cannot be cached (large WSA/VQA/RECORD payloads); after the move it keeps only those non-audio files.
+
 ### Movie sequences (0.3.x)
 
 When targeting **0.3.x**, enable **Movie sequences** to extract `MOVIES.MIX` and convert VQA payloads to STVQ using CRC-named `video/xxxxxxxx.N.w16` sidecars from the release ZIP. GDI and NOD `MOVIES.MIX` are merged first (union by CRC) so shared clips are encoded only once. Encoding runs in a windowed worker pool (configurable 1–8 parallel encodes, default 4) with ordered MIX writeout. Quality and encoding-effort selects map to remix STVQ presets — **Low** quality is suited for 8 MHz Atari ST computers. Missing sidecars omit that clip (with a warning). Encoding is still slow in the browser, but parallel workers use multiple CPU cores.

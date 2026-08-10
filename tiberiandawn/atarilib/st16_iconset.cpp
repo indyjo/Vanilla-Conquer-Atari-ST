@@ -433,7 +433,9 @@ static void ST16_Mask_Flush_Run(uint8_t *mask_row, int word_ix, int cols, uint16
 	word = (cols >= 16)
 		? accum
 		: (uint16_t)(((uint16_t)accum << (16 - cols)) | (uint16_t)(0xFFFFu >> cols));
-	*(uint16_t *)(mask_row + word_ix * 2) = word;
+	/* Mask plane words are native/big-endian (same as ST16 header after offline convert).
+	 * Host remix runs on LE; a raw uint16_t store would byte-swap pad bits into x16..23. */
+	ST16_Write_BE16(mask_row + word_ix * 2, word);
 }
 
 void ST16_Build_Mask_From_Chunky(

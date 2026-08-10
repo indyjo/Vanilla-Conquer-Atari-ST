@@ -25,7 +25,8 @@ cd tiberiandawn/tools/remix
 make
 ```
 
-Smoke test (ST16 conversion with `../../atari-assets/temperat.w16`):
+ST16 conversion smoke + curated iconset regression (`../../atari-assets/temperat.w16`,
+`testdata/iconsets/`):
 
 ```bash
 make test-st16
@@ -37,16 +38,17 @@ SHPX / KeyFrame decode regression (curated shapes under `testdata/shapes/`):
 make test-shpx
 ```
 
-Run both host regression suites:
+Run host regression suites:
 
 ```bash
 make test
 ```
 
-Regenerate test blobs from an unmodified `CONQUER.MIX`:
+Regenerate curated blobs:
 
 ```bash
 python3 testdata/extract_shapes.py /path/to/conquer.mix
+python3 testdata/extract_iconsets.py /path/to/temperat.mix   # retail CD TEMPERAT.MIX
 ```
 
 ## Host usage

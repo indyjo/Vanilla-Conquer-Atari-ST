@@ -51,6 +51,7 @@
  *   TechnoClass::Draw_Pips -- Draws the transport pips and other techno graphics.             *
  *   TechnoClass::Enter_Idle_Mode -- Object enters its default idle condition.                 *
  *   TechnoClass::Evaluate_Cell -- Determine the value and object of specified cell.           *
+ *   TechnoClass::Evaluate_Mapped_Cell -- Threat-scan helper for a pre-validated map cell.     *
  *   TechnoClass::Evaluate_Object -- Determines score value of specified object.               *
  *   TechnoClass::Exit_Object -- Causes specified object to leave this object.                 *
  *   TechnoClass::Find_Docking_Bay -- Searches for a close docking bay.                        *
@@ -1539,6 +1540,7 @@ bool TechnoClass::Evaluate_Object(ThreatType method, int mask, int range, Techno
  * HISTORY:                                                                                    *
  *   06/19/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
+#ifndef ATARI_ST
 bool TechnoClass::Evaluate_Cell(ThreatType method,
                                 int mask,
                                 CELL cell,
@@ -1577,6 +1579,57 @@ bool TechnoClass::Evaluate_Cell(ThreatType method,
 
     return (Evaluate_Object(method, mask, range, tentative, value));
 }
+#endif
+
+#ifdef ATARI_ST
+/***********************************************************************************************
+ * TechnoClass::Evaluate_Mapped_Cell -- Score a pre-validated map cell for threat scan.        *
+ *                                                                                             *
+ *    Caller must ensure the cell lies inside the playable map (In_Radar-equivalent).          *
+ *                                                                                             *
+ *=============================================================================================*/
+bool TechnoClass::Evaluate_Mapped_Cell(ThreatType method,
+                                       int mask,
+                                       int range,
+                                       CellClass const& cell,
+                                       TechnoClass const** object,
+                                       int& value) const
+{
+    *object = NULL;
+    value = 0;
+
+    /*
+    **	Empty cells are the common case in the ring scan; skip Cell_Occupier.
+    */
+    if (!cell.OccupierPtr)
+        return (false);
+
+    TechnoClass const* tentative = (TechnoClass const*)cell.Cell_Occupier();
+    while (tentative) {
+        if (tentative->Is_Techno() && !House->Is_Ally(tentative))
+            break;
+        tentative = (TechnoClass const*)tentative->Next;
+    }
+
+    if (!tentative)
+        return (false);
+
+    *object = tentative;
+    return (Evaluate_Object(method, mask, range, tentative, value));
+}
+
+/*
+**	Walk a contiguous edge of mapped cells (stride 1 = row, MAP_CELL_W = column).
+**	`consider` is typically a lambda that closes over scan state (method/mask/range/best*).
+*/
+template <typename Consider>
+static void Threat_Scan_Edge(CellClass* ptr, int count, int stride, Consider const& consider)
+{
+    for (; count > 0; --count, ptr += stride) {
+        consider(*ptr);
+    }
+}
+#endif
 
 /***********************************************************************************************
  * TechnoClass::Greatest_Threat -- Determines best target given search criteria.               *
@@ -1681,6 +1734,88 @@ TARGET TechnoClass::Greatest_Threat(ThreatType method) const
         */
         TechnoClass const* object;
         int value;
+#ifdef ATARI_ST
+        int const cx = Cell_X(cell);
+        int const cy = Cell_Y(cell);
+        int const map_x = Map.MapCellX;
+        int const map_y = Map.MapCellY;
+        int const map_x2 = map_x + Map.MapCellWidth;
+        int const map_y2 = map_y + Map.MapCellHeight;
+        int const bail4 = crange / 4;
+        int const bail2 = crange / 2;
+
+        auto consider_cell = [&](CellClass const& mapped) {
+            if (Evaluate_Mapped_Cell(method, mask, range, mapped, &object, value)) {
+                if (bestval < value) {
+                    bestobject = object;
+                }
+            }
+        };
+
+        for (int radius = 1; radius < crange; radius++) {
+            int const y_top = cy - radius;
+            int const y_bot = cy + radius;
+            int const x_left = cx - radius;
+            int const x_right = cx + radius;
+            bool const top_ok = (y_top >= map_y);
+            bool const bot_ok = (y_bot < map_y2);
+            bool const left_ok = (x_left >= map_x);
+            bool const right_ok = (x_right < map_x2);
+
+            /*
+            **	Scan the top and bottom rows of the "box".
+            */
+            int x0 = x_left;
+            int x1 = x_right;
+            if (x0 < map_x)
+                x0 = map_x;
+            if (x1 >= map_x2)
+                x1 = map_x2 - 1;
+
+            if (x0 <= x1) {
+                int const xcount = x1 - x0 + 1;
+                if (top_ok) {
+                    Threat_Scan_Edge(&Map[XY_Cell(x0, y_top)], xcount, 1, consider_cell);
+                }
+                if (bot_ok) {
+                    Threat_Scan_Edge(&Map[XY_Cell(x0, y_bot)], xcount, 1, consider_cell);
+                }
+            }
+
+            /*
+            **	Scan the left and right columns of the "box".
+            */
+            int y0 = cy - (radius - 1);
+            int y1 = cy + (radius - 1);
+            if (y0 < map_y)
+                y0 = map_y;
+            if (y1 >= map_y2)
+                y1 = map_y2 - 1;
+
+            if (y0 <= y1) {
+                int const ycount = y1 - y0 + 1;
+                if (left_ok) {
+                    Threat_Scan_Edge(&Map[XY_Cell(x_left, y0)], ycount, MAP_CELL_W, consider_cell);
+                }
+                if (right_ok) {
+                    Threat_Scan_Edge(&Map[XY_Cell(x_right, y0)], ycount, MAP_CELL_W, consider_cell);
+                }
+            }
+
+            /*
+            **	Bail early if a target has already been found and the range is at
+            **	one of the breaking points (i.e., normal range or range * 2).
+            */
+            if (bestobject) {
+                if (radius == bail4) {
+                    return (bestobject->As_Target());
+                }
+                if (radius == bail2) {
+                    return (bestobject->As_Target());
+                }
+            }
+        }
+#else
         for (int radius = 1; radius < crange; radius++) {
 
             /*
@@ -1756,6 +1891,7 @@ TARGET TechnoClass::Greatest_Threat(ThreatType method) const
                 }
             }
         }
+#endif
 
     } else {
 

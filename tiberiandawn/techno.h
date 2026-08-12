@@ -46,6 +46,8 @@
 #include "door.h"
 #include "crew.h"
 
+class CellClass;
+
 /****************************************************************************
 **	This is the common data between building and units.
 */
@@ -296,7 +298,21 @@ public:
     virtual int Weapon_Range(int which) const;
     virtual bool Captured(HouseClass* newowner);
     virtual ResultType Take_Damage(int& damage, int distance, WarheadType warhead, TechnoClass* source);
+#ifndef ATARI_ST
     bool Evaluate_Cell(ThreatType method, int mask, CELL cell, int range, TechnoClass const** object, int& value) const;
+#endif
+#ifdef ATARI_ST
+    /*
+    **	Ring-scan helper: cell is already inside the playable map rect (In_Radar-equivalent).
+    **	Skips legality checks and Map[cell] indexing used by Evaluate_Cell.
+    */
+    bool Evaluate_Mapped_Cell(ThreatType method,
+                              int mask,
+                              int range,
+                              CellClass const& cell,
+                              TechnoClass const** object,
+                              int& value) const;
+#endif
     bool Evaluate_Object(ThreatType method, int mask, int range, TechnoClass const* object, int& value) const;
     bool Is_Cloaked(HousesType house) const;
     bool Is_Cloaked(HouseClass const* house) const;

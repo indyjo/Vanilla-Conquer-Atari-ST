@@ -388,20 +388,42 @@ void Simple_Text_Print(char const* text, unsigned x, unsigned y, unsigned fore, 
         fontpalette[15] = 205;
     }
 
-    char* tempstr = NULL;
+    /*
+    **	Strip 0xFF bytes if present. Common case (credits, most UI) has none —
+    **	print the caller's string in place. Only when a 0xFF is found do we
+    **	build a filtered copy, preferring a small stack buffer.
+    */
+    char const* printstr = text;
+    char* heapstr = NULL;
+    char stackbuf[128];
 
     if (text) {
-        /*
-        ** remove any 0xff characters from the string
-        */
-        tempstr = new char[strlen(text) + 1];
-        char* tempptr = tempstr;
-
-        for (int i = 0; i < (int)strlen(text) + 1; i++) {
-            if (text[i] != -1) {
-                *tempptr = text[i];
-                tempptr++;
+        char const* p = text;
+        while (*p != '\0' && (unsigned char)*p != 0xFF) {
+            ++p;
+        }
+        if ((unsigned char)*p == 0xFF) {
+            size_t const len = strlen(text);
+            char* dst;
+            if (len < sizeof(stackbuf)) {
+                dst = stackbuf;
+            } else {
+                heapstr = new char[len + 1];
+                dst = heapstr;
             }
+
+            size_t const prefix = (size_t)(p - text);
+            if (prefix) {
+                memcpy(dst, text, prefix);
+            }
+            char* out = dst + prefix;
+            for (; *p != '\0'; ++p) {
+                if ((unsigned char)*p != 0xFF) {
+                    *out++ = *p;
+                }
+            }
+            *out = '\0';
+            printstr = dst;
         }
     }
 
@@ -560,14 +582,14 @@ void Simple_Text_Print(char const* text, unsigned x, unsigned y, unsigned fore, 
     /*
     **	Display the (centered) message if there is one.
     */
-    if (text && *text) {
+    if (printstr && *printstr) {
         switch (flag & (TPF_CENTER | TPF_RIGHT)) {
         case TPF_CENTER:
-            x -= String_Pixel_Width(tempstr) >> 1;
+            x -= String_Pixel_Width(printstr) >> 1;
             break;
 
         case TPF_RIGHT:
-            x -= String_Pixel_Width(tempstr);
+            x -= String_Pixel_Width(printstr);
             break;
 
         default:
@@ -575,11 +597,11 @@ void Simple_Text_Print(char const* text, unsigned x, unsigned y, unsigned fore, 
         }
 
         if (x < (unsigned)SeenBuff.Get_Width() && y < (unsigned)SeenBuff.Get_Height()) {
-            LogicPage->Print(tempstr, x, y, fore, back);
+            LogicPage->Print(printstr, x, y, fore, back);
         }
     }
-    if (tempstr) {
-        delete[] tempstr;
+    if (heapstr) {
+        delete[] heapstr;
     }
 }
 

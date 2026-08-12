@@ -45,6 +45,11 @@
 
 #include "function.h"
 
+#ifdef ATARI_ST
+#include "c2p.h"
+#include "st_blit.h"
+#endif
+
 /*
 **	This is the holding buffer for the text overlap list. This buffer must be in the near
 **	data segment. It will be filled in by the Set_Text() function.
@@ -55,6 +60,30 @@ short HelpClass::OverlapList[50] = {REFRESH_EOL};
 char const* HelpClass::HelpText;
 
 CountDownTimerClass HelpClass::CountDownTimer;
+
+#ifdef ATARI_ST
+/*
+** Pre-allocated ST planar cache for the help tooltip. Rasterized only after the
+** hover countdown expires (and when content changes); Draw_It then blits it.
+*/
+enum
+{
+    HELP_CACHE_MAX_W = 192,
+    HELP_CACHE_MAX_H = 32,
+    HELP_CACHE_BYTES = (HELP_CACHE_MAX_W / 2) * HELP_CACHE_MAX_H
+};
+
+static unsigned char HelpCachePixels[HELP_CACHE_BYTES];
+static GraphicBufferClass HelpCacheBuffer;
+static bool HelpCacheInited;
+static bool HelpCacheValid;
+static int HelpCacheBlitW;
+static int HelpCacheBlitH;
+static int HelpCacheKeyText = TXT_NONE;
+static int HelpCacheKeyCost;
+static int HelpCacheKeyColor;
+static int HelpCacheKeyWidth;
+#endif
 
 /***********************************************************************************************
  * HelpClass::HelpClass -- Default constructor for the help processor.                         *
@@ -82,6 +111,9 @@ HelpClass::HelpClass(void)
     CountDownTimer.Set(0);
     IsRight = false;
     Cost = 0;
+#ifdef ATARI_ST
+    Invalidate_Help_Cache();
+#endif
 }
 
 /***********************************************************************************************
@@ -248,6 +280,9 @@ void HelpClass::Help_Text(int text, int x, int y, int color, bool quick, int cos
         Color = color;
         Text = text;
         Cost = cost;
+#ifdef ATARI_ST
+        Invalidate_Help_Cache();
+#endif
 
         /*
         ** Sidebar passes quick=true (no hover delay). Compute draw coords immediately
@@ -280,6 +315,18 @@ void HelpClass::Draw_It(bool forced)
     TabClass::Draw_It(forced);
 
     if (Text != TXT_NONE && (forced || !CountDownTimer.Time())) {
+
+#ifdef ATARI_ST
+        /*
+        ** Prefer planar cache blit after the countdown has expired. Never rebuild
+        ** the cache while the hover timer is still running.
+        */
+        if (!CountDownTimer.Time() && LogicPage && LogicPage->Get_Graphic_Buffer()
+            && LogicPage->Get_Graphic_Buffer()->Is_ST_Planar() && Ensure_Help_Cache()
+            && Blit_Help_Cache()) {
+            return;
+        }
+#endif
 
         if (LogicPage->Lock()) {
 
@@ -351,6 +398,13 @@ void HelpClass::Set_Text(int text)
         }
         int lines = (Cost) ? 2 : 1;
         memcpy((void*)OverlapList, Text_Overlap_List(Text_String(Text), DrawX - 1, DrawY, lines), sizeof(OverlapList));
+#ifdef ATARI_ST
+        /*
+        ** Layout/metrics changed; rebuild cache on the next visible Draw_It after
+        ** the countdown expires (do not rasterize here during the hover delay).
+        */
+        Invalidate_Help_Cache();
+#endif
     }
 }
 
@@ -402,6 +456,9 @@ bool HelpClass::Scroll_Map(DirType facing, int& distance, bool really)
 void HelpClass::Set_Cost(int cost)
 {
     Cost = cost;
+#ifdef ATARI_ST
+    Invalidate_Help_Cache();
+#endif
 }
 
 void HelpClass::Set_Tactical_Position(COORDINATE coord)
@@ -411,3 +468,125 @@ void HelpClass::Set_Tactical_Position(COORDINATE coord)
     }
     TabClass::Set_Tactical_Position(coord);
 }
+
+#ifdef ATARI_ST
+
+void HelpClass::Invalidate_Help_Cache(void)
+{
+    HelpCacheValid = false;
+    HelpCacheKeyText = TXT_NONE;
+}
+
+bool HelpClass::Ensure_Help_Cache(void)
+{
+    /*
+    ** Never build while the popup delay is still running.
+    */
+    if (CountDownTimer.Time() || Text == TXT_NONE) {
+        return false;
+    }
+
+    if (HelpCacheValid && HelpCacheKeyText == Text && HelpCacheKeyCost == Cost && HelpCacheKeyColor == Color
+        && HelpCacheKeyWidth == Width) {
+        return true;
+    }
+
+    Fancy_Text_Print(TXT_NONE, 0, 0, 0, 0, TPF_MAP | TPF_NOSHADOW);
+
+    int cost_w = 0;
+    if (Cost) {
+        char cbuf[15];
+        sprintf(cbuf, "$%d", Cost);
+        cost_w = String_Pixel_Width(cbuf);
+    }
+
+    /*
+    ** Pixel box matching Draw_It geometry, relative to (DrawX-1, DrawY-1).
+    ** One-line rect ends at FontHeight+1 inclusive; cost adds a second line.
+    */
+    int need_w = Width + 3;
+    if (cost_w + 3 > need_w) {
+        need_w = cost_w + 3;
+    }
+    int need_h = Cost ? (FontHeight * 2 + 1) : (FontHeight + 2);
+    if (need_w < 8) {
+        need_w = 8;
+    }
+    if (need_h < 2) {
+        need_h = 2;
+    }
+    if (need_w > HELP_CACHE_MAX_W || need_h > HELP_CACHE_MAX_H) {
+        return false;
+    }
+
+    if (!HelpCacheInited) {
+        HelpCacheBuffer.Init(
+            HELP_CACHE_MAX_W, HELP_CACHE_MAX_H, HelpCachePixels, HELP_CACHE_BYTES, (int)GBC_ST_PLANAR_LORES);
+        HelpCacheInited = true;
+    }
+
+    GraphicViewPortClass* oldpage = Set_Logic_Page(HelpCacheBuffer);
+    HelpCacheBuffer.Clear(BLACK);
+
+    Fancy_Text_Print(Text, 1, 1, Color, BLACK, TPF_MAP | TPF_NOSHADOW);
+    HelpCacheBuffer.Draw_Rect(0, 0, Width + 2, FontHeight + 1, Color);
+
+    if (Cost) {
+        char buffer[15];
+        sprintf(buffer, "$%d", Cost);
+        Fancy_Text_Print(buffer, 1, FontHeight + 1, Color, BLACK, TPF_MAP | TPF_NOSHADOW);
+        HelpCacheBuffer.Draw_Rect(0, FontHeight + 1, cost_w + 2, FontHeight * 2, Color);
+        HelpCacheBuffer.Draw_Line(1, FontHeight + 1, MIN(cost_w + 1, Width), FontHeight + 1, BLACK);
+    }
+
+    Set_Logic_Page(oldpage);
+
+    HelpCacheBlitW = need_w;
+    HelpCacheBlitH = need_h;
+    HelpCacheKeyText = Text;
+    HelpCacheKeyCost = Cost;
+    HelpCacheKeyColor = Color;
+    HelpCacheKeyWidth = Width;
+    HelpCacheValid = true;
+    return true;
+}
+
+bool HelpClass::Blit_Help_Cache(void)
+{
+    if (!HelpCacheValid || !LogicPage) {
+        return false;
+    }
+
+    GraphicBufferClass* dst_gb = LogicPage->Get_Graphic_Buffer();
+    if (!dst_gb || !dst_gb->Is_ST_Planar() || !dst_gb->Get_Buffer()) {
+        return false;
+    }
+
+    if (!LogicPage->Lock()) {
+        return false;
+    }
+
+    const int src_bpl = ST_Planar_Row_Bytes(HELP_CACHE_MAX_W);
+    int dst_bpl = dst_gb->Get_Pitch();
+    if (dst_bpl <= 0) {
+        dst_bpl = ST_Planar_Row_Bytes(dst_gb->Get_Width());
+    }
+
+    const int dx = LogicPage->Get_XPos() + DrawX - 1;
+    const int dy = LogicPage->Get_YPos() + DrawY - 1;
+    const BOOL ok = ST_Blit_Planar_Rect_Blit(HelpCachePixels,
+                                             src_bpl,
+                                             0,
+                                             0,
+                                             (uint8_t*)dst_gb->Get_Buffer(),
+                                             dst_bpl,
+                                             dx,
+                                             dy,
+                                             HelpCacheBlitW,
+                                             HelpCacheBlitH);
+
+    LogicPage->Unlock();
+    return ok != FALSE;
+}
+
+#endif /* ATARI_ST */

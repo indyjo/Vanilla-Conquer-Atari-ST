@@ -77,6 +77,15 @@ private:
 
     void Set_Text(int text);
 
+#ifdef ATARI_ST
+    /*
+    ** Planar tooltip cache: rasterize once after the hover delay, then blit.
+    */
+    void Invalidate_Help_Cache(void);
+    bool Ensure_Help_Cache(void);
+    bool Blit_Help_Cache(void);
+#endif
+
     /*
     **	If the help text is right justified (as with the help text that pops up over the
     **	sidebar icons), then this flag is set to true.

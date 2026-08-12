@@ -276,10 +276,12 @@ int Confine_Rect(int *x, int *y, int dw, int dh, int width, int height)
 }
 
 // Global variable: Can video driver blit overlapped regions?
+// bool, not BOOL: common/misc.h declares it as bool, and on big-endian the
+// mismatch made every read return false regardless of the value written.
 #ifdef ATARI_ST
-BOOL OverlappedVideoBlits = TRUE;
+bool OverlappedVideoBlits = true;
 #else
-BOOL OverlappedVideoBlits = FALSE;
+bool OverlappedVideoBlits = false;
 #endif
 
 // Global variables for icon caching statistics

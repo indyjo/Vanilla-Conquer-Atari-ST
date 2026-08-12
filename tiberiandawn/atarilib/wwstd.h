@@ -15,7 +15,9 @@
 #define MAKE_LONG(a,b) (((long)(a) << 16) | (long)((b)&0x0000FFFFL))
 
 // Color constants - used in defines.h
-typedef enum {
+// Underlying type must match common/wwstd.h, otherwise this is 4 bytes there
+// and 2 bytes here (ODR violation, wrong half read on big-endian).
+typedef enum : unsigned short {
 	TBLACK,
 	PURPLE,
 	CYAN,

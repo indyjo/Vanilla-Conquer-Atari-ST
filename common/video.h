@@ -9,6 +9,8 @@ enum GBC_Enum
     GBC_NONE = 0,
     GBC_VIDEOMEM = 1,
     GBC_VISIBLE = 2,
+    // ST interleaved 16-color planar; must match atarilib/gbuffer.h (ODR).
+    GBC_ST_PLANAR_LORES = 4,
 };
 
 class VideoSurface;

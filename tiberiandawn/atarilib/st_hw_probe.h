@@ -31,12 +31,6 @@ int ST_Hw_Is_Ste_Sound_Class(void);
  */
 int ST_Hw_Dma_Audio_Available(void);
 
-/*
- * True when the address lies in ST-RAM, i.e. the memory the shifter, the
- * BLiTTER and DMA audio can reach.
- */
-int ST_Hw_Is_St_Ram(const void *addr);
-
 #ifdef __cplusplus
 }
 #endif

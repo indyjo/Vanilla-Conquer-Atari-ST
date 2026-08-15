@@ -248,7 +248,7 @@ enum GBC_Enum {
 	GBC_NONE				= 0,
 	GBC_VIDEOMEM		= 1,
 	GBC_VISIBLE			= 2,
-	/* ST interleaved 16-color planar: Pitch = width/2 bytes per line; typical 320×200 → 32768-byte alloc. */
+	/* ST interleaved 16-color planar: Pitch = width/2 bytes per line; 320×200 → 32000 bytes. */
 	GBC_ST_PLANAR_LORES	= 4,
 };
 

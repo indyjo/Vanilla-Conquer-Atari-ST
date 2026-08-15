@@ -24,7 +24,33 @@
 #include <stdio.h>
 #include <stdint.h>
 
-enum { ST_LORES_PLANAR_BYTES = 32768 };
+enum { ST_LORES_FRAME_BYTES = 32000 };
+
+static unsigned char *Backplane_Page_Alloc = NULL;
+static unsigned char *Backplane_Page = NULL;
+
+void *ST_Screen_Backplane_Page(void)
+{
+	if (Backplane_Page) {
+		return Backplane_Page;
+	}
+
+	Backplane_Page_Alloc = (unsigned char *)Stram_Alloc((unsigned long)ST_LORES_FRAME_BYTES + 255u);
+	if (!Backplane_Page_Alloc) {
+		return NULL;
+	}
+
+	uintptr_t raw = (uintptr_t)Backplane_Page_Alloc;
+	Backplane_Page = (unsigned char *)((raw + 255u) & ~(uintptr_t)255u);
+	return Backplane_Page;
+}
+
+static void Free_Backplane_Page(void)
+{
+	Stram_Free(Backplane_Page_Alloc);
+	Backplane_Page_Alloc = NULL;
+	Backplane_Page = NULL;
+}
 
 static int ST_Current_Video_Matches(long log_base, long phys_base, int rez)
 {
@@ -45,7 +71,7 @@ static void *Alloc_Visible_Plane(int width, int height)
 		return Visible_Plane;
 	}
 
-	Visible_Alloc = (unsigned char *)Stram_Alloc((unsigned long)ST_LORES_PLANAR_BYTES + 256u);
+	Visible_Alloc = (unsigned char *)Stram_Alloc((unsigned long)ST_LORES_FRAME_BYTES + 255u);
 	if (!Visible_Alloc) {
 		return NULL;
 	}
@@ -202,6 +228,7 @@ void ST_Screen_Shutdown_Restore_Tos(void)
 
 	Free_Visible_Plane();
 	Game_Visible_Planar = NULL;
+	Free_Backplane_Page();
 }
 
 void ST_Screen_Hardware_Set_Phys_Base(void *phys)
@@ -338,6 +365,7 @@ void ST_Screen_Shutdown_Restore_Tos(void)
 		}
 	}
 	Palette_ST_Restore_Hardware_State_And_Clear();
+	Free_Backplane_Page();
 }
 
 void ST_Screen_Hardware_Set_Phys_Base(void *phys)

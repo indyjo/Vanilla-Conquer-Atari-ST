@@ -53,9 +53,10 @@ typedef struct StvqHw {
 } StvqHw;
 
 /*
- * screen0/screen1: if both non-NULL, use caller planar buffers. Game path flips
+ * screen0/screen1: if both non-NULL, use caller planar ST-RAM buffers (game
+ * visible page + backplane page; HiddenPage may alias screen1). Game path flips
  * with Setscreen(log=phys=front) then Vsync. If both NULL, allocate ST-RAM
- * screens (standalone; same Setscreen+Vsync flip).
+ * screens (standalone stvqview).
  * enable_audio: non-zero to allocate/use DMA ring when hardware supports it.
  */
 int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, uint8_t *screen1,

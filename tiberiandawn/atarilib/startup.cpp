@@ -312,33 +312,36 @@ int main(int argc, char *argv[])
 		*/
 		if (ScreenWidth == 320 && ScreenHeight == 200) {
 			/*
-			 * ST shifter uses 256-byte-aligned video base. Visible buffer is allocated
-			 * in st_screen.cpp when ST_SEPARATE_DEBUG_SCREEN.
-			 *
-			 * The hidden page is a back buffer for the game's own drawing, and with
-			 * hardware blits off every blit is a CPU copy, so use Alloc (C heap) and leave
-			 * scarce ST-RAM to the shifter and STE DMA audio. Callers that hand
-			 * this page to the video hardware must check the address first: neither
-			 * the BLiTTER nor the shifter can reach alternate RAM.
+			 * Visible page is TOS Logbase (ST-RAM). Backplane page is always
+			 * ST-RAM for STVQ ping-pong. Game HiddenPage uses TT-RAM only when
+			 * the BLiTTER is off and TT-RAM exists; otherwise it aliases the
+			 * backplane so the shifter/BLiTTER can reach it without a second
+			 * ST-RAM frame.
 			 */
-			static unsigned char *st_hidden_alloc = NULL;
-			static unsigned char *st_hidden_plane = NULL;
-			if (!st_hidden_alloc) {
-				st_hidden_alloc = (unsigned char *)(AllowHardwareBlitFills
-					? Stram_Alloc(32768u + 256u)
-					: Alloc(32768u + 256u, MEM_NORMAL));
+			void *backplane = ST_Screen_Backplane_Page();
+			if (!backplane) {
+				printf("C&C - Failed to allocate backplane page.\n");
+				if (Palette) delete [] Palette;
+				ST_Init_Await_Keypress();
+				return (EXIT_FAILURE);
+			}
+			void *hidden_plane = backplane;
+			if (!AllowHardwareBlitFills && ST_Blitter_Has_Ttram()) {
+				static unsigned char *st_hidden_alloc = NULL;
+				if (!st_hidden_alloc) {
+					st_hidden_alloc = (unsigned char *)Alloc(32000u, MEM_NORMAL);
+				}
 				if (!st_hidden_alloc) {
 					printf("C&C - Failed to allocate hidden planar page.\n");
 					if (Palette) delete [] Palette;
 					ST_Init_Await_Keypress();
 					return (EXIT_FAILURE);
 				}
-				uintptr_t raw_h = (uintptr_t)st_hidden_alloc;
-				st_hidden_plane = (unsigned char *)((raw_h + 255u) & ~(uintptr_t)255u);
+				hidden_plane = st_hidden_alloc;
 			}
 			void *vis_plane = ST_Screen_Register_Game_Visible(320, 200);
-			VisiblePage.Init(320, 200, vis_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
-			HiddenPage.Init(320, 200, st_hidden_plane, 32768, (GBC_Enum)GBC_ST_PLANAR_LORES);
+			VisiblePage.Init(320, 200, vis_plane, 32000, (GBC_Enum)GBC_ST_PLANAR_LORES);
+			HiddenPage.Init(320, 200, hidden_plane, 32000, (GBC_Enum)GBC_ST_PLANAR_LORES);
 			VisiblePage.Clear(0);
 			HiddenPage.Clear(0);
 			ST_Screen_Apply_Game_Video_Hardware();

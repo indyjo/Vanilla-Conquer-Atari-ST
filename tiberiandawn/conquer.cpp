@@ -83,7 +83,6 @@
 #include "atarilib/stvq/stvq_hw.h"
 #include "atarilib/stvq/stvq_io.h"
 #include "atarilib/stvq/stvq_player.h"
-#include "atarilib/st_hw_probe.h"
 #include "st_sprite_cache.h"
 #include <limits.h>
 
@@ -117,16 +116,7 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 	StvqPlayer player;
 	StvqFrame frame;
 	uint8_t* visible0 = (uint8_t*)VisiblePage.Get_Buffer();
-	uint8_t* hidden0 = (uint8_t*)HiddenPage.Get_Buffer();
-	/*
-	 * The player makes both pages the video base, and the shifter cannot read
-	 * alternate RAM. Pass neither rather than one it cannot show; it then
-	 * allocates its own ST-RAM screens.
-	 */
-	if (!ST_Hw_Is_St_Ram(visible0) || !ST_Hw_Is_St_Ram(hidden0)) {
-		visible0 = NULL;
-		hidden0 = NULL;
-	}
+	uint8_t* hidden0 = (uint8_t*)ST_Screen_Backplane_Page();
 	int yielded = 0;
 	int first = 1;
 	unsigned vbl_accum = 0;
@@ -2511,8 +2501,9 @@ void Play_Movie(char const* name, ThemeType theme, bool clrscrn)
 #ifdef ATARI_ST
         /*
         **	Atari ST: stream FORM STVQ under the same .VQA name. Real Westwood VQA
-        **	or bad headers soft-skip like a missing clip. Phys ping-pong only on
-        **	VisiblePage/HiddenPage; restore entry Visible phys on every exit.
+        **	or bad headers soft-skip like a missing clip. Phys ping-pong on
+        **	VisiblePage and the ST-RAM backplane page; restore entry Visible
+        **	phys on every exit.
         */
         {
             CCFileClass file(fullname);

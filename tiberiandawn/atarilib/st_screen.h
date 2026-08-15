@@ -25,6 +25,13 @@ int ST_Screen_Enter_LoRes_Game_Video(void);
 /* Allocate (if needed) and return the planar pointer VisiblePage should use. */
 void *ST_Screen_Register_Game_Visible(int width, int height);
 
+/*
+ * ST-RAM backplane page for STVQ ping-pong (32000-byte LoRes + 255-byte align slop).
+ * HiddenPage aliases this unless software blits + TT-RAM give it its own buffer.
+ * Allocate at video init; NULL if ST-RAM is exhausted.
+ */
+void *ST_Screen_Backplane_Page(void);
+
 /* Low res ($FF8260) + shifter video base -> game buffer (OS Logbase unchanged). */
 void ST_Screen_Apply_Game_Video_Hardware(void);
 

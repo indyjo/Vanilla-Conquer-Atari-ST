@@ -51,6 +51,12 @@
 #include	"../../common/timer_st_vbl.h"
 #include	<mint/cookie.h>
 
+/*
+ * TOS crt0 (`__stksize`): bytes reserved above the heap. Mintlib default is 64 KiB.
+ * 32 KiB is enough for this port and returns 32 KiB to GEMDOS/malloc.
+ */
+extern "C" long _stksize = 32768L;
+
 static bool Game_Still_Initializing = true;
 static bool Init_Keypress_Shown = false;
 

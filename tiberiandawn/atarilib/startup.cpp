@@ -89,11 +89,10 @@ void ST_Init_Await_Keypress(void)
 }
 
 /*
- * Hardware BLiTTER on 68000–030 with no TT-RAM (typical STe / Falcon ST-RAM).
- * 040+ copyback D-cache is not coherent with the chip; we skip cache sync and
- * force soft blit instead. TT-RAM cannot be addressed by the BLiTTER, so when
- * it is present we prefer soft blit and keep game buffers out of scarce ST-RAM.
- * 030 write-through is left alone (no sync): BLiTTER wins the Falcon ST-RAM path.
+ * Hardware BLiTTER when the chip exists and CONQUER.INI HardwareFills=1.
+ * 040+ copyback and TT-RAM (BLiTTER-unreachable) used to force soft blit;
+ * HardwareFills=1 keeps the chip on in those cases. No chip or HardwareFills=0
+ * still means software blits. 030 write-through is left alone (no cache sync).
  */
 static int ST_Blitter_Cpu_Needs_Soft_Blit(void)
 {
@@ -130,14 +129,10 @@ static void Probe_ST_Blitter(void)
 		return;
 	}
 	if (ST_Blitter_Cpu_Needs_Soft_Blit()) {
-		AllowHardwareBlitFills = FALSE;
-		DBG_INFO("Using software blits (68040+ copyback cache)");
-		return;
+		DBG_WARN("HardwareFills=1: using BLiTTER despite 68040+ copyback cache");
 	}
 	if (ST_Blitter_Has_Ttram()) {
-		AllowHardwareBlitFills = FALSE;
-		DBG_INFO("Using software blits (TT-RAM present)");
-		return;
+		DBG_WARN("HardwareFills=1: using BLiTTER despite TT-RAM (keep blit buffers in ST-RAM)");
 	}
 
 	Blitmode(BLIT_HARD);

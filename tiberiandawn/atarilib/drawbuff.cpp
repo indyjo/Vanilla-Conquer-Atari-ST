@@ -564,7 +564,7 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 		}
 	}
 
-	/* Full-buffer planar -> planar: byte-identical copy (same layout as C2P / Setscreen). */
+	/* Full-buffer planar -> planar: linear copy (blitter when enabled). */
 	{
 		const int src_bpl = GB_ST_Planar_Row_Bytes(src_gb);
 		const int dst_bpl = GB_ST_Planar_Row_Bytes(dest_gb);
@@ -579,7 +579,7 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 			&& dest_vp->Get_XPos() == 0 && dest_vp->Get_YPos() == 0
 			&& src_root && dst_root
 			&& src_bytes == (long)dst_bpl * (long)dest_gb->Get_Height()) {
-			memcpy(dst_root, src_root, (size_t)src_bytes);
+			ST_Blit_Linear_Copy(dst_root, src_root, (unsigned long)src_bytes);
 			return TRUE;
 		}
 	}

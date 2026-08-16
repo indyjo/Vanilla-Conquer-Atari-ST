@@ -10,6 +10,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 enum {
 	ST_BLIT_SKEW_NFSR = 0x40u,
@@ -393,6 +394,55 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 		hog);
 
 	ST_FRAME_BAR_BLIT_END();
+	return TRUE;
+}
+
+BOOL ST_Blit_Linear_Copy(void *dst, const void *src, unsigned long nbytes)
+{
+	if (!dst || !src) {
+		return FALSE;
+	}
+	if (nbytes == 0) {
+		return TRUE;
+	}
+
+	const uintptr_t dst_u = (uintptr_t)dst;
+	const uintptr_t src_u = (uintptr_t)src;
+	const bool aligned = ((dst_u | src_u | nbytes) & 1ul) == 0ul;
+
+	if (!AllowHardwareBlitFills || !aligned) {
+		memcpy(dst, src, (size_t)nbytes);
+		return TRUE;
+	}
+
+	ST_Blit_Backend &hw = ST_Blit_HW_Backend();
+	uint8_t *d = (uint8_t *)dst;
+	const uint8_t *s = (const uint8_t *)src;
+	unsigned long nwords = nbytes / 2ul;
+
+	ST_Blitter plan{};
+	plan.src_x_inc = 2;
+	plan.src_y_inc = 2;
+	plan.endmask1 = 0xFFFFu;
+	plan.endmask2 = 0xFFFFu;
+	plan.endmask3 = 0xFFFFu;
+	plan.dst_x_inc = 2;
+	plan.dst_y_inc = 2;
+	plan.hop = 2;
+	plan.op = 3;
+	plan.skew = 0;
+
+	while (nwords > 0) {
+		const uint16_t chunk = (nwords > 65535ul) ? 65535u : (uint16_t)nwords;
+		plan.x_count = chunk;
+		hw.Await();
+		hw.Program(plan);
+		hw.Execute(false, 1, (void *)s, d);
+		s += (size_t)chunk * 2u;
+		d += (size_t)chunk * 2u;
+		nwords -= chunk;
+	}
+	hw.Await();
 	return TRUE;
 }
 

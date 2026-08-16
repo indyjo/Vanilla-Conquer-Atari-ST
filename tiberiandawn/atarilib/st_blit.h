@@ -47,6 +47,15 @@ enum {
 	ST_BLIT_CTRL_START_HOG = 0xC0u
 };
 
+/*
+ * Contiguous word copy (src_x_inc = dst_x_inc = 2), one pass — not four
+ * bitplanes. Uses the hardware blitter when AllowHardwareBlitFills is set
+ * (shared, non-HOG). Waits for completion via Await (ST/STE premature
+ * restart; Falcon BUSY poll). Otherwise memcpy. Odd sizes or odd
+ * addresses fall back to memcpy.
+ */
+BOOL ST_Blit_Linear_Copy(void *dst, const void *src, unsigned long nbytes);
+
 BOOL ST_Blit_Planar_Screen_Rect_Blit(
 	const uint8_t *src_root,
 	uint8_t *dst_root,

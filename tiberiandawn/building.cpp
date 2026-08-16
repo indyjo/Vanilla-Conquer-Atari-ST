@@ -116,6 +116,16 @@ static int Building_Idle_Throttled_Rate(BStateType state, int rate)
     return rate;
 }
 
+static bool Skip_Building_Construction_Frames(BStateType state)
+{
+#ifdef ATARI_ST
+    return SkipBuildingConstructionAnims && state == BSTATE_CONSTRUCTION;
+#else
+    (void)state;
+    return false;
+#endif
+}
+
 enum SAMState
 {
     SAM_NONE = -1,   // Used for non SAM site buildings.
@@ -533,6 +543,17 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
         if (Mission == MISSION_DECONSTRUCTION) {
             shapenum = (Class->Anims[BState].Start + Class->Anims[BState].Count - 1) - shapenum;
         }
+        if (Skip_Building_Construction_Frames(BState)) {
+            /*
+            **	Keep a static frame for the whole construction/sell delay so the
+            **	footprint is not redrawn on every buildup stage. Timing is unchanged.
+            */
+            if (Mission == MISSION_DECONSTRUCTION) {
+                shapenum = Class->Anims[BState].Start + Class->Anims[BState].Count - 1;
+            } else {
+                shapenum = Class->Anims[BState].Start;
+            }
+        }
 
     } else {
 
@@ -921,7 +942,7 @@ void BuildingClass::AI(void)
     /*
     **	Always refresh the SAM site if it has an animation change.
     */
-    if (*this == STRUCT_SAM && stagechange)
+    if (*this == STRUCT_SAM && stagechange && !Skip_Building_Construction_Frames(BState))
         Mark(MARK_CHANGE);
 
     if ((!Class->IsTurretEquipped && *this != STRUCT_OBELISK) || Mission == MISSION_CONSTRUCTION
@@ -954,7 +975,9 @@ void BuildingClass::AI(void)
             if (Fetch_Stage() >= ctrl->Start + ctrl->Count) {
                 toloop = true;
             }
-            Mark(MARK_CHANGE);
+            if (!Skip_Building_Construction_Frames(BState)) {
+                Mark(MARK_CHANGE);
+            }
         } else {
             if (BState == BSTATE_NONE || Fetch_Rate() == 0) {
                 IsReadyToCommence = true;
@@ -984,7 +1007,9 @@ void BuildingClass::AI(void)
             Set_Rate(Building_Idle_Throttled_Rate(BState, ctrl->Rate));
         }
         Set_Stage(ctrl->Start);
-        Mark(MARK_CHANGE);
+        if (!Skip_Building_Construction_Frames(BState)) {
+            Mark(MARK_CHANGE);
+        }
     }
 
     /*
@@ -1049,6 +1074,7 @@ void BuildingClass::AI(void)
                 Set_Rate(Building_Idle_Throttled_Rate(BState, ctrl->Rate));
             }
             Set_Stage(ctrl->Start);
+            Mark(MARK_CHANGE);
         }
         QueueBState = BSTATE_NONE;
     }

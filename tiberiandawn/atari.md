@@ -400,8 +400,9 @@ Optional keys next to `cnc.tos`. Missing keys keep the listed default.
 | `HardwareFills` | auto | Use the BLiTTER when the chip is present. Auto skips it on 68040+ (copyback) and when TT-RAM is present; `1` forces it on, `0` forces CPU blits. |
 | `ThrottleBuildingIdleAnims` | auto | Slow building idle / refinery-full loops by 4×. |
 | `ThrottleInfantryIdleAnims` | auto | Infantry fidgets (idle, salute, gesture, facing) at 1/4 rate. Nikoomba and civilian scatter stay full rate. |
+| `SkipBuildingConstructionAnims` | auto | Hold a static buildup/sell frame; construction time is unchanged. |
 
-Throttle keys and `HardwareFills`: omit or `-1` = auto, `0` = off, `1` = on. Idle-anim auto runs a short 200 Hz CPU probe at boot (`atarilib/st_autotune.cpp`) and throttles on ≤16 MHz-class machines (`ST_AUTOTUNE_16MHZ_MAX_LOOPS`). Decisions are logged in `cnc.log`.
+Throttle keys, `SkipBuildingConstructionAnims`, and `HardwareFills`: omit or `-1` = auto, `0` = off, `1` = on. Idle-anim and construction-skip auto run a short 200 Hz CPU probe at boot (`atarilib/st_autotune.cpp`) and enable on ≤16 MHz-class machines (`ST_AUTOTUNE_16MHZ_MAX_LOOPS`). Decisions are logged in `cnc.log`.
 
 ## Runtime Usage
 

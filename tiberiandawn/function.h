@@ -282,6 +282,7 @@ typedef struct NodeNameTag
 
 #ifdef ATARI_ST
 #include "ATARILIB/misc.h"
+#include "st_autotune.h"
 void Set_Video_Cursor_Clip(bool clipped);
 #endif
 

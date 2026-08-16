@@ -102,6 +102,20 @@
 */
 #include "sidebarglyphx.h"
 
+static int Building_Idle_Throttled_Rate(BStateType state, int rate)
+{
+#ifdef ATARI_ST
+    if (ThrottleBuildingIdleAnims && rate > 0 && (state == BSTATE_IDLE || state == BSTATE_FULL)) {
+        int throttled = rate * ST_IDLE_ANIM_THROTTLE_FACTOR;
+        if (throttled > 255) {
+            throttled = 255;
+        }
+        return throttled;
+    }
+#endif
+    return rate;
+}
+
 enum SAMState
 {
     SAM_NONE = -1,   // Used for non SAM site buildings.
@@ -434,26 +448,26 @@ void BuildingClass::Debug_Dump(MonoClass* mono) const
 {
     Validate();
     mono->Set_Cursor(0, 0);
-    mono->Print("Name:Mission:TarCom:Radio:Coord:St:?\n"
-                "                                                                      \n"
-                "NYHealth:Turret:Building:Cargo:?\n"
-                "Active........                                                       \n"
-                "Limbo.........  ?\n"
-                "Owned.........  Last Message:                                             \n"
-                "Discovered....  Timer:Arm:Tiberium:Flash:Stage:\n"
-                "Selected......                                                       \n"
-                "Teathered.....                  \n"
-                "Locked on Map.                                                             \n"
-                "Is A Loaner...                                                             \n"
-                "                                                                           \n"
-                "                                                                           \n"
-                "                                                                           \n"
-                "Repairing.....                                                             \n"
-                "                                                                           \n"
-                "                                                                           \n"
-                "Recoiling.....                                                             \n"
-                "To Display....                                                             \n"
-                "                                                           \n");
+    mono->Print("?Name:???????????????Mission:????TarCom:?????????Radio:?Coord:????????????St:?\n"
+                "?                   ?           ?       ?       ?      ?        ?        ?    ?\n"
+                "????????????????N?Y?Health:????????Turret:?????????Building:???Cargo:?????????\n"
+                "?Active........? ? ?        ?     ?       ?      ?            ?               ?\n"
+                "?Limbo.........? ? ???????????????????????????????????????????????????????????\n"
+                "?Owned.........? ? ?Last Message:                                             ?\n"
+                "?Discovered....? ? ?Timer:?Arm:????????Tiberium:?Flash:?Stage:?????????????????\n"
+                "?Selected......? ? ?      ?    ?      ?         ?      ?      ?                \n"
+                "?Teathered.....? ? ????????????????????????????????????????????                \n"
+                "?Locked on Map.? ? ?                                                           \n"
+                "?Is A Loaner...? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?Repairing.....? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?Recoiling.....? ? ?                                                           \n"
+                "?To Display....? ? ?                                                           \n"
+                "????????????????????                                                           \n");
     mono->Set_Cursor(1, 1);
     mono->Printf("%s:%s", House->Class->IniName, Class->IniName);
     mono->Set_Cursor(35, 3);
@@ -965,9 +979,9 @@ void BuildingClass::AI(void)
     if (toloop) {
         BuildingTypeClass::AnimControlType const* ctrl = Fetch_Anim_Control();
         if (BState == BSTATE_CONSTRUCTION || BState == BSTATE_IDLE) {
-            Set_Rate(Options.Normalize_Delay(ctrl->Rate));
+            Set_Rate(Building_Idle_Throttled_Rate(BState, Options.Normalize_Delay(ctrl->Rate)));
         } else {
-            Set_Rate(ctrl->Rate);
+            Set_Rate(Building_Idle_Throttled_Rate(BState, ctrl->Rate));
         }
         Set_Stage(ctrl->Start);
         Mark(MARK_CHANGE);
@@ -1030,9 +1044,9 @@ void BuildingClass::AI(void)
             BState = QueueBState;
             BuildingTypeClass::AnimControlType const* ctrl = Fetch_Anim_Control();
             if (BState == BSTATE_CONSTRUCTION || BState == BSTATE_IDLE) {
-                Set_Rate(Options.Normalize_Delay(ctrl->Rate));
+                Set_Rate(Building_Idle_Throttled_Rate(BState, Options.Normalize_Delay(ctrl->Rate)));
             } else {
-                Set_Rate(ctrl->Rate);
+                Set_Rate(Building_Idle_Throttled_Rate(BState, ctrl->Rate));
             }
             Set_Stage(ctrl->Start);
         }
@@ -3232,7 +3246,7 @@ void BuildingClass::Begin_Mode(BStateType bstate)
         if (Class->IsRegulated && bstate != BSTATE_CONSTRUCTION) {
             rate = Options.Normalize_Delay(rate);
         }
-        Set_Rate(rate);
+        Set_Rate(Building_Idle_Throttled_Rate(bstate, rate));
         Set_Stage(ctrl->Start);
     }
 }

@@ -180,26 +180,26 @@ void InfantryClass::Debug_Dump(MonoClass* mono) const
 {
     Validate();
     mono->Set_Cursor(0, 0);
-    mono->Print("ÚName:ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂMission:ÄÄÄÂTarCom:ÂNavCom:ÂRadio:ÂCoord:ÄÄÂHeadTo:ÄÂSt:Ä¿\n"
-                "³                   ³           ³       ³       ³      ³        ³        ³    ³\n"
-                "ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂNÂYÂHealth:ÄÂBody:ÂTurret:ÂSpeed:ÂPath:ÁÄÄÄÄÄÄÂCargo:ÄÄÄÄÁÄÄÄÄ´\n"
-                "³Active........³ ³ ³        ³     ³       ³      ³            ³               ³\n"
-                "³Limbo.........³ ³ ÃÄÄÄÄÄÄÄÄÁÄÄÄÄÄÁÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\n"
-                "³Owned.........³ ³ ³Last Message:                                             ³\n"
-                "³Discovered....³ ³ ÃTimer:ÂArm:ÂTrack:ÂTiberium:ÂFlash:ÂStage:ÂTeam:ÄÄÄÄÂArch:´\n"
-                "³Selected......³ ³ ³      ³    ³      ³         ³      ³      ³         ³     ³\n"
-                "³Teathered.....³ ³ ÃÄÄÄÄÄÄÁÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÙ\n"
-                "³Locked on Map.³ ³ ³                                                           \n"
-                "³Is Prone......³ ³ ³                                                           \n"
-                "³Is A Loner....³ ³ ³                                                           \n"
-                "³Deploying.....³ ³ ³                                                           \n"
-                "³Rotating......³ ³ ³                                                           \n"
-                "³Firing........³ ³ ³                                                           \n"
-                "³Driving.......³ ³ ³                                                           \n"
-                "³To Look.......³ ³ ³                                                           \n"
-                "³Recoiling.....³ ³ ³                                                           \n"
-                "³To Display....³ ³ ³                                                           \n"
-                "ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÁÄÙ                                                           \n");
+    mono->Print("Name:Mission:TarCom:NavCom:Radio:Coord:HeadTo:St:?\n"
+                "                                                                      \n"
+                "NYHealth:Body:Turret:Speed:Path:Cargo:?\n"
+                "Active........                                                       \n"
+                "Limbo.........  ?\n"
+                "Owned.........  Last Message:                                             \n"
+                "Discovered....  Timer:Arm:Track:Tiberium:Flash:Stage:Team:Arch:\n"
+                "Selected......                                                     \n"
+                "Teathered.....  \n"
+                "Locked on Map.                                                             \n"
+                "Is Prone......                                                             \n"
+                "Is A Loner....                                                             \n"
+                "Deploying.....                                                             \n"
+                "Rotating......                                                             \n"
+                "Firing........                                                             \n"
+                "Driving.......                                                             \n"
+                "To Look.......                                                             \n"
+                "Recoiling.....                                                             \n"
+                "To Display....                                                             \n"
+                "                                                           \n");
     mono->Set_Cursor(1, 1);
     mono->Printf("%s:%s", House->Class->IniName, Class->IniName);
     mono->Text_Print("X", 16 + (IsProne ? 2 : 0), 10);
@@ -1991,7 +1991,20 @@ void InfantryClass::Random_Animate(void)
             }
         }
 
-        switch (Random_Pick(0, 55)) {
+        int pick = Random_Pick(0, 55);
+#ifdef ATARI_ST
+        /*
+        **	On slow machines, cosmetic fidgets (idle, salute, gesture, facing)
+        **	run at 1/4 the usual rate. Nikoomba and civilian wander stay full rate.
+        */
+        if (ThrottleInfantryIdleAnims && *this != INFANTRY_C10) {
+            bool cosmetic = (pick <= 4 || (pick >= 10 && pick <= 13));
+            if (cosmetic && Random_Pick(0, ST_IDLE_ANIM_THROTTLE_FACTOR - 1) != 0) {
+                pick = -1;
+            }
+        }
+#endif
+        switch (pick) {
         case 10:
             Do_Action(DO_SALUTE1);
             break;

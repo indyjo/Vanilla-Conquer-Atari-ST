@@ -2,6 +2,17 @@
 
 This file collects Atari ST port specific implementation notes.
 
+## Contents
+
+- [ST16 ICN iconset format](#st16-icn-iconset-format)
+- [SHPX KeyFrame SHP format](#shpx-external-pool-keyframe-shp-format)
+- [CONQUER.INI](#conquerini-options)
+- [Runtime Usage](#runtime-usage)
+- [Regenerating W16 Files](#regenerating-w16-files)
+- [Required MIX files](#required-mix-files)
+- [AUDX audio format](#audx-external-pool-audio-format)
+- [Preparing MIX files](#preparing-mix-files-remix-web)
+
 ## ST16 ICN iconset format
 
 Westwood **ICN iconsets** (the `IControl_Type` blob in `tile.h`) hold terrain stamp graphics (roads, water, slopes, clear, etc.) and other icons such as `TRANS.ICN`. The Atari port adds an optional **ST16** extension for **blitter-ready** ST interleaved 16-color planar icon data.
@@ -379,6 +390,18 @@ Rules:
 - `subset[pen]` is the VGA palette index displayed on hardware pen `pen` (used by `Set_Palette` via `C2P_HW_Palette_Subset`).
 
 Theaters and WSAs load the file with `CCFileClass`, validate with `C2P_WeightSet_Validate()`, and install via `C2P_Install_CustomWeights()`. LUTs are baked once during install; the file buffer is not retained. **Legacy 4096-byte weight-only files are not accepted.**
+
+## CONQUER.INI `[Options]`
+
+Optional keys next to `cnc.tos`. Missing keys keep the listed default.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `HardwareFills` | `1` | Use the BLiTTER when the chip is present (`0` = CPU blits). |
+| `ThrottleBuildingIdleAnims` | auto | Slow building idle / refinery-full loops by 4×. |
+| `ThrottleInfantryIdleAnims` | auto | Infantry fidgets (idle, salute, gesture, facing) at 1/4 rate. Nikoomba and civilian scatter stay full rate. |
+
+For the two throttle keys: omit or `-1` = auto, `0` = off, `1` = on. Auto runs a short 200 Hz CPU probe at boot (`atarilib/st_autotune.cpp`) and enables throttling on ≤16 MHz-class machines (`ST_AUTOTUNE_16MHZ_MAX_LOOPS`). Decisions are logged in `cnc.log`.
 
 ## Runtime Usage
 

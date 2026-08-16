@@ -89,11 +89,13 @@ void ST_Init_Await_Keypress(void)
 }
 
 /*
- * Hardware BLiTTER when the chip exists and CONQUER.INI HardwareFills=1.
- * 040+ copyback and TT-RAM (BLiTTER-unreachable) used to force soft blit;
- * HardwareFills=1 keeps the chip on in those cases. No chip or HardwareFills=0
- * still means software blits. 030 write-through is left alone (no cache sync).
+ * Hardware BLiTTER when the chip exists, unless 040+ copyback or TT-RAM
+ * (BLiTTER-unreachable) would make it unsafe. CONQUER.INI HardwareFills=1
+ * forces the chip on anyway; HardwareFills=0 forces software. Omit / -1 = auto.
+ * 030 write-through is left alone (no cache sync).
  */
+static int HardwareFillsIni = -1;
+
 static int ST_Blitter_Cpu_Needs_Soft_Blit(void)
 {
 	long cpu = 0;
@@ -124,15 +126,32 @@ static void Probe_ST_Blitter(void)
 	}
 	DBG_INFO("Atari BLiTTER chip available");
 
-	if (!AllowHardwareBlitFills) {
-		DBG_INFO("Using software blits due to config");
+	if (HardwareFillsIni == 0) {
+		AllowHardwareBlitFills = FALSE;
+		DBG_INFO("Using software blits due to HardwareFills=0");
 		return;
 	}
-	if (ST_Blitter_Cpu_Needs_Soft_Blit()) {
-		DBG_WARN("HardwareFills=1: using BLiTTER despite 68040+ copyback cache");
-	}
-	if (ST_Blitter_Has_Ttram()) {
-		DBG_WARN("HardwareFills=1: using BLiTTER despite TT-RAM (keep blit buffers in ST-RAM)");
+
+	int const risky = ST_Blitter_Cpu_Needs_Soft_Blit() || ST_Blitter_Has_Ttram();
+	if (HardwareFillsIni > 0) {
+		AllowHardwareBlitFills = TRUE;
+		if (ST_Blitter_Cpu_Needs_Soft_Blit()) {
+			DBG_WARN("HardwareFills=1: using BLiTTER despite 68040+ copyback cache");
+		}
+		if (ST_Blitter_Has_Ttram()) {
+			DBG_WARN("HardwareFills=1: using BLiTTER despite TT-RAM (keep blit buffers in ST-RAM)");
+		}
+	} else if (risky) {
+		AllowHardwareBlitFills = FALSE;
+		if (ST_Blitter_Cpu_Needs_Soft_Blit()) {
+			DBG_INFO("Using software blits (68040+ copyback; set HardwareFills=1 to force BLiTTER)");
+		}
+		if (ST_Blitter_Has_Ttram()) {
+			DBG_INFO("Using software blits (TT-RAM; set HardwareFills=1 to force BLiTTER)");
+		}
+		return;
+	} else {
+		AllowHardwareBlitFills = TRUE;
 	}
 
 	Blitmode(BLIT_HARD);
@@ -627,7 +646,7 @@ void Read_Setup_Options( RawFileClass *config_file )
 		config_file->Read (buffer, config_file->Size());
 
 		VideoBackBufferAllowed = WWGetPrivateProfileInt ("Options", "VideoBackBuffer", 1, buffer);
-		AllowHardwareBlitFills = WWGetPrivateProfileInt ("Options", "HardwareFills", 1, buffer);
+		HardwareFillsIni = WWGetPrivateProfileInt ("Options", "HardwareFills", -1, buffer);
 		//ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
 		IsV107 = WWGetPrivateProfileInt ("Options", "Compatibility", 0, buffer);
 		throttle_building_idle = WWGetPrivateProfileInt ("Options", "ThrottleBuildingIdleAnims", -1, buffer);

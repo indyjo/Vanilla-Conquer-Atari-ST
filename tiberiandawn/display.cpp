@@ -493,6 +493,9 @@ DisplayClass::DisplayClass(void)
     IsRubberBand = false;
     IsTentative = false;
     IsSellMode = false;
+#ifdef ATARI_ST
+    DidScrollThisFrame = false;
+#endif
 }
 
 /***********************************************************************************************
@@ -614,6 +617,9 @@ void DisplayClass::Init_Clear(void)
     IsRubberBand = false;
     IsTentative = false;
     IsSellMode = false;
+#ifdef ATARI_ST
+    DidScrollThisFrame = false;
+#endif
 
     /*
     ** Empty all the display's layers
@@ -1935,6 +1941,9 @@ bool DisplayClass::Scroll_Map(DirType facing, int& distance, bool really)
         Set_Tactical_Position(coord);
         IsToRedraw = true;
         Flag_To_Redraw(false);
+#ifdef ATARI_ST
+        DidScrollThisFrame = true;
+#endif
     }
     return (true);
 }

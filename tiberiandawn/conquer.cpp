@@ -1837,6 +1837,10 @@ bool Main_Loop()
 
     ST_FRAME_BAR_FRAME_BEGIN();
 
+#ifdef ATARI_ST
+    Map.Reset_Map_Scroll_Pulse();
+#endif
+
     //	InMainLoop = true;
 
     /*
@@ -1940,43 +1944,40 @@ bool Main_Loop()
     */
     Map.Layer[LAYER_GROUND].Sort();
 
-    //	Heap_Dump_Check( "Before Logic.AI" );
+#ifdef ATARI_ST
+    bool const freeze_logic = FreezeAIDuringMapGestures
+        && (GameToPlay == GAME_NORMAL || GameToPlay == GAME_SKIRMISH)
+        && !RecordGame && !PlaybackGame && !Debug_Map
+        && Map.Is_Busy_With_Map_Gesture();
+#else
+    bool const freeze_logic = false;
+#endif
 
-    /*
-    **	AI logic operations are performed here.
-    */
-    Logic.AI();
+    if (!freeze_logic) {
+        Logic.AI();
 
-    //	Heap_Dump_Check( "After Logic.AI" );
+        /*
+        **	Manage the inter-player message list.  If Manage() returns true, it means
+        **	a message has expired & been removed, and the entire map must be updated.
+        */
+        if (Messages.Manage()) {
+            HiddenPage.Clear();
+            Map.Flag_To_Redraw(true);
+        }
 
-    /*
-    **	Manage the inter-player message list.  If Manage() returns true, it means
-    **	a message has expired & been removed, and the entire map must be updated.
-    */
-    if (Messages.Manage()) {
-        HiddenPage.Clear();
-        Map.Flag_To_Redraw(true);
+        ProcessTicks += ProcessTimer.Time();
+        ProcessFrames++;
+
+        /*
+        **	Process all commands that are ready to be processed.
+        */
+        Queue_AI();
+
+        /*
+        **	Keep track of elapsed time in the game.
+        */
+        Score.ElapsedTime += TIMER_SECOND / TICKS_PER_SECOND;
     }
-
-    //
-    // Measure how long it took to process the AI
-    //
-    ProcessTicks += ProcessTimer.Time();
-    ProcessFrames++;
-
-    //	Heap_Dump_Check( "Before Queue_AI" );
-
-    /*
-    **	Process all commands that are ready to be processed.
-    */
-    Queue_AI();
-
-    // Heap_Dump_Check( "After Queue_AI" );
-
-    /*
-    **	Keep track of elapsed time in the game.
-    */
-    Score.ElapsedTime += TIMER_SECOND / TICKS_PER_SECOND;
 
     Call_Back();
 
@@ -1985,7 +1986,7 @@ bool Main_Loop()
     /*
     **	Perform any win/lose code as indicated by the global control flags.
     */
-    if (EndCountDown)
+    if (!freeze_logic && EndCountDown)
         EndCountDown--;
 
     /*
@@ -2039,13 +2040,15 @@ bool Main_Loop()
     **	The frame logic has been completed. Increment the frame
     **	counter.
     */
-    Frame++;
+    if (!freeze_logic) {
+        Frame++;
 
-    /*
-    ** Very rarely, the human players will get a message from the computer.
-    */
-    if (GameToPlay == GAME_SKIRMISH && MPlayerGhosts && Random_Pick(0, 10000) == 1) {
-        Computer_Message();
+        /*
+        ** Very rarely, the human players will get a message from the computer.
+        */
+        if (GameToPlay == GAME_SKIRMISH && MPlayerGhosts && Random_Pick(0, 10000) == 1) {
+            Computer_Message();
+        }
     }
 
     /*

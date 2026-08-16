@@ -11,6 +11,7 @@
 bool ThrottleBuildingIdleAnims = false;
 bool ThrottleInfantryIdleAnims = false;
 bool SkipBuildingConstructionAnims = false;
+bool FreezeAIDuringMapGestures = false;
 
 /*
  * Sample window in _hz_200 ticks (200 Hz). 40 ticks = 200 ms.
@@ -67,7 +68,7 @@ static bool St_Autotune_Apply_Override(int ini, bool auto_on)
 	return ini != 0;
 }
 
-void ST_Autotune_Configure(int building_ini, int infantry_ini, int skip_buildup_ini)
+void ST_Autotune_Configure(int building_ini, int infantry_ini, int skip_buildup_ini, int freeze_gestures_ini)
 {
 	unsigned long const loops = St_Autotune_Probe_Loops();
 	bool const slow_16mhz = (loops <= (unsigned long)ST_AUTOTUNE_16MHZ_MAX_LOOPS);
@@ -81,13 +82,16 @@ void ST_Autotune_Configure(int building_ini, int infantry_ini, int skip_buildup_
 	ThrottleBuildingIdleAnims = St_Autotune_Apply_Override(building_ini, slow_16mhz);
 	ThrottleInfantryIdleAnims = St_Autotune_Apply_Override(infantry_ini, slow_16mhz);
 	SkipBuildingConstructionAnims = St_Autotune_Apply_Override(skip_buildup_ini, slow_16mhz);
+	FreezeAIDuringMapGestures = St_Autotune_Apply_Override(freeze_gestures_ini, slow_16mhz);
 	DBG_INFO("Building idle animations are %s.",
 		ThrottleBuildingIdleAnims ? "throttled" : "not throttled");
 	DBG_INFO("Infantry idle animations are %s.",
 		ThrottleInfantryIdleAnims ? "throttled" : "not throttled");
 	DBG_INFO("Building construction animations are %s.",
 		SkipBuildingConstructionAnims ? "skipped (static frame)" : "played");
-	DBG_INFO("To change these, edit CONQUER.INI [Options]: ThrottleBuildingIdleAnims / ThrottleInfantryIdleAnims / SkipBuildingConstructionAnims. 0 = off, 1 = on. Omit them, or use -1, to keep this auto-detect.");
+	DBG_INFO("AI freeze during map gestures is %s.",
+		FreezeAIDuringMapGestures ? "on" : "off");
+	DBG_INFO("To change these, edit CONQUER.INI [Options]: ThrottleBuildingIdleAnims / ThrottleInfantryIdleAnims / SkipBuildingConstructionAnims / FreezeAIDuringMapGestures. 0 = off, 1 = on. Omit them, or use -1, to keep this auto-detect.");
 }
 
 #endif /* ATARI_ST */

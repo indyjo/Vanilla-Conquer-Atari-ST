@@ -208,6 +208,17 @@ public:
         return CellRedraw.Is_True(cell);
     };
 
+#ifdef ATARI_ST
+    bool Is_Busy_With_Map_Gesture(void) const
+    {
+        return IsRubberBand || DidScrollThisFrame;
+    }
+    void Reset_Map_Scroll_Pulse(void)
+    {
+        DidScrollThisFrame = false;
+    }
+#endif
+
     /*
     ** Computes starting position based on player's units' Coords.
     */
@@ -272,6 +283,13 @@ protected:
     **	the extended selection is in progress.
     */
     unsigned IsRubberBand : 1;
+
+#ifdef ATARI_ST
+    /*
+    **	Set when Scroll_Map actually moves the view this frame (mouse, keys, or inertia).
+    */
+    unsigned DidScrollThisFrame : 1;
+#endif
 
     /*
     **	The moment the mouse is held down, this flag gets set. If the mouse is dragged

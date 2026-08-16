@@ -641,6 +641,7 @@ void Read_Setup_Options( RawFileClass *config_file )
 	int throttle_building_idle = -1;
 	int throttle_infantry_idle = -1;
 	int skip_building_construction = -1;
+	int freeze_ai_map_gestures = -1;
 
 	if (config_file->Is_Available()) {
 		char *buffer = new char [config_file->Size()];
@@ -653,12 +654,14 @@ void Read_Setup_Options( RawFileClass *config_file )
 		throttle_building_idle = WWGetPrivateProfileInt ("Options", "ThrottleBuildingIdleAnims", -1, buffer);
 		throttle_infantry_idle = WWGetPrivateProfileInt ("Options", "ThrottleInfantryIdleAnims", -1, buffer);
 		skip_building_construction = WWGetPrivateProfileInt ("Options", "SkipBuildingConstructionAnims", -1, buffer);
+		freeze_ai_map_gestures = WWGetPrivateProfileInt ("Options", "FreezeAIDuringMapGestures", -1, buffer);
 
 		delete [] buffer;
 	}
 
 #ifdef ATARI_ST
-	ST_Autotune_Configure(throttle_building_idle, throttle_infantry_idle, skip_building_construction);
+	ST_Autotune_Configure(throttle_building_idle, throttle_infantry_idle, skip_building_construction,
+		freeze_ai_map_gestures);
 #endif
 }
 

@@ -116,12 +116,21 @@ static int Building_Idle_Throttled_Rate(BStateType state, int rate)
     return rate;
 }
 
-static bool Skip_Building_Construction_Frames(BStateType state)
+static bool Skip_Building_Construction_Frames(BuildingClass const* building)
 {
 #ifdef ATARI_ST
-    return SkipBuildingConstructionAnims && state == BSTATE_CONSTRUCTION;
+    if (!SkipBuildingConstructionAnims || building == NULL) {
+        return false;
+    }
+    if (building->BState == BSTATE_CONSTRUCTION) {
+        return true;
+    }
+    /*
+    **	Construction yard "busy" loop while a building is produced.
+    */
+    return (*building == STRUCT_CONST && building->BState == BSTATE_ACTIVE);
 #else
-    (void)state;
+    (void)building;
     return false;
 #endif
 }
@@ -543,7 +552,7 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
         if (Mission == MISSION_DECONSTRUCTION) {
             shapenum = (Class->Anims[BState].Start + Class->Anims[BState].Count - 1) - shapenum;
         }
-        if (Skip_Building_Construction_Frames(BState)) {
+        if (Skip_Building_Construction_Frames(this)) {
             /*
             **	Keep a static frame for the whole construction/sell delay so the
             **	footprint is not redrawn on every buildup stage. Timing is unchanged.
@@ -558,6 +567,10 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
     } else {
 
         shapefile = Class->Get_Image_Data();
+
+        if (Skip_Building_Construction_Frames(this)) {
+            shapenum = Class->Anims[BState].Start;
+        }
 
         /*
         **	The obelisk has a stage value than can be overridden by
@@ -942,7 +955,7 @@ void BuildingClass::AI(void)
     /*
     **	Always refresh the SAM site if it has an animation change.
     */
-    if (*this == STRUCT_SAM && stagechange && !Skip_Building_Construction_Frames(BState))
+    if (*this == STRUCT_SAM && stagechange && !Skip_Building_Construction_Frames(this))
         Mark(MARK_CHANGE);
 
     if ((!Class->IsTurretEquipped && *this != STRUCT_OBELISK) || Mission == MISSION_CONSTRUCTION
@@ -975,7 +988,7 @@ void BuildingClass::AI(void)
             if (Fetch_Stage() >= ctrl->Start + ctrl->Count) {
                 toloop = true;
             }
-            if (!Skip_Building_Construction_Frames(BState)) {
+            if (!Skip_Building_Construction_Frames(this)) {
                 Mark(MARK_CHANGE);
             }
         } else {
@@ -1007,7 +1020,7 @@ void BuildingClass::AI(void)
             Set_Rate(Building_Idle_Throttled_Rate(BState, ctrl->Rate));
         }
         Set_Stage(ctrl->Start);
-        if (!Skip_Building_Construction_Frames(BState)) {
+        if (!Skip_Building_Construction_Frames(this)) {
             Mark(MARK_CHANGE);
         }
     }

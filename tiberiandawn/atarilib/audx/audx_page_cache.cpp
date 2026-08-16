@@ -107,7 +107,6 @@ int AUDX_Page_Cache_Init(void)
 			seed.page_index = (uint32_t)global;
 			g_audx_page_shards[sh]->set((uint16_t)slot, seed, g_audx_page_slab + (size_t)global * AUDX_PAGE_SIZE);
 		}
-		g_audx_page_shards[sh]->reset_head();
 	}
 
 	g_audx_page_inited = 1;

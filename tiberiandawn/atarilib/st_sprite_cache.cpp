@@ -1,5 +1,5 @@
 /*
- * Ranked ring-cached planar + 1bpp mask sprite cache for Buffer_Frame_To_Page (Atari ST).
+ * Ranked planar + 1bpp mask sprite cache for Buffer_Frame_To_Page (Atari ST).
  *
  * Each RankCache directory node is (hash32, SpriteSlotHeader*). The slab slot layout is
  * [header: full key + crop/mask_off | planar | 1bpp mask]. Key stores raw shape_id/frame (and
@@ -27,7 +27,7 @@
 #include <new>
 
 /*
- * Each tier is a set of independent RankCache rings ("shards").
+ * Each tier is a set of independent RankCache directories ("shards").
  * Defaults: 32/8/2/1 shards × (8/6/8/8) slots → capacities 256/48/16/8 (dims 16/32/64/96).
  * On 4MB machines the default slab must stay larger than the score-screen reconfigure
  * (~64×64-tier slots): GEMDOS free RAM is fragmented, so a later Alloc of a similar
@@ -178,7 +178,7 @@ struct SpriteSlotKeyMatch {
 	}
 };
 
-/* One configured tier pool (fixed byte-capacity slots + sharded ranked rings). */
+/* One configured tier pool (fixed byte-capacity slots + sharded ranked directories). */
 struct SpriteCacheTier {
 	/*
 	 * Reference square side used only to size payload_sz (bytes for planar+mask of a dim×dim
@@ -186,7 +186,7 @@ struct SpriteCacheTier {
 	 */
 	int dim = 0;
 	int capacity = 0; /* total slots across all shards */
-	int shard_count = 0; /* independent RankCache rings */
+	int shard_count = 0; /* independent RankCache directories */
 	int shard_size = 0; /* slots per shard (see ST_SPRITE_CACHE_SHARD_SIZE_*) */
 	uint8_t *slot_base = nullptr; /* capacity × slot_sz */
 	int payload_sz = 0; /* max packed planar+mask bytes per slot */
@@ -522,7 +522,6 @@ static void sprite_cache_reseed_tier_rank(SpriteCacheTier &tr, int tier_index)
 		SpriteRankCache *rank = tr.shards[sh];
 		if (!rank || !rank->valid())
 			continue;
-		rank->reset_head();
 		const uint16_t n = rank->capacity();
 		for (uint16_t i = 0; i < n; ++i, ++global_i) {
 			SpriteCacheKey dk;

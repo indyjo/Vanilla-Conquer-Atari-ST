@@ -1,13 +1,13 @@
 /*
- * rankcache.h — Fixed-capacity ranked ring cache (no STL containers).
+ * rankcache.h — Fixed-capacity ranked directory (no STL containers).
  *
- * Directory nodes are ordered as a ring: head is MRU (logical rank 0),
- * head+capacity-1 is LRU. Lookup is a linear scan. A hit bubbles the
- * entry one step toward MRU (neighbor swap). A miss rekeys the LRU node
- * and rotates it to MRU so consecutive inserts do not thrash one slot.
+ * Directory nodes are a packed array: index 0 is MRU, capacity-1 is LRU.
+ * Lookup is a linear scan. A hit bubbles the entry one step toward MRU
+ * (neighbor swap). A miss rekeys the LRU node and shifts it to index 0
+ * so consecutive inserts do not thrash one slot.
  *
- * Value payloads (e.g. slab pointers) stay with the node; only directory
- * order changes — pointed-to memory is never moved by the cache.
+ * Value payloads (e.g. slab pointers) stay with the directory node that
+ * owns them; pointed-to memory is never moved by the cache.
  *
  * get / retarget_oldest assign Value by copy (pointers remain valid for
  * in-place updates through the pointee). Optional Pred continues the scan
@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <new>
 
 template <typename Key, typename Value>
@@ -32,7 +33,6 @@ public:
 	explicit RankCache(uint16_t capacity)
 	    : nodes_(nullptr)
 	    , capacity_(capacity)
-	    , head_(0)
 	{
 		if (capacity_ == 0)
 			return;
@@ -46,25 +46,22 @@ public:
 		delete[] nodes_;
 		nodes_ = nullptr;
 		capacity_ = 0;
-		head_ = 0;
 	}
 
 	uint16_t capacity() const { return capacity_; }
 	bool valid() const { return nodes_ != nullptr && capacity_ > 0; }
 
-	/* Physical index write (init / reseed). Does not change head. */
-	void set(uint16_t phys_i, const Key &key, const Value &value)
+	/* Index write (init / reseed). Index 0 is MRU. */
+	void set(uint16_t i, const Key &key, const Value &value)
 	{
-		if (!nodes_ || phys_i >= capacity_)
+		if (!nodes_ || i >= capacity_)
 			return;
-		nodes_[phys_i].key = key;
-		nodes_[phys_i].value = value;
+		nodes_[i].key = key;
+		nodes_[i].value = value;
 	}
 
-	void reset_head() { head_ = 0; }
-
 	/*
-	 * Linear scan from MRU. On hit at logical rank i>0, swap with predecessor.
+	 * Linear scan from MRU. On hit at rank i>0, swap with predecessor.
 	 * value_out receives a copy of the live node Value after any promote.
 	 */
 	bool get(const Key &key, Value &value_out)
@@ -78,20 +75,18 @@ public:
 		if (!nodes_ || capacity_ == 0)
 			return false;
 
-		for (uint16_t logical = 0; logical < capacity_; ++logical) {
-			const uint16_t p = phys(logical);
-			if (!(nodes_[p].key == key))
+		for (uint16_t i = 0; i < capacity_; ++i) {
+			if (!(nodes_[i].key == key))
 				continue;
-			if (!accept(nodes_[p].value))
+			if (!accept(nodes_[i].value))
 				continue;
-			if (logical > 0) {
-				const uint16_t pred = phys((uint16_t)(logical - 1));
-				Node tmp = nodes_[p];
-				nodes_[p] = nodes_[pred];
-				nodes_[pred] = tmp;
-				value_out = nodes_[pred].value;
+			if (i > 0) {
+				Node tmp = nodes_[i];
+				nodes_[i] = nodes_[i - 1];
+				nodes_[i - 1] = tmp;
+				value_out = nodes_[i - 1].value;
 			} else {
-				value_out = nodes_[p].value;
+				value_out = nodes_[i].value;
 			}
 			return true;
 		}
@@ -99,7 +94,7 @@ public:
 	}
 
 	/*
-	 * Rekey the LRU node (same Value / slab) and make it MRU via ring rotate.
+	 * Rekey the LRU node (same Value / slab) and make it MRU.
 	 * Returns false if empty or if key is already present (Key match + already_has).
 	 */
 	bool retarget_oldest(const Key &key, Value &value_out)
@@ -113,22 +108,19 @@ public:
 		if (!nodes_ || capacity_ == 0)
 			return false;
 
-		for (uint16_t logical = 0; logical < capacity_; ++logical) {
-			const uint16_t p = phys(logical);
-			if (nodes_[p].key == key && already_has(nodes_[p].value))
+		for (uint16_t i = 0; i < capacity_; ++i) {
+			if (nodes_[i].key == key && already_has(nodes_[i].value))
 				return false;
 		}
 
-		head_ = (head_ == 0) ? (uint16_t)(capacity_ - 1) : (uint16_t)(head_ - 1);
-		nodes_[head_].key = key;
-		value_out = nodes_[head_].value;
+		promote_lru_to_mru(key, value_out);
 		return true;
 	}
 
 	/*
 	 * Like retarget_oldest, but only rekeys a node whose Value passes can_evict
 	 * (e.g. pin_count == 0). Scans from LRU toward MRU; swaps the chosen node
-	 * into the LRU slot, then rotates it to MRU.
+	 * into the LRU slot, then promotes it to MRU.
 	 */
 	template <typename CanEvict>
 	bool retarget_oldest_evictable(const Key &key, Value &value_out, CanEvict can_evict)
@@ -136,34 +128,29 @@ public:
 		if (!nodes_ || capacity_ == 0)
 			return false;
 
-		for (uint16_t logical = 0; logical < capacity_; ++logical) {
-			const uint16_t p = phys(logical);
-			if (nodes_[p].key == key)
+		for (uint16_t i = 0; i < capacity_; ++i) {
+			if (nodes_[i].key == key)
 				return false;
 		}
 
 		int chosen = -1;
-		for (int logical = (int)capacity_ - 1; logical >= 0; --logical) {
-			const uint16_t p = phys((uint16_t)logical);
-			if (can_evict(nodes_[p].value)) {
-				chosen = logical;
+		for (int i = (int)capacity_ - 1; i >= 0; --i) {
+			if (can_evict(nodes_[i].value)) {
+				chosen = i;
 				break;
 			}
 		}
 		if (chosen < 0)
 			return false;
 
-		const uint16_t lru = phys((uint16_t)(capacity_ - 1));
-		if ((uint16_t)chosen != (uint16_t)(capacity_ - 1)) {
-			const uint16_t p = phys((uint16_t)chosen);
-			Node tmp = nodes_[p];
-			nodes_[p] = nodes_[lru];
-			nodes_[lru] = tmp;
+		const uint16_t last = (uint16_t)(capacity_ - 1);
+		if ((uint16_t)chosen != last) {
+			Node tmp = nodes_[chosen];
+			nodes_[chosen] = nodes_[last];
+			nodes_[last] = tmp;
 		}
 
-		head_ = (head_ == 0) ? (uint16_t)(capacity_ - 1) : (uint16_t)(head_ - 1);
-		nodes_[head_].key = key;
-		value_out = nodes_[head_].value;
+		promote_lru_to_mru(key, value_out);
 		return true;
 	}
 
@@ -179,17 +166,19 @@ private:
 		}
 	};
 
-	uint16_t phys(uint16_t logical) const
+	void promote_lru_to_mru(const Key &key, Value &value_out)
 	{
-		uint16_t p = (uint16_t)(head_ + logical);
-		if (p >= capacity_)
-			p = (uint16_t)(p - capacity_);
-		return p;
+		const uint16_t last = (uint16_t)(capacity_ - 1);
+		const Value keep = nodes_[last].value;
+		if (last > 0)
+			memmove(&nodes_[1], &nodes_[0], (size_t)last * sizeof(Node));
+		nodes_[0].key = key;
+		nodes_[0].value = keep;
+		value_out = keep;
 	}
 
 	Node *nodes_;
 	uint16_t capacity_;
-	uint16_t head_;
 };
 
 #endif /* ATARILIB_RANKCACHE_H_ */

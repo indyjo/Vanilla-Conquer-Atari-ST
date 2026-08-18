@@ -358,6 +358,43 @@ namespace {
 			blit_h) ? true : false;
 	}
 
+	bool RubberbandPainted;
+	int RubberbandDrawnX;
+	int RubberbandDrawnY;
+	enum { RUBBERBAND_COVER_MAX = 8 };
+	int RubberbandCoverN;
+	short RubberbandCoverC0[RUBBERBAND_COVER_MAX];
+	short RubberbandCoverR0[RUBBERBAND_COVER_MAX];
+	short RubberbandCoverC1[RUBBERBAND_COVER_MAX];
+	short RubberbandCoverR1[RUBBERBAND_COVER_MAX];
+
+	void Rubberband_Cover_Reset(void)
+	{
+		RubberbandCoverN = 0;
+	}
+
+	void Rubberband_Cover_Add(int c0, int r0, int c1, int r1)
+	{
+		if (c0 > c1) {
+			int t = c0;
+			c0 = c1;
+			c1 = t;
+		}
+		if (r0 > r1) {
+			int t = r0;
+			r0 = r1;
+			r1 = t;
+		}
+		if (c1 <= c0 || r1 <= r0 || RubberbandCoverN >= RUBBERBAND_COVER_MAX) {
+			return;
+		}
+		int const i = RubberbandCoverN++;
+		RubberbandCoverC0[i] = (short)c0;
+		RubberbandCoverR0[i] = (short)r0;
+		RubberbandCoverC1[i] = (short)c1;
+		RubberbandCoverR1[i] = (short)r1;
+	}
+
 }
 #endif
 
@@ -498,6 +535,8 @@ DisplayClass::DisplayClass(void)
     IsSellMode = false;
 #ifdef ATARI_ST
     DidScrollThisFrame = false;
+    RubberbandPainted = false;
+    Rubberband_Cover_Reset();
 #endif
 }
 
@@ -622,6 +661,8 @@ void DisplayClass::Init_Clear(void)
     IsSellMode = false;
 #ifdef ATARI_ST
     DidScrollThisFrame = false;
+    RubberbandPainted = false;
+    Rubberband_Cover_Reset();
 #endif
 
     /*
@@ -2503,10 +2544,21 @@ void DisplayClass::Draw_It(bool forced)
         ST_FRAME_BAR_MAP_PREP_BEGIN();
 
         /*
-        **	In rubber band mode, mark all cells under the "rubber band" to be
-        **	redrawn.
+        **	Rubber band: restore cells under white lines. CCR skips idle holds
+        **	(HidPage still has the last box) and only flags outline deltas.
         */
-        Refresh_Band();
+#ifdef ATARI_ST
+        if (Debug_Clipped_Tactical_Redraw && IsRubberBand) {
+            if (!RubberbandPainted) {
+                Refresh_Band();
+            } else if (NewX != RubberbandDrawnX || NewY != RubberbandDrawnY) {
+                Flag_Band_Changed(RubberbandDrawnX, RubberbandDrawnY, NewX, NewY);
+            }
+        } else
+#endif
+        {
+            Refresh_Band();
+        }
 
         /*
         ** If the multiplayer message system is displaying one or more messages,
@@ -2834,7 +2886,17 @@ void DisplayClass::Draw_It(bool forced)
         */
         if (IsRubberBand) {
             LogicPage->Draw_Rect(BandX + TacPixelX, BandY + TacPixelY, NewX + TacPixelX, NewY + TacPixelY, WHITE);
+#ifdef ATARI_ST
+            RubberbandPainted = true;
+            RubberbandDrawnX = NewX;
+            RubberbandDrawnY = NewY;
+#endif
         }
+#ifdef ATARI_ST
+        else {
+            RubberbandPainted = false;
+        }
+#endif
         /*
         **	Clear the redraw flags so that normal redraw flag setting can resume.
         */
@@ -3043,11 +3105,71 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 		}
 	}
 	if (dirty_n == 0) {
+#ifdef ATARI_ST
+		Rubberband_Cover_Reset();
+#endif
 		return;
 	}
 
 	Rect_Cover<Rect_Cover_Idx> boxes[REDRAW_RECT_MAX];
-	Rect_Cover_Idx const nbox = Rect_Cover_Greedy<unsigned char, Rect_Cover_Idx>(remain,
+	Rect_Cover_Idx nbox = 0;
+#ifdef ATARI_ST
+	/*
+	**	Rubberband outline dirt stays thin edge rects. Greedy leftover AABB of
+	**	four edges would restamp the whole selection box.
+	*/
+	for (int i = 0; i < RubberbandCoverN && nbox < REDRAW_RECT_MAX - 1; i++) {
+		int c0 = (int)RubberbandCoverC0[i] - origin_cx;
+		int r0 = (int)RubberbandCoverR0[i] - origin_cy;
+		int c1 = (int)RubberbandCoverC1[i] - origin_cx;
+		int r1 = (int)RubberbandCoverR1[i] - origin_cy;
+		if (c0 < 0) {
+			c0 = 0;
+		}
+		if (r0 < 0) {
+			r0 = 0;
+		}
+		if (c1 > cols) {
+			c1 = cols;
+		}
+		if (r1 > rows) {
+			r1 = rows;
+		}
+		if (c1 <= c0 || r1 <= r0) {
+			continue;
+		}
+		for (int r = r0; r < r1; r++) {
+			for (int c = c0; c < c1; c++) {
+				remain[r * cols + c] = 0;
+			}
+		}
+		boxes[nbox].c0 = (Rect_Cover_Idx)c0;
+		boxes[nbox].r0 = (Rect_Cover_Idx)r0;
+		boxes[nbox].c1 = (Rect_Cover_Idx)c1;
+		boxes[nbox].r1 = (Rect_Cover_Idx)r1;
+		nbox++;
+	}
+	Rubberband_Cover_Reset();
+	Rect_Cover_Idx const cap = (Rect_Cover_Idx)(REDRAW_RECT_MAX - nbox);
+	Rect_Cover_Idx gmax = 0;
+	if (cap > 1) {
+		gmax = (Rect_Cover_Idx)(cap - 1);
+		if (gmax > (Rect_Cover_Idx)REDRAW_RECT_GROW_MAX) {
+			gmax = (Rect_Cover_Idx)REDRAW_RECT_GROW_MAX;
+		}
+	}
+	if (cap > 0) {
+		nbox = (Rect_Cover_Idx)(nbox + Rect_Cover_Greedy<unsigned char, Rect_Cover_Idx>(remain,
+			(Rect_Cover_Idx)rows,
+			(Rect_Cover_Idx)cols,
+			boxes + nbox,
+			cap,
+			gmax,
+			(Rect_Cover_Idx)REDRAW_RECT_GROW_NUM,
+			(Rect_Cover_Idx)REDRAW_RECT_GROW_DEN));
+	}
+#else
+	nbox = Rect_Cover_Greedy<unsigned char, Rect_Cover_Idx>(remain,
 		(Rect_Cover_Idx)rows,
 		(Rect_Cover_Idx)cols,
 		boxes,
@@ -3055,6 +3177,7 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 		(Rect_Cover_Idx)REDRAW_RECT_GROW_MAX,
 		(Rect_Cover_Idx)REDRAW_RECT_GROW_NUM,
 		(Rect_Cover_Idx)REDRAW_RECT_GROW_DEN);
+#endif
 
 	Redraw_Rect rects[REDRAW_RECT_MAX];
 	int nrect = 0;
@@ -4148,50 +4271,161 @@ void DisplayClass::Select_These(COORDINATE coord1, COORDINATE coord2, bool addit
  * HISTORY:                                                                                    *
  *   01/19/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
+void DisplayClass::Flag_Band_H(int x1, int x2, int y)
+{
+    int sx1 = x1 + TacPixelX;
+    int sx2 = x2 + TacPixelX;
+    int const sy = y + TacPixelY;
+    if (sx1 > sx2) {
+        int const temp = sx1;
+        sx1 = sx2;
+        sx2 = temp;
+    }
+
+    int minc = 0;
+    int minr = 0;
+    int maxc = 0;
+    int maxr = 0;
+    bool any = false;
+    for (int x = sx1;;) {
+        CELL const cell = Click_Cell_Calc(Bound(x, 0, TacPixelX + Lepton_To_Pixel(TacLeptonWidth)), sy);
+        if (cell != -1) {
+            (*this)[cell].Redraw_Objects(cell);
+#ifdef ATARI_ST
+            if (Debug_Clipped_Tactical_Redraw) {
+                int const cx = Cell_X(cell);
+                int const cy = Cell_Y(cell);
+                if (!any || cx < minc) {
+                    minc = cx;
+                }
+                if (!any || cy < minr) {
+                    minr = cy;
+                }
+                if (!any || cx > maxc) {
+                    maxc = cx;
+                }
+                if (!any || cy > maxr) {
+                    maxr = cy;
+                }
+                any = true;
+            }
+#endif
+        }
+        if (x >= sx2) {
+            break;
+        }
+        int const next = x + CELL_PIXEL_W;
+        x = (next > sx2) ? sx2 : next;
+    }
+#ifdef ATARI_ST
+    if (any) {
+        Rubberband_Cover_Add(minc, minr, maxc + 1, maxr + 1);
+    }
+#endif
+}
+
+void DisplayClass::Flag_Band_V(int x, int y1, int y2)
+{
+    int const sx = x + TacPixelX;
+    int sy1 = y1 + TacPixelY;
+    int sy2 = y2 + TacPixelY;
+    if (sy1 > sy2) {
+        int const temp = sy1;
+        sy1 = sy2;
+        sy2 = temp;
+    }
+
+    int minc = 0;
+    int minr = 0;
+    int maxc = 0;
+    int maxr = 0;
+    bool any = false;
+    for (int y = sy1;;) {
+        CELL const cell = Click_Cell_Calc(sx, Bound(y, 0, TacPixelY + Lepton_To_Pixel(TacLeptonHeight)));
+        if (cell != -1) {
+            (*this)[cell].Redraw_Objects(cell);
+#ifdef ATARI_ST
+            if (Debug_Clipped_Tactical_Redraw) {
+                int const cx = Cell_X(cell);
+                int const cy = Cell_Y(cell);
+                if (!any || cx < minc) {
+                    minc = cx;
+                }
+                if (!any || cy < minr) {
+                    minr = cy;
+                }
+                if (!any || cx > maxc) {
+                    maxc = cx;
+                }
+                if (!any || cy > maxr) {
+                    maxr = cy;
+                }
+                any = true;
+            }
+#endif
+        }
+        if (y >= sy2) {
+            break;
+        }
+        int const next = y + CELL_PIXEL_H;
+        y = (next > sy2) ? sy2 : next;
+    }
+#ifdef ATARI_ST
+    if (any) {
+        Rubberband_Cover_Add(minc, minr, maxc + 1, maxr + 1);
+    }
+#endif
+}
+
+void DisplayClass::Flag_Band_Outline(int x1, int y1, int x2, int y2)
+{
+    if (x1 > x2) {
+        int const temp = x1;
+        x1 = x2;
+        x2 = temp;
+    }
+    if (y1 > y2) {
+        int const temp = y1;
+        y1 = y2;
+        y2 = temp;
+    }
+    Flag_Band_V(x1, y1, y2);
+    Flag_Band_V(x2, y1, y2);
+    Flag_Band_H(x1, x2, y1);
+    Flag_Band_H(x1, x2, y2);
+}
+
+#ifdef ATARI_ST
+void DisplayClass::Flag_Band_Changed(int oldx, int oldy, int newx, int newy)
+{
+    Rubberband_Cover_Reset();
+    if (oldx == newx && oldy == newy) {
+        return;
+    }
+    if (oldy == newy) {
+        Flag_Band_V(oldx, BandY, oldy);
+        Flag_Band_V(newx, BandY, newy);
+        Flag_Band_H(oldx, newx, BandY);
+        Flag_Band_H(oldx, newx, oldy);
+    } else if (oldx == newx) {
+        Flag_Band_H(BandX, oldx, oldy);
+        Flag_Band_H(BandX, newx, newy);
+        Flag_Band_V(BandX, oldy, newy);
+        Flag_Band_V(oldx, oldy, newy);
+    } else {
+        Flag_Band_Outline(BandX, BandY, oldx, oldy);
+        Flag_Band_Outline(BandX, BandY, newx, newy);
+    }
+}
+#endif
+
 void DisplayClass::Refresh_Band(void)
 {
     if (IsRubberBand) {
-
-        /*
-        **	In rubber band mode, mark all cells under the "rubber band" to be
-        **	redrawn.
-        */
-        int x1 = BandX + TacPixelX;
-        int y1 = BandY + TacPixelY;
-        int x2 = NewX + TacPixelX;
-        int y2 = NewY + TacPixelY;
-
-        if (x1 > x2) {
-            int temp = x1;
-            x1 = x2;
-            x2 = temp;
-        }
-        if (y1 > y2) {
-            int temp = y1;
-            y1 = y2;
-            y2 = temp;
-        }
-
-        CELL cell;
-        for (int y = y1; y <= y2 + CELL_PIXEL_H; y += CELL_PIXEL_H) {
-            cell = Click_Cell_Calc(x1, Bound(y, 0, TacPixelY + Lepton_To_Pixel(TacLeptonHeight)));
-            if (cell != -1)
-                (*this)[cell].Redraw_Objects(cell);
-
-            cell = Click_Cell_Calc(x2, Bound(y, 0, TacPixelY + Lepton_To_Pixel(TacLeptonHeight)));
-            if (cell != -1)
-                (*this)[cell].Redraw_Objects(cell);
-        }
-
-        for (int x = x1; x <= x2 + CELL_PIXEL_W; x += CELL_PIXEL_W) {
-            cell = Click_Cell_Calc(Bound(x, 0, TacPixelX + Lepton_To_Pixel(TacLeptonWidth)), y1);
-            if (cell != -1)
-                (*this)[cell].Redraw_Objects(cell);
-
-            cell = Click_Cell_Calc(Bound(x, 0, TacPixelX + Lepton_To_Pixel(TacLeptonWidth)), y2);
-            if (cell != -1)
-                (*this)[cell].Redraw_Objects(cell);
-        }
+#ifdef ATARI_ST
+        Rubberband_Cover_Reset();
+#endif
+        Flag_Band_Outline(BandX, BandY, NewX, NewY);
     }
 }
 
@@ -4880,6 +5114,9 @@ void DisplayClass::Mouse_Left_Release(CELL cell, int x, int y, ObjectClass* obje
 
             IsRubberBand = false;
             IsTentative = false;
+#ifdef ATARI_ST
+            RubberbandPainted = false;
+#endif
             Map.DisplayClass::IsToRedraw = true;
             Map.Flag_To_Redraw(false);
 
@@ -5038,7 +5275,12 @@ void DisplayClass::Mouse_Left_Held(int x, int y)
         if (x != NewX || y != NewY) {
             x = Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1);
             y = Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1);
-            Refresh_Band();
+#ifdef ATARI_ST
+            if (!Debug_Clipped_Tactical_Redraw)
+#endif
+            {
+                Refresh_Band();
+            }
             NewX = x;
             NewY = y;
             IsToRedraw = true;

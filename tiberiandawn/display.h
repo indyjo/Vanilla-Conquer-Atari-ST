@@ -344,6 +344,13 @@ private:
     int BandX, BandY;
     int NewX, NewY;
 
+    void Flag_Band_H(int x1, int x2, int y);
+    void Flag_Band_V(int x, int y1, int y2);
+    void Flag_Band_Outline(int x1, int y1, int x2, int y2);
+#ifdef ATARI_ST
+    void Flag_Band_Changed(int oldx, int oldy, int newx, int newy);
+#endif
+
     static void const* ShadowShapes;
     static unsigned char ShadowTrans[(SHADOW_COL_COUNT + 1) * 256];
 

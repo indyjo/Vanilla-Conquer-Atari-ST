@@ -419,6 +419,8 @@ If the file is missing or invalid, the engine keeps the current built-in weight 
 
 Paint (in `display.cpp` `ST_Redraw_Coalesced_Clipped`) does not clip per tile. In-view dirty cells are coalesced into redraw rectangles by `Rect_Cover_Greedy` (`rect_cover.h`): **greedy grow** (expand left/right/down while remaining-dirty density stays at least **12/16**). At most `REDRAW_RECT_MAX - 1` grow-algorithm rectangles; leftover dirty cells become **one bounding box** (last slot). Covering a rectangle unmarks every cell inside it; unmarked cells may be filled. **Every cell in a redraw rect is restamped** (objects overdraw copied terrain; “clean” cells in the rect are not assumed intact). Completely shrouded cells skip the terrain stamp and get only the black mask. All of that is stack-local (view mask ≤ 16×12, ≤8×64 object pointers).
 
+Rubber-band selection (CCR) flags **outline cells only**, and only when the box actually changes. An idle hold redraws the white `Draw_Rect` on HidPage without extra `CellRedraw`. One-axis drags flag the old moving edge, the new moving edge, and the grown/shrunk stubs on the two perpendicular sides (anchor edges that did not move stay unmarked). Release flags the last outline so the box is erased. Those outline cells are injected as **thin edge rects** before greedy pack so leftover AABB cannot swallow the selection interior.
+
 Scroll in clipped mode flags only tiles whose 24×24 stamp is not fully inside the hidpage copy (the entering edge). It does not add the unclipped `extra_x`/`extra_y` seam band or shrink the copy by 24px.
 
 View cell `(0,0)` is converted to pixels once (`Coord_To_Pixel` on that cell’s northwest). Every other stamp/clip corner is `origin + (vc,vr) * 24`.

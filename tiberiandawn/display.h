@@ -217,6 +217,10 @@ public:
     {
         DidScrollThisFrame = false;
     }
+    void Present_Begin(bool complete);
+    void Present_Add_Screen_Rect(int x0, int y0, int x1, int y1);
+    void Present_Add_Tactical_Rect(int vx0, int vy0, int vx1, int vy1);
+    void Present_Blit(void);
 #endif
 
     /*
@@ -286,7 +290,7 @@ protected:
 
 #ifdef ATARI_ST
     /*
-    **	Set when Scroll_Map actually moves the view this frame (mouse, keys, or inertia).
+    **	Set when the tactical view moves this frame (Scroll_Map, playback, radar jump).
     */
     unsigned DidScrollThisFrame : 1;
 #endif

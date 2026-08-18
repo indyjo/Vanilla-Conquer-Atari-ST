@@ -56,6 +56,21 @@ enum {
  */
 BOOL ST_Blit_Linear_Copy(void *dst, const void *src, unsigned long nbytes);
 
+/*
+ * Word-aligned planar rect copy (x and width multiples of 16). One blitter
+ * pass over interleaved planes (src_x_inc = dst_x_inc = 2), hop=source,
+ * op=D=S so destination is not read. Software path is memcpy per row.
+ */
+BOOL ST_Blit_Planar_Aligned_Rect_Copy(
+	const uint8_t *src_root,
+	uint8_t *dst_root,
+	int src_row_bytes,
+	int dst_row_bytes,
+	int x,
+	int y,
+	int pixel_width,
+	int pixel_height);
+
 BOOL ST_Blit_Planar_Screen_Rect_Blit(
 	const uint8_t *src_root,
 	uint8_t *dst_root,

@@ -584,6 +584,33 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 		}
 	}
 
+	/*
+	** Cross-buffer planar rect (HidPage -> SeenBuff present). Same-buffer
+	** copies already returned above; a full-screen present uses Linear_Copy.
+	** Without this, leftover planar rects fall through to GetPixel/PutPixel.
+	*/
+	if (src_planar && dst_planar && !trans && src_root && dst_root) {
+		const int sx_abs = src_vp->Get_XPos() + x_pixel;
+		const int sy_abs = src_vp->Get_YPos() + y_pixel;
+		const int dx_abs = dest_vp->Get_XPos() + dx_pixel;
+		const int dy_abs = dest_vp->Get_YPos() + dy_pixel;
+		const int src_bpl = GB_ST_Planar_Row_Bytes(src_gb);
+		const int dst_bpl = GB_ST_Planar_Row_Bytes(dest_gb);
+		if (ST_Blit_Planar_Rect_Blit(
+				src_root,
+				src_bpl,
+				sx_abs,
+				sy_abs,
+				dst_root,
+				dst_bpl,
+				dx_abs,
+				dy_abs,
+				pixel_width,
+				pixel_height)) {
+			return TRUE;
+		}
+	}
+
 	for (int y = 0; y < pixel_height; y++) {
 		for (int x = 0; x < pixel_width; x++) {
 			unsigned char pixel;

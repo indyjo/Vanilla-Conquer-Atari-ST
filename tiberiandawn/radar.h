@@ -70,6 +70,7 @@ public:
     virtual CELL Click_Cell_Calc(int x, int y);
     virtual void AI(KeyNumType& input, int x, int y);
     virtual void Draw_It(bool complete = false);
+    bool Needs_Present(void) const;
     virtual void Refresh_Cells(CELL cell, short const* list);
     virtual void Set_Map_Dimensions(int x, int y, int w, int h);
     //		virtual void Set_Tactical_Position(int x, int y, int leptonx=0, int leptony=0);

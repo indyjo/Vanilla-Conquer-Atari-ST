@@ -80,6 +80,7 @@
 #include <string.h>
 #ifdef ATARI_ST
 #include "atarilib/st16_preshift.h"
+#include "common/gadget.h"
 #endif
 #include "common/fading.h"
 #include "ccini.h"
@@ -3073,6 +3074,12 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 		return;
 	}
 
+#ifdef ATARI_ST
+	for (int i = 0; i < nrect; i++) {
+		Map.Present_Add_Tactical_Rect(rects[i].vx0, rects[i].vy0, rects[i].vx1, rects[i].vy1);
+	}
+#endif
+
 	ObjectClass* olists[REDRAW_RECT_MAX][REDRAW_RECT_OBJ_CAP];
 	int nobj[REDRAW_RECT_MAX];
 	int rorder[REDRAW_RECT_MAX];
@@ -3201,6 +3208,197 @@ void DisplayClass::Redraw_Coalesced_Clipped(int draw_flags)
 {
 	ST_Redraw_Coalesced_Clipped(draw_flags, ShadowShapes, ShadowTrans);
 }
+
+#ifdef ATARI_ST
+
+enum {
+	PRESENT_RECT_MAX = 24
+};
+
+static bool Present_Full;
+static int Present_N;
+static int Present_X0[PRESENT_RECT_MAX];
+static int Present_Y0[PRESENT_RECT_MAX];
+static int Present_X1[PRESENT_RECT_MAX];
+static int Present_Y1[PRESENT_RECT_MAX];
+static int Present_Area;
+
+static void Present_Snapshot_Chrome(void);
+
+void DisplayClass::Present_Add_Screen_Rect(int x0, int y0, int x1, int y1)
+{
+	if (Present_Full) {
+		return;
+	}
+	int const sw = HidPage.Get_Width();
+	int const sh = HidPage.Get_Height();
+	if (x0 < 0) {
+		x0 = 0;
+	}
+	if (y0 < 0) {
+		y0 = 0;
+	}
+	if (x1 > sw) {
+		x1 = sw;
+	}
+	if (y1 > sh) {
+		y1 = sh;
+	}
+	if (x1 <= x0 || y1 <= y0) {
+		return;
+	}
+	x0 &= ~15;
+	x1 = (x1 + 15) & ~15;
+	if (x1 > sw) {
+		x1 = sw;
+	}
+	if (x1 <= x0) {
+		return;
+	}
+	if (Present_N >= PRESENT_RECT_MAX) {
+		Present_Full = true;
+		return;
+	}
+	Present_X0[Present_N] = x0;
+	Present_Y0[Present_N] = y0;
+	Present_X1[Present_N] = x1;
+	Present_Y1[Present_N] = y1;
+	Present_N++;
+	Present_Area += (x1 - x0) * (y1 - y0);
+	if (Present_Area >= (sw * sh) / 2) {
+		Present_Full = true;
+	}
+}
+
+void DisplayClass::Present_Add_Tactical_Rect(int vx0, int vy0, int vx1, int vy1)
+{
+	Present_Add_Screen_Rect(TacPixelX + vx0, TacPixelY + vy0, TacPixelX + vx1, TacPixelY + vy1);
+}
+
+static void Present_Snapshot_Chrome(void)
+{
+	int const sw = HidPage.Get_Width();
+	int const sh = HidPage.Get_Height();
+
+	if (Map.Needs_Present()
+#if defined(ST_FRAME_BAR_PROFILE)
+		|| StFrameMeterPendingRedraw
+#endif
+	) {
+		Map.Present_Add_Screen_Rect(0, 0, sw, Map.Get_Tab_Height());
+	}
+	if (Map.Credits.IsToRedraw) {
+		int const xx = sw - 120;
+		Map.Present_Add_Screen_Rect(xx - 20, 0, xx + 50, Map.Get_Tab_Height());
+	}
+	if (GScreenClass::Buttons) {
+		for (GadgetClass* g = GScreenClass::Buttons; g != NULL; g = g->Get_Next()) {
+			if (g->Is_To_Redraw()) {
+				Map.Present_Add_Screen_Rect(g->X, g->Y, g->X + g->Width, g->Y + g->Height);
+			}
+		}
+	}
+	if (!Map.IsSidebarActive) {
+		return;
+	}
+	if (Map.SidebarClass::IsToRedraw) {
+		Map.Present_Add_Screen_Rect(Map.SideX, Map.SideY, sw, sh);
+	}
+	for (int i = 0; i < SidebarClass::COLUMNS; i++) {
+		SidebarClass::StripClass& strip = Map.Column[i];
+		if (!strip.IsToRedraw) {
+			continue;
+		}
+		int const h = SidebarClass::StripClass::MAX_VISIBLE * strip.ObjectHeight
+			+ SidebarClass::StripClass::BUTTON_HEIGHT + 2;
+		Map.Present_Add_Screen_Rect(strip.X, strip.Y, strip.X + strip.ObjectWidth + 8, strip.Y + h);
+	}
+	if (Map.PowerClass::IsToRedraw) {
+		Map.Present_Add_Screen_Rect(
+			Map.PowX, Map.PowY, Map.PowX + Map.PowWidth, Map.PowY + Map.PowHeight);
+	}
+	if (Map.RadarClass::Needs_Present()) {
+		Map.Present_Add_Screen_Rect(
+			Map.RadX, Map.RadY, Map.RadX + Map.RadWidth, Map.RadY + Map.RadHeight);
+	}
+}
+
+void DisplayClass::Present_Begin(bool complete)
+{
+	Present_N = 0;
+	Present_Area = 0;
+	/*
+	** Playback (and radar jumps) set DesiredTacticalCoord via Set_Tactical_Position
+	** without Scroll_Map, so DidScrollThisFrame is false. HidPage still scroll-copies
+	** in Draw_It; SeenBuff must get a full present or only the entering edge updates.
+	*/
+	Present_Full = complete || !Debug_Clipped_Tactical_Redraw || DidScrollThisFrame
+		|| DesiredTacticalCoord != TacticalCoord;
+	if (!Present_Full) {
+		Present_Snapshot_Chrome();
+	}
+}
+
+void DisplayClass::Present_Blit(void)
+{
+	static int prev_x, prev_y, prev_w, prev_h;
+	static bool have_prev;
+
+	WWMouse->Draw_Mouse(&HidPage);
+
+	int mx, my, mw, mh;
+	WWMouse->Get_Cursor_Rect(mx, my, mw, mh);
+	if (mw > 0 && mh > 0) {
+		Present_Add_Screen_Rect(mx, my, mx + mw, my + mh);
+	}
+	if (have_prev && prev_w > 0 && prev_h > 0) {
+		Present_Add_Screen_Rect(prev_x, prev_y, prev_x + prev_w, prev_y + prev_h);
+	}
+
+	if (Present_Full || Present_N == 0) {
+		HidPage.Blit(SeenBuff, 0, 0, 0, 0, HidPage.Get_Width(), HidPage.Get_Height(), false);
+	} else {
+		GraphicBufferClass *const hid_gb = HidPage.Get_Graphic_Buffer();
+		GraphicBufferClass *const seen_gb = SeenBuff.Get_Graphic_Buffer();
+		const uint8_t *const hid_root = (hid_gb && hid_gb->Is_ST_Planar())
+			? (const uint8_t *)hid_gb->Get_Buffer() : NULL;
+		uint8_t *const seen_root = (seen_gb && seen_gb->Is_ST_Planar())
+			? (uint8_t *)seen_gb->Get_Buffer() : NULL;
+		if (hid_root && seen_root) {
+			for (int i = 0; i < Present_N; i++) {
+				int const w = Present_X1[i] - Present_X0[i];
+				int const h = Present_Y1[i] - Present_Y0[i];
+				ST_Blit_Planar_Aligned_Rect_Copy(
+					hid_root,
+					seen_root,
+					ST_PLANAR_BYTES_PER_LINE,
+					ST_PLANAR_BYTES_PER_LINE,
+					Present_X0[i],
+					Present_Y0[i],
+					w,
+					h);
+			}
+		} else {
+			for (int i = 0; i < Present_N; i++) {
+				int const w = Present_X1[i] - Present_X0[i];
+				int const h = Present_Y1[i] - Present_Y0[i];
+				HidPage.Blit(SeenBuff, Present_X0[i], Present_Y0[i], Present_X0[i], Present_Y0[i], w, h, false);
+			}
+		}
+	}
+
+	if (mw > 0 && mh > 0) {
+		prev_x = mx;
+		prev_y = my;
+		prev_w = mw;
+		prev_h = mh;
+		have_prev = true;
+	}
+
+	WWMouse->Erase_Mouse(&HidPage, false);
+}
+
+#endif /* ATARI_ST */
 
 void DisplayClass::Redraw_Icons(int draw_flags)
 {
@@ -4917,6 +5115,11 @@ void DisplayClass::Set_Tactical_Position(COORDINATE coord)
     if (ScenarioInit) {
         TacticalCoord = coord;
     }
+#ifdef ATARI_ST
+    else if (coord != TacticalCoord) {
+        DidScrollThisFrame = true;
+    }
+#endif
     DesiredTacticalCoord = coord;
     IsToRedraw = true;
     Flag_To_Redraw(false);

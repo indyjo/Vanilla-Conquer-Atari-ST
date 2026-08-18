@@ -52,6 +52,10 @@ public:
 
     virtual void AI(KeyNumType& input, int x, int y);
     virtual void Draw_It(bool complete = false);
+    bool Needs_Present(void) const
+    {
+        return IsToRedraw;
+    }
 
     virtual void One_Time(void); // One-time inits
     virtual void Init_Clear(void);

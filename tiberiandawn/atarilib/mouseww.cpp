@@ -918,6 +918,18 @@ extern "C" void Invalidate_Mouse_Planar_Cache(void)
  * HISTORY:                                                                *
  *   Internal utility: blit cursor shape only (no save/restore).          *
  *=========================================================================*/
+void WWMouseClass::Get_Cursor_Rect(int &x, int &y, int &w, int &h)
+{
+	if (CursorWidth <= 0 || CursorHeight <= 0) {
+		x = y = w = h = 0;
+		return;
+	}
+	x = Get_Mouse_X() - MouseXHot;
+	y = Get_Mouse_Y() - MouseYHot;
+	w = CursorWidth;
+	h = CursorHeight;
+}
+
 void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 {
 	if (!scr || State != 0 || !PrevCursor || CursorWidth <= 0 || CursorHeight <= 0)

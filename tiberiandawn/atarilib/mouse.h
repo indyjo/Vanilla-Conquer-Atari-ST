@@ -52,6 +52,7 @@ class WWMouseClass {
 		// The following two routines can be used to render the mouse onto a graphicbuffer
 		// other than the hidpage.
 		//
+		void Get_Cursor_Rect(int &x, int &y, int &w, int &h);
 		void Draw_Mouse(GraphicViewPortClass *scr);
 		void Erase_Mouse(GraphicViewPortClass *scr, int forced = FALSE);
 		void Set_Cursor_From_Block(int hotx, int hoty, void *block, int frame_index);

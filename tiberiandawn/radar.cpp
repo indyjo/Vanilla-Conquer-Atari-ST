@@ -332,6 +332,11 @@ bool RadarClass::Radar_Activate(int control)
  *   04/24/1991 JLB : Created.                                                                 *
  *   05/08/1994 JLB : Converted to member function.                                            *
  *=============================================================================================*/
+bool RadarClass::Needs_Present(void) const
+{
+    return IsToRedraw || FullRedraw;
+}
+
 void RadarClass::Draw_It(bool forced)
 {
     DisplayClass::Draw_It(forced);

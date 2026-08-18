@@ -446,6 +446,80 @@ BOOL ST_Blit_Linear_Copy(void *dst, const void *src, unsigned long nbytes)
 	return TRUE;
 }
 
+BOOL ST_Blit_Planar_Aligned_Rect_Copy(
+	const uint8_t *src_root,
+	uint8_t *dst_root,
+	int src_row_bytes,
+	int dst_row_bytes,
+	int x,
+	int y,
+	int pixel_width,
+	int pixel_height)
+{
+	if (!src_root || !dst_root) {
+		return FALSE;
+	}
+	if (pixel_width <= 0 || pixel_height <= 0) {
+		return TRUE;
+	}
+	if ((x & 15) != 0 || (pixel_width & 15) != 0
+		|| src_row_bytes <= 0 || dst_row_bytes <= 0
+		|| src_row_bytes > ST_BLITTER_SHORT_MAX
+		|| dst_row_bytes > ST_BLITTER_SHORT_MAX
+		|| pixel_height > ST_BLITTER_SHORT_MAX) {
+		return FALSE;
+	}
+
+	const unsigned x_words = (unsigned)(pixel_width >> 4) * 4u;
+	if (x_words == 0u || x_words > 65535u) {
+		return FALSE;
+	}
+
+	const size_t row_bytes = (size_t)x_words * 2u;
+	const uint8_t *src = src_root + (size_t)y * (size_t)src_row_bytes
+		+ (size_t)(x >> 4) * 8u;
+	uint8_t *dst = dst_root + (size_t)y * (size_t)dst_row_bytes
+		+ (size_t)(x >> 4) * 8u;
+
+	ST_FRAME_BAR_BLIT_BEGIN();
+
+	if (!AllowHardwareBlitFills) {
+		for (int row = 0; row < pixel_height; row++) {
+			memcpy(dst, src, row_bytes);
+			src += src_row_bytes;
+			dst += dst_row_bytes;
+		}
+		ST_FRAME_BAR_BLIT_END();
+		return TRUE;
+	}
+
+	ST_Blit_Backend &hw = ST_Blit_HW_Backend();
+	const bool hog = ST_Blit_Should_Use_Hog(pixel_width, pixel_height);
+	const short x_inc = 2;
+	const short x_count = (short)x_words;
+
+	ST_Blitter plan{};
+	plan.src_x_inc = x_inc;
+	plan.src_y_inc = (short)(src_row_bytes - (x_count - 1) * x_inc);
+	plan.endmask1 = 0xFFFFu;
+	plan.endmask2 = 0xFFFFu;
+	plan.endmask3 = 0xFFFFu;
+	plan.dst_x_inc = x_inc;
+	plan.dst_y_inc = (short)(dst_row_bytes - (x_count - 1) * x_inc);
+	plan.x_count = (uint16_t)x_count;
+	plan.hop = 2;
+	plan.op = 3;
+	plan.skew = 0;
+
+	hw.Await();
+	hw.Program(plan);
+	hw.Execute(hog, (uint16_t)pixel_height, (void *)src, dst);
+	hw.Await();
+
+	ST_FRAME_BAR_BLIT_END();
+	return TRUE;
+}
+
 BOOL ST_Blit_Planar_Screen_Rect_Blit(
 	const uint8_t *src_root,
 	uint8_t *dst_root,

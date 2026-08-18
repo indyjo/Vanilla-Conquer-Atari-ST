@@ -376,6 +376,9 @@ void GScreenClass::Render(void)
 
         // WWMouse->Erase_Mouse(&HidPage, TRUE);
         GraphicViewPortClass* oldpage = Set_Logic_Page(HidPage);
+#ifdef ATARI_ST
+        Map.Present_Begin(IsToRedraw);
+#endif
         Draw_It(IsToRedraw);
 
         if (Buttons)
@@ -480,6 +483,15 @@ void GScreenClass::Blit_Display(void)
         WWMouse->Erase_Mouse(&HidPage, false);
     } else {
 #else //(0)
+#ifdef ATARI_ST
+    if (Debug_Clipped_Tactical_Redraw) {
+        Map.Present_Blit();
+#ifdef CHEAT_KEYS
+        Add_Current_Screen();
+#endif
+        return;
+    }
+#endif
     WWMouse->Draw_Mouse(&HidPage);
     HidPage.Blit(SeenBuff, 0, 0, 0, 0, HidPage.Get_Width(), HidPage.Get_Height(), false);
 #ifdef CHEAT_KEYS

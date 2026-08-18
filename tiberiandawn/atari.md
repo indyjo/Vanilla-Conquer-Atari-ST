@@ -431,6 +431,8 @@ Hovercraft cargo is drawn in the hover’s `Draw_It` in the same `WINDOW_TACTICA
 
 Each rectangle: **all tiles in the rect**, then objects, then **shroud for every cell in the rect**, then restore the window.
 
+After paint, CCR **presents** HidPage to SeenBuff by copying those redraw rects (plus tab/sidebar/power/radar/gadget/credits regions snapshotted from existing `IsToRedraw` flags, and the previous and current mouse cursor boxes). Present boxes are grown to 16-pixel X bounds so interleaved bitplanes are a contiguous word stream: one source-only blitter pass (`ST_Blit_Planar_Aligned_Rect_Copy`, hop=source, op=D=S). A **full** 320×200 present (`ST_Blit_Linear_Copy`) is used when the map scrolled this frame (`Scroll_Map` or a pending `DesiredTacticalCoord` change, including `record.bin` playback), after `Flag_To_Redraw(true)`, when CCR is off, or when the dirty union is large. Playback does not run `Map.Input` / `Scroll_Map`; it teleports the view, so present cannot rely on mouse-cursor rects.
+
 ## Regenerating W16 Files
 
 Build the host optimizer:

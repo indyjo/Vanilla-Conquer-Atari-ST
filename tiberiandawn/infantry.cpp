@@ -1812,6 +1812,15 @@ short const* InfantryClass::Overlap_List(void) const
     //	return(Coord_Spillage_List(Coord, (IsSelected ? 24 : 14))+1);
 }
 
+void InfantryClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    int const pad = Pixel_To_Lepton((Doing > DO_WALK || Is_Selected_By_Player()) ? 36 : 24);
+    dx0 = -pad;
+    dy0 = -pad;
+    dx1 = pad;
+    dy1 = pad;
+}
+
 /***********************************************************************************************
  * InfantryClass::Can_Fire -- Can the infantry fire its weapon?                                *
  *                                                                                             *

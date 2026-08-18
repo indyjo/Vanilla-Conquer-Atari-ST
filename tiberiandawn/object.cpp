@@ -983,7 +983,6 @@ bool ObjectClass::Render(bool forced)
 {
     int x, y;
     COORDINATE coord = Render_Coord();
-    CELL cell = Coord_Cell(coord);
 
     bool const allow_draw = Debug_Map || Debug_Unshroud
         || (Debug_Clipped_Tactical_Redraw
@@ -1027,11 +1026,6 @@ bool ObjectClass::Render(bool forced)
         }
 
         if (Map.Coord_To_Pixel(coord, x, y)) {
-
-            if (Debug_Clipped_Tactical_Redraw
-                && Map.Tactical_Cell_Hides_Objects_For_Local_Player(cell)) {
-                return (false);
-            }
 
             /*
             **	Draw the object itself
@@ -1191,10 +1185,9 @@ void ObjectClass::Mark_For_Redraw(void)
 {
     if (Debug_Clipped_Tactical_Redraw) {
         Flag_Redraw_Mask_Cells_From_Footprint(this);
-    } else {
-        if (!IsToDisplay) {
-            IsToDisplay = true;
-        }
+    }
+    if (!IsToDisplay) {
+        IsToDisplay = true;
     }
     Map.Flag_To_Redraw(false);
 }
@@ -1572,7 +1565,7 @@ bool ObjectClass::Mark(MarkType mark)
         **	this game frame.
         */
         if (mark == MARK_CHANGE) {
-            if (!Debug_Clipped_Tactical_Redraw && IsToDisplay) {
+            if (IsToDisplay) {
                 return (false);
             }
             if (IsDown == true) {
@@ -1777,6 +1770,13 @@ short const* ObjectClass::Occupy_List(bool placement) const
 short const* ObjectClass::Overlap_List(void) const
 {
     return (Class_Of().Overlap_List());
+};
+void ObjectClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    dx0 = -CELL_LEPTON_W;
+    dy0 = -CELL_LEPTON_H;
+    dx1 = CELL_LEPTON_W;
+    dy1 = CELL_LEPTON_H;
 };
 BuildingClass* ObjectClass::Who_Can_Build_Me(bool intheory, bool legal) const
 {

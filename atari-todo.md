@@ -17,6 +17,11 @@ Tracked follow-ups for the Atari ST/MiNT port.
 - [x] ST 320×200 double-buffer strategy — **decided / in use**
   - Separate aligned planar visible + hidden pages in `startup.cpp`; `SeenBuff`/`HidPage` viewports; present via `Blit_Display` (in-game) or `Blit_Hid_Page_To_Seen_Buff` (menus, score, etc.).
 
+- [ ] Separate window origin from clip-rect origin for clipped tactical redraw.
+  - Today `SHAPE_WIN_REL` uses one `WindowList[WINDOW_TACTICAL]` record for both: moving the clip to a redraw rect also moves `(0,0)`. Layer objects compensate with `px -= vx0`; nested draws (`Coord_To_Pixel` into the same window, e.g. hover cargo) do not.
+  - Goal: clip an interior rect while draw coordinates stay tactical-view relative, so `Coord_To_Pixel` and `Draw_It(..., WINDOW_TACTICAL)` stay in the same space unclipped and clipped.
+  - Primary files: `tiberiandawn/display.cpp` (`ST_Redraw_Coalesced_Clipped`), shape/clip path if the window list cannot express a distinct clip origin.
+
 ## KeyFrame / Shape Decode Robustness
 
 - [ ] Finish hardening XOR-chain `Build_Frame` when subframe table windows hit asset end.

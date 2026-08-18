@@ -43,6 +43,21 @@ void ST_Planar_Draw_VLine_Fast(
 	short y2_abs,
 	uint16_t color4);
 
+/*
+ * Horizontal span using four precomputed plane words as a 16-pixel repeating pattern
+ * (Bayer x-phase is aligned to 16-pixel groups on ST lores). Inclusive x.
+ */
+void ST_Planar_Draw_HLine_Pattern16(
+	uint16_t *planar_root,
+	short planar_row_words,
+	short y_abs,
+	short x1_abs,
+	short x2_abs,
+	uint16_t fill0,
+	uint16_t fill1,
+	uint16_t fill2,
+	uint16_t fill3);
+
 /* Fill words for flat nibble color (same table as ST_Planar_Fill_Rect_Fast). */
 void ST_Planar_Get_Fill_Words(uint16_t color4, uint16_t out[4]);
 

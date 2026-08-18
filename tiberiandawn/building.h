@@ -247,6 +247,7 @@ public:
     virtual void const* Remap_Table(void);
     virtual int Exit_Object(TechnoClass* base);
     virtual void Draw_It(int x, int y, WindowNumberType window);
+    virtual void Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const;
     virtual bool Mark(MarkType mark);
     virtual void Look(bool incremental = false);
     virtual void Fire_Out(void);

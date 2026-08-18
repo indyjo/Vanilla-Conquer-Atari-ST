@@ -352,6 +352,14 @@ bool TerrainClass::Mark(MarkType mark)
  *   06/27/1994 JLB : Created.                                                                 *
  *   11/09/1994 JLB : Changed selected terrain highlight method.                               *
  *=============================================================================================*/
+void TerrainClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    dx0 = -2 * CELL_LEPTON_W;
+    dy0 = -2 * CELL_LEPTON_H;
+    dx1 = 2 * CELL_LEPTON_W;
+    dy1 = 2 * CELL_LEPTON_H;
+}
+
 void TerrainClass::Draw_It(int x, int y, WindowNumberType window)
 {
     Validate();

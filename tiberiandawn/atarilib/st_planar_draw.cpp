@@ -100,6 +100,37 @@ void ST_Planar_Get_Fill_Words(uint16_t color4, uint16_t out[4])
 	out[3] = kFillWordsByNibble[c][3];
 }
 
+void ST_Planar_Draw_HLine_Pattern16(
+	uint16_t *planar_root,
+	short planar_row_words,
+	short y_abs,
+	short x1_abs,
+	short x2_abs,
+	uint16_t fill0,
+	uint16_t fill1,
+	uint16_t fill2,
+	uint16_t fill3)
+{
+	if (!planar_root || planar_row_words <= 0)
+		return;
+	if (x1_abs > x2_abs) {
+		short t = x1_abs;
+		x1_abs = x2_abs;
+		x2_abs = t;
+	}
+	uint16_t *row = planar_root + (size_t)y_abs * (size_t)planar_row_words;
+	Apply_Flat_HSpan_To_Row(
+		row,
+		(short)(x1_abs >> 4),
+		(short)(x2_abs >> 4),
+		(short)(x1_abs & 15),
+		(short)(x2_abs & 15),
+		fill0,
+		fill1,
+		fill2,
+		fill3);
+}
+
 void ST_Planar_Draw_HLine_Fast(
 	uint16_t *planar_root,
 	short planar_row_words,

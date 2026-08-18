@@ -530,6 +530,14 @@ void BuildingClass::Debug_Dump(MonoClass* mono) const
  *   06/27/1994 JLB : Takes a clipping window parameter.                                       *
  *   07/06/1995 JLB : Handles damaged silos correctly.                                         *
  *=============================================================================================*/
+void BuildingClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    dx0 = -3 * CELL_LEPTON_W;
+    dy0 = -3 * CELL_LEPTON_H;
+    dx1 = 3 * CELL_LEPTON_W;
+    dy1 = 3 * CELL_LEPTON_H;
+}
+
 void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
 {
     Validate();

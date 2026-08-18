@@ -267,7 +267,7 @@ public:
     /*
     **	Display and rendering controls.
     */
-    void Draw_It(int x, int y, int draw_flags = 0) const;
+    void Draw_It(int x, int y, int draw_flags = 0, CELL cell = (CELL)-1) const;
     void Redraw_Objects(CELL cell, bool forced = false);
     void Redraw_Objects(bool forced = false);
     void Shimmer(void);

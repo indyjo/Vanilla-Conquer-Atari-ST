@@ -248,6 +248,14 @@ short const* BulletClass::Occupy_List(bool placement) const
     return (Coord_Spillage_List(Coord, 10));
 }
 
+void BulletClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    dx0 = -2 * CELL_LEPTON_W;
+    dx1 = 2 * CELL_LEPTON_W;
+    dy0 = -2 * CELL_LEPTON_H - Altitude;
+    dy1 = 2 * CELL_LEPTON_H;
+}
+
 /***********************************************************************************************
  * BulletClass::Mark -- Performs related map refreshing under bullet.                          *
  *                                                                                             *

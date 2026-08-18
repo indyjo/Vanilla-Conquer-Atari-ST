@@ -120,6 +120,7 @@ public:
     **	object interacts with the map and thus indirectly controls rendering.
     */
     virtual void Draw_It(int x, int y, WindowNumberType window);
+    virtual void Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const;
     virtual bool Mark(MarkType mark = MARK_CHANGE);
     unsigned char* Radar_Icon(CELL cell);
 

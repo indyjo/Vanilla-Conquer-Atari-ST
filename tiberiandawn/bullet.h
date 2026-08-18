@@ -122,6 +122,7 @@ public:
     virtual bool Mark(MarkType mark = MARK_CHANGE);
     virtual void AI(void);
     virtual short const* Occupy_List(bool placement = false) const;
+    virtual void Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const;
     virtual short const* Overlap_List(void) const
     {
         return Occupy_List();

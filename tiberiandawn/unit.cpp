@@ -2251,22 +2251,43 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
 
         /*
         **	If this unit has "piggy back" unit(s), then render it at the same time.
+        **	Pixel offsets are relative to this hover's draw origin so a clipped
+        **	WINDOW_TACTICAL still places cargo on the deck (Coord_To_Pixel is
+        **	tactical-absolute and would land outside the redraw-rect window).
         */
         if (*this == UNIT_HOVER && Is_Something_Attached()) {
             TechnoClass* u = (TechnoClass*)Attached_Object();
+            int const hx = Lepton_To_Pixel((int)Coord_X(Coord));
+            int const hy = Lepton_To_Pixel((int)Coord_Y(Coord));
 
             int counter = 0;
             for (;;) {
-                int x1, y1;
-
-                if (Map.Coord_To_Pixel(Coord_Add(Coord_Add(Coord, 0xFF80FF80L), StoppingCoordAbs[counter++]), x1, y1)) {
-                    // Pass the window through, so that the virtual window will also work. ST - 6/18/2019 12:00PM
-                    // u->Draw_It(x1, y1, WINDOW_TACTICAL);
-                    u->Draw_It(x1, y1, window);
-                }
+                COORDINATE const cargo_coord =
+                    Coord_Add(Coord_Add(Coord, 0xFF80FF80L), StoppingCoordAbs[counter++]);
+                int const x1 = x + Lepton_To_Pixel((int)Coord_X(cargo_coord)) - hx;
+                int const y1 = y + Lepton_To_Pixel((int)Coord_Y(cargo_coord)) - hy;
+                u->Draw_It(x1, y1, window);
                 if (!u->Next)
                     break;
                 u = (TechnoClass*)u->Next;
+            }
+        }
+
+        /*
+        **	Tethered unload contact: same trick as the weapon factory overlay.
+        **	Draw it in this window so the ramp walker is not sheared by a
+        **	passenger-only redraw rect.
+        */
+        if (*this == UNIT_HOVER && !Is_Something_Attached() && IsTethered && In_Radio_Contact()) {
+            TechnoClass* contact = Contact_With_Whom();
+            if (contact != NULL && contact->IsActive && !contact->IsInLimbo && contact->IsDown) {
+                int const xxx = x
+                    + ((int)Lepton_To_Pixel((int)Coord_X(contact->Render_Coord()))
+                       - (int)Lepton_To_Pixel((int)Coord_X(Render_Coord())));
+                int const yyy = y
+                    + ((int)Lepton_To_Pixel((int)Coord_Y(contact->Render_Coord()))
+                       - (int)Lepton_To_Pixel((int)Coord_Y(Render_Coord())));
+                contact->Draw_It(xxx, yyy, window);
             }
         }
     }
@@ -2989,6 +3010,25 @@ short const* UnitClass::Overlap_List(void) const
         size = ICON_PIXEL_W * 2;
     }
     return (Coord_Spillage_List(Coord, size) + 1);
+}
+
+void UnitClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    if (*this == UNIT_GUNBOAT) {
+        dx0 = -3 * CELL_LEPTON_W;
+        dx1 = 3 * CELL_LEPTON_W;
+        dy0 = -CELL_LEPTON_H;
+        dy1 = CELL_LEPTON_H;
+        return;
+    }
+    int cells = 1;
+    if (Is_Selected_By_Player() || IsFiring || Class->IsGigundo || IsAnimAttached || Flagged != HOUSE_NONE) {
+        cells = 2;
+    }
+    dx0 = -cells * CELL_LEPTON_W;
+    dy0 = -cells * CELL_LEPTON_H;
+    dx1 = cells * CELL_LEPTON_W;
+    dy1 = cells * CELL_LEPTON_H;
 }
 
 #ifdef NEVER

@@ -508,6 +508,14 @@ short const* AnimClass::Overlap_List(void) const
     return (Coord_Spillage_List(Center_Coord(), Class->Size));
 }
 
+void AnimClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    dx0 = -2 * CELL_LEPTON_W;
+    dy0 = -2 * CELL_LEPTON_H;
+    dx1 = 2 * CELL_LEPTON_W;
+    dy1 = 2 * CELL_LEPTON_H;
+}
+
 /***********************************************************************************************
  * AnimClass::Occupy_List -- Determines the occupy list for the animation.                     *
  *                                                                                             *

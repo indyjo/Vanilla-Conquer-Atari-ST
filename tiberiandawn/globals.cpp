@@ -33,6 +33,11 @@
 
 #include "function.h"
 #include "common/vqaconfig.h"
+#ifdef ATARI_ST
+#include "ikbd.h"
+#include "c2p.h"
+#include "st_planar_draw.h"
+#endif
 
 #ifdef JAPANESE
 bool ForceEnglish = false;
@@ -42,7 +47,223 @@ bool Debug_Quiet = false;
 bool Debug_Cheat = false;
 bool Debug_Remap = false;
 bool Debug_Icon = false;
-bool Debug_Clipped_Tactical_Redraw = false; /* F8 / Debug_Flag: true = cell-flag + per-cell clip + footprint; false = unclipped redraw (Refresh_Cells / layer Render / IsToDisplay) */
+bool Debug_Clipped_Tactical_Redraw = true; /* Alt+C: false = unclipped full redraw */
+bool Debug_Redraw_Rects = false; /* Alt+R: cycle a color rect on every cell/unit Draw_It */
+static unsigned char Debug_Redraw_Cycle = 1;
+
+unsigned char Debug_Next_Redraw_Color(void)
+{
+    unsigned char const c = Debug_Redraw_Cycle;
+    Debug_Redraw_Cycle = (unsigned char)(Debug_Redraw_Cycle + 1);
+    if (Debug_Redraw_Cycle == 0) {
+        Debug_Redraw_Cycle = 1;
+    }
+    return c;
+}
+
+#ifdef ATARI_ST
+static int Debug_Planar_Context(uint16_t **root, short *row_words, int *buf_w, int *buf_h, int *ox, int *oy)
+{
+    if (LogicPage == NULL) {
+        return 0;
+    }
+    GraphicBufferClass *gb = LogicPage->Get_Graphic_Buffer();
+    if (gb == NULL || !gb->Is_ST_Planar()) {
+        return 0;
+    }
+    int const pitch = gb->Get_Pitch();
+    int const row_bytes = (pitch > 0) ? pitch : ST_Planar_Row_Bytes(gb->Get_Width());
+    *root = (uint16_t *)gb->Get_Buffer();
+    *row_words = (short)(row_bytes >> 1);
+    *buf_w = gb->Get_Width();
+    *buf_h = gb->Get_Height();
+    *ox = LogicPage->Get_XPos();
+    *oy = LogicPage->Get_YPos();
+    return (*root != NULL && *row_words > 0 && *buf_w > 0 && *buf_h > 0);
+}
+
+static void Debug_Bayer_Pattern16(unsigned char pal, int y, uint16_t fill[4])
+{
+    unsigned char const p0 = C2P_Map8ToPlanar4(0, y, pal);
+    unsigned char const p1 = C2P_Map8ToPlanar4(1, y, pal);
+    unsigned char const p2 = C2P_Map8ToPlanar4(2, y, pal);
+    unsigned char const p3 = C2P_Map8ToPlanar4(3, y, pal);
+    fill[0] = fill[1] = fill[2] = fill[3] = 0;
+    for (int i = 0; i < 16; i++) {
+        unsigned char c;
+        switch (i & 3) {
+        case 0:
+            c = p0;
+            break;
+        case 1:
+            c = p1;
+            break;
+        case 2:
+            c = p2;
+            break;
+        default:
+            c = p3;
+            break;
+        }
+        uint16_t const bit = (uint16_t)(0x8000u >> i);
+        if (c & 1) {
+            fill[0] = (uint16_t)(fill[0] | bit);
+        }
+        if (c & 2) {
+            fill[1] = (uint16_t)(fill[1] | bit);
+        }
+        if (c & 4) {
+            fill[2] = (uint16_t)(fill[2] | bit);
+        }
+        if (c & 8) {
+            fill[3] = (uint16_t)(fill[3] | bit);
+        }
+    }
+}
+
+static void Debug_Bayer_HLine(uint16_t *root, short row_words, int x0, int x1, int y, unsigned char pal)
+{
+    uint16_t fill[4];
+    Debug_Bayer_Pattern16(pal, y, fill);
+    ST_Planar_Draw_HLine_Pattern16(
+        root, row_words, (short)y, (short)x0, (short)x1, fill[0], fill[1], fill[2], fill[3]);
+}
+
+static void Debug_Bayer_VLine(uint16_t *root, short row_words, int x, int y0, int y1, unsigned char pal)
+{
+    if (y0 > y1) {
+        int t = y0;
+        y0 = y1;
+        y1 = t;
+    }
+    short const word_off = (short)((x >> 4) * 4);
+    uint16_t const bitmask = (uint16_t)(1u << (15 - (x & 15)));
+    uint16_t const inv = (uint16_t)~bitmask;
+    uint16_t *p = root + (size_t)y0 * (size_t)row_words + (size_t)word_off;
+    for (int y = y0; y <= y1; y++, p += row_words) {
+        unsigned char const c = C2P_Map8ToPlanar4(x, y, pal);
+        p[0] = (uint16_t)((p[0] & inv) | ((c & 1) ? bitmask : 0));
+        p[1] = (uint16_t)((p[1] & inv) | ((c & 2) ? bitmask : 0));
+        p[2] = (uint16_t)((p[2] & inv) | ((c & 4) ? bitmask : 0));
+        p[3] = (uint16_t)((p[3] & inv) | ((c & 8) ? bitmask : 0));
+    }
+}
+
+static int Debug_Clip_Rect(int *x0, int *y0, int *x1, int *y1, int buf_w, int buf_h)
+{
+    if (*x0 > *x1) {
+        int t = *x0;
+        *x0 = *x1;
+        *x1 = t;
+    }
+    if (*y0 > *y1) {
+        int t = *y0;
+        *y0 = *y1;
+        *y1 = t;
+    }
+    if (*x1 < 0 || *y1 < 0 || *x0 >= buf_w || *y0 >= buf_h) {
+        return 0;
+    }
+    if (*x0 < 0) {
+        *x0 = 0;
+    }
+    if (*y0 < 0) {
+        *y0 = 0;
+    }
+    if (*x1 >= buf_w) {
+        *x1 = buf_w - 1;
+    }
+    if (*y1 >= buf_h) {
+        *y1 = buf_h - 1;
+    }
+    return 1;
+}
+#endif
+
+void Debug_Redraw_Mark_Tile(int x, int y)
+{
+    if (!Debug_Redraw_Rects || LogicPage == NULL) {
+        return;
+    }
+    unsigned char const color = Debug_Next_Redraw_Color();
+    int x0 = Map.TacPixelX + x;
+    int y0 = Map.TacPixelY + y;
+    int x1 = x0 + ICON_PIXEL_W - 1;
+    int y1 = y0 + ICON_PIXEL_H - 1;
+#ifdef ATARI_ST
+    uint16_t *root;
+    short row_words;
+    int buf_w, buf_h, ox, oy;
+    if (Debug_Planar_Context(&root, &row_words, &buf_w, &buf_h, &ox, &oy)) {
+        x0 += ox;
+        y0 += oy;
+        x1 += ox;
+        y1 += oy;
+        if (!Debug_Clip_Rect(&x0, &y0, &x1, &y1, buf_w, buf_h)) {
+            return;
+        }
+        Debug_Bayer_HLine(root, row_words, x0, x1, y0, color);
+        Debug_Bayer_HLine(root, row_words, x0, x1, y1, color);
+        Debug_Bayer_VLine(root, row_words, x0, y0, y1, color);
+        Debug_Bayer_VLine(root, row_words, x1, y0, y1, color);
+        return;
+    }
+#endif
+    LogicPage->Draw_Rect(x0, y0, x1, y1, color);
+}
+
+void Debug_Redraw_Mark_Unit(int x, int y, WindowNumberType window, int width, int height)
+{
+    if (!Debug_Redraw_Rects || LogicPage == NULL || width < 1 || height < 1) {
+        return;
+    }
+    unsigned char const color = Debug_Next_Redraw_Color();
+    int x0 = WindowList[window][WINDOWX] + x - (width / 2);
+    int y0 = WindowList[window][WINDOWY] + y - (height / 2);
+    int x1 = x0 + width - 1;
+    int y1 = y0 + height - 1;
+#ifdef ATARI_ST
+    uint16_t *root;
+    short row_words;
+    int buf_w, buf_h, ox, oy;
+    if (Debug_Planar_Context(&root, &row_words, &buf_w, &buf_h, &ox, &oy)) {
+        x0 += ox;
+        y0 += oy;
+        x1 += ox;
+        y1 += oy;
+        if (!Debug_Clip_Rect(&x0, &y0, &x1, &y1, buf_w, buf_h)) {
+            return;
+        }
+        Debug_Bayer_HLine(root, row_words, x0, x1, y0, color);
+        Debug_Bayer_HLine(root, row_words, x0, x1, y1, color);
+        Debug_Bayer_VLine(root, row_words, x0, y0, y1, color);
+        Debug_Bayer_VLine(root, row_words, x1, y0, y1, color);
+        return;
+    }
+#endif
+    LogicPage->Draw_Rect(x0, y0, x1, y1, color);
+}
+
+void Debug_Redraw_Hotkeys_Service(void)
+{
+#ifdef ATARI_ST
+    static int prev_c;
+    static int prev_r;
+    int const alt = IKBD_Key_Is_Down(VK_MENU);
+    int const c = (alt && IKBD_Key_Is_Down(VK_C)) ? 1 : 0;
+    int const r = (alt && IKBD_Key_Is_Down(VK_R)) ? 1 : 0;
+    if (c && !prev_c) {
+        Debug_Clipped_Tactical_Redraw = (Debug_Clipped_Tactical_Redraw == false);
+        Map.Flag_To_Redraw(true);
+    }
+    if (r && !prev_r) {
+        Debug_Redraw_Rects = (Debug_Redraw_Rects == false);
+        Map.Flag_To_Redraw(true);
+    }
+    prev_c = c;
+    prev_r = r;
+#endif
+}
 /*
  * TODO(ST): Debug_Flag defaults true here (RA defaults false). With it on, "replay
  * introduction" walks the debug movie carousel (INTRO2 → GDIEND1 → …) so the 2nd

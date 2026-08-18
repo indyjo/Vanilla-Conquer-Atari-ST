@@ -1498,6 +1498,7 @@ void Call_Back(void)
     }
     ST_Debug_Screen_Service();
     ST_Sprite_Cache_Stats_Debug_Service();
+    Debug_Redraw_Hotkeys_Service();
 #endif
 
     /*

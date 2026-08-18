@@ -930,12 +930,14 @@ bool CellClass::Get_Template_Info(char *template_name, int &icon, void *&image_d
  *   12/11/1994 JLB : Mixes up clear terrain through pseudo-random table.                      *
  *   04/25/1995 JLB : Smudges drawn BELOW overlays.                                            *
  *=============================================================================================*/
-void CellClass::Draw_It(int x, int y, int draw_type) const
+void CellClass::Draw_It(int x, int y, int draw_type, CELL cell) const
 {
 	Validate();
 	TemplateTypeClass const *ttype = 0;
 	int	icon;		// The icon number to use from the template set.
-	CELL	cell = Cell_Number();
+	if ((unsigned)cell >= (unsigned)MAP_CELL_TOTAL) {
+		cell = Cell_Number();
+	}
 	void * remap = NULL;
 #ifdef SCENARIO_EDITOR
 	TemplateTypeClass * tptr;
@@ -1152,10 +1154,12 @@ void CellClass::Draw_It(int x, int y, int draw_type) const
 							break;
 					}
 				}
-	#endif
+				#endif
 			}
 		}
 	}
+
+	Debug_Redraw_Mark_Tile(x, y);
 }
 
 

@@ -1009,6 +1009,21 @@ short const* AircraftClass::Overlap_List(void) const
     return (Class->Overlap_List());
 }
 
+void AircraftClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+{
+    if (Altitude) {
+        dx0 = -CELL_LEPTON_W;
+        dx1 = CELL_LEPTON_W;
+        dy0 = -3 * CELL_LEPTON_H;
+        dy1 = CELL_LEPTON_H;
+        return;
+    }
+    dx0 = -2 * CELL_LEPTON_W;
+    dy0 = -2 * CELL_LEPTON_H;
+    dx1 = 2 * CELL_LEPTON_W;
+    dy1 = 2 * CELL_LEPTON_H;
+}
+
 /***********************************************************************************************
  * AircraftClass::Init -- Initialize the aircraft system to an empty state.                    *
  *                                                                                             *

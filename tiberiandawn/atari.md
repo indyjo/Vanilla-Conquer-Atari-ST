@@ -8,6 +8,7 @@ This file collects Atari ST port specific implementation notes.
 - [SHPX KeyFrame SHP format](#shpx-external-pool-keyframe-shp-format)
 - [CONQUER.INI](#conquerini-options)
 - [Runtime Usage](#runtime-usage)
+- [Clipped tactical redraw](#clipped-tactical-redraw)
 - [Regenerating W16 Files](#regenerating-w16-files)
 - [Required MIX files](#required-mix-files)
 - [AUDX audio format](#audx-external-pool-audio-format)
@@ -411,6 +412,24 @@ Throttle keys, `SkipBuildingConstructionAnims`, `FreezeAIDuringMapGestures`, and
 - **WSA playback:** `WSA_Atari_TryInstallC2PWeights()` loads `<basename>.W16` when an animation is opened.
 
 If the file is missing or invalid, the engine keeps the current built-in weight set (`C2P_Clear_CustomWeights()` resets to compiled-in TEMPERAT/HTITLE tables).
+
+## Clipped tactical redraw
+
+`Alt+C` toggles `Debug_Clipped_Tactical_Redraw` (on by default). Marks stay **non-contagious**: units flag `CellRedraw` from occupy/overlap footprints only (`object.cpp`), not neighbor contagion via Occupier/Overlapper.
+
+Paint (in `display.cpp` `ST_Redraw_Coalesced_Clipped`) does not clip per tile. In-view dirty cells are coalesced into redraw rectangles by `Rect_Cover_Greedy` (`rect_cover.h`): **greedy grow** (expand left/right/down while remaining-dirty density stays at least **12/16**). At most `REDRAW_RECT_MAX - 1` grow-algorithm rectangles; leftover dirty cells become **one bounding box** (last slot). Covering a rectangle unmarks every cell inside it; unmarked cells may be filled. **Every cell in a redraw rect is restamped** (objects overdraw copied terrain; “clean” cells in the rect are not assumed intact). Completely shrouded cells skip the terrain stamp and get only the black mask. All of that is stack-local (view mask ≤ 16×12, ≤8×64 object pointers).
+
+Scroll in clipped mode flags only tiles whose 24×24 stamp is not fully inside the hidpage copy (the entering edge). It does not add the unclipped `extra_x`/`extra_y` seam band or shrink the copy by 24px.
+
+View cell `(0,0)` is converted to pixels once (`Coord_To_Pixel` on that cell’s northwest). Every other stamp/clip corner is `origin + (vc,vr) * 24`.
+
+Objects come from `DisplayClass::Layer[]` in existing draw order. Binning is in **lepton space**: each object supplies a conservative `Get_AABB` (offsets from `Coord`; selection/anim/altitude may enlarge it); each redraw rect is converted once to a half-open map-lepton box. Rects are sorted by ascending `x_min`; the per-object loop tests `x_min`, then Y, then `x_max` and stops when `obj.x_max < rect.x_min`. No occupy/overlap walks and no `Coord_To_Pixel` in the bin loop. An object that overlaps two rects is drawn in both (each clipped to that rect). `WINDOW_TACTICAL` matches the redraw rect. Objects in the rect are drawn even if `Tactical_Cell_Hides_Objects_For_Local_Player` is true; the shroud pass after objects covers black/fog cells. Terrain stamps still skip hidden cells (black mask only).
+
+Tethered passengers (hovercraft unload) still get `RADIO_REDRAW` from `TechnoClass::Mark`; that only flags the contact object’s occupy/overlap cells. `IsToDisplay` latches `MARK_CHANGE` for the frame so hover↔cargo radio cannot recurse.
+
+Hovercraft cargo is drawn in the hover’s `Draw_It` in the same `WINDOW_TACTICAL` as the boat: attached (“piggy back”) riders use lepton pixel offsets from the hover origin (not `Coord_To_Pixel`, which is tactical-absolute and misses a redraw-rect clip). After unload, the tethered contact is drawn the same way as a weapon-factory vehicle on the pad. Other unloading units still paint as Layer objects from their own footprints.
+
+Each rectangle: **all tiles in the rect**, then objects, then **shroud for every cell in the rect**, then restore the window.
 
 ## Regenerating W16 Files
 

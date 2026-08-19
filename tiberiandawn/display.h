@@ -220,6 +220,7 @@ public:
     void Present_Begin(bool complete);
     void Present_Add_Screen_Rect(int x0, int y0, int x1, int y1);
     void Present_Add_Tactical_Rect(int vx0, int vy0, int vx1, int vy1);
+    void Present_Write_Through_Rect(int x0, int y0, int x1, int y1);
     void Present_Blit(void);
 #endif
 

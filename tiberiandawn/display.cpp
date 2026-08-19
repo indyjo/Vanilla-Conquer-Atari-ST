@@ -3349,13 +3349,8 @@ static int Present_X1[PRESENT_RECT_MAX];
 static int Present_Y1[PRESENT_RECT_MAX];
 static int Present_Area;
 
-static void Present_Snapshot_Chrome(void);
-
-void DisplayClass::Present_Add_Screen_Rect(int x0, int y0, int x1, int y1)
+static bool Present_Clip_Align(int& x0, int& y0, int& x1, int& y1)
 {
-	if (Present_Full) {
-		return;
-	}
 	int const sw = HidPage.Get_Width();
 	int const sh = HidPage.Get_Height();
 	if (x0 < 0) {
@@ -3371,14 +3366,44 @@ void DisplayClass::Present_Add_Screen_Rect(int x0, int y0, int x1, int y1)
 		y1 = sh;
 	}
 	if (x1 <= x0 || y1 <= y0) {
-		return;
+		return false;
 	}
 	x0 &= ~15;
 	x1 = (x1 + 15) & ~15;
 	if (x1 > sw) {
 		x1 = sw;
 	}
-	if (x1 <= x0) {
+	return (x1 > x0 && y1 > y0);
+}
+
+static void Present_Copy_Hid_Rect(int x0, int y0, int x1, int y1)
+{
+	int const w = x1 - x0;
+	int const h = y1 - y0;
+	GraphicBufferClass* const hid_gb = HidPage.Get_Graphic_Buffer();
+	GraphicBufferClass* const seen_gb = SeenBuff.Get_Graphic_Buffer();
+	uint8_t const* const hid_root = (hid_gb && hid_gb->Is_ST_Planar())
+		? (uint8_t const*)hid_gb->Get_Buffer()
+		: NULL;
+	uint8_t* const seen_root = (seen_gb && seen_gb->Is_ST_Planar())
+		? (uint8_t*)seen_gb->Get_Buffer()
+		: NULL;
+	if (hid_root && seen_root) {
+		ST_Blit_Planar_Aligned_Rect_Copy(
+			hid_root, seen_root, ST_PLANAR_BYTES_PER_LINE, ST_PLANAR_BYTES_PER_LINE, x0, y0, w, h);
+	} else {
+		HidPage.Blit(SeenBuff, x0, y0, x0, y0, w, h, false);
+	}
+}
+
+static void Present_Snapshot_Chrome(void);
+
+void DisplayClass::Present_Add_Screen_Rect(int x0, int y0, int x1, int y1)
+{
+	if (Present_Full) {
+		return;
+	}
+	if (!Present_Clip_Align(x0, y0, x1, y1)) {
 		return;
 	}
 	if (Present_N >= PRESENT_RECT_MAX) {
@@ -3391,7 +3416,7 @@ void DisplayClass::Present_Add_Screen_Rect(int x0, int y0, int x1, int y1)
 	Present_Y1[Present_N] = y1;
 	Present_N++;
 	Present_Area += (x1 - x0) * (y1 - y0);
-	if (Present_Area >= (sw * sh) / 2) {
+	if (Present_Area >= (HidPage.Get_Width() * HidPage.Get_Height()) / 2) {
 		Present_Full = true;
 	}
 }
@@ -3399,6 +3424,16 @@ void DisplayClass::Present_Add_Screen_Rect(int x0, int y0, int x1, int y1)
 void DisplayClass::Present_Add_Tactical_Rect(int vx0, int vy0, int vx1, int vy1)
 {
 	Present_Add_Screen_Rect(TacPixelX + vx0, TacPixelY + vy0, TacPixelX + vx1, TacPixelY + vy1);
+}
+
+void DisplayClass::Present_Write_Through_Rect(int x0, int y0, int x1, int y1)
+{
+	if (!Debug_Coalesced_Clipped_Redraw || !Present_Clip_Align(x0, y0, x1, y1)) {
+		return;
+	}
+	Conditional_Hide_Mouse(x0, y0, x1 - 1, y1 - 1);
+	Present_Copy_Hid_Rect(x0, y0, x1, y1);
+	Conditional_Show_Mouse();
 }
 
 static void Present_Snapshot_Chrome(void)
@@ -3484,32 +3519,8 @@ void DisplayClass::Present_Blit(void)
 	if (Present_Full || Present_N == 0) {
 		HidPage.Blit(SeenBuff, 0, 0, 0, 0, HidPage.Get_Width(), HidPage.Get_Height(), false);
 	} else {
-		GraphicBufferClass *const hid_gb = HidPage.Get_Graphic_Buffer();
-		GraphicBufferClass *const seen_gb = SeenBuff.Get_Graphic_Buffer();
-		const uint8_t *const hid_root = (hid_gb && hid_gb->Is_ST_Planar())
-			? (const uint8_t *)hid_gb->Get_Buffer() : NULL;
-		uint8_t *const seen_root = (seen_gb && seen_gb->Is_ST_Planar())
-			? (uint8_t *)seen_gb->Get_Buffer() : NULL;
-		if (hid_root && seen_root) {
-			for (int i = 0; i < Present_N; i++) {
-				int const w = Present_X1[i] - Present_X0[i];
-				int const h = Present_Y1[i] - Present_Y0[i];
-				ST_Blit_Planar_Aligned_Rect_Copy(
-					hid_root,
-					seen_root,
-					ST_PLANAR_BYTES_PER_LINE,
-					ST_PLANAR_BYTES_PER_LINE,
-					Present_X0[i],
-					Present_Y0[i],
-					w,
-					h);
-			}
-		} else {
-			for (int i = 0; i < Present_N; i++) {
-				int const w = Present_X1[i] - Present_X0[i];
-				int const h = Present_Y1[i] - Present_Y0[i];
-				HidPage.Blit(SeenBuff, Present_X0[i], Present_Y0[i], Present_X0[i], Present_Y0[i], w, h, false);
-			}
+		for (int i = 0; i < Present_N; i++) {
+			Present_Copy_Hid_Rect(Present_X0[i], Present_Y0[i], Present_X1[i], Present_Y1[i]);
 		}
 	}
 

@@ -150,6 +150,11 @@ int ShapeButtonClass::Draw_Me(int forced)
         if (LogicPage == &SeenBuff) {
             Conditional_Show_Mouse();
         }
+#ifdef ATARI_ST
+        else if (LogicPage == &HidPage) {
+            Map.Present_Write_Through_Rect(X, Y, X + Width, Y + Height);
+        }
+#endif
         return (true);
     }
     return (false);

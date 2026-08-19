@@ -1528,9 +1528,17 @@ int RadarClass::TacticalClass::Action(unsigned flags, KeyNumType& key)
                     if (cell != -1) {
                         int cellx = Cell_X(cell);
                         int celly = Cell_Y(cell);
+#ifdef ATARI_ST
+                        /*
+                        ** MOUSE_RADAR_CURSOR is a white box with hotspot (0,0)
+                        ** at its top-left. Treat that box as the new tactical
+                        ** area rather than centering the view on the corner.
+                        */
+#else
                         cellx -= Lepton_To_Cell(Map.TacLeptonWidth) / 2;
-                        cellx = MAX(cellx, Map.MapCellX);
                         celly -= Lepton_To_Cell(Map.TacLeptonHeight) / 2;
+#endif
+                        cellx = MAX(cellx, Map.MapCellX);
                         celly = MAX(celly, Map.MapCellY);
                         cell = XY_Cell(cellx, celly);
                         shadow = (!Map[cell].Is_Visible(PlayerPtr) && !Debug_Unshroud);

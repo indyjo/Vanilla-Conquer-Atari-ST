@@ -3002,11 +3002,13 @@ short const* UnitClass::Overlap_List(void) const
         return (&_gunboat[0]);
     }
 
+    /*
+    **	Safe to drop selected/firing from the 48px bump: 24x24 SHAPE_CENTER hulls
+    **	plus 18x18 select chrome stay inside one cell (recoil is 1px). MaxSize > 24
+    **	(MLRS turret shift) still takes 48, as do gigundo, flags, and attached anims.
+    */
     size = ICON_PIXEL_W;
-    if (Is_Selected_By_Player() || IsFiring) {
-        size += 24;
-    }
-    if (Is_Selected_By_Player() || Class->IsGigundo || IsAnimAttached || Flagged != HOUSE_NONE) {
+    if (Class->IsGigundo || IsAnimAttached || Flagged != HOUSE_NONE || Class->MaxSize > ICON_PIXEL_W) {
         size = ICON_PIXEL_W * 2;
     }
     return (Coord_Spillage_List(Coord, size) + 1);
@@ -3024,7 +3026,7 @@ void UnitClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
         return;
     }
     int cells = 1;
-    if (Is_Selected_By_Player() || IsFiring || Class->IsGigundo || IsAnimAttached || Flagged != HOUSE_NONE) {
+    if (Class->IsGigundo || IsAnimAttached || Flagged != HOUSE_NONE || Class->MaxSize > ICON_PIXEL_W) {
         cells = 2;
     }
     x0 = x - cells * CELL_LEPTON_W;

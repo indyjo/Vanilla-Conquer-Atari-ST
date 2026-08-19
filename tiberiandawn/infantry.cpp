@@ -1804,17 +1804,21 @@ MoveType InfantryClass::Can_Enter_Cell(CELL cell, FacingType) const
  * HISTORY:                                                                                    *
  *   09/01/1994 JLB : Created.                                                                 *
  *=============================================================================================*/
+/*
+**	Live infantry fits a 24px square about Coord (walk ~12px, sub-spots, select box).
+**	Death can reach ~22px, so use 36 once Doing >= DO_PUNCH_DEATH (first death DoType).
+**	Do not use maxsize < 24: that increases leeway and can miss a neighbor while walking.
+*/
 short const* InfantryClass::Overlap_List(void) const
 {
     Validate();
-    // return(Coord_Spillage_List(Coord, 24 + ((IsSelected || Doing > DO_WALK)?12:0)));
-    return (Coord_Spillage_List(Coord, 24 + ((Doing > DO_WALK || Is_Selected_By_Player()) ? 12 : 0)));
-    //	return(Coord_Spillage_List(Coord, (IsSelected ? 24 : 14))+1);
+    int const size = (Doing >= DO_PUNCH_DEATH) ? 36 : 24;
+    return (Coord_Spillage_List(Coord, size));
 }
 
 void InfantryClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
-    int const pad = Pixel_To_Lepton((Doing > DO_WALK || Is_Selected_By_Player()) ? 36 : 24);
+    int const pad = Pixel_To_Lepton((Doing >= DO_PUNCH_DEATH) ? 36 : 24);
     int const x = Coord_X(Coord);
     int const y = Coord_Y(Coord);
     x0 = x - pad;

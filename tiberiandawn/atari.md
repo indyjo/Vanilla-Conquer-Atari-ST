@@ -421,7 +421,7 @@ Paint (in `display.cpp` `ST_Redraw_Coalesced_Clipped`) does not clip per tile. I
 
 Rubber-band selection (CCR) flags **outline cells only**, and only when the box actually changes. An idle hold redraws the white `Draw_Rect` on HidPage without extra `CellRedraw`. One-axis drags flag the old moving edge, the new moving edge, and the grown/shrunk stubs on the two perpendicular sides (anchor edges that did not move stay unmarked). Release flags the last outline so the box is erased. Those outline cells are injected as **thin edge rects** before greedy pack so leftover AABB cannot swallow the selection interior.
 
-Scroll in clipped mode flags only tiles whose 24×24 stamp is not fully inside the hidpage copy (the entering edge). It does not add the unclipped `extra_x`/`extra_y` seam band or shrink the copy by 24px.
+Scroll in clipped mode flags only tiles whose **visible** pixels were not covered by the hidpage copy (the entering edge). A 24×24 stamp that hangs off the view is still treated as copied if the on-screen part moved with the blit, so a vertical scroll does not restamp the left/right columns and a horizontal scroll does not restamp the top/bottom rows. It does not add the unclipped `extra_x`/`extra_y` seam band or shrink the copy by 24px.
 
 View cell `(0,0)` is converted to pixels once (`Coord_To_Pixel` on that cell’s northwest). Every other stamp/clip corner is `origin + (vc,vr) * 24`.
 

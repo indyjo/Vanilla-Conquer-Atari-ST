@@ -2689,9 +2689,11 @@ void DisplayClass::Draw_It(bool forced)
 
                 if (Debug_Clipped_Tactical_Redraw) {
                     /*
-                    **	Clipped mode: stamp only cells whose 24x24 tile is not fully
-                    **	inside the hidpage copy (the true entering edge). No extra_x/y
-                    **	seam band and no 24px shrink of the copy rect.
+                    **	Clipped mode: stamp only cells whose visible pixels were not
+                    **	covered by the hidpage copy (the true entering edge). A 24x24
+                    **	stamp that hangs off the view still counts as copied if the
+                    **	on-screen part moved with the blit. No extra_x/y seam band
+                    **	and no 24px shrink of the copy rect.
                     */
                     int const view_w = Lepton_To_Pixel(TacLeptonWidth);
                     int const view_h = Lepton_To_Pixel(TacLeptonHeight);
@@ -2699,8 +2701,15 @@ void DisplayClass::Draw_It(bool forced)
                     int const copy_y1 = oldy + oldh;
                     for (y = starty; y < view_h; y += CELL_PIXEL_H) {
                         for (x = startx; x < view_w; x += CELL_PIXEL_W) {
-                            if (x < oldx || y < oldy || x + CELL_PIXEL_W > copy_x1
-                                || y + CELL_PIXEL_H > copy_y1) {
+                            int const vis_x0 = (x > 0) ? x : 0;
+                            int const vis_y0 = (y > 0) ? y : 0;
+                            int const vis_x1 = (x + CELL_PIXEL_W < view_w) ? x + CELL_PIXEL_W : view_w;
+                            int const vis_y1 = (y + CELL_PIXEL_H < view_h) ? y + CELL_PIXEL_H : view_h;
+                            if (vis_x1 <= vis_x0 || vis_y1 <= vis_y0) {
+                                continue;
+                            }
+                            if (vis_x0 < oldx || vis_y0 < oldy || vis_x1 > copy_x1
+                                || vis_y1 > copy_y1) {
                                 CELL c = Click_Cell_Calc(Bound(x, 0, view_w - 1) + TacPixelX,
                                                          Bound(y, 0, view_h - 1) + TacPixelY);
                                 if (c > 0) {

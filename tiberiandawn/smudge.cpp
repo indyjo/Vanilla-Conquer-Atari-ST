@@ -236,9 +236,7 @@ bool SmudgeClass::Mark(MarkType mark)
                             }
                         }
 
-                        if (!Debug_Clipped_Tactical_Redraw) {
-                            cell->Redraw_Objects(newcell);
-                        }
+                        cell->Redraw_Objects(newcell);
                     }
                 }
             }

@@ -2548,7 +2548,7 @@ void DisplayClass::Draw_It(bool forced)
         **	(HidPage still has the last box) and only flags outline deltas.
         */
 #ifdef ATARI_ST
-        if (Debug_Clipped_Tactical_Redraw && IsRubberBand) {
+        if (Debug_Coalesced_Clipped_Redraw && IsRubberBand) {
             if (!RubberbandPainted) {
                 Refresh_Band();
             } else if (NewX != RubberbandDrawnX || NewY != RubberbandDrawnY) {
@@ -2687,7 +2687,7 @@ void DisplayClass::Draw_It(bool forced)
                 int startx = -Lepton_To_Pixel(Coord_XLepton(TacticalCoord));
                 int starty = -Lepton_To_Pixel(Coord_YLepton(TacticalCoord));
 
-                if (Debug_Clipped_Tactical_Redraw) {
+                if (Debug_Coalesced_Clipped_Redraw) {
                     /*
                     **	Clipped mode: stamp only cells whose visible pixels were not
                     **	covered by the hidpage copy (the true entering edge). A 24x24
@@ -2852,7 +2852,7 @@ void DisplayClass::Draw_It(bool forced)
 #ifdef FIX_ME_LATER
 //		HidPage.Blit(HidPage, 0, HidPage.Get_Height()-1, 0, HidPage.Get_Height(), HidPage.Get_Width(), 1, false);
 #endif // FIX_ME_LATER
-        if (Debug_Clipped_Tactical_Redraw) {
+        if (Debug_Coalesced_Clipped_Redraw) {
             /*
             **	Coalesced clipped redraw: few WINDOW_TACTICAL clips, Layer[] objects,
             **	tiles + shroud per rectangle (see ST_Redraw_Coalesced_Clipped).
@@ -2910,7 +2910,7 @@ void DisplayClass::Draw_It(bool forced)
         **	Clear the redraw flags so that normal redraw flag setting can resume.
         */
         CellRedraw.Reset();
-        if (Debug_Clipped_Tactical_Redraw) {
+        if (Debug_Coalesced_Clipped_Redraw) {
             for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
                 for (int index = 0; index < Layer[layer].Count(); index++) {
                     ObjectClass* obj = Layer[layer][index];
@@ -3238,14 +3238,8 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 			if (obj == NULL || !obj->IsActive || !obj->IsDown || obj->IsInLimbo) {
 				continue;
 			}
-			int dx0, dy0, dx1, dy1;
-			obj->Get_AABB(dx0, dy0, dx1, dy1);
-			int const cx = Coord_X(obj->Coord);
-			int const cy = Coord_Y(obj->Coord);
-			int const ox0 = cx + dx0;
-			int const oy0 = cy + dy0;
-			int const ox1 = cx + dx1;
-			int const oy1 = cy + dy1;
+			int ox0, oy0, ox1, oy1;
+			obj->Get_AABB(ox0, oy0, ox1, oy1);
 			for (int oi = 0; oi < nrect; oi++) {
 				int const ri = rorder[oi];
 				Redraw_Rect const& rc = rects[ri];
@@ -3464,7 +3458,7 @@ void DisplayClass::Present_Begin(bool complete)
 	** without Scroll_Map, so DidScrollThisFrame is false. HidPage still scroll-copies
 	** in Draw_It; SeenBuff must get a full present or only the entering edge updates.
 	*/
-	Present_Full = complete || !Debug_Clipped_Tactical_Redraw || DidScrollThisFrame
+	Present_Full = complete || !Debug_Coalesced_Clipped_Redraw || DidScrollThisFrame
 		|| DesiredTacticalCoord != TacticalCoord;
 	if (!Present_Full) {
 		Present_Snapshot_Chrome();
@@ -3564,7 +3558,7 @@ void DisplayClass::Redraw_Icons(int draw_flags)
                     */
                     bool cell_visible = cellptr->Is_Visible(PlayerPtr) || Debug_Unshroud;
                     if (cell_visible) {
-                        if (!Debug_Clipped_Tactical_Redraw
+                        if (!Debug_Coalesced_Clipped_Redraw
                             || !Tactical_Cell_Hides_Objects_For_Local_Player(cell, cellptr)) {
                             cellptr->Draw_It(xpixel, ypixel, draw_flags, cell);
                         }
@@ -3638,7 +3632,7 @@ void DisplayClass::Redraw_Shadow(void)
                                                   SHAPE_GHOST,
                                                   NULL,
                                                   ShadowTrans);
-                                } else if (shadow == -2 && Debug_Clipped_Tactical_Redraw) {
+                                } else if (shadow == -2 && Debug_Coalesced_Clipped_Redraw) {
 #ifdef ATARI_ST
                                     if (!ST_Draw_Shadow_Mask_Slot((short)ST_SHADOW_FULL_SLOT, xpixel, ypixel))
 #endif
@@ -4301,7 +4295,7 @@ void DisplayClass::Flag_Band_H(int x1, int x2, int y)
         if (cell != -1) {
             (*this)[cell].Redraw_Objects(cell);
 #ifdef ATARI_ST
-            if (Debug_Clipped_Tactical_Redraw) {
+            if (Debug_Coalesced_Clipped_Redraw) {
                 int const cx = Cell_X(cell);
                 int const cy = Cell_Y(cell);
                 if (!any || cx < minc) {
@@ -4354,7 +4348,7 @@ void DisplayClass::Flag_Band_V(int x, int y1, int y2)
         if (cell != -1) {
             (*this)[cell].Redraw_Objects(cell);
 #ifdef ATARI_ST
-            if (Debug_Clipped_Tactical_Redraw) {
+            if (Debug_Coalesced_Clipped_Redraw) {
                 int const cx = Cell_X(cell);
                 int const cy = Cell_Y(cell);
                 if (!any || cx < minc) {
@@ -5285,7 +5279,7 @@ void DisplayClass::Mouse_Left_Held(int x, int y)
             x = Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1);
             y = Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1);
 #ifdef ATARI_ST
-            if (!Debug_Clipped_Tactical_Redraw)
+            if (!Debug_Coalesced_Clipped_Redraw)
 #endif
             {
                 Refresh_Band();

@@ -530,12 +530,14 @@ void BuildingClass::Debug_Dump(MonoClass* mono) const
  *   06/27/1994 JLB : Takes a clipping window parameter.                                       *
  *   07/06/1995 JLB : Handles damaged silos correctly.                                         *
  *=============================================================================================*/
-void BuildingClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void BuildingClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
-    dx0 = -3 * CELL_LEPTON_W;
-    dy0 = -3 * CELL_LEPTON_H;
-    dx1 = 3 * CELL_LEPTON_W;
-    dy1 = 3 * CELL_LEPTON_H;
+    int const x = Coord_X(Coord);
+    int const y = Coord_Y(Coord);
+    x0 = x - 3 * CELL_LEPTON_W;
+    y0 = y - 3 * CELL_LEPTON_H;
+    x1 = x + 3 * CELL_LEPTON_W;
+    y1 = y + 3 * CELL_LEPTON_H;
 }
 
 void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
@@ -720,7 +722,7 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
                       + ((int)Lepton_To_Pixel((int)Coord_Y(contact->Render_Coord()))
                          - (int)Lepton_To_Pixel((int)Coord_Y(Render_Coord())));
             contact->Draw_It(xxx, yyy, window);
-            if (!Debug_Clipped_Tactical_Redraw) {
+            if (!Debug_Coalesced_Clipped_Redraw) {
                 contact->IsToDisplay = false;
             }
         }
@@ -843,7 +845,7 @@ bool BuildingClass::Mark(MarkType mark)
             break;
 
         default:
-            if (!Debug_Clipped_Tactical_Redraw) {
+            {
                 short const* offset = Overlap_List();
                 short const* occupy = Occupy_List();
                 Map.Refresh_Cells(cell, offset);

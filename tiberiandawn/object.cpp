@@ -77,73 +77,6 @@
 
 #include "function.h"
 
-namespace {
-
-static void Flag_Cell_If_Redraw_Cell(CELL c)
-{
-    if ((unsigned)c < (unsigned)MAP_CELL_TOTAL && Map.In_View(c)) {
-        Map.Flag_Cell(c);
-    }
-}
-
-static bool Cell_Is_Redraw_Masked_In_View(CELL c)
-{
-    return ((unsigned)c < (unsigned)MAP_CELL_TOTAL && Map.In_View(c) && Map.Is_Cell_Flagged(c));
-}
-
-static void Flag_Redraw_Mask_Cells_From_Footprint(ObjectClass* obj)
-{
-    if (obj == NULL || !GameActive || obj->IsInLimbo || !obj->IsDown || !obj->IsActive) {
-        return;
-    }
-    CELL const anchor = Coord_Cell(obj->Coord);
-    short const* plist = obj->Occupy_List(false);
-    if (plist != NULL) {
-        if (*plist == REFRESH_SIDEBAR) {
-            plist++;
-        }
-        while (*plist != REFRESH_EOL) {
-            Flag_Cell_If_Redraw_Cell((CELL)(anchor + *plist++));
-        }
-    }
-    short const* olist = obj->Overlap_List();
-    if (olist != NULL) {
-        while (*olist != REFRESH_EOL) {
-            Flag_Cell_If_Redraw_Cell((CELL)(anchor + *olist++));
-        }
-    }
-}
-
-static bool Footprint_Has_Flagged_Redraw_Cell(ObjectClass const* obj)
-{
-    if (obj == NULL || !obj->IsDown || obj->IsInLimbo || !obj->IsActive) {
-        return (false);
-    }
-    CELL const anchor = Coord_Cell(obj->Coord);
-    short const* plist = obj->Occupy_List(false);
-    if (plist != NULL) {
-        if (*plist == REFRESH_SIDEBAR) {
-            plist++;
-        }
-        while (*plist != REFRESH_EOL) {
-            if (Cell_Is_Redraw_Masked_In_View((CELL)(anchor + *plist++))) {
-                return (true);
-            }
-        }
-    }
-    short const* olist = obj->Overlap_List();
-    if (olist != NULL) {
-        while (*olist != REFRESH_EOL) {
-            if (Cell_Is_Redraw_Masked_In_View((CELL)(anchor + *olist++))) {
-                return (true);
-            }
-        }
-    }
-    return (false);
-}
-
-} // namespace
-
 /*
 **	Selected objects have a special marking box around them. This is the shapes that are
 **	used for this purpose.
@@ -984,10 +917,7 @@ bool ObjectClass::Render(bool forced)
     int x, y;
     COORDINATE coord = Render_Coord();
 
-    bool const allow_draw = Debug_Map || Debug_Unshroud
-        || (Debug_Clipped_Tactical_Redraw
-                ? ((forced || Footprint_Has_Flagged_Redraw_Cell(this)) && IsDown && !IsInLimbo)
-                : ((forced || IsToDisplay) && IsDown && !IsInLimbo));
+    bool const allow_draw = Debug_Map || Debug_Unshroud || ((forced || IsToDisplay) && IsDown && !IsInLimbo);
 
     if (allow_draw) {
 
@@ -1031,7 +961,7 @@ bool ObjectClass::Render(bool forced)
             **	Draw the object itself
             */
             Draw_It(x, y, WINDOW_TACTICAL);
-            if (!Debug_Clipped_Tactical_Redraw) {
+            if (!Debug_Coalesced_Clipped_Redraw) {
                 IsToDisplay = false;
             }
 
@@ -1070,7 +1000,7 @@ bool ObjectClass::Render(bool forced)
  *=============================================================================================*/
 void ObjectClass::Debug_Dump(MonoClass* mono) const
 {
-    mono->Text_Print("X", 16 + ((Debug_Clipped_Tactical_Redraw ? Footprint_Has_Flagged_Redraw_Cell(this) : IsToDisplay) ? 2 : 0), 18);
+    mono->Text_Print("X", 16 + (IsToDisplay ? 2 : 0), 18);
     mono->Text_Print("X", 16 + (IsActive ? 2 : 0), 3);
     mono->Text_Print("X", 16 + (IsInLimbo ? 2 : 0), 4);
     // mono->Text_Print("X", 16 + (IsSelected?2:0), 7);
@@ -1183,9 +1113,6 @@ void ObjectTypeClass::One_Time(void)
  *=============================================================================================*/
 void ObjectClass::Mark_For_Redraw(void)
 {
-    if (Debug_Clipped_Tactical_Redraw) {
-        Flag_Redraw_Mask_Cells_From_Footprint(this);
-    }
     if (!IsToDisplay) {
         IsToDisplay = true;
     }
@@ -1771,12 +1698,14 @@ short const* ObjectClass::Overlap_List(void) const
 {
     return (Class_Of().Overlap_List());
 };
-void ObjectClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void ObjectClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
-    dx0 = -CELL_LEPTON_W;
-    dy0 = -CELL_LEPTON_H;
-    dx1 = CELL_LEPTON_W;
-    dy1 = CELL_LEPTON_H;
+    int const x = Coord_X(Coord);
+    int const y = Coord_Y(Coord);
+    x0 = x - CELL_LEPTON_W;
+    y0 = y - CELL_LEPTON_H;
+    x1 = x + CELL_LEPTON_W;
+    y1 = y + CELL_LEPTON_H;
 };
 BuildingClass* ObjectClass::Who_Can_Build_Me(bool intheory, bool legal) const
 {

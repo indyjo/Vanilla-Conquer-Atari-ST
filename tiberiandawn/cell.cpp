@@ -377,7 +377,7 @@ void CellClass::Redraw_Objects(CELL cell, bool forced)
 
 		Map.Flag_Cell(cell);
 
-		if (!Debug_Clipped_Tactical_Redraw) {
+		if (!Debug_Coalesced_Clipped_Redraw) {
 			/*
 			**	Unclipped redraw: mark occupiers/overlappers for layer Render(IsToDisplay).
 			*/

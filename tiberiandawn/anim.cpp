@@ -201,9 +201,6 @@ bool AnimClass::Render(bool forced)
     Validate();
     if (Delay)
         return (false);
-    if (Debug_Clipped_Tactical_Redraw) {
-        return (ObjectClass::Render(true));
-    }
     IsToDisplay = true;
     return (ObjectClass::Render(forced));
 }
@@ -346,13 +343,10 @@ bool AnimClass::Mark(MarkType mark)
 {
     Validate();
     if (ObjectClass::Mark(mark)) {
-        if (Debug_Clipped_Tactical_Redraw) {
-            if (mark == MARK_DOWN && IsDown) {
-                Map.Overlap_Down(Coord_Cell(Coord), this);
-            }
-        } else {
-            Map.Refresh_Cells(Coord_Cell(Center_Coord()), Overlap_List());
+        if (Debug_Coalesced_Clipped_Redraw && mark == MARK_DOWN && IsDown) {
+            Map.Overlap_Down(Coord_Cell(Center_Coord()), this);
         }
+        Map.Refresh_Cells(Coord_Cell(Center_Coord()), Overlap_List());
         return (true);
     }
     return (false);
@@ -508,12 +502,20 @@ short const* AnimClass::Overlap_List(void) const
     return (Coord_Spillage_List(Center_Coord(), Class->Size));
 }
 
-void AnimClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void AnimClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
-    dx0 = -2 * CELL_LEPTON_W;
-    dy0 = -2 * CELL_LEPTON_H;
-    dx1 = 2 * CELL_LEPTON_W;
-    dy1 = 2 * CELL_LEPTON_H;
+    int pad = 2 * CELL_LEPTON_W;
+    if (Class->Type == ANIM_ION_CANNON) {
+        pad = 8 * CELL_LEPTON_W;
+    } else if (Class->Size > ICON_PIXEL_W * 2) {
+        pad = 3 * CELL_LEPTON_W;
+    }
+    int const x = Coord_X(Center_Coord());
+    int const y = Coord_Y(Center_Coord());
+    x0 = x - pad;
+    y0 = y - pad;
+    x1 = x + pad;
+    y1 = y + pad;
 }
 
 /***********************************************************************************************

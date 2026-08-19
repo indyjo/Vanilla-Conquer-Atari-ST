@@ -3012,23 +3012,25 @@ short const* UnitClass::Overlap_List(void) const
     return (Coord_Spillage_List(Coord, size) + 1);
 }
 
-void UnitClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void UnitClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
+    int const x = Coord_X(Coord);
+    int const y = Coord_Y(Coord);
     if (*this == UNIT_GUNBOAT) {
-        dx0 = -3 * CELL_LEPTON_W;
-        dx1 = 3 * CELL_LEPTON_W;
-        dy0 = -CELL_LEPTON_H;
-        dy1 = CELL_LEPTON_H;
+        x0 = x - 3 * CELL_LEPTON_W;
+        x1 = x + 3 * CELL_LEPTON_W;
+        y0 = y - CELL_LEPTON_H;
+        y1 = y + CELL_LEPTON_H;
         return;
     }
     int cells = 1;
     if (Is_Selected_By_Player() || IsFiring || Class->IsGigundo || IsAnimAttached || Flagged != HOUSE_NONE) {
         cells = 2;
     }
-    dx0 = -cells * CELL_LEPTON_W;
-    dy0 = -cells * CELL_LEPTON_H;
-    dx1 = cells * CELL_LEPTON_W;
-    dy1 = cells * CELL_LEPTON_H;
+    x0 = x - cells * CELL_LEPTON_W;
+    y0 = y - cells * CELL_LEPTON_H;
+    x1 = x + cells * CELL_LEPTON_W;
+    y1 = y + cells * CELL_LEPTON_H;
 }
 
 #ifdef NEVER

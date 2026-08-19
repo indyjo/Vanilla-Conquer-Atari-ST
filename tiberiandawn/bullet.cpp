@@ -248,12 +248,14 @@ short const* BulletClass::Occupy_List(bool placement) const
     return (Coord_Spillage_List(Coord, 10));
 }
 
-void BulletClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void BulletClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
-    dx0 = -2 * CELL_LEPTON_W;
-    dx1 = 2 * CELL_LEPTON_W;
-    dy0 = -2 * CELL_LEPTON_H - Altitude;
-    dy1 = 2 * CELL_LEPTON_H;
+    int const x = Coord_X(Coord);
+    int const y = Coord_Y(Coord);
+    x0 = x - 2 * CELL_LEPTON_W;
+    x1 = x + 2 * CELL_LEPTON_W;
+    y0 = y - 2 * CELL_LEPTON_H - Altitude;
+    y1 = y + 2 * CELL_LEPTON_H;
 }
 
 /***********************************************************************************************
@@ -276,7 +278,7 @@ bool BulletClass::Mark(MarkType mark)
 {
     Validate();
     if (ObjectClass::Mark(mark)) {
-        if (!Class->IsInvisible && !Debug_Clipped_Tactical_Redraw) {
+        if (!Class->IsInvisible) {
             Map.Refresh_Cells(Coord_Cell(Coord), Occupy_List());
         }
         return (true);

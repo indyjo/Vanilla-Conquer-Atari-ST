@@ -484,7 +484,7 @@ void GScreenClass::Blit_Display(void)
     } else {
 #else //(0)
 #ifdef ATARI_ST
-    if (Debug_Clipped_Tactical_Redraw) {
+    if (Debug_Coalesced_Clipped_Redraw) {
         Map.Present_Blit();
 #ifdef CHEAT_KEYS
         Add_Current_Screen();

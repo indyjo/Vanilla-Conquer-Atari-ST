@@ -956,7 +956,7 @@ bool AircraftClass::Mark(MarkType mark)
     if (!FootClass::Mark(mark)) {
         return (false);
     }
-    if (!Debug_Clipped_Tactical_Redraw) {
+    if (!Debug_Coalesced_Clipped_Redraw) {
         CELL const c = Coord_Cell(Coord);
         Map.Refresh_Cells(c, Occupy_List());
         Map.Refresh_Cells(c, Overlap_List());
@@ -1009,19 +1009,21 @@ short const* AircraftClass::Overlap_List(void) const
     return (Class->Overlap_List());
 }
 
-void AircraftClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void AircraftClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
+    int const x = Coord_X(Coord);
+    int const y = Coord_Y(Coord);
     if (Altitude) {
-        dx0 = -CELL_LEPTON_W;
-        dx1 = CELL_LEPTON_W;
-        dy0 = -3 * CELL_LEPTON_H;
-        dy1 = CELL_LEPTON_H;
+        x0 = x - CELL_LEPTON_W;
+        x1 = x + CELL_LEPTON_W;
+        y0 = y - 3 * CELL_LEPTON_H;
+        y1 = y + CELL_LEPTON_H;
         return;
     }
-    dx0 = -2 * CELL_LEPTON_W;
-    dy0 = -2 * CELL_LEPTON_H;
-    dx1 = 2 * CELL_LEPTON_W;
-    dy1 = 2 * CELL_LEPTON_H;
+    x0 = x - 2 * CELL_LEPTON_W;
+    y0 = y - 2 * CELL_LEPTON_H;
+    x1 = x + 2 * CELL_LEPTON_W;
+    y1 = y + 2 * CELL_LEPTON_H;
 }
 
 /***********************************************************************************************
@@ -2019,26 +2021,26 @@ void AircraftClass::Debug_Dump(MonoClass* mono) const
 {
     Validate();
     mono->Set_Cursor(0, 0);
-    mono->Print("ÚName:ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂMission:ÄÄÄÂTarCom:ÂNavCom:ÂRadio:ÂCoord:ÄÄÂAltitudeÂSt:Ä¿\n"
-                "³                   ³           ³       ³       ³      ³        ³        ³    ³\n"
-                "ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂNÂYÂHealth:ÄÂFdir:ÂÄBdir:ÄÂSpeed:ÂÄÄÄÄÄÁÄÄÄÄÄÄÂCargo:ÄÄÄÄÁÄÄÄÄ´\n"
-                "³Active........³ ³ ³        ³     ³       ³      ³            ³               ³\n"
-                "³Limbo.........³ ³ ÃÄÄÄÄÄÄÄÄÁÄÄÄÄÄÁÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\n"
-                "³Owned.........³ ³ ³Last Message:                                             ³\n"
-                "³Discovered....³ ³ ÃTimer:ÂArm:ÂÄÄÄÄÄÄÂÄÄÄÄÄÄÄÄÄÂFlash:ÂStage:ÂTeam:ÄÄÄÄÂArch:´\n"
-                "³Selected......³ ³ ³      ³    ³      ³         ³      ³      ³         ³     ³\n"
-                "³Teathered.....³ ³ ÃÄÄÄÄÄÄÁÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÙ\n"
-                "³Locked on Map.³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³Is A Loaner...³ ³ ³                                                           \n"
-                "³Is Landing....³ ³ ³                                                           \n"
-                "³Is Taking Off.³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³              ³ ³ ³                                                           \n"
-                "³Recoiling.....³ ³ ³                                                           \n"
-                "³To Display....³ ³ ³                                                           \n"
-                "ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÁÄÙ                                                           \n");
+    mono->Print("?Name:???????????????Mission:????TarCom:?NavCom:?Radio:?Coord:???Altitude?St:?\n"
+                "?                   ?           ?       ?       ?      ?        ?        ?    ?\n"
+                "????????????????N?Y?Health:??Fdir:??Bdir:??Speed:??????????????Cargo:?????????\n"
+                "?Active........? ? ?        ?     ?       ?      ?            ?               ?\n"
+                "?Limbo.........? ? ???????????????????????????????????????????????????????????\n"
+                "?Owned.........? ? ?Last Message:                                             ?\n"
+                "?Discovered....? ? ?Timer:?Arm:??????????????????Flash:?Stage:?Team:?????Arch:?\n"
+                "?Selected......? ? ?      ?    ?      ?         ?      ?      ?         ?     ?\n"
+                "?Teathered.....? ? ????????????????????????????????????????????????????????????\n"
+                "?Locked on Map.? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?Is A Loaner...? ? ?                                                           \n"
+                "?Is Landing....? ? ?                                                           \n"
+                "?Is Taking Off.? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?              ? ? ?                                                           \n"
+                "?Recoiling.....? ? ?                                                           \n"
+                "?To Display....? ? ?                                                           \n"
+                "????????????????????                                                           \n");
     mono->Set_Cursor(1, 1);
     mono->Printf("%s:%s", House->Class->IniName, Class->IniName);
     mono->Set_Cursor(36, 3);

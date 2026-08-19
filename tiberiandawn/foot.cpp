@@ -322,10 +322,8 @@ bool FootClass::Mark(MarkType mark)
             break;
 
             default:
-                if (!Debug_Clipped_Tactical_Redraw) {
-                    Map.Refresh_Cells(cell, Overlap_List());
-                    Map.Refresh_Cells(cell, Occupy_List());
-                }
+                Map.Refresh_Cells(cell, Overlap_List());
+                Map.Refresh_Cells(cell, Occupy_List());
                 break;
         }
         return (true);

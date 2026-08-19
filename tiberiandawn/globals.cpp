@@ -47,7 +47,7 @@ bool Debug_Quiet = false;
 bool Debug_Cheat = false;
 bool Debug_Remap = false;
 bool Debug_Icon = false;
-bool Debug_Clipped_Tactical_Redraw = true; /* Alt+C: false = unclipped full redraw */
+bool Debug_Coalesced_Clipped_Redraw = true; /* Alt+C: false = unclipped full redraw */
 bool Debug_Redraw_Rects = false; /* Alt+R: cycle a color rect on every cell/unit Draw_It */
 static unsigned char Debug_Redraw_Cycle = 1;
 
@@ -253,7 +253,7 @@ void Debug_Redraw_Hotkeys_Service(void)
     int const c = (alt && IKBD_Key_Is_Down(VK_C)) ? 1 : 0;
     int const r = (alt && IKBD_Key_Is_Down(VK_R)) ? 1 : 0;
     if (c && !prev_c) {
-        Debug_Clipped_Tactical_Redraw = (Debug_Clipped_Tactical_Redraw == false);
+        Debug_Coalesced_Clipped_Redraw = (Debug_Coalesced_Clipped_Redraw == false);
         Map.Flag_To_Redraw(true);
     }
     if (r && !prev_r) {

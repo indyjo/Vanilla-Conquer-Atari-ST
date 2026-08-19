@@ -1812,13 +1812,15 @@ short const* InfantryClass::Overlap_List(void) const
     //	return(Coord_Spillage_List(Coord, (IsSelected ? 24 : 14))+1);
 }
 
-void InfantryClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void InfantryClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
     int const pad = Pixel_To_Lepton((Doing > DO_WALK || Is_Selected_By_Player()) ? 36 : 24);
-    dx0 = -pad;
-    dy0 = -pad;
-    dx1 = pad;
-    dy1 = pad;
+    int const x = Coord_X(Coord);
+    int const y = Coord_Y(Coord);
+    x0 = x - pad;
+    y0 = y - pad;
+    x1 = x + pad;
+    y1 = y + pad;
 }
 
 /***********************************************************************************************

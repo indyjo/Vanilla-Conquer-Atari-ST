@@ -279,9 +279,7 @@ bool TemplateClass::Mark(MarkType mark)
                             }
                         }
 
-                        if (!Debug_Clipped_Tactical_Redraw) {
-                            cellptr->Redraw_Objects(cell);
-                        }
+                        cellptr->Redraw_Objects(cell);
                         cellptr->Recalc_Attributes();
                     }
                 }

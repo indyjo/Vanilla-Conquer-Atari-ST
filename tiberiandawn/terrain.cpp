@@ -320,7 +320,7 @@ bool TerrainClass::Mark(MarkType mark)
             break;
 
         default:
-            if (!Debug_Clipped_Tactical_Redraw) {
+            {
                 short const* overlap = Class->Overlap_List();
                 short const* occupy = Class->Occupy_List();
                 Map.Refresh_Cells(cell, overlap);
@@ -352,12 +352,14 @@ bool TerrainClass::Mark(MarkType mark)
  *   06/27/1994 JLB : Created.                                                                 *
  *   11/09/1994 JLB : Changed selected terrain highlight method.                               *
  *=============================================================================================*/
-void TerrainClass::Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const
+void TerrainClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
 {
-    dx0 = -2 * CELL_LEPTON_W;
-    dy0 = -2 * CELL_LEPTON_H;
-    dx1 = 2 * CELL_LEPTON_W;
-    dy1 = 2 * CELL_LEPTON_H;
+    int const x = Coord_X(Coord);
+    int const y = Coord_Y(Coord);
+    x0 = x - 2 * CELL_LEPTON_W;
+    y0 = y - 2 * CELL_LEPTON_H;
+    x1 = x + 2 * CELL_LEPTON_W;
+    y1 = y + 2 * CELL_LEPTON_H;
 }
 
 void TerrainClass::Draw_It(int x, int y, WindowNumberType window)

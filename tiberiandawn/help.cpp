@@ -77,8 +77,11 @@ static unsigned char HelpCachePixels[HELP_CACHE_BYTES];
 static GraphicBufferClass HelpCacheBuffer;
 static bool HelpCacheInited;
 static bool HelpCacheValid;
-static int HelpCacheBlitW;
-static int HelpCacheBlitH;
+static int HelpCacheLine1W;
+static int HelpCacheLine1H;
+static int HelpCacheLine2W;
+static int HelpCacheLine2H;
+static bool HelpPresented;
 static int HelpCacheKeyText = TXT_NONE;
 static int HelpCacheKeyCost;
 static int HelpCacheKeyColor;
@@ -324,6 +327,7 @@ void HelpClass::Draw_It(bool forced)
         if (!CountDownTimer.Time() && LogicPage && LogicPage->Get_Graphic_Buffer()
             && LogicPage->Get_Graphic_Buffer()->Is_ST_Planar() && Ensure_Help_Cache()
             && Blit_Help_Cache()) {
+            Present_Help_Once();
             return;
         }
 #endif
@@ -348,6 +352,20 @@ void HelpClass::Draw_It(bool forced)
             }
 
             LogicPage->Unlock();
+#ifdef ATARI_ST
+            HelpCacheLine1W = Width + 3;
+            HelpCacheLine1H = FontHeight + 2;
+            if (Cost) {
+                char buffer[15];
+                sprintf(buffer, "$%d", Cost);
+                HelpCacheLine2W = String_Pixel_Width(buffer) + 3;
+                HelpCacheLine2H = FontHeight;
+            } else {
+                HelpCacheLine2W = 0;
+                HelpCacheLine2H = 0;
+            }
+            Present_Help_Once();
+#endif
         }
     }
     //	if (!In_Debugger) HidPage.Unlock();
@@ -404,6 +422,9 @@ void HelpClass::Set_Text(int text)
         ** the countdown expires (do not rasterize here during the hover delay).
         */
         Invalidate_Help_Cache();
+        if (!IsRight) {
+            Refresh_Cells(Coord_Cell(TacticalCoord), &OverlapList[0]);
+        }
 #endif
     }
 }
@@ -475,6 +496,7 @@ void HelpClass::Invalidate_Help_Cache(void)
 {
     HelpCacheValid = false;
     HelpCacheKeyText = TXT_NONE;
+    HelpPresented = false;
 }
 
 bool HelpClass::Ensure_Help_Cache(void)
@@ -541,8 +563,10 @@ bool HelpClass::Ensure_Help_Cache(void)
 
     Set_Logic_Page(oldpage);
 
-    HelpCacheBlitW = need_w;
-    HelpCacheBlitH = need_h;
+    HelpCacheLine1W = Width + 3;
+    HelpCacheLine1H = FontHeight + 2;
+    HelpCacheLine2W = Cost ? (cost_w + 3) : 0;
+    HelpCacheLine2H = Cost ? FontHeight : 0;
     HelpCacheKeyText = Text;
     HelpCacheKeyCost = Cost;
     HelpCacheKeyColor = Color;
@@ -574,19 +598,52 @@ bool HelpClass::Blit_Help_Cache(void)
 
     const int dx = LogicPage->Get_XPos() + DrawX - 1;
     const int dy = LogicPage->Get_YPos() + DrawY - 1;
-    const BOOL ok = ST_Blit_Planar_Rect_Blit(HelpCachePixels,
-                                             src_bpl,
-                                             0,
-                                             0,
-                                             (uint8_t*)dst_gb->Get_Buffer(),
-                                             dst_bpl,
-                                             dx,
-                                             dy,
-                                             HelpCacheBlitW,
-                                             HelpCacheBlitH);
+    uint8_t* const dst = (uint8_t*)dst_gb->Get_Buffer();
+
+    /*
+    ** Blit only the real box(es). A single AABB would stamp cache-clear black
+    ** into the L-shaped gap beside a shorter cost line.
+    */
+    BOOL ok = ST_Blit_Planar_Rect_Blit(HelpCachePixels,
+                                       src_bpl,
+                                       0,
+                                       0,
+                                       dst,
+                                       dst_bpl,
+                                       dx,
+                                       dy,
+                                       HelpCacheLine1W,
+                                       HelpCacheLine1H);
+    if (ok && HelpCacheLine2W > 0 && HelpCacheLine2H > 0) {
+        ok = ST_Blit_Planar_Rect_Blit(HelpCachePixels,
+                                      src_bpl,
+                                      0,
+                                      FontHeight + 1,
+                                      dst,
+                                      dst_bpl,
+                                      dx,
+                                      dy + FontHeight + 1,
+                                      HelpCacheLine2W,
+                                      HelpCacheLine2H);
+    }
 
     LogicPage->Unlock();
     return ok != FALSE;
+}
+
+void HelpClass::Present_Help_Once(void)
+{
+    if (HelpPresented || !Debug_Coalesced_Clipped_Redraw) {
+        return;
+    }
+    int const x0 = DrawX - 1;
+    int const y0 = DrawY - 1;
+    Map.Present_Add_Screen_Rect(x0, y0, x0 + HelpCacheLine1W, y0 + HelpCacheLine1H);
+    if (HelpCacheLine2W > 0 && HelpCacheLine2H > 0) {
+        Map.Present_Add_Screen_Rect(
+            x0, y0 + FontHeight + 1, x0 + HelpCacheLine2W, y0 + FontHeight + 1 + HelpCacheLine2H);
+    }
+    HelpPresented = true;
 }
 
 #endif /* ATARI_ST */

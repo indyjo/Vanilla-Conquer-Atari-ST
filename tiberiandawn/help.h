@@ -84,6 +84,7 @@ private:
     void Invalidate_Help_Cache(void);
     bool Ensure_Help_Cache(void);
     bool Blit_Help_Cache(void);
+    void Present_Help_Once(void);
 #endif
 
     /*

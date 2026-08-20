@@ -399,8 +399,8 @@ Optional keys next to `cnc.tos`. Missing keys keep the listed default.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `HardwareFills` | auto | Use the BLiTTER when the chip is present. Auto skips it on 68040+ (copyback) and when TT-RAM is present; `1` forces it on, `0` forces CPU blits. |
-| `ThrottleBuildingIdleAnims` | auto | Slow building idle / refinery-full loops by 4×. |
-| `ThrottleInfantryIdleAnims` | auto | Infantry fidgets (idle, salute, gesture, facing) at 1/4 rate. Nikoomba and civilian scatter stay full rate. |
+| `ThrottleBuildingIdleAnims` | auto | Hold a static idle / refinery-full frame (timing unchanged). |
+| `ThrottleInfantryIdleAnims` | auto | Draw stand pose instead of idle/salute/gesture fidgets. Facing and RNG still run so recordings match. Nikoomba and civilian scatter stay full rate. |
 | `SkipBuildingConstructionAnims` | auto | Hold a static buildup/sell frame and freeze the construction yard while it is producing; construction time is unchanged. |
 | `FreezeAIDuringMapGestures` | auto | Pause simulation while scrolling or rubber-banding (single-player only). Sound and drawing continue. |
 

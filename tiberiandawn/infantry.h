@@ -237,6 +237,9 @@ public:
     **	Movement and animation.
     */
     virtual bool Do_Action(DoType todo, bool force = false);
+#ifdef ATARI_ST
+    bool Draws_As_Stand_Pose(void) const;
+#endif
     virtual void Random_Animate(void);
     virtual MoveType Can_Enter_Cell(CELL, FacingType = FACING_NONE) const;
     virtual void Per_Cell_Process(bool center);

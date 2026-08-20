@@ -607,6 +607,27 @@ void InfantryClass::Draw_It(int x, int y, WindowNumberType window)
     if (doit == DO_NOTHING)
         doit = DO_STAND_READY;
 
+#ifdef ATARI_ST
+    /*
+    **	Hold the stand pose for cosmetic fidgets. Do_Action / facing still run
+    **	so Random_Animate is not called extra times (that would desync RNG).
+    */
+    if (ThrottleInfantryIdleAnims && *this != INFANTRY_C10) {
+        switch (doit) {
+        case DO_IDLE1:
+        case DO_IDLE2:
+        case DO_GESTURE1:
+        case DO_GESTURE2:
+        case DO_SALUTE1:
+        case DO_SALUTE2:
+            doit = DO_STAND_READY;
+            break;
+        default:
+            break;
+        }
+    }
+#endif
+
     /*
     ** Hold the walk pose for a couple of frames after we come to a stop to try and avoid the problem where a moving
     *infantry
@@ -2006,20 +2027,7 @@ void InfantryClass::Random_Animate(void)
             }
         }
 
-        int pick = Random_Pick(0, 55);
-#ifdef ATARI_ST
-        /*
-        **	On slow machines, cosmetic fidgets (idle, salute, gesture, facing)
-        **	run at 1/4 the usual rate. Nikoomba and civilian wander stay full rate.
-        */
-        if (ThrottleInfantryIdleAnims && *this != INFANTRY_C10) {
-            bool cosmetic = (pick <= 4 || (pick >= 10 && pick <= 13));
-            if (cosmetic && Random_Pick(0, ST_IDLE_ANIM_THROTTLE_FACTOR - 1) != 0) {
-                pick = -1;
-            }
-        }
-#endif
-        switch (pick) {
+        switch (Random_Pick(0, 55)) {
         case 10:
             Do_Action(DO_SALUTE1);
             break;
@@ -2049,13 +2057,8 @@ void InfantryClass::Random_Animate(void)
             if (Sim_Random_Pick(1, 20) == 1 && !Is_Selected_By_Player() && *this == INFANTRY_MOEBIUS
                 && IsDiscoveredByPlayer) {
                 static VocType _response[] = {
-                    //						VOC_EXCELLENT1,
-                    //						VOC_EXCELLENT2,
                     VOC_EXCELLENT3,
-                    //						VOC_EXCELLENT4,
-                    //						VOC_EXCELLENT5,
                     VOC_QUIP1,
-                    //						VOC_QUIP2
                 };
                 Sound_Effect(_response[Sim_Random_Pick(0, (int)(sizeof(_response) / sizeof(_response[0])) - 1)], Coord);
             }
@@ -2187,10 +2190,42 @@ void InfantryClass::Scatter(COORDINATE threat, bool forced, bool nokidding)
  * HISTORY:                                                                                    *
  *   09/24/1994 JLB : Created.                                                                 *
  *=============================================================================================*/
+#ifdef ATARI_ST
+static bool Infantry_Do_Draws_As_Stand(InfantryClass const* inf, DoType doit)
+{
+    if (doit == DO_NOTHING || doit == DO_STAND_READY || doit == DO_STAND_GUARD) {
+        return true;
+    }
+    if (!ThrottleInfantryIdleAnims || *inf == INFANTRY_C10) {
+        return false;
+    }
+    switch (doit) {
+    case DO_IDLE1:
+    case DO_IDLE2:
+    case DO_GESTURE1:
+    case DO_GESTURE2:
+    case DO_SALUTE1:
+    case DO_SALUTE2:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool InfantryClass::Draws_As_Stand_Pose(void) const
+{
+    Validate();
+    return Infantry_Do_Draws_As_Stand(this, Doing);
+}
+#endif
+
 bool InfantryClass::Do_Action(DoType todo, bool force)
 {
     Validate();
     if (todo != Doing && (Doing == DO_NOTHING || force || MasterDoControls[Doing].Interrupt)) {
+#ifdef ATARI_ST
+        if (!Infantry_Do_Draws_As_Stand(this, Doing) || !Infantry_Do_Draws_As_Stand(this, todo))
+#endif
         Mark(MARK_CHANGE);
         // Mark(MARK_OVERLAP_UP);
         Doing = todo;

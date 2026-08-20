@@ -20,9 +20,6 @@ extern bool ThrottleInfantryIdleAnims;
 extern bool SkipBuildingConstructionAnims;
 extern bool FreezeAIDuringMapGestures;
 
-/* Idle anims play this many times less often when throttling is on. */
-enum { ST_IDLE_ANIM_THROTTLE_FACTOR = 4 };
-
 /*
  * *_ini from CONQUER.INI [Options]:
  *   -1 = auto (CPU probe), 0 = force off, 1 = force on.

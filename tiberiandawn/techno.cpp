@@ -2178,7 +2178,16 @@ void TechnoClass::AI(void)
     */
     if (What_Am_I() != RTTI_BUILDING) {
         if (StageClass::Graphic_Logic() || Time_To_Redraw()) {
-            Mark(MARK_CHANGE);
+#ifdef ATARI_ST
+            /*
+            **	Held fidgets still tick Graphic_Logic so the idle clip ends on
+            **	the original frame, but the stand pose is already on screen.
+            */
+            if (What_Am_I() != RTTI_INFANTRY || !((InfantryClass*)this)->Draws_As_Stand_Pose())
+#endif
+            {
+                Mark(MARK_CHANGE);
+            }
         }
     }
 

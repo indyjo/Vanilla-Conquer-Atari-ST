@@ -102,20 +102,6 @@
 */
 #include "sidebarglyphx.h"
 
-static int Building_Idle_Throttled_Rate(BStateType state, int rate)
-{
-#ifdef ATARI_ST
-    if (ThrottleBuildingIdleAnims && rate > 0 && (state == BSTATE_IDLE || state == BSTATE_FULL)) {
-        int throttled = rate * ST_IDLE_ANIM_THROTTLE_FACTOR;
-        if (throttled > 255) {
-            throttled = 255;
-        }
-        return throttled;
-    }
-#endif
-    return rate;
-}
-
 static bool Skip_Building_Construction_Frames(BuildingClass const* building)
 {
 #ifdef ATARI_ST
@@ -133,6 +119,28 @@ static bool Skip_Building_Construction_Frames(BuildingClass const* building)
     (void)building;
     return false;
 #endif
+}
+
+/*
+**	Idle / refinery-full loops keep their original Set_Rate (IsReadyToCommence
+**	timing). Throttle only skips redraw and holds the first frame.
+*/
+static bool Skip_Building_Idle_Frames(BuildingClass const* building)
+{
+#ifdef ATARI_ST
+    if (!ThrottleBuildingIdleAnims || building == NULL || building->Class->IsTurretEquipped) {
+        return false;
+    }
+    return (building->BState == BSTATE_IDLE || building->BState == BSTATE_FULL);
+#else
+    (void)building;
+    return false;
+#endif
+}
+
+static bool Hold_Building_Anim_Frame(BuildingClass const* building)
+{
+    return Skip_Building_Construction_Frames(building) || Skip_Building_Idle_Frames(building);
 }
 
 enum SAMState
@@ -578,7 +586,7 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
 
         shapefile = Class->Get_Image_Data();
 
-        if (Skip_Building_Construction_Frames(this)) {
+        if (Hold_Building_Anim_Frame(this)) {
             shapenum = Class->Anims[BState].Start;
         }
 
@@ -998,7 +1006,7 @@ void BuildingClass::AI(void)
             if (Fetch_Stage() >= ctrl->Start + ctrl->Count) {
                 toloop = true;
             }
-            if (!Skip_Building_Construction_Frames(this)) {
+            if (!Hold_Building_Anim_Frame(this)) {
                 Mark(MARK_CHANGE);
             }
         } else {
@@ -1025,12 +1033,12 @@ void BuildingClass::AI(void)
     if (toloop) {
         BuildingTypeClass::AnimControlType const* ctrl = Fetch_Anim_Control();
         if (BState == BSTATE_CONSTRUCTION || BState == BSTATE_IDLE) {
-            Set_Rate(Building_Idle_Throttled_Rate(BState, Options.Normalize_Delay(ctrl->Rate)));
+            Set_Rate(Options.Normalize_Delay(ctrl->Rate));
         } else {
-            Set_Rate(Building_Idle_Throttled_Rate(BState, ctrl->Rate));
+            Set_Rate(ctrl->Rate);
         }
         Set_Stage(ctrl->Start);
-        if (!Skip_Building_Construction_Frames(this)) {
+        if (!Hold_Building_Anim_Frame(this)) {
             Mark(MARK_CHANGE);
         }
     }
@@ -1092,9 +1100,9 @@ void BuildingClass::AI(void)
             BState = QueueBState;
             BuildingTypeClass::AnimControlType const* ctrl = Fetch_Anim_Control();
             if (BState == BSTATE_CONSTRUCTION || BState == BSTATE_IDLE) {
-                Set_Rate(Building_Idle_Throttled_Rate(BState, Options.Normalize_Delay(ctrl->Rate)));
+                Set_Rate(Options.Normalize_Delay(ctrl->Rate));
             } else {
-                Set_Rate(Building_Idle_Throttled_Rate(BState, ctrl->Rate));
+                Set_Rate(ctrl->Rate);
             }
             Set_Stage(ctrl->Start);
             Mark(MARK_CHANGE);
@@ -3295,7 +3303,7 @@ void BuildingClass::Begin_Mode(BStateType bstate)
         if (Class->IsRegulated && bstate != BSTATE_CONSTRUCTION) {
             rate = Options.Normalize_Delay(rate);
         }
-        Set_Rate(Building_Idle_Throttled_Rate(bstate, rate));
+        Set_Rate(rate);
         Set_Stage(ctrl->Start);
     }
 }

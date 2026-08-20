@@ -452,6 +452,15 @@ void GadgetClass::Draw_All(bool forced)
         gadget->Draw_Me(forced);
         gadget = gadget->Get_Next();
     }
+
+    /*
+    **	Input() force-redraws every gadget the first time it sees a list. If this
+    **	list was just painted, mark it so buttons are not filled/labeled a second
+    **	time. Draw_All(false) is the map render path and must not steal LastList.
+    */
+    if (forced) {
+        LastList = this;
+    }
 }
 
 /***************************************************************************

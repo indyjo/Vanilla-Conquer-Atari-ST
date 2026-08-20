@@ -831,6 +831,10 @@ void OptionsClass::Save_Settings(void)
     ini.Put_Int(OPTIONS, "DeathAnnounce", IsDeathAnnounce);
     ini.Put_Int(OPTIONS, "FreeScrolling", IsFreeScroll);
 
+#ifdef ATARI_ST
+    ST_Autotune_Preserve_INI(ini);
+#endif
+
     ini.Put_Int(HotkeyName, "KeyForceMove1", KeyForceMove1);
     ini.Put_Int(HotkeyName, "KeyForceMove2", KeyForceMove2);
     ini.Put_Int(HotkeyName, "KeyForceAttack1", KeyForceAttack1);

@@ -392,19 +392,28 @@ Rules:
 
 Theaters and WSAs load the file with `CCFileClass`, validate with `C2P_WeightSet_Validate()`, and install via `C2P_Install_CustomWeights()`. LUTs are baked once during install; the file buffer is not retained. **Legacy 4096-byte weight-only files are not accepted.**
 
-## CONQUER.INI `[Options]`
+## CONQUER.INI `[Options]` / `[AtariST]`
 
 Optional keys next to `cnc.tos`. Missing keys keep the listed default.
 
+`[Options]` (shared with PC, plus the existing Atari blit override):
+
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `HardwareFills` | auto | Use the BLiTTER when the chip is present. Auto skips it on 68040+ (copyback) and when TT-RAM is present; `1` forces it on, `0` forces CPU blits. |
+| `HardwareFills` | auto | Use the BLiTTER when the chip is present. Auto skips it on 68040+ (copyback) and when TT-RAM is present; `1` forces it on, `0` forces CPU blits. Omit or `-1` = auto. |
+
+`[AtariST]` (port-only; `[Options]` copies are still read, then moved here the next time the game saves the INI):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
 | `ThrottleBuildingIdleAnims` | auto | Hold a static idle / refinery-full frame (timing unchanged). |
 | `ThrottleInfantryIdleAnims` | auto | Draw stand pose instead of idle/salute/gesture fidgets. Facing and RNG still run so recordings match. Nikoomba and civilian scatter stay full rate. |
-| `SkipBuildingConstructionAnims` | auto | Hold a static buildup/sell frame and freeze the construction yard while it is producing; construction time is unchanged. |
+| `SkipBuildingConstructionAnims` | off | Hold a static buildup/sell frame and freeze the construction yard while it is producing; construction time is unchanged. Off by default on all CPUs. |
 | `FreezeAIDuringMapGestures` | auto | Pause simulation while scrolling or rubber-banding (single-player only). Sound and drawing continue. |
 
-Throttle keys, `SkipBuildingConstructionAnims`, `FreezeAIDuringMapGestures`, and `HardwareFills`: omit or `-1` = auto, `0` = off, `1` = on. These autos run a short 200 Hz CPU probe at boot (`atarilib/st_autotune.cpp`) and enable on ≤16 MHz-class machines (`ST_AUTOTUNE_16MHZ_MAX_LOOPS`). Decisions are logged in `cnc.log`.
+Throttle keys and `FreezeAIDuringMapGestures`: omit or `-1` = auto, `0` = off, `1` = on. Auto runs a short 200 Hz CPU probe at boot (`atarilib/st_autotune.cpp`) and enables on ≤16 MHz-class machines (`ST_AUTOTUNE_16MHZ_MAX_LOOPS`). `SkipBuildingConstructionAnims`: omit or `-1` / `0` = play construction frames, `1` = skip. Decisions are logged in `cnc.log`.
+
+The game rewrites `CONQUER.INI` from the Options menu (Resume), Game Controls, Sound, and at startup (`PlayIntro=No`). `[AtariST]` keys (including `-1` auto) are rewritten with short `;` comments. Westwood INI load accepts `;` comments but drops them on round-trip, so the comments are regenerated on each save.
 
 ## Runtime Usage
 

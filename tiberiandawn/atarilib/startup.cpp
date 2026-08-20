@@ -434,6 +434,7 @@ int main(int argc, char *argv[])
 		** gonna change it to say "no" in the future.
 		*/
 		WWWritePrivateProfileString("Intro", "PlayIntro", "No", buffer);
+		ST_Autotune_Append_Section_If_Missing(buffer);
 		cfile.Write(buffer, strlen(buffer));
 
 		Free(buffer);
@@ -651,15 +652,34 @@ void Read_Setup_Options( RawFileClass *config_file )
 		HardwareFillsIni = WWGetPrivateProfileInt ("Options", "HardwareFills", -1, buffer);
 		//ScreenHeight = WWGetPrivateProfileInt ("Options", "Resolution", 0, buffer) ? 1536 : 1536;
 		IsV107 = WWGetPrivateProfileInt ("Options", "Compatibility", 0, buffer);
-		throttle_building_idle = WWGetPrivateProfileInt ("Options", "ThrottleBuildingIdleAnims", -1, buffer);
-		throttle_infantry_idle = WWGetPrivateProfileInt ("Options", "ThrottleInfantryIdleAnims", -1, buffer);
-		skip_building_construction = WWGetPrivateProfileInt ("Options", "SkipBuildingConstructionAnims", -1, buffer);
-		freeze_ai_map_gestures = WWGetPrivateProfileInt ("Options", "FreezeAIDuringMapGestures", -1, buffer);
+
+		/*
+		**	Atari-only autotune keys live in [AtariST]. Fall back to [Options]
+		**	so a 0.3.3-dev CONQUER.INI still applies.
+		*/
+		throttle_building_idle = WWGetPrivateProfileInt (ST_AUTOTUNE_INI_SECTION, "ThrottleBuildingIdleAnims", -999, buffer);
+		if (throttle_building_idle == -999) {
+			throttle_building_idle = WWGetPrivateProfileInt ("Options", "ThrottleBuildingIdleAnims", -1, buffer);
+		}
+		throttle_infantry_idle = WWGetPrivateProfileInt (ST_AUTOTUNE_INI_SECTION, "ThrottleInfantryIdleAnims", -999, buffer);
+		if (throttle_infantry_idle == -999) {
+			throttle_infantry_idle = WWGetPrivateProfileInt ("Options", "ThrottleInfantryIdleAnims", -1, buffer);
+		}
+		skip_building_construction = WWGetPrivateProfileInt (ST_AUTOTUNE_INI_SECTION, "SkipBuildingConstructionAnims", -999, buffer);
+		if (skip_building_construction == -999) {
+			skip_building_construction = WWGetPrivateProfileInt ("Options", "SkipBuildingConstructionAnims", -1, buffer);
+		}
+		freeze_ai_map_gestures = WWGetPrivateProfileInt (ST_AUTOTUNE_INI_SECTION, "FreezeAIDuringMapGestures", -999, buffer);
+		if (freeze_ai_map_gestures == -999) {
+			freeze_ai_map_gestures = WWGetPrivateProfileInt ("Options", "FreezeAIDuringMapGestures", -1, buffer);
+		}
 
 		delete [] buffer;
 	}
 
 #ifdef ATARI_ST
+	ST_Autotune_Remember_INI(throttle_building_idle, throttle_infantry_idle, skip_building_construction,
+		freeze_ai_map_gestures);
 	ST_Autotune_Configure(throttle_building_idle, throttle_infantry_idle, skip_building_construction,
 		freeze_ai_map_gestures);
 #endif

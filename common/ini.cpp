@@ -365,8 +365,16 @@ int INIClass::Save(Pipe& pipe) const
         INIEntry* entryptr = secptr->EntryList.First();
         while (entryptr && entryptr->Is_Valid()) {
             total += pipe.Put(entryptr->Entry, (int)strlen(entryptr->Entry));
-            total += pipe.Put("=", 1);
-            total += pipe.Put(entryptr->Value, (int)strlen(entryptr->Value));
+            /*
+            **	Lines whose name starts with ';' are comments (Westwood INI).
+            **	Load already skips them; emit them without '=value'.
+            */
+            if (entryptr->Entry[0] != ';') {
+                total += pipe.Put("=", 1);
+                if (entryptr->Value != NULL) {
+                    total += pipe.Put(entryptr->Value, (int)strlen(entryptr->Value));
+                }
+            }
             total += pipe.Put("\r\n", (int)strlen("\r\n"));
 
             entryptr = entryptr->Next();

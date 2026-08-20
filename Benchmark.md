@@ -4,14 +4,32 @@ Format modelled on [STDOOM Benchmark.txt](https://github.com/indyjo/STDOOM/blob/
 
 ## How to run
 
-Playback benchmark (`RECORD.BIN` in the game directory):
+Playback benchmark (`RECORD.BIN` in the game directory). TOS cannot take argv; rename `cnc.tos` to `cnc.ttp` so GEMDOS will pass the flags:
 
 ```text
-cnc.tos -XY          # default audio
-cnc.tos -XYQ         # mostly disable audio (-XQ)
+cnc.ttp -XY          # default audio
+cnc.ttp -XYQ         # mostly disable audio (-XQ)
 ```
 
 `-XQ` turns off theme/score and some init paths; **SFX and EVA from the recording still play** (see Vanilla TD `Debug_Quiet` behaviour).
+
+Intro / briefing cutscenes are not part of the timed run. Abort them with **ESC**, or delete `MOVIES.MIX` so they never start.
+
+### Autotune (0.3.3+)
+
+From **0.3.3**, a boot CPU probe turns on idle-animation throttles and AI freeze during map gestures on ≤16 MHz-class machines (8 MHz ST/STe and 16 MHz Mega STe). That cuts fidget redraws, so the published ST/STe fps numbers **include** autotune. Construction buildup/sell frames stay on unless you set `SkipBuildingConstructionAnims=1`. Falcon/TT are above the probe threshold and are unaffected.
+
+For a true system-performance run (full idle anims; AI keeps simulating while you scroll), put this in `CONQUER.INI` `[AtariST]`:
+
+```ini
+[AtariST]
+ThrottleBuildingIdleAnims=0
+ThrottleInfantryIdleAnims=0
+SkipBuildingConstructionAnims=0
+FreezeAIDuringMapGestures=0
+```
+
+The game rewrites `CONQUER.INI` when you leave the **Options** menu (Resume), when you OK **Game Controls** or **Sound**, and once at startup (`PlayIntro=No`). `[AtariST]` keys are kept on those writes (legacy copies under `[Options]` are migrated).
 
 Timing starts when the mission loads; results are printed at playback end (console + dialog):
 
@@ -31,7 +49,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 - **0.3.0** — AUDX pools + page cache; 8-bit PCM stream / LUT path (2026-07-30)
 - **0.3.1** — soft/HW blit from [PR #7](https://github.com/indyjo/Vanilla-Conquer-Atari-ST/pull/7); AUDX fix (no GEMDOS in VBL) (2026-08-05)
 - **0.3.2** — drop BLiTTER cache-sync; soft blit on 040+ / TT-RAM; keep HW blit on 030 (2026-08-07)
-- **0.3.3-dev** — coalesced clipped redraw (CCR) and partial HidPage present (2026-08-19)
+- **0.3.3** — coalesced clipped redraw (CCR), partial HidPage present, idle-anim throttles (2026-08-20)
 
 ## Results
 
@@ -43,9 +61,10 @@ Same 1570-frame playback recording (software blits only):
 |---------|-------|------|-----|
 | 0.3.0 | 255603 | 21:18.01 | 1.2285 |
 | 0.3.1 | 153904 | 12:49.52 | 2.0402 |
-| 0.3.3-dev | 102241 | 8:31.20 | 3.0712 |
+| 0.3.2 | 141694 | 11:48.47 | 2.2160 |
+| 0.3.3 | 99945 | 8:19.72 | 3.1417 |
 
-`0.3.1` is about **65%** faster than `0.3.0` on plain ST (`-XYQ`). `0.3.3-dev` is about **51%** faster than `0.3.1`.
+`0.3.1` is about **65%** faster than `0.3.0` on plain ST (`-XYQ`). `0.3.3` is about **42%** faster than `0.3.2` (and about **54%** faster than `0.3.1`).
 
 ### 8 MHz Atari STe (68000), EmuTOS 1.3 (US), 60 Hz (emulated)
 
@@ -58,7 +77,7 @@ Same 1570-frame playback recording (software blits only):
 | 0.3.0 | 158546 | 13:12.73 | 1.9805 |
 | 0.3.1 | 158929 | 13:14.64 | 1.9757 |
 | 0.3.2 | 156058 | 13:00.29 | 2.0121 |
-| 0.3.3-dev | 108812 | 9:04.06 | 2.8857 |
+| 0.3.3 | 105805 | 8:49.02 | 2.9677 |
 
 `-XYQ`:
 
@@ -69,9 +88,9 @@ Same 1570-frame playback recording (software blits only):
 | 0.3.0 | 130331 | 10:51.65 | 2.4093 |
 | 0.3.1 | 130657 | 10:53.28 | 2.4032 |
 | 0.3.2 | 128066 | 10:40.33 | 2.4519 |
-| 0.3.3-dev | 86637 | 7:13.18 | 3.6243 |
+| 0.3.3 | 84882 | 7:04.41 | 3.6993 |
 
-STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on plain ST.
+STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on plain ST. `0.3.3` is about **51%** faster than `0.3.2` on STe `-XYQ`.
 
 ### 16 MHz Atari Falcon (68030), EmuTOS 1.3 512 KB (US), 60 Hz (emulated)
 
@@ -83,7 +102,8 @@ STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on pl
 | 0.2.0 | 49253 | 4:06.26 | 6.3752 |
 | 0.3.0 | 49790 | 4:08.95 | 6.3065 |
 | 0.3.1 | 50478 | 4:12.39 | 6.2205 |
-| 0.3.3-dev | 38406 | 3:12.03 | 8.1758 |
+| 0.3.2 | 46995 | 3:54.97 | 6.6816 |
+| 0.3.3 | 36298 | 3:01.49 | 8.6506 |
 
 `-XYQ`:
 
@@ -93,8 +113,8 @@ STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on pl
 | 0.2.0 | 47339 | 3:56.69 | 6.6330 |
 | 0.3.0 | 47231 | 3:56.15 | 6.6482 |
 | 0.3.1 | 47990 | 3:59.95 | 6.5430 |
-| 0.3.2 | 47293 | 3:56.46 | 6.6395 |
-| 0.3.3-dev | 36097 | 3:00.48 | 8.6988 |
+| 0.3.2 | 44044 | 3:40.22 | 7.1292 |
+| 0.3.3 | 33982 | 2:49.91 | 9.2402 |
 
 #### Same Falcon, TT-RAM, no BLiTTER (software blits)
 
@@ -103,5 +123,16 @@ EmuTOS reports no blitter (`AllowHardwareBlitFills` forced off → software path
 | Version | Ticks | Time | FPS |
 |---------|-------|------|-----|
 | 0.3.1 | 33843 | 2:49.21 | 9.2781 |
-| 0.3.2 | 33671 | 2:48.35 | 9.3255 |
-| 0.3.3-dev | 25354 | 2:06.77 | 12.3846 |
+| 0.3.2 | 31182 | 2:35.91 | 10.0699 |
+| 0.3.3 | 24059 | 2:00.29 | 13.0512 |
+
+### 32 MHz Atari TT (68030), 4 MB ST-RAM + 4 MB TT-RAM, EmuTOS 1.3
+
+`-XYQ`:
+
+| Version | Ticks | Time | FPS |
+|---------|-------|------|-----|
+| 0.3.2 | 15387 | 1:16.93 | 20.4068 |
+| 0.3.3 | 11904 | 0:59.52 | 26.3777 |
+
+`0.3.3` is about **29%** faster than `0.3.2` on this TT (`-XYQ`).

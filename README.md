@@ -4,26 +4,34 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 
 ![In-game screenshot (Nod base, 320×200)](docs/atari-st/screenshot-ingame.png)
 
-**Status:** Game is rendered in 16 colors; playable in emulation; performance not great (usually single-digit FPS); FMV cutscenes supported.
+**Status:** Game is rendered in 16 colors; playable in emulation. Performance has improved somewhat (still single-digit FPS on 8 MHz ST/STe; more comfortable on Falcon). FMV cutscenes are supported. 
 
+- Performance measurements in **[Benchmark.md](Benchmark.md)**.
 - Upstream Vanilla Conquer (PC, other platforms): **[README-vanilla-conquer.md](README-vanilla-conquer.md)**
 - Open tasks & release prep: **[atari-todo.md](atari-todo.md)**
 - Port notes (MIX list, `.W16` format): **[tiberiandawn/atari.md](tiberiandawn/atari.md)**
 
 ## Requirements
 
-- CPU: Acceptable framerates on Falcon+. FMV also works on 8MHz.
-- RAM: 4MB supported (more RAM is better, especiall TT-RAM)
-- Blitter is supported; if unavailable, software Blitting is used
+- CPU: Acceptable framerates on Falcon+. FMV also works on 8 MHz.
+- RAM: 4 MB supported (more RAM is better, especially TT-RAM)
+- Blitter is supported; if unavailable or slower than CPU, software blitting is used
 - STe/TT/Falcon DMA sound is supported; game remains silent on plain ST.
 
 ## Run
 
-See the [itch.io project page](https://indyjo.itch.io/cnc-atari-st).
+See the [itch.io project page](https://indyjo.itch.io/cnc-atari-st), or [Benchmark.md](Benchmark.md) for measuring performance.
 
 ## Build
 
-`m68k-atari-mint` toolchain; then `cd tiberiandawn && make` → `bin/AtariST/cnc.tos`. Host tests: `make tests` ([tests/README](tiberiandawn/tests/README.md)). On-target tests: `make st-tests` ([st_suite readme](tiberiandawn/tests/st_suite/readme.md)).
+`m68k-atari-mint` toolchain plus **libcmini**. If libcmini is not already in the MiNT sys-root, point Make at its install prefix (the path must end in `/usr`):
+
+```sh
+cd tiberiandawn
+make LIBCMINI_PREFIX="$HOME/opt/libcmini/usr" -j4
+```
+
+Output: `bin/AtariST/cnc.tos`. Host tests: `make tests` ([tests/README](tiberiandawn/tests/README.md)). On-target tests: `make st-tests` ([st_suite readme](tiberiandawn/tests/st_suite/readme.md)).
 
 ## Host tools
 

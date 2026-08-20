@@ -334,13 +334,19 @@ ifeq ($(LTO),1)
 # The codegen flags have to be repeated on the link line: LTRANS re-runs the
 # assembler, which otherwise rejects 020 instructions ("selected processor does
 # not have all features of selected architecture"). -Wa,-m68020 does not reach it.
-LDFLAGS += -flto=auto $(CPU_FLAGS)
+#
+# "override" is required, not cosmetic: Release with WITH_SYMBOLS=1 does
+# "override LDFLAGS :=" above, and GNU make silently drops every later plain
+# assignment to a variable once it has been set with override. Without it these
+# two lines vanish while LINK_PRE_OBJS below still applies, which links crt0.o
+# twice and leaves LTRANS on the default 68000 arch.
+override LDFLAGS += -flto=auto $(CPU_FLAGS)
 ifneq ($(USE_LIBCMINI),1)
 # ...but CPU_FLAGS also selects the m68020-60 multilib, whose libc contains 68881
 # instructions and dies before main() on an FPU-less machine. Keep libraries and
 # startfiles on the default (68000, FPU-free) tree; that code runs fine on 020+.
 # -B does not win over the multilib suffix for startfiles, hence -nostartfiles.
-LDFLAGS += -nostartfiles -L$(SYSROOT_LIB_DIR) -L$(GCC_LIB_DIR)
+override LDFLAGS += -nostartfiles -L$(SYSROOT_LIB_DIR) -L$(GCC_LIB_DIR)
 LINK_PRE_OBJS += $(SYSROOT_LIB_DIR)crt0.o $(GCC_LIB_DIR)crtbegin.o
 LIBS += $(GCC_LIB_DIR)crtend.o
 endif

@@ -1147,6 +1147,12 @@ bool Select_Game(bool fade)
             **	network play.
             */
             case SEL_MULTIPLAYER_GAME:
+#ifdef ATARI_ST
+                GameToPlay = GAME_NORMAL;
+                display = true;
+                selection = SEL_NONE;
+                break;
+#else
                 switch (GameToPlay) {
 
                 /*
@@ -1274,6 +1280,7 @@ bool Select_Game(bool fade)
                     break;
                 }
                 break;
+#endif
 
             /*
             **	Play a VQ

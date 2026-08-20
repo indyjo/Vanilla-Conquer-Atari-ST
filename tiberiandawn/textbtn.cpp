@@ -352,7 +352,17 @@ void TextButtonClass::Draw_Text(char const* text)
             color = CC_GREEN;
 
             if (IsDisabled) {
+#ifdef ATARI_ST
+                /*
+                **	Idle/selected buttons flatten GradFont6 to a single pen
+                **	(TPF_MEDIUM_COLOR / TPF_BRIGHT_COLOR). Disabled originally
+                **	left TPF_USE_GRAD_PAL alone, which paints the VGA shade
+                **	ramp — mismatched on 16-color ST. Flatten the same way.
+                */
+                flags = TPF_USE_GRAD_PAL | TPF_MEDIUM_COLOR;
+#else
                 flags = (TextPrintType)0;
+#endif
             } else {
                 if (IsPressed || IsOn) {
                     flags = TPF_USE_GRAD_PAL | TPF_BRIGHT_COLOR;

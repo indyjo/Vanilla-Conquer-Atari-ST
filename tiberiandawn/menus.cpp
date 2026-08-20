@@ -523,6 +523,9 @@ int Main_Menu(unsigned int timeout)
     KeyNumType input; // input from user
     int retval;       // return value
     int curbutton;
+#ifdef ATARI_ST
+    int num_buttons = 0;
+#endif
 #ifdef NEWMENU
 #ifdef BONUS_MISSIONS
     TextButtonClass* buttons[8];
@@ -626,6 +629,10 @@ int Main_Menu(unsigned int timeout)
                              starty,
                              D_MULTI_W,
                              D_MULTI_H);
+#ifdef ATARI_ST
+    // Networking is not implemented on ST yet; keep the button visible but inert.
+    multibtn.Disable();
+#endif
     starty += ystep;
 
     // TextButtonClass internetbutton(BUTTON_INTERNET, TXT_INTERNET,
@@ -640,6 +647,10 @@ int Main_Menu(unsigned int timeout)
                              D_MULTI_Y,
                              D_MULTI_W,
                              D_MULTI_H);
+#ifdef ATARI_ST
+    // Networking is not implemented on ST yet; keep the button visible but inert.
+    multibtn.Disable();
+#endif
 #endif
 #endif
 
@@ -757,12 +768,12 @@ int Main_Menu(unsigned int timeout)
 #endif // BONUS_MISSIONS
     buttons[butt++] = &loadbtn;
     button_ids[butt - 1] = BUTTON_LOAD;
-    buttons[butt++] = &multibtn;
-    button_ids[butt - 1] = BUTTON_MULTI;
+    // Skip disabled multiplayer in keyboard wrap; mouse still sees the gadget.
     buttons[butt++] = &introbtn;
     button_ids[butt - 1] = BUTTON_INTRO;
     buttons[butt++] = &exitbtn;
     button_ids[butt - 1] = BUTTON_EXIT;
+    num_buttons = butt;
 #else
     if (expansions) {
         curbutton = 0;
@@ -923,12 +934,16 @@ int Main_Menu(unsigned int timeout)
             break;
 
         case (BUTTON_MULTI | KN_BUTTON):
+#ifdef ATARI_ST
+            break;
+#else
             retval = (input & 0x7FFF) - BUTTON_EXPAND;
 #ifdef DEMO
             retval += 1;
 #endif // DEMO
             process = false;
             break;
+#endif
 
         case (BUTTON_INTRO | KN_BUTTON):
             retval = (input & 0x7FFF) - BUTTON_EXPAND;
@@ -952,14 +967,8 @@ int Main_Menu(unsigned int timeout)
             curbutton--;
 #ifdef NEWMENU
 #ifdef ATARI_ST
-            if (expansions) {
-                if (curbutton < 0) {
-                    curbutton = 5;
-                }
-            } else {
-                if (curbutton < 0) {
-                    curbutton = 4;
-                }
+            if (curbutton < 0) {
+                curbutton = num_buttons - 1;
             }
 #else
             if (expansions) {
@@ -987,14 +996,8 @@ int Main_Menu(unsigned int timeout)
             curbutton++;
 #ifdef NEWMENU
 #ifdef ATARI_ST
-            if (expansions) {
-                if (curbutton > 5) {
-                    curbutton = 0;
-                }
-            } else {
-                if (curbutton > 4) {
-                    curbutton = 0;
-                }
+            if (curbutton >= num_buttons) {
+                curbutton = 0;
             }
 #else
             if (curbutton > 5) {

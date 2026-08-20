@@ -2244,7 +2244,8 @@ int Version_Number(void)
 {
     const char* demo_text = Is_Demo() ? "DEMO " : "";
 
-    // Only print the git tag version number if it starts with 'v'
+            // Tagged official builds (GitTag starts with 'v', clean tree): version only, no SHA.
+    // Untagged or dirty trees: rN plus optional '~' and short SHA.
     if (*GitTag == '\0' || GitUncommittedChanges || *GitTag != 'v') {
         snprintf(VersionText,
                  sizeof(VersionText),
@@ -2254,13 +2255,7 @@ int Version_Number(void)
                  (GitUncommittedChanges ? "~" : ""),
                  GitShortSHA1);
     } else {
-        snprintf(VersionText,
-                 sizeof(VersionText),
-                 "%s%s %s%s",
-                 demo_text,
-                 GitTag,
-                 (GitUncommittedChanges ? "~" : ""),
-                 GitShortSHA1);
+        snprintf(VersionText, sizeof(VersionText), "%s%s", demo_text, GitTag);
     }
 
     return (1);

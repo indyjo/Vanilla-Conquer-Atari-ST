@@ -60,6 +60,16 @@ endif
 OUTDIR ?= ./bin/$(PLATFORM)
 INTDIR ?= $(PLATFORM)/$(CONFIG)
 
+# Fill VersionText from git (common/gitinfo.cpp.in). Default off; itch-release forces it.
+# make WITH_GITINFO=1 … — local builds with real rN / tag + SHA (dirty trees show '~').
+WITH_GITINFO ?= 0
+# Write GitUncommittedChanges=false even if the tree is dirty (itch-release always sets this).
+GITINFO_FORCE_CLEAN ?= 0
+GIT_ROOT = $(abspath ..)
+GITINFO_IN = $(GIT_ROOT)/common/gitinfo.cpp.in
+GITINFO_GEN = $(GIT_ROOT)/common/gen_gitinfo.sh
+GITINFO_CPP = $(INTDIR)/gitinfo.cpp
+
 # Project name
 PROJECT_NAME = TiberianDawn
 
@@ -473,7 +483,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(PLATFORM_LIB)/st_gitinfo.cpp $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/libcmini_posix_shim.cpp $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(if $(filter 1,$(WITH_GITINFO)),,$(PLATFORM_LIB)/st_gitinfo.cpp) $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/libcmini_posix_shim.cpp $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
 
 # Shared STVQ runtime (C) — game + tools/stvqview
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -536,6 +546,11 @@ RC_OBJECTS :=
 endif
 
 ALL_OBJECTS = $(CPP_OBJECTS) $(ASM_OBJECTS) $(RC_OBJECTS) $(STVQ_C_OBJS)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+ifeq ($(WITH_GITINFO),1)
+ALL_OBJECTS += $(INTDIR)/gitinfo.o
+endif
+endif
 
 # Output files - platform-specific
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -666,6 +681,17 @@ $(INTDIR)/ste_stream_memory_source.o: $(PLATFORM_LIB)/audx/ste_stream_memory_sou
 $(INTDIR)/ste_stream_page_ring_source.o: $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+ifeq ($(WITH_GITINFO),1)
+# Always re-run the generator (cheap); rewrite gitinfo.cpp only when contents change.
+.PHONY: gitinfo-refresh
+$(GITINFO_CPP): $(GITINFO_IN) $(GITINFO_GEN) gitinfo-refresh | $(INTDIR)
+	@echo "Generating $@ from git..."
+	@sh "$(GITINFO_GEN)" "$(GITINFO_IN)" "$@" "$(GIT_ROOT)" "$(GITINFO_FORCE_CLEAN)"
+$(INTDIR)/gitinfo.o: $(GITINFO_CPP) | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+endif
 endif
 
 # Special rule for platform lib alloc.cpp to avoid conflict with root alloc.cpp
@@ -828,6 +854,7 @@ endif
 	@echo "  CONFIG=Release - Build release version (defaults: CXX_OPT_REL=-O3, WITH_SYMBOLS=1)"
 	@echo "  PROFILE_FRAME_BAR=0 - Atari-only: disable Hz200 profiler (default: 1, -DST_FRAME_BAR_PROFILE)"
 	@echo "  PROFILE_BORDER=0    - Atari-only: disable audio pen-0 border timing (default: 0)"
+	@echo "  WITH_GITINFO=1  - Atari-only: generate gitinfo.cpp from common/gitinfo.cpp.in"
 	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"
 	@echo "  FRAME_POINTERS=1 - Keep A6 frame chain (-fno-omit-frame-pointer); default: 0"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
@@ -863,8 +890,10 @@ ifeq ($(PLATFORM_LIB),ATARILIB)
 	@echo "  make LIBC_RUNTIME=libcmini LIBCMINI_PREFIX=/path/to/libcmini/usr -j4"
 	@echo "  make PROFILE_FRAME_BAR=0 - Atari build without tab-strip profiler (on by default)"
 	@echo "  make PROFILE_BORDER=0    - Audio VBL/IMA decode border timing (on by default)"
+	@echo "  make WITH_GITINFO=1      - Title-menu version from git (rN SHA, or vX.Y.Z with no SHA on release tags)"
 	@echo "  make itch-release        - dist/itch/cncst-x.y.z.zip + cncst-sym-x.y.z.zip"
-	@echo "                             (requires tag release/atarist/vx.y.z on HEAD; clean repo unless ITCH_ALLOW_DIRTY=1)"
+	@echo "                             (requires tag release/atarist/vx.y.z on HEAD; clean repo unless ITCH_ALLOW_DIRTY=1;"
+	@echo "                              always WITH_GITINFO=1 and never marks the in-game label dirty)"
 endif
 	@echo ""
 	@echo "Cross-Compiler:"
@@ -1066,7 +1095,6 @@ remix-web-itch:
 #=============================================================================
 ifeq ($(PLATFORM_LIB),ATARILIB)
 
-GIT_ROOT = $(abspath ..)
 NM = $(CROSS_PREFIX)/$(CROSS_TARGET)-nm
 STRIP = $(CROSS_PREFIX)/$(CROSS_TARGET)-strip
 ITCH_DIST_DIR = dist/itch
@@ -1098,7 +1126,7 @@ itch-release:
 	VERSION=$${RELEASE_TAG#release/atarist/v}; \
 	echo "Release tag: $$RELEASE_TAG (version $$VERSION)"; \
 	$(MAKE) clean CONFIG=Release; \
-	$(MAKE) all CONFIG=Release WITH_SYMBOLS=1 PROFILE_FRAME_BAR=1 OUTDIR=./bin/AtariST/; \
+	$(MAKE) all CONFIG=Release WITH_SYMBOLS=1 PROFILE_FRAME_BAR=1 WITH_GITINFO=1 GITINFO_FORCE_CLEAN=1 OUTDIR=./bin/AtariST/; \
 	if [ ! -f "$(ITCH_RELEASE_TOS)" ]; then \
 		echo "error: $(ITCH_RELEASE_TOS) not found after build" >&2; \
 		exit 1; \

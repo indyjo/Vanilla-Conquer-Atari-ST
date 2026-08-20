@@ -1,3 +1,4 @@
+/* Fallback when WITH_GITINFO=0. itch-release and make WITH_GITINFO=1 use common/gitinfo.cpp.in instead. */
 #include "common/gitinfo.h"
 #include <ctime>
 

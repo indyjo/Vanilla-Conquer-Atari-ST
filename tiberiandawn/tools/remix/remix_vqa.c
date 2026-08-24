@@ -60,7 +60,7 @@ static void dct_for_effort(RemixVideoEffort e, unsigned *y, unsigned *chroma)
 	}
 }
 
-/** Extra frames after the current for STCR utility/eviction (0 = current frame only). */
+/** Extra frames after the current for STCR candidates/utility/eviction (0 = current frame only). */
 static unsigned lookahead_for_effort(RemixVideoEffort e)
 {
 	switch (e) {

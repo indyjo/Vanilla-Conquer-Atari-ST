@@ -53,7 +53,7 @@ static void usage(const char *argv0)
 	    "    --cb-size N           codebook entries (default %u)\n"
 	    "    --cb-per-frame N      max STCR replaces/frame (default %u; 0=none)\n"
 	    "    --cb-random-pct N     %% of STCR slots accepted at random (default %u)\n"
-	    "    --cb-lookahead N      frames ahead for eviction/utility (default %u)\n"
+	    "    --cb-lookahead N      frames ahead for STCR candidates/utility (default %u)\n"
 	    "    --gamma F             YUV gamma before DCT (default %.2g)\n"
 	    "    --dct-alpha F         DCT weight alpha in 1/(1+a*(u^2+v^2)) (default %.2g)\n"
 	    "    --dct-coeffs N        Y zig-zag DCT coeffs (default %u)\n"

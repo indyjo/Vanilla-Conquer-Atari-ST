@@ -113,20 +113,27 @@ Requires existing `name.<N>.w16` sidecars; aborts if any are missing.
 
 Defaults: `--cb-size 2048`, `--cb-per-frame 32`, `--cb-random-pct 25`, `--cb-lookahead 1`,
 `--gamma 0.77`, `--dct-alpha 0.2`, `--dct-coeffs 15`, `--dct-chroma-coeffs 7`.
-No initial `STCB`: the codebook starts empty and is filled only via `STCR`. STCR:
-residual-only shortlist of `2*R` (stay-as-is aware); accept `(100-random)%` by
-add-utility (ignore eviction) paired with least-damage victims (ignore install); then
-accept `random%` tiles directly. On palette/segment changes, codebook DCT features are
-recomputed under the new W16 and every existing CB entry becomes a **prime eviction
-candidate**; STCR always replaces the lowest-index free prime before damage-based
-victims. STVD assignment and N−2 skip never use pre-cut tiles: only current-epoch CB
+No initial `STCB`: the codebook starts empty and is filled only via `STCR`. STCR
+candidates come from the farthest lookahead frame (`f_end`); on encode frame 0 they
+come from every frame in the window. Residual-only shortlist of `2*R` (stay-as-is
+on the current frame only); accept `(100-random)%` by add-utility over the full
+window (ignore eviction) paired with least-damage victims (ignore install); then
+accept `random%` tiles from the same candidate pool. On palette/segment changes,
+codebook DCT features are recomputed under the new W16 and every **prior-palette**
+CB entry (`tile_epoch < pal_epoch`) becomes a **prime eviction candidate**; STCR
+always replaces the lowest-index free stale prime before damage-based victims.
+Tiles sampled from post-cut lookahead frames are stamped `pal_epoch+1` so they
+are not drawn until after `STPL` and are not evicted as primes before the cut.
+STVD assignment and N−2 skip never use pre-cut tiles: only current-epoch CB
 entries are referenced, and the cut frame is force-full. Tile error is weighted
 **YUV-DCT** feature L2: source and recon → palette-opt YUV (`--gamma`) → per-plane 8×8
 DCT → zig-zag packs `[Y×Ny | U×Nc | V×Nc]` with `√(1/(1+α(u²+v²)))`. Fewer chroma coeffs
 underweight U/V vs Y (chroma is smoother; U/V magnitudes are already smaller than Y).
 
 STCR lookahead spans at most one palette cut: pre-cut frames score under the old palette,
-post-cut under the new; a second cut shrinks the window.
+post-cut under the new; a second cut shrinks the window. Candidates may still come from
+the far side of that cut so the codebook can pre-buffer tiles for the first post-cut
+frame.
 
 ### preview
 

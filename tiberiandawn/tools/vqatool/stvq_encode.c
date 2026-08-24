@@ -270,7 +270,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	}
 
 	fprintf(stderr, "frames=%u size=%ux%u tiles=%ux%u segments=%u cb=%u R=%u shortlist=%u*%u random=%u%% "
-	                "lookahead=%u gamma=%.3g dct-alpha=%.3g dct-coeffs=%u+%u+%u (feat=%u)\n",
+	                "lookahead=%u cand=f_end gamma=%.3g dct-alpha=%.3g dct-coeffs=%u+%u+%u (feat=%u)\n",
 	    dec.frame_count, dec.width, dec.height, tiles_x, tiles_y, dec.segment_count, opts->cb_size,
 	    opts->cb_per_frame, 2u, opts->cb_per_frame, opts->cb_random_pct, opts->cb_lookahead,
 	    stvq_metric_gamma(), stvq_metric_dct_alpha(), stvq_metric_dct_coeffs(),

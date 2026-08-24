@@ -45,11 +45,14 @@
 #include "audx/ste_stream_page_ring_source.h"
 #include "ccfile.h"
 #include "audio.h"
+#include "audio_timer_dac.h"
+#include "digi_ring.h"
 #include "memflag.h"
 #include "ste_aud_constants.h"
 #include "ste_stream_format.h"
 #include "ste_stream_pcm.h"
 #include "ste_stream_ima99.h"
+#include "st_audio_cfg.h"
 #include "st_border_profile.h"
 
 #include <stdio.h>
@@ -130,6 +133,7 @@ static volatile unsigned char* const STE_DMA_END_L = (volatile unsigned char*)0x
 static volatile unsigned char* const STE_DMA_MIXER = (volatile unsigned char*)0xFFFF8922UL;
 
 static int g_ste_dma_ok;
+static int g_audio_ok; /* STE DMA or YM/Covox timer DAC */
 static unsigned char g_ste_dma_rate_idx;
 int g_ste_pcm_dup2x = 1;
 
@@ -303,8 +307,25 @@ static void ste_dma_stop(void)
 	}
 }
 
+static void digi_output_stop(void)
+{
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		Timer_Dac_Game_Stop();
+	} else {
+		ste_dma_stop();
+	}
+}
+
 static int ste_audio_alloc_init(void)
 {
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		DigiRing* r = Timer_Dac_Ring();
+		if (!r || !r->base) {
+			return 0;
+		}
+		g_dma_pool = r->base;
+		return 1;
+	}
 	if (g_dma_pool) {
 		return 1;
 	}
@@ -314,6 +335,10 @@ static int ste_audio_alloc_init(void)
 
 static void ste_audio_alloc_shutdown(void)
 {
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		g_dma_pool = 0;
+		return;
+	}
 	ste_stram_free(g_dma_pool);
 	g_dma_pool = 0;
 }
@@ -367,6 +392,7 @@ static void ste_voice_set_score(struct SteStreamState* ss, int is_score)
 }
 
 static void ste_stream_shutdown_one(struct SteStreamState* ss);
+static void ste_voice_reset_sources(int vi);
 static void ste_voice_release_file_heap(int vi);
 
 static void ste_voice_pull_padded(struct SteStreamState* ss, unsigned char* dst, unsigned nsamp)
@@ -384,7 +410,13 @@ static void ste_voice_pull_padded(struct SteStreamState* ss, unsigned char* dst,
 	 * down on EOF so Theme.AI does not treat a stall as "song finished" and pick another.
 	 */
 	if (got == 0UL && ss->format->at_end()) {
+		int const vi = (int)(ss - &g_voice_ss[0]);
 		ste_stream_shutdown_one(ss);
+		/* Unpin page-ring slabs here; never free() on VBL (GEMDOS-unsafe). */
+		if (vi >= 0 && vi < STE_MIX_VOICES) {
+			ste_voice_reset_sources(vi);
+			g_voice_src[vi] = 0;
+		}
 	}
 }
 
@@ -726,7 +758,41 @@ static void ste_audio_vbl_remove(void)
 
 static void ste_audio_service_core(void)
 {
-	if (!g_ste_dma_ok || !ste_any_voice_active()) {
+	if (!g_audio_ok || !ste_any_voice_active()) {
+		return;
+	}
+
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		DigiRing* r = Timer_Dac_Ring();
+		if (!r || !r->base || Timer_Dac_Movie_Owns()) {
+			return;
+		}
+		if (!Timer_Dac_Active()) {
+			if (g_ste_suppress_dma_off_cleanup) {
+				return;
+			}
+			Timer_Dac_Game_Stop();
+			g_pending_voice_shutdown = 1;
+			g_ste_suppress_dma_off_cleanup = 0;
+			return;
+		}
+		unsigned const consumer = r->ops->consumer_pos(r);
+		unsigned const w = g_ring_write_pos;
+		unsigned to_fill =
+		    (consumer + (unsigned)STE_DMA_RING_SAMPLES - w) % (unsigned)STE_DMA_RING_SAMPLES;
+		to_fill &= ~1U;
+		if (to_fill == 0) {
+			return;
+		}
+		ste_ring_write_mixed(w, to_fill);
+		g_ring_write_pos = (w + to_fill) % (unsigned)STE_DMA_RING_SAMPLES;
+		if (!ste_any_voice_active()) {
+			Timer_Dac_Game_Stop();
+		}
+		return;
+	}
+
+	if (!g_ste_dma_ok) {
 		return;
 	}
 	// If DMA playback is off, clean up voices and streams unless cleanup is suppressed, then exit.
@@ -835,7 +901,7 @@ static int ste_play_sample(void const* sample, int priority, int volume, int as_
  */
 int File_Stream_Sample_Vol(char const* filename, int volume, BOOL)
 {
-	if (!g_ste_dma_ok || !filename) {
+	if (!g_audio_ok || !filename) {
 		return -1;
 	}
 	ste_process_pending_voice_shutdown();
@@ -849,7 +915,7 @@ int File_Stream_Sample_Vol(char const* filename, int volume, BOOL)
 		}
 	}
 	if (!ste_any_voice_active()) {
-		ste_dma_stop();
+		digi_output_stop();
 	}
 	ste_sr_restore(sr);
 	free(g_stream_file_buf);
@@ -984,29 +1050,125 @@ void Sample_Make_PCM(void* sample)
 
 BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 {
+	StAudioDriver want = g_st_audio_driver_preference;
+
 	ste_audio_capture_tos_sound();
 	ste_process_pending_voice_shutdown();
 	(void)stereo;
 	(void)rate;
 	(void)bits_per_sample; /* STE path is always 8-bit DMA; ignore host request. */
 	ste_audio_vbl_remove();
-	g_ste_dma_ok = ST_Hw_Dma_Audio_Available() ? 1 : 0;
-	if (g_ste_dma_ok && ste_dma_12500_supported()) {
-		g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_12517_IDX;
-		g_ste_pcm_dup2x = 0;
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		g_dma_pool = 0;
+		Timer_Dac_Shutdown();
 	} else {
-		g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_25033_IDX;
-		g_ste_pcm_dup2x = 1;
+		ste_audio_alloc_shutdown();
+		Timer_Dac_Shutdown();
 	}
+	g_ste_dma_ok = 0;
+	g_audio_ok = 0;
+	g_st_audio_backend = ST_AUDIO_NONE;
+	g_st_audio_subsample_2 = 0;
 	g_pending_voice_shutdown = 0;
 	ste_shutdown_all_voices();
 	g_stream_file_voice = -1;
-	ste_audio_alloc_shutdown();
 	free(g_stream_file_buf);
 	g_stream_file_buf = 0;
 	g_stream_file_len = 0;
 	Audio_Focus_Loss_Function = 0;
-	if (!g_ste_dma_ok) {
+
+	if (want == ST_AUDIO_NONE) {
+		SampleType = SAMPLE_NONE;
+		SoundType = SFX_NONE;
+		DBG_INFO("Audio: None (digi disabled by CONQUER.INI)");
+		return FALSE;
+	}
+
+	int const dma_avail = ST_Hw_Dma_Audio_Available() ? 1 : 0;
+
+	if (want == ST_AUDIO_AUTO) {
+		want = dma_avail ? ST_AUDIO_STE : ST_AUDIO_NONE;
+	}
+
+	if (want == ST_AUDIO_STE) {
+		if (!dma_avail) {
+			printf("STE-DMA: Audio_Init failed (STE requested, no DMA)\n");
+			fflush(stdout);
+			SampleType = SAMPLE_NONE;
+			SoundType = SFX_NONE;
+			return FALSE;
+		}
+		g_ste_dma_ok = 1;
+		g_st_audio_backend = ST_AUDIO_STE;
+		if (ste_dma_12500_supported()) {
+			g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_12517_IDX;
+			g_ste_pcm_dup2x = 0;
+		} else {
+			g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_25033_IDX;
+			g_ste_pcm_dup2x = 1;
+		}
+		for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
+			g_voice_pcm[vi].reset();
+			g_voice_ima[vi].reset();
+		}
+		if (!ste_audio_alloc_init()) {
+			printf("STE-DMA: Audio_Init failed (DMA ring ST-RAM)\n");
+			fflush(stdout);
+			g_ste_dma_ok = 0;
+			g_st_audio_backend = ST_AUDIO_NONE;
+			SampleType = SAMPLE_NONE;
+			SoundType = SFX_NONE;
+			return FALSE;
+		}
+		SampleType = SAMPLE_SB;
+		SoundType = SFX_DMA_SOUND;
+		g_audio_ok = 1;
+		ste_dma_stop();
+		ste_falcon_dma_matrix_connect();
+		ste_dma_mixer_connect();
+		ste_audio_vbl_install();
+		DBG_INFO("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d, hw=%d)",
+		    g_ste_dma_rate_idx == STE_HW_RATE_12517_IDX ? 12517u : 25033u,
+		    g_ste_pcm_dup2x,
+		    ST_Hw_Machine_Major());
+		return TRUE;
+	}
+
+	if (want == ST_AUDIO_YM || want == ST_AUDIO_COVOX) {
+		g_ste_pcm_dup2x = 0;
+		g_st_audio_subsample_2 = 1;
+		g_st_audio_backend = want;
+		if (!Timer_Dac_Init(want)) {
+			g_st_audio_backend = ST_AUDIO_NONE;
+			g_st_audio_subsample_2 = 0;
+			SampleType = SAMPLE_NONE;
+			SoundType = SFX_NONE;
+			return FALSE;
+		}
+		for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
+			g_voice_pcm[vi].reset();
+			g_voice_ima[vi].reset();
+		}
+		if (!ste_audio_alloc_init()) {
+			Timer_Dac_Shutdown();
+			g_st_audio_backend = ST_AUDIO_NONE;
+			g_st_audio_subsample_2 = 0;
+			SampleType = SAMPLE_NONE;
+			SoundType = SFX_NONE;
+			return FALSE;
+		}
+		SampleType = SAMPLE_SB;
+		SoundType = SFX_DMA_SOUND;
+		g_audio_ok = 1;
+		Timer_Dac_Set_Stride(1);
+		ste_audio_vbl_install();
+		DBG_INFO("Timer-DAC: Audio_Init OK (%s, ~6269 Hz, subsample=2)",
+		    ST_Audio_Cfg_Driver_Name(want));
+		return TRUE;
+	}
+
+	/* Auto with no DMA → silent */
+	{
 		long mch = 0;
 		long snd = 0;
 		(void)Getcookie(C__MCH, &mch);
@@ -1014,50 +1176,37 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 		printf("STE-DMA: Audio_Init failed (_MCH=$%lX _SND=$%lX; need _MCH hw != 0, _SND bit 1)\n",
 		    (unsigned long)mch, (unsigned long)snd);
 		fflush(stdout);
-		SampleType = SAMPLE_NONE;
-		SoundType = SFX_NONE;
-		return FALSE;
 	}
-	for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
-		g_voice_pcm[vi].reset();
-		g_voice_ima[vi].reset();
-	}
-	if (!ste_audio_alloc_init()) {
-		printf("STE-DMA: Audio_Init failed (DMA ring ST-RAM)\n");
-		fflush(stdout);
-		SampleType = SAMPLE_NONE;
-		SoundType = SFX_NONE;
-		return FALSE;
-	}
-	SampleType = SAMPLE_SB;
-	SoundType = SFX_DMA_SOUND;
-	ste_dma_stop();
-	ste_falcon_dma_matrix_connect();
-	ste_dma_mixer_connect();
-	ste_audio_vbl_install();
-	DBG_INFO("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d, hw=%d)",
-	    g_ste_dma_rate_idx == STE_HW_RATE_12517_IDX ? 12517u : 25033u,
-	    g_ste_pcm_dup2x,
-	    ST_Hw_Machine_Major());
-	return TRUE;
+	SampleType = SAMPLE_NONE;
+	SoundType = SFX_NONE;
+	return FALSE;
 }
 
 void Sound_End(void)
 {
 	ste_audio_vbl_remove();
-	ste_dma_stop();
+	digi_output_stop();
 	ste_shutdown_all_voices();
 	g_stream_file_voice = -1;
-	ste_audio_alloc_shutdown();
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		g_dma_pool = 0;
+	} else {
+		ste_audio_alloc_shutdown();
+	}
+	Timer_Dac_Shutdown();
 	free(g_stream_file_buf);
 	g_stream_file_buf = 0;
 	g_stream_file_len = 0;
+	g_audio_ok = 0;
+	g_ste_dma_ok = 0;
+	g_st_audio_backend = ST_AUDIO_NONE;
+	g_st_audio_subsample_2 = 0;
 	ste_audio_restore_tos_sound();
 }
 
 void Stop_Sample(int)
 {
-	ste_dma_stop();
+	digi_output_stop();
 	ste_shutdown_all_voices();
 	g_stream_file_voice = -1;
 }
@@ -1093,7 +1242,7 @@ void Stop_Sample_Playing(void const* sample)
 		}
 	}
 	if (!ste_any_voice_active()) {
-		ste_dma_stop();
+		digi_output_stop();
 	}
 	ste_sr_restore(sr);
 }
@@ -1104,7 +1253,7 @@ void Stop_Sample_Playing(void const* sample)
  */
 static int ste_play_sample(void const* sample, int priority, int volume, int as_score)
 {
-	if (!g_ste_dma_ok || !sample) {
+	if (!g_audio_ok || !sample) {
 		return -1;
 	}
 	unsigned char const* b = (unsigned char const*)sample;
@@ -1197,15 +1346,19 @@ static int ste_play_sample(void const* sample, int priority, int volume, int as_
 		return 1;
 	}
 
-	/* Half-ring prefill, then loop the whole ring from DMA (start/end programmed once). */
-	ste_dma_stop();
+	/* Half-ring prefill, then arm DMA loop or Timer A. */
+	digi_output_stop();
 	memset(g_dma_pool, 0, (size_t)STE_DMA_RING_SAMPLES);
 	g_ring_write_pos = 0;
 	g_stream_samples_written = 0UL;
 	unsigned const prefill = (unsigned)STE_DMA_RING_SAMPLES / 2U;
 	ste_ring_write_mixed(0, prefill);
 	g_ring_write_pos = prefill % (unsigned)STE_DMA_RING_SAMPLES;
-	ste_dma_arm_loop(g_dma_pool, STE_DMA_RING_SAMPLES);
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		Timer_Dac_Game_Arm(prefill);
+	} else {
+		ste_dma_arm_loop(g_dma_pool, STE_DMA_RING_SAMPLES);
+	}
 	g_ste_suppress_dma_off_cleanup = 0;
 	return 1;
 }
@@ -1247,7 +1400,7 @@ void Fade_Sample(int handle, int)
 	Stop_Sample(handle);
 }
 int Get_Free_Sample_Handle(int) { return 1; }
-int Get_Digi_Handle(void) { return g_ste_dma_ok ? 1 : -1; }
+int Get_Digi_Handle(void) { return g_audio_ok ? 1 : -1; }
 
 long Sample_Length(void const* sample)
 {
@@ -1264,23 +1417,47 @@ long Sample_Length(void const* sample)
 void Restore_Sound_Buffers(void) {}
 
 /*
- * Yield STE DMA to STV playback: stop voices, stop DMA, remove audio VBL.
- * Keeps the game DMA ring allocated for Ste_Audio_Reclaim_Dma.
+ * Yield digi output to STVQ: stop voices, stop DMA/timer, remove audio VBL.
+ * Keeps game ring storage for Ste_Audio_Reclaim_Dma.
  */
 void Ste_Audio_Yield_Dma(void)
 {
 	ste_process_pending_voice_shutdown();
 	ste_shutdown_all_voices();
 	g_stream_file_voice = -1;
-	ste_dma_stop();
+	digi_output_stop();
 	ste_audio_vbl_remove();
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		if (g_st_stvq_enable_audio) {
+			Timer_Dac_Set_Movie_Owner(1);
+			Timer_Dac_Resume();
+			DigiRing* r = Timer_Dac_Ring();
+			if (r) {
+				digi_ring_reset(r);
+				if (r->base) {
+					memset(r->base, 0, r->size);
+				}
+			}
+		} else {
+			Timer_Dac_Pause();
+		}
+	}
 }
 
 /*
- * Reclaim STE DMA after STV: reinstall mixer/VBL; idle until Theme/Play_Sample arms.
+ * Reclaim digi after STVQ: reinstall mixer/VBL; idle until Theme/Play_Sample arms.
  */
 void Ste_Audio_Reclaim_Dma(void)
 {
+	if (!g_audio_ok) {
+		return;
+	}
+	if (ST_Audio_Cfg_Is_Timer_Backend()) {
+		Timer_Dac_Set_Movie_Owner(0);
+		Timer_Dac_Game_Stop();
+		ste_audio_vbl_install();
+		return;
+	}
 	if (!g_ste_dma_ok) {
 		return;
 	}
@@ -1292,4 +1469,4 @@ void Ste_Audio_Reclaim_Dma(void)
 
 BOOL Set_Primary_Buffer_Format(void) { return TRUE; }
 BOOL Start_Primary_Sound_Buffer(BOOL) { return TRUE; }
-void Stop_Primary_Sound_Buffer(void) { ste_dma_stop(); }
+void Stop_Primary_Sound_Buffer(void) { digi_output_stop(); }

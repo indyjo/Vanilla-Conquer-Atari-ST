@@ -21,6 +21,8 @@ static int g_ini_throttle_building = -1;
 static int g_ini_throttle_infantry = -1;
 static int g_ini_skip_buildup = -1;
 static int g_ini_freeze_gestures = -1;
+static char g_ini_audio[16] = "Auto";
+static int g_ini_stvq_enable_audio = 1;
 
 /*
  * Sample window in _hz_200 ticks (200 Hz). 40 ticks = 200 ms.
@@ -112,6 +114,17 @@ void ST_Autotune_Remember_INI(int building, int infantry, int skip, int freeze)
 	g_ini_freeze_gestures = freeze;
 }
 
+void ST_Autotune_Remember_Audio_INI(char const* audio, int stvq_enable_audio)
+{
+	if (audio && audio[0]) {
+		strncpy(g_ini_audio, audio, sizeof(g_ini_audio) - 1u);
+		g_ini_audio[sizeof(g_ini_audio) - 1u] = '\0';
+	} else {
+		strcpy(g_ini_audio, "Auto");
+	}
+	g_ini_stvq_enable_audio = stvq_enable_audio != 0 ? 1 : 0;
+}
+
 static int St_Autotune_Clamp_Ini(int value)
 {
 	if (value < 0) {
@@ -147,6 +160,8 @@ static St_Autotune_Ini_Item const k_ini_items[] = {
 	  "SkipBuildingConstructionAnims" },
 	{ { "; Game stops while scrolling.", 0, 0 },
 	  "FreezeAIDuringMapGestures" },
+	{ { "; STVQ digi during movies.", 0, 0 },
+	  "StvqEnableAudio" },
 };
 
 enum { ST_AUTOTUNE_INI_ITEM_COUNT = sizeof(k_ini_items) / sizeof(k_ini_items[0]) };
@@ -158,6 +173,7 @@ static int const* St_Autotune_Stored_Slots(void)
 	slots[1] = g_ini_throttle_infantry;
 	slots[2] = g_ini_skip_buildup;
 	slots[3] = g_ini_freeze_gestures;
+	slots[4] = g_ini_stvq_enable_audio;
 	return slots;
 }
 
@@ -166,7 +182,18 @@ static void St_Autotune_Put_Comment(INIClass& ini, char const* line)
 	ini.Put_String(ST_AUTOTUNE_INI_SECTION, line, k_comment_mark);
 }
 
-static void St_Autotune_Put_Commented_Keys(INIClass& ini, int const* values)
+static void St_Autotune_Normalize_Audio(char* out, unsigned out_sz, char const* in)
+{
+	char const* src = in && in[0] ? in : "Auto";
+	/* Keep a short canonical token for round-trip. */
+	if (out_sz < 2u) {
+		return;
+	}
+	strncpy(out, src, out_sz - 1u);
+	out[out_sz - 1u] = '\0';
+}
+
+static void St_Autotune_Put_Commented_Keys(INIClass& ini, int const* values, char const* audio)
 {
 	static char const* const ATARI = ST_AUTOTUNE_INI_SECTION;
 	unsigned c;
@@ -174,11 +201,17 @@ static void St_Autotune_Put_Commented_Keys(INIClass& ini, int const* values)
 	for (c = 0; k_section_comments[c] != 0; ++c) {
 		St_Autotune_Put_Comment(ini, k_section_comments[c]);
 	}
+	St_Autotune_Put_Comment(ini, "; Digi: Auto|STE|YM|Covox|None");
+	ini.Put_String(ATARI, "Audio", audio);
 	for (unsigned i = 0; i < ST_AUTOTUNE_INI_ITEM_COUNT; ++i) {
 		for (c = 0; c < 3 && k_ini_items[i].comments[c] != 0; ++c) {
 			St_Autotune_Put_Comment(ini, k_ini_items[i].comments[c]);
 		}
-		ini.Put_Int(ATARI, k_ini_items[i].key, values[i]);
+		if (strcmp(k_ini_items[i].key, "StvqEnableAudio") == 0) {
+			ini.Put_Int(ATARI, k_ini_items[i].key, values[i] != 0 ? 1 : 0);
+		} else {
+			ini.Put_Int(ATARI, k_ini_items[i].key, values[i]);
+		}
 	}
 }
 
@@ -188,6 +221,18 @@ void ST_Autotune_Preserve_INI(INIClass& ini)
 	static char const* const OPTIONS = "Options";
 	int const* const stored = St_Autotune_Stored_Slots();
 	int values[ST_AUTOTUNE_INI_ITEM_COUNT];
+	char audio[16];
+	char audio_buf[32];
+
+	St_Autotune_Normalize_Audio(audio, sizeof(audio), g_ini_audio);
+	if (ini.Is_Present(ATARI, "Audio")) {
+		ini.Get_String(ATARI, "Audio", audio, audio_buf, (int)sizeof(audio_buf));
+		St_Autotune_Normalize_Audio(audio, sizeof(audio), audio_buf);
+	} else if (ini.Is_Present(OPTIONS, "Audio")) {
+		ini.Get_String(OPTIONS, "Audio", audio, audio_buf, (int)sizeof(audio_buf));
+		St_Autotune_Normalize_Audio(audio, sizeof(audio), audio_buf);
+	}
+	ini.Clear(OPTIONS, "Audio");
 
 	for (unsigned i = 0; i < ST_AUTOTUNE_INI_ITEM_COUNT; ++i) {
 		char const* const key = k_ini_items[i].key;
@@ -197,17 +242,24 @@ void ST_Autotune_Preserve_INI(INIClass& ini)
 		} else if (ini.Is_Present(OPTIONS, key)) {
 			value = ini.Get_Int(OPTIONS, key, value);
 		}
-		values[i] = St_Autotune_Clamp_Ini(value);
+		if (strcmp(key, "StvqEnableAudio") == 0) {
+			values[i] = value != 0 ? 1 : 0;
+		} else {
+			values[i] = St_Autotune_Clamp_Ini(value);
+		}
 		ini.Clear(OPTIONS, key);
 	}
 	ini.Clear(ATARI);
-	St_Autotune_Put_Commented_Keys(ini, values);
+	St_Autotune_Put_Commented_Keys(ini, values, audio);
+	strncpy(g_ini_audio, audio, sizeof(g_ini_audio) - 1u);
+	g_ini_audio[sizeof(g_ini_audio) - 1u] = '\0';
+	g_ini_stvq_enable_audio = values[4];
 }
 
 void ST_Autotune_Append_Section_If_Missing(char* profile)
 {
 	int const* const stored = St_Autotune_Stored_Slots();
-	char block[700];
+	char block[900];
 	char* p;
 	char* end;
 	unsigned i;
@@ -222,11 +274,18 @@ void ST_Autotune_Append_Section_If_Missing(char* profile)
 	for (c = 0; k_section_comments[c] != 0 && p + 48 < end; ++c) {
 		p += sprintf(p, "%s\r\n", k_section_comments[c]);
 	}
+	if (p + 64 < end) {
+		p += sprintf(p, "; Digi: Auto|STE|YM|Covox|None\r\nAudio=%s\r\n", g_ini_audio);
+	}
 	for (i = 0; i < ST_AUTOTUNE_INI_ITEM_COUNT && p + 80 < end; ++i) {
 		for (c = 0; c < 3 && k_ini_items[i].comments[c] != 0; ++c) {
 			p += sprintf(p, "%s\r\n", k_ini_items[i].comments[c]);
 		}
-		p += sprintf(p, "%s=%d\r\n", k_ini_items[i].key, St_Autotune_Clamp_Ini(stored[i]));
+		if (strcmp(k_ini_items[i].key, "StvqEnableAudio") == 0) {
+			p += sprintf(p, "%s=%d\r\n", k_ini_items[i].key, stored[i] != 0 ? 1 : 0);
+		} else {
+			p += sprintf(p, "%s=%d\r\n", k_ini_items[i].key, St_Autotune_Clamp_Ini(stored[i]));
+		}
 	}
 	strcat(profile, block);
 }

@@ -4,6 +4,7 @@
  * ThrottleBuildingIdleAnims / ThrottleInfantryIdleAnims / FreezeAIDuringMapGestures
  * are set at startup from a 200 Hz CPU probe, then optionally overridden by CONQUER.INI.
  * SkipBuildingConstructionAnims defaults to off (play buildup/sell frames); INI 1 forces skip.
+ * Audio= / StvqEnableAudio= are remembered here so Options saves preserve [AtariST].
  */
 
 #ifndef ST_AUTOTUNE_H
@@ -40,6 +41,7 @@ void ST_Autotune_Configure(int building_ini, int infantry_ini, int skip_buildup_
  * rewrites. Regenerates short ';' comments (Load discards comments).
  */
 void ST_Autotune_Remember_INI(int building, int infantry, int skip, int freeze);
+void ST_Autotune_Remember_Audio_INI(char const* audio, int stvq_enable_audio);
 void ST_Autotune_Preserve_INI(class INIClass& ini);
 /* First-boot / PlayIntro rewrite: append [AtariST] if the profile lacks it. */
 void ST_Autotune_Append_Section_If_Missing(char* profile);

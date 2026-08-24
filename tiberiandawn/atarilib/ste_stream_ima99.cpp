@@ -1,8 +1,10 @@
 #include "ste_stream_ima99.h"
 
+#include "st_audio_cfg.h"
+
 #include <string.h>
 
-SteStreamIma99Format::SteStreamIma99Format() : total_output_samples_(0UL)
+SteStreamIma99Format::SteStreamIma99Format() : total_output_samples_(0UL), subsample_2_(0)
 {
 	reset();
 	ws_adpcm68k_init_tables();
@@ -12,6 +14,7 @@ void SteStreamIma99Format::reset()
 {
 	memset(&ima_, 0, sizeof(ima_));
 	total_output_samples_ = 0UL;
+	subsample_2_ = 0;
 }
 
 void SteStreamIma99Format::stream_init_(unsigned char const* payload, unsigned long payload_len, int channels)
@@ -65,7 +68,8 @@ int SteStreamIma99Format::bind_from_aud(unsigned char const* aud, unsigned long 
 
 	unsigned char const* const payload = aud + STE_AUD_HDR_LEN;
 	stream_init_(payload, payload_len, 1);
-	total_output_samples_ = src_samples;
+	subsample_2_ = g_st_audio_subsample_2;
+	total_output_samples_ = subsample_2_ ? ((src_samples + 1UL) >> 1) : src_samples;
 	return 1;
 }
 
@@ -139,10 +143,59 @@ unsigned SteStreamIma99Format::stream_pull_(signed char* dst, unsigned max_out)
 	return written;
 }
 
+unsigned long SteStreamIma99Format::pull_sub2_(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256])
+{
+	unsigned long written = 0UL;
+	while (written < sample_count) {
+		unsigned long need_out = sample_count - written;
+		unsigned need_in = (unsigned)(need_out << 1);
+		if (need_in > (unsigned)STE_IMA_SKIP_SCRATCH) {
+			need_in = (unsigned)STE_IMA_SKIP_SCRATCH;
+		}
+		need_in &= ~1u;
+		if (need_in == 0u) {
+			break;
+		}
+		unsigned const got = stream_pull_(sub2_scratch_, need_in);
+		if (got < 2u) {
+			break;
+		}
+		unsigned const pairs = got >> 1;
+		for (unsigned i = 0; i < pairs; ++i) {
+			dst[written + i] = lut[(unsigned char)sub2_scratch_[i << 1]];
+		}
+		written += pairs;
+	}
+	return written;
+}
+
+unsigned long SteStreamIma99Format::skip_sub2_(unsigned long sample_count)
+{
+	unsigned long skipped = 0UL;
+	unsigned long left = sample_count << 1;
+	while (left > 0UL) {
+		unsigned batch = left > (unsigned long)STE_IMA_SKIP_SCRATCH ? (unsigned)STE_IMA_SKIP_SCRATCH : (unsigned)left;
+		batch &= ~1U;
+		if (batch == 0) {
+			break;
+		}
+		unsigned const got = stream_pull_(skip_scratch_, batch);
+		if (got == 0) {
+			break;
+		}
+		skipped += (unsigned long)(got >> 1);
+		left -= (unsigned long)got;
+	}
+	return skipped;
+}
+
 unsigned long SteStreamIma99Format::pull(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256])
 {
 	if (dst == nullptr || lut == nullptr || sample_count == 0UL || total_output_samples_ == 0UL) {
 		return 0UL;
+	}
+	if (subsample_2_) {
+		return pull_sub2_(dst, sample_count, lut);
 	}
 	unsigned long const got = (unsigned long)stream_pull_((signed char*)dst, (unsigned)sample_count);
 	for (unsigned long i = 0; i < got; ++i) {
@@ -153,6 +206,9 @@ unsigned long SteStreamIma99Format::pull(unsigned char* dst, unsigned long sampl
 
 unsigned long SteStreamIma99Format::skip(unsigned long sample_count)
 {
+	if (subsample_2_) {
+		return skip_sub2_(sample_count);
+	}
 	unsigned long skipped = 0;
 	unsigned long left = sample_count;
 	while (left > 0UL) {

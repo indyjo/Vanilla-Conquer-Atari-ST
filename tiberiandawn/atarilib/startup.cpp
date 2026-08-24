@@ -47,6 +47,8 @@
 #include	"ikbd.h"
 #include	"st_blit.h"
 #include	"st_screen.h"
+#include	"st_autotune.h"
+#include	"st_audio_cfg.h"
 #include	"palette.h"
 #include	"../../common/timer_st_vbl.h"
 #include	<mint/cookie.h>
@@ -674,7 +676,16 @@ void Read_Setup_Options( RawFileClass *config_file )
 			freeze_ai_map_gestures = WWGetPrivateProfileInt ("Options", "FreezeAIDuringMapGestures", -1, buffer);
 		}
 
+		char audio_buf[32];
+		WWGetPrivateProfileString(ST_AUTOTUNE_INI_SECTION, "Audio", "Auto", audio_buf, (int)sizeof(audio_buf), buffer);
+		int stvq_enable = WWGetPrivateProfileInt(ST_AUTOTUNE_INI_SECTION, "StvqEnableAudio", 1, buffer);
+		ST_Audio_Cfg_Set_From_Ini(audio_buf, stvq_enable);
+		ST_Autotune_Remember_Audio_INI(ST_Audio_Cfg_Driver_Name(g_st_audio_driver_preference), stvq_enable);
+
 		delete [] buffer;
+	} else {
+		ST_Audio_Cfg_Set_From_Ini("Auto", 1);
+		ST_Autotune_Remember_Audio_INI("Auto", 1);
 	}
 
 #ifdef ATARI_ST

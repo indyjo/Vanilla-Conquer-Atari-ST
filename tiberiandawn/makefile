@@ -483,11 +483,12 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(if $(filter 1,$(WITH_GITINFO)),,$(PLATFORM_LIB)/st_gitinfo.cpp) $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/libcmini_posix_shim.cpp $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(if $(filter 1,$(WITH_GITINFO)),,$(PLATFORM_LIB)/st_gitinfo.cpp) $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/st_audio_cfg.cpp $(PLATFORM_LIB)/audio_timer_dac.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(if $(filter 1,$(USE_LIBCMINI)),$(PLATFORM_LIB)/libcmini_posix_shim.cpp,) $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
 
 # Shared STVQ runtime (C) — game + tools/stvqview
 ifeq ($(PLATFORM_LIB),ATARILIB)
 STVQ_C_SOURCES = \
+	$(PLATFORM_LIB)/digi_ring.c \
 	$(PLATFORM_LIB)/stvq/stvq_format.c \
 	$(PLATFORM_LIB)/stvq/stvq_hw.c \
 	$(PLATFORM_LIB)/stvq/stvq_player.c \
@@ -655,6 +656,9 @@ ifeq ($(WITH_SYMBOLS),1)
 CFLAGS_STVQ += -g
 endif
 endif
+$(INTDIR)/digi_ring.o: $(PLATFORM_LIB)/digi_ring.c | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
 $(INTDIR)/stvq_format.o: $(PLATFORM_LIB)/stvq/stvq_format.c | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
@@ -964,12 +968,13 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTD
 	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
 	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/keyframe.o $(INTDIR)/wsa.o \
 	$(INTDIR)/audio_ste.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
+	$(INTDIR)/st_audio_cfg.o $(INTDIR)/audio_timer_dac.o $(INTDIR)/digi_ring.o \
 	$(INTDIR)/audx_pool_file.o $(INTDIR)/audx_page_cache.o $(INTDIR)/ste_stream_memory_source.o \
 	$(INTDIR)/ste_stream_page_ring_source.o \
 	$(INTDIR)/st_load_uncompress.o \
 	$(INTDIR)/buff.o $(INTDIR)/bfiofile.o $(INTDIR)/blwstraw.o $(INTDIR)/blowfish.o \
 	$(INTDIR)/crc.o $(INTDIR)/fading.o $(INTDIR)/file.o $(INTDIR)/file_posix.o \
-	$(INTDIR)/paths.o $(PATHS_IMPL_OBJ) $(INTDIR)/libcmini_posix_shim.o $(INTDIR)/debugstring.o \
+	$(INTDIR)/paths.o $(PATHS_IMPL_OBJ) $(if $(filter 1,$(USE_LIBCMINI)),$(INTDIR)/libcmini_posix_shim.o,) $(INTDIR)/debugstring.o \
 	$(INTDIR)/pk.o $(INTDIR)/pkstraw.o $(INTDIR)/rndstraw.o $(INTDIR)/sha.o $(INTDIR)/shastraw.o \
 	$(INTDIR)/straw.o $(INTDIR)/xstraw.o $(INTDIR)/wwkeyboard.o \
 	$(INTDIR)/misc.o $(INTDIR)/random.o $(INTDIR)/int.o $(INTDIR)/mp.o

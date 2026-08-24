@@ -26,7 +26,8 @@ typedef struct StvqHw {
 	uint16_t origin_x; /* pixel offset of tile (0,0) */
 	uint16_t origin_y;
 
-	int dma_ok; /* STE/TT/Falcon DMA available and audio enabled */
+	int dma_ok; /* STE/TT/Falcon DMA or YM/Covox timer ring available and audio enabled */
+	int timer_mode; /* 1 = DigiRing via Timer A (YM/Covox); 0 = STE DMA */
 
 	/* Present: palette queued for Setpalette on next present/Vsync. */
 	volatile int pending_pal_valid;

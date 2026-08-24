@@ -35,12 +35,15 @@ private:
 	unsigned long bytes_left_;
 	unsigned long total_output_samples_;
 	int duplicate_2x_;
+	int subsample_2_; /* YM/Covox only: pull(N) consumes 2N asset samples (STE never sets). */
 	int repeat_pending_;
 	unsigned char repeat_sample_;
 	unsigned char scratch_[1024];
 
 	unsigned long pull_dup2x_(unsigned char *dst, unsigned long sample_count, unsigned char const lut[256]);
 	unsigned long skip_dup2x_(unsigned long sample_count);
+	unsigned long pull_sub2_(unsigned char *dst, unsigned long sample_count, unsigned char const lut[256]);
+	unsigned long skip_sub2_(unsigned long sample_count);
 	/* Read into scratch_; returns bytes obtained (0 = stall or EOF). */
 	unsigned long fill_scratch_(unsigned long nbytes);
 };

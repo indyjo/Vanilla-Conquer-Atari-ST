@@ -42,11 +42,15 @@ private:
 
 	Ima99Core ima_;
 	unsigned long total_output_samples_;
+	int subsample_2_; /* YM/Covox: emit every other decoded sample (STE never sets). */
 	signed char skip_scratch_[STE_IMA_SKIP_SCRATCH];
+	signed char sub2_scratch_[STE_IMA_SKIP_SCRATCH];
 
 	void stream_init_(unsigned char const* payload, unsigned long payload_len, int channels);
 	int open_next_frame_();
 	unsigned stream_pull_(signed char* dst, unsigned max_out);
+	unsigned long pull_sub2_(unsigned char* dst, unsigned long sample_count, unsigned char const lut[256]);
+	unsigned long skip_sub2_(unsigned long sample_count);
 };
 
 #endif /* STE_STREAM_IMA99_H */

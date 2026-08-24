@@ -9,6 +9,9 @@
  */
 #include "stvq_hw.h"
 
+#include "../audio_timer_dac.h"
+#include "../digi_ring.h"
+#include "../st_audio_cfg.h"
 #include "../st_hw_probe.h"
 #include "stvq_prof.h"
 
@@ -269,6 +272,18 @@ static int ring_queue_pcm(StvqHw *hw, const unsigned char *pcm, unsigned need)
 	if (!hw || !hw->ring || !pcm || need < 1)
 		return -1;
 
+	if (hw->timer_mode) {
+		DigiRing *tr = Timer_Dac_Ring();
+		if (!tr)
+			return -1;
+		if (digi_ring_queue(tr, pcm, need) != 0)
+			return 1; /* busy */
+		hw->ring_armed = tr->armed;
+		hw->ring_write = tr->write_pos;
+		hw->ring_queued = tr->queued;
+		return 0;
+	}
+
 	if (!hw->ring_armed) {
 		/* Cold start: silence ring, place first chunk at 0, then arm loop. */
 		memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
@@ -351,17 +366,36 @@ int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, 
 	}
 
 	hw->dma_ok = 0;
-	if (enable_audio && dma_audio_available()) {
-		hw->ring_raw = stram_alloc((unsigned long)STVQ_DMA_RING_BYTES + 2u);
-		if (!hw->ring_raw)
-			goto fail;
-		hw->ring = align2(hw->ring_raw);
-		memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
-		hw->ring_write = 0;
-		hw->ring_queued = 0;
-		hw->ring_dma_pos = 0;
-		hw->ring_armed = 0;
-		hw->dma_ok = 1;
+	hw->timer_mode = 0;
+	if (enable_audio) {
+		if (ST_Audio_Cfg_Is_Timer_Backend()) {
+			if (g_st_stvq_enable_audio) {
+				DigiRing *tr = Timer_Dac_Ring();
+				if (tr && tr->base) {
+					hw->ring = tr->base;
+					hw->ring_raw = NULL; /* not owned */
+					hw->ring_write = 0;
+					hw->ring_queued = 0;
+					hw->ring_dma_pos = 0;
+					hw->ring_armed = 0;
+					hw->timer_mode = 1;
+					hw->dma_ok = 1;
+					Timer_Dac_Set_Movie_Owner(1);
+				}
+			}
+			/* StvqEnableAudio=0 → silent movie on YM/Covox */
+		} else if (dma_audio_available()) {
+			hw->ring_raw = stram_alloc((unsigned long)STVQ_DMA_RING_BYTES + 2u);
+			if (!hw->ring_raw)
+				goto fail;
+			hw->ring = align2(hw->ring_raw);
+			memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
+			hw->ring_write = 0;
+			hw->ring_queued = 0;
+			hw->ring_dma_pos = 0;
+			hw->ring_armed = 0;
+			hw->dma_ok = 1;
+		}
 	}
 
 	if (hw->screens_owned) {
@@ -558,6 +592,21 @@ int stvq_hw_pcm_busy(StvqHw *hw, size_t need)
 
 	if (!hw->dma_ok || !hw->ring)
 		return 0;
+
+	if (hw->timer_mode) {
+		DigiRing *tr = Timer_Dac_Ring();
+		if (!tr)
+			return 0;
+		if (!tr->armed)
+			return 0;
+		if (need < 1)
+			return 0;
+		if (need > (size_t)STVQ_DMA_RING_BYTES - 1u)
+			need = (size_t)STVQ_DMA_RING_BYTES - 1u;
+		freeb = digi_ring_free_bytes(tr);
+		return freeb < need ? 1 : 0;
+	}
+
 	if (!hw->ring_armed)
 		return 0; /* cold start accepts immediately */
 
@@ -572,15 +621,30 @@ int stvq_hw_pcm_busy(StvqHw *hw, size_t need)
 
 void stvq_hw_pcm_stop(StvqHw *hw)
 {
-	if (hw->dma_ok) {
-		dma_stop_impl();
+	if (!hw->dma_ok)
+		return;
+	if (hw->timer_mode) {
+		DigiRing *tr = Timer_Dac_Ring();
+		if (tr && tr->ops && tr->ops->stop)
+			tr->ops->stop(tr);
+		if (tr) {
+			digi_ring_reset(tr);
+			if (tr->base)
+				memset(tr->base, 0, tr->size);
+		}
 		hw->ring_armed = 0;
-		if (hw->ring)
-			memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
 		hw->ring_write = 0;
 		hw->ring_queued = 0;
 		hw->ring_dma_pos = 0;
+		return;
 	}
+	dma_stop_impl();
+	hw->ring_armed = 0;
+	if (hw->ring)
+		memset(hw->ring, 0, (size_t)STVQ_DMA_RING_BYTES);
+	hw->ring_write = 0;
+	hw->ring_queued = 0;
+	hw->ring_dma_pos = 0;
 }
 
 void stvq_hw_wait_vbl(StvqHw *hw)

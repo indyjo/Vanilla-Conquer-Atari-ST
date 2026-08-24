@@ -16,7 +16,7 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 - CPU: Acceptable framerates on Falcon+. FMV also works on 8 MHz.
 - RAM: 4 MB supported (more RAM is better, especially TT-RAM)
 - Blitter is supported; if unavailable or slower than CPU, software blitting is used
-- STe/TT/Falcon DMA sound is supported; game remains silent on plain ST.
+- Digitized audio: STe/TT/Falcon DMA by default (`[AtariST] Audio=Auto`). Optional YM-2149 or Covox digi on plain ST via `Audio=YM` / `Audio=Covox` (see `tiberiandawn/atari.md`).
 
 ## Run
 

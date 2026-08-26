@@ -13,9 +13,45 @@
 # CONFIGURATION - Customize these variables
 #=============================================================================
 
-# Cross-compiler toolchain directory
-CROSS_PREFIX = $(HOME)/opt/cross-mint/bin
-CROSS_TARGET = m68k-atari-mint
+# Cross-compiler toolchain directory (often a symlink to mint or mintelf).
+# Overridable via make CROSS_PREFIX=… or the environment (?=).
+CROSS_PREFIX ?= $(HOME)/opt/cross-mint/bin
+
+# CROSS_TARGET: auto-detect from CROSS_PREFIX unless set on the command line
+# or in the environment (make CROSS_TARGET=m68k-atari-mint …).
+# Preference when both toolchains are present: mintelf if LTO=1 already, else a.out mint.
+ifeq ($(filter command line environment,$(origin CROSS_TARGET)),)
+_CROSS_HAS_MINT := $(wildcard $(CROSS_PREFIX)/m68k-atari-mint-g++)
+_CROSS_HAS_MINTELF := $(wildcard $(CROSS_PREFIX)/m68k-atari-mintelf-g++)
+ifeq ($(LTO),1)
+ifneq ($(_CROSS_HAS_MINTELF),)
+CROSS_TARGET := m68k-atari-mintelf
+else
+$(error LTO=1 needs $(CROSS_PREFIX)/m68k-atari-mintelf-g++ (a.out cannot do LTO))
+endif
+else ifneq ($(_CROSS_HAS_MINT),)
+CROSS_TARGET := m68k-atari-mint
+else ifneq ($(_CROSS_HAS_MINTELF),)
+CROSS_TARGET := m68k-atari-mintelf
+else
+CROSS_TARGET := m68k-atari-mint
+endif
+endif
+
+# LTO needs mintelf (a.out cannot store LTO IR). Default on for mintelf unless
+# the user sets LTO on the command line or in the environment (make LTO=0 …).
+ifeq ($(filter command line environment,$(origin LTO)),)
+ifeq ($(CROSS_TARGET),m68k-atari-mintelf)
+LTO := 1
+else
+LTO := 0
+endif
+endif
+ifeq ($(LTO),1)
+ifeq ($(filter m68k-atari-mintelf,$(CROSS_TARGET)),)
+$(error LTO=1 requires CROSS_TARGET=m68k-atari-mintelf (a.out cannot do LTO))
+endif
+endif
 
 # Build configuration: Debug or Release
 CONFIG ?= Release
@@ -206,12 +242,9 @@ CXXFLAGS_COMMON += $(FASTCALL_FLAGS)
 CXXFLAGS_COMMON += $(CPU_FLAGS)
 CXXFLAGS_COMMON += $(FRAME_POINTER_FLAGS)
 
-# Link-time optimization. Needs CROSS_TARGET=m68k-atari-mintelf: the a.out
-# target cannot do LTO at all, because GCC keeps its IR in .gnu.lto_* named
-# sections and a.out has none (it ICEs in default_no_named_section).
-#   make LTO=1 CROSS_TARGET=m68k-atari-mintelf M68K_CPU=68020-60 ...
+# Link-time optimization (defaults to 1 under mintelf; see CROSS_TARGET above).
+# a.out cannot store LTO IR in named sections (ICE). Override with LTO=0.
 # Added here rather than to CXXFLAGS so the SIZE_OPT_OBJS snapshot below keeps it.
-LTO ?= 0
 ifeq ($(LTO),1)
 CXXFLAGS_COMMON += -flto=auto
 endif
@@ -918,8 +951,8 @@ endif
 	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"
 	@echo "  FRAME_POINTERS=1 - Keep A6 frame chain (-fno-omit-frame-pointer); default: 0"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
-	@echo "  LTO=1            - Link-time optimization; needs CROSS_TARGET=m68k-atari-mintelf"
-	@echo "                     (the a.out target cannot do LTO)."
+	@echo "  LTO=0|1          - Link-time optimization (default: 1 under mintelf, 0 under a.out mint;"
+	@echo "                     a.out cannot do LTO; LTO=1 auto-selects mintelf if both exist)."
 	@echo "  SIZE_OPT_OBJS=…  - Release only: basenames compiled with -Os (cold path;"
 	@echo "                     default: score cdata bdata blowfish init mapsel"
 	@echo "                     scenario options expand msgbox; empty disables)"
@@ -930,7 +963,10 @@ endif
 	@echo "    mintlib: paths_posix.cpp; libcmini: paths_tos.cpp (-DLIBCMINI)"
 	@echo "  LIBCMINI_PREFIX  - Atari-only libcmini install prefix ending in /usr"
 	@echo "  PLATFORM=Win32 - Target platform (default: Win32)"
-	@echo "  CROSS_PREFIX   - Cross-compiler path (default: \$$HOME/opt/cross-mint/bin)"
+	@echo "  CROSS_PREFIX   - Cross-compiler path (default: \$$HOME/opt/cross-mint/bin;"
+	@echo "                     override with make CROSS_PREFIX=… or env)"
+	@echo "  CROSS_TARGET   - Autodetected from CROSS_PREFIX (*-mint-g++ / *-mintelf-g++);"
+	@echo "                     override with CROSS_TARGET=m68k-atari-mint[elf]"
 	@echo "  USE_ATARILIB   - Force use of ATARILIB (default: auto-detect)"
 	@echo "  USE_WIN32LIB   - Force use of WIN32LIB (default: auto-detect)"
 	@echo ""
@@ -964,6 +1000,7 @@ endif
 	@echo "  CC:    $(CC)"
 	@echo "  ASM:   $(ASM)"
 	@echo "  RC:    $(RC)"
+	@echo "  LTO:   $(LTO)"
 	@echo ""
 	@echo "Important Notes:"
 	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \

@@ -545,8 +545,11 @@ endif
 ASM_SOURCES = \
 	IPXPROT.ASM IPXREAL.ASM KEYFBUFF.ASM MMX.ASM PAGFAULT.ASM \
 	SUPPORT.ASM TXTPRNT.ASM WINASM.ASM
+# libcmini has no LINE-A helpers; mintlib already provides linea0/__aline.
 ifeq ($(PLATFORM_LIB),ATARILIB)
-ASM_SOURCES += $(PLATFORM_LIB)/linea_shim.s
+ifeq ($(USE_LIBCMINI),1)
+ASM_SOURCES += $(PLATFORM_LIB)/st_linea0.S
+endif
 endif
 
 # Resource files
@@ -576,7 +579,7 @@ PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/iconset.o,$(INTDIR)/iconset_$(PLATFOR
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/misc.o,$(INTDIR)/misc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 # gadget.cpp exists in ../common/ (VC_COMMON) and root GADGET.CPP — root excluded on ST
 CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(VC_COMMON_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
-ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.ASM,%.o,$(patsubst %.asm,%.o,$(patsubst %.s,%.o,$(ASM_SOURCES))))))
+ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.ASM,%.o,$(patsubst %.asm,%.o,$(patsubst %.S,%.o,$(patsubst %.s,%.o,$(ASM_SOURCES)))))))
 # Filter out truncated x86 assembly object files for ATARILIB (they can't be assembled for m68k)
 ifeq ($(PLATFORM_LIB),ATARILIB)
 ASM_OBJECTS := $(filter-out $(INTDIR)/IPXPROT.o $(INTDIR)/IPXREAL.o $(INTDIR)/KEYFBUFF.o $(INTDIR)/MMX.o $(INTDIR)/PAGFAULT.o $(INTDIR)/SUPPORT.o $(INTDIR)/TXTPRNT.o $(INTDIR)/WINASM.o,$(ASM_OBJECTS))
@@ -803,6 +806,18 @@ $(INTDIR)/%.o: $(PLATFORM_LIB)/%.s | $(INTDIR)
 	@mkdir -p $(INTDIR)
 	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \
 		$(ASM) $(ASMFLAGS) -o $@ $<; \
+	else \
+		echo "WARNING: x86 assembly on m68k target"; \
+		echo "Error: x86 assembly files cannot be assembled for m68k target"; \
+		echo "Skipping $< - you may need to convert or rewrite in C/C++"; \
+		touch $@; \
+	fi
+# Preprocessed assembly (.S): run through $(CC) so __USER_LABEL_PREFIX__ is set.
+$(INTDIR)/%.o: $(PLATFORM_LIB)/%.S | $(INTDIR)
+	@echo "Assembling $<..."
+	@mkdir -p $(INTDIR)
+	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \
+		$(CC) $(FASTCALL_FLAGS) $(CPU_FLAGS) $(ASMFLAGS) -c -o $@ $<; \
 	else \
 		echo "WARNING: x86 assembly on m68k target"; \
 		echo "Error: x86 assembly files cannot be assembled for m68k target"; \

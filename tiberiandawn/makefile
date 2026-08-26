@@ -340,7 +340,9 @@ CXX_OPT_REL ?= -O3
 # Cold-path translation units: compile with -Os to reclaim ST-RAM while the
 # hot path (blit/AI/audio) keeps CXX_OPT_REL. Basenames only (no path/ext).
 # Override: make SIZE_OPT_OBJS='score cdata' ...  or SIZE_OPT_OBJS= to disable.
-SIZE_OPT_OBJS ?= score cdata bdata blowfish init mapsel scenario options expand msgbox
+SIZE_OPT_OBJS ?= score cdata bdata blowfish init mapsel scenario options expand msgbox \
+	saveload scenarioini mp rules ini globals startup \
+	confdlg gamedlg loaddlg mapeddlg nulldlg sounddlg visudlg drop help
 WITH_SYMBOLS ?= 1
 CXXFLAGS = $(CXXFLAGS_COMMON) $(CXX_OPT_REL) -DNDEBUG
 CXXFLAGS += -ffunction-sections -fdata-sections
@@ -954,8 +956,9 @@ endif
 	@echo "  LTO=0|1          - Link-time optimization (default: 1 under mintelf, 0 under a.out mint;"
 	@echo "                     a.out cannot do LTO; LTO=1 auto-selects mintelf if both exist)."
 	@echo "  SIZE_OPT_OBJS=…  - Release only: basenames compiled with -Os (cold path;"
-	@echo "                     default: score cdata bdata blowfish init mapsel"
-	@echo "                     scenario options expand msgbox; empty disables)"
+	@echo "                     default: score/init/mapsel/scenario/options/expand/msgbox,"
+	@echo "                     data tables, saveload/scenarioini/mp/rules/ini/globals/startup,"
+	@echo "                     dialogs + drop/help; empty disables)"
 	@echo "  FASTCALL=0       - Disable -mfastcall on compile and link (default: 1)"
 	@echo "  M68K_CPU=68020-60 - Atari-only: build for 68020..68060 (default: empty = 68000)"
 	@echo "  ST16_USE_PRESHIFT=0|1 - Terrain pre-shift cache (default: 1 iff M68K_CPU has 68020)"

@@ -217,7 +217,8 @@ template<class T> VOID BitFlagsFlip(T &a, T b)
 }
 #endif
 
-typedef enum {
+// Underlying type must match common/wwstd.h (see atarilib/wwstd.h).
+typedef enum : unsigned short {
 	TBLACK,
 	PURPLE,
 	CYAN,

@@ -177,7 +177,8 @@ bool ProgEndCalled = false;
 // RunningAsDLL is defined in globals.cpp, just declare it here
 extern bool RunningAsDLL;
 
-extern bool ReadyToQuit;
+// int, not bool: winstub.cpp defines it as int and uses the values 0..3.
+extern int ReadyToQuit;
 
 /***********************************************************************************************
  * main -- Initial startup routine (preps library systems).                                    *

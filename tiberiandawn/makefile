@@ -40,7 +40,8 @@ RC = $(CROSS_PREFIX)/$(CROSS_TARGET)-windres
 # Detect target platform from cross-compiler
 # If using m68k-atari-mint, default to AtariST platform
 # PLATFORM can be overridden on command line: make PLATFORM=Win32
-ifeq ($(CROSS_TARGET),m68k-atari-mint)
+# Matches m68k-atari-mintelf too, so the ELF toolchain needs no extra switches.
+ifneq ($(filter m68k-atari-mint%,$(CROSS_TARGET)),)
 PLATFORM ?= AtariST
 PLATFORM_LIB = ATARILIB
 else
@@ -205,6 +206,16 @@ CXXFLAGS_COMMON += $(FASTCALL_FLAGS)
 CXXFLAGS_COMMON += $(CPU_FLAGS)
 CXXFLAGS_COMMON += $(FRAME_POINTER_FLAGS)
 
+# Link-time optimization. Needs CROSS_TARGET=m68k-atari-mintelf: the a.out
+# target cannot do LTO at all, because GCC keeps its IR in .gnu.lto_* named
+# sections and a.out has none (it ICEs in default_no_named_section).
+#   make LTO=1 CROSS_TARGET=m68k-atari-mintelf M68K_CPU=68020-60 ...
+# Added here rather than to CXXFLAGS so the SIZE_OPT_OBJS snapshot below keeps it.
+LTO ?= 0
+ifeq ($(LTO),1)
+CXXFLAGS_COMMON += -flto=auto
+endif
+
 # Note: Windows-specific libraries may not be available for m68k target
 # You may need to provide alternatives or stub implementations
 WINDOWS_LIBS = -lwinmm -lws2_32
@@ -316,6 +327,36 @@ LIBS = $(PLATFORM_LIBS)
 # Per-object -Os override (must follow final CXXFLAGS).
 CXXFLAGS_SIZE = $(filter-out $(CXX_OPT_REL),$(CXXFLAGS)) -Os
 $(foreach _o,$(SIZE_OPT_OBJS),$(eval $(INTDIR)/$(_o).o: CXXFLAGS := $(CXXFLAGS_SIZE)))
+endif
+
+# LTO link side (see the LTO switch above).
+ifeq ($(LTO),1)
+# The codegen flags have to be repeated on the link line: LTRANS re-runs the
+# assembler, which otherwise rejects 020 instructions ("selected processor does
+# not have all features of selected architecture"). -Wa,-m68020 does not reach it.
+#
+# "override" is required, not cosmetic: Release with WITH_SYMBOLS=1 does
+# "override LDFLAGS :=" above, and GNU make silently drops every later plain
+# assignment to a variable once it has been set with override. Without it these
+# two lines vanish while LINK_PRE_OBJS below still applies, which links crt0.o
+# twice and leaves LTRANS on the default 68000 arch.
+override LDFLAGS += -flto=auto $(CPU_FLAGS)
+ifneq ($(USE_LIBCMINI),1)
+# ...but CPU_FLAGS also selects the m68020-60 multilib, whose libc contains 68881
+# instructions and dies before main() on an FPU-less machine. Keep libraries and
+# startfiles on the default (68000, FPU-free) tree; that code runs fine on 020+.
+# -B does not win over the multilib suffix for startfiles, hence -nostartfiles.
+override LDFLAGS += -nostartfiles -L$(SYSROOT_LIB_DIR) -L$(GCC_LIB_DIR)
+LINK_PRE_OBJS += $(SYSROOT_LIB_DIR)crt0.o $(GCC_LIB_DIR)crtbegin.o
+LIBS += $(GCC_LIB_DIR)crtend.o
+endif
+# Translation units nothing may be inlined into. Inlining into
+# ObjectClass::ObjectClass() under LTO corrupts the game: empty playfield,
+# runaway frame rate, mission lost after ~470 frames. Bisected 2026-08-12 to
+# that constructor; a noinline attribute does not help, only this flag on the
+# whole TU.
+LTO_NO_INLINE_OBJS ?= object
+$(foreach _o,$(LTO_NO_INLINE_OBJS),$(eval $(INTDIR)/$(_o).o: CXXFLAGS += -fno-inline))
 endif
 
 # Convert defines to compiler flags
@@ -862,6 +903,8 @@ endif
 	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"
 	@echo "  FRAME_POINTERS=1 - Keep A6 frame chain (-fno-omit-frame-pointer); default: 0"
 	@echo "  CXX_OPT_REL=-O3  - Release only: optimization flag (default: -O3)"
+	@echo "  LTO=1            - Link-time optimization; needs CROSS_TARGET=m68k-atari-mintelf"
+	@echo "                     (the a.out target cannot do LTO)."
 	@echo "  SIZE_OPT_OBJS=…  - Release only: basenames compiled with -Os (cold path;"
 	@echo "                     default: score cdata bdata blowfish init mapsel"
 	@echo "                     scenario options expand msgbox; empty disables)"

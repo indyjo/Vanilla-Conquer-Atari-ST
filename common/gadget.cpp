@@ -55,7 +55,11 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "gadget.h"
+#ifndef ATARI_ST
+// Only the WIN32/CHEAT_KEYS screenshot block below uses this. On ST it would
+// pull in common/buffer.h and collide with atarilib's BufferClass (ODR).
 #include "filepcx.h"
+#endif
 #include "wwmouse.h"
 #ifdef _WIN32
 #include <io.h>

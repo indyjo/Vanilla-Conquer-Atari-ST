@@ -1265,7 +1265,7 @@ itch-release:
 	mkdir -p "$(ITCH_STAGE_DIR)"; \
 	echo "Extracting Hatari-compatible symbols..."; \
 	{ echo "# $$RELEASE_TAG — generated from cnc.tos for Hatari debugger/profiler"; \
-	  "$(NM)" -n "$(ITCH_RELEASE_TOS)" | awk '$$2 ~ /^[TDB]$$/ {print $$1, $$2, $$3}'; } \
+	  "$(NM)" -n "$(ITCH_RELEASE_TOS)" | awk '$$2 ~ /^[tTdDbB]$$/ {print $$1, $$2, $$3}'; } \
 	  > "$(ITCH_DIST_DIR)/cnc.sym"; \
 	cp "$(ITCH_RELEASE_TOS)" "$(ITCH_STAGE_DIR)/cnc.tos"; \
 	echo "Stripping debug symbols from staged cnc.tos..."; \

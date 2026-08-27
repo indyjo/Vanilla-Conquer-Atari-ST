@@ -237,6 +237,8 @@ endif
 CXXFLAGS_COMMON = -Wall -Wextra -fno-exceptions
 CXXFLAGS_COMMON += $(INCLUDES)
 CXXFLAGS_COMMON += -Wno-unused-parameter -Wno-sign-compare -Wno-deprecated-declarations
+# LTO sees new T[n] overflow as malloc((size_t)-1); not a real 4 GiB alloc.
+CXXFLAGS_COMMON += -Wno-alloc-size-larger-than
 CXXFLAGS_COMMON += -std=c++17 -fpermissive
 CXXFLAGS_COMMON += $(FASTCALL_FLAGS)
 CXXFLAGS_COMMON += $(CPU_FLAGS)
@@ -375,7 +377,7 @@ ifeq ($(LTO),1)
 # assignment to a variable once it has been set with override. Without it these
 # two lines vanish while LINK_PRE_OBJS below still applies, which links crt0.o
 # twice and leaves LTRANS on the default 68000 arch.
-override LDFLAGS += -flto=auto $(CPU_FLAGS)
+override LDFLAGS += -flto=auto -Wno-alloc-size-larger-than $(CPU_FLAGS)
 ifneq ($(USE_LIBCMINI),1)
 # ...but CPU_FLAGS also selects the m68020-60 multilib, whose libc contains 68881
 # instructions and dies before main() on an FPU-less machine. Keep libraries and

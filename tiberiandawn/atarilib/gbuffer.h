@@ -10,7 +10,7 @@
 #include "windows.h"  // For BOOL type
 
 #include "../COMMONLIB/wwstd.h"
-#include "buffer.h"
+#include "buffer.h" /* common/buffer.h (-I../common); GraphicBufferClass still owns the alloc */
 
 // Forward declaration for Buffer_Fill_Quad
 #ifdef __cplusplus

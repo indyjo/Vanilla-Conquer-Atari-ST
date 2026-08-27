@@ -6,10 +6,73 @@
  */
 
 #include "gbuffer.h"
-#include "drawbuff.h"  // For Buffer_Clear, Buffer_Fill_Quad
+#include "drawbuff.h"  // For Buffer_Clear, Buffer_Fill_Quad, Buffer_To_Page
 #include "c2p.h"
 #include "ww_win.h"
 #include <stdio.h>  // For sprintf
+
+BufferClass::BufferClass(void* buffer, int size)
+{
+	Size = size;
+	if (buffer) {
+		Buffer = (unsigned char*)buffer;
+		Allocated = false;
+	} else {
+		Buffer = new unsigned char[Size];
+		Allocated = true;
+	}
+}
+
+BufferClass::BufferClass(int size)
+{
+	Size = size;
+	Buffer = new unsigned char[Size];
+	Allocated = true;
+}
+
+BufferClass::BufferClass()
+{
+	Buffer = nullptr;
+	Size = 0;
+	Allocated = false;
+}
+
+BufferClass::~BufferClass()
+{
+	if (Allocated) {
+		delete[] static_cast<unsigned char*>(Buffer);
+	}
+}
+
+int BufferClass::To_Page(int w, int h, GraphicViewPortClass& view)
+{
+	int return_code = 0;
+	if (view.Lock()) {
+		return_code = (int)Buffer_To_Page(0, 0, w, h, Buffer, &view);
+		view.Unlock();
+	}
+	return return_code;
+}
+
+int BufferClass::To_Page(GraphicViewPortClass& view)
+{
+	int return_code = 0;
+	if (view.Lock()) {
+		return_code = (int)Buffer_To_Page(0, 0, view.Get_Width(), view.Get_Height(), Buffer, &view);
+		view.Unlock();
+	}
+	return return_code;
+}
+
+int BufferClass::To_Page(int x, int y, int w, int h, GraphicViewPortClass& view)
+{
+	int return_code = 0;
+	if (view.Lock()) {
+		return_code = (int)Buffer_To_Page(x, y, w, h, Buffer, &view);
+		view.Unlock();
+	}
+	return return_code;
+}
 
 /***************************************************************************
  * GVPC::GRAPHICVIEWPORTCLASS -- Constructor for basic view port class     *

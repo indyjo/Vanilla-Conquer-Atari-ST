@@ -34,7 +34,7 @@ bool RunningAsDLL = false;
 int RequiredCD = -2;
 unsigned char *GamePalette = NULL;
 
-/* Defined in AUDIO.CPP for full game; audio_ste.cpp expects these for SampleType writes. */
+/* Defined in AUDIO.CPP for full game; atarilib/audio.cpp expects these for SampleType writes. */
 Sample_Type SampleType = SAMPLE_NONE;
 SFX_Type SoundType = SFX_NONE;
 GraphicBufferClass SysMemPage(320, 200, (void *)NULL);

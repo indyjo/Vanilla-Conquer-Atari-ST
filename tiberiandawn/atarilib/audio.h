@@ -118,7 +118,7 @@ int Get_Digi_Handle(void);
 long Sample_Length(void const *sample);
 void Restore_Sound_Buffers(void);
 #ifdef ATARI_ST
-/* Hand off STE DMA to STV (stop voices + remove audio VBL); reclaim after movie. */
+/* Hand off Digi HAL to STVQ (stop mixer voices + remove audio VBL); reclaim after movie. */
 void Ste_Audio_Yield_Dma(void);
 void Ste_Audio_Reclaim_Dma(void);
 #endif

@@ -117,7 +117,7 @@ static int play(const char *path)
 	    (unsigned)player.hdr.fps,
 	    (unsigned)player.hdr.cb_entries,
 	    (unsigned)player.hdr.max_frame_bytes);
-	printf("I/O: prefetch next STFR during present VBL; SND0 into DMA ring\n");
+	printf("I/O: prefetch next STFR during present VBL; SND0 via Digi_Submit\n");
 	fflush(stdout);
 
 	/* NULL screens => allocate private ST-RAM ping-pong (standalone). */
@@ -129,10 +129,10 @@ static int play(const char *path)
 	}
 	player.hw = &hw;
 	use_audio = hw.dma_ok && (player.hdr.flags & STVQ_FLAG_SOUND) != 0;
-	printf("Audio: dma_ok=%d flags=0x%x -> %s\n",
+	printf("Audio: digi_ok=%d flags=0x%x -> %s\n",
 	    hw.dma_ok,
 	    (unsigned)player.hdr.flags,
-	    use_audio ? "STE-DMA clock" : "silent VBL pace");
+	    use_audio ? "Digi_Submit clock" : "silent VBL pace (need Digi HAL)");
 	fflush(stdout);
 
 	stvq_hw_set_pending_palette(&hw, player.initial_pal);

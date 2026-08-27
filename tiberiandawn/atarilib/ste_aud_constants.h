@@ -1,5 +1,5 @@
 /*
- * ste_aud_constants.h - Shared .AUD / AUD99 limits for STE streaming (used by audio_ste and format drivers).
+ * ste_aud_constants.h - Shared .AUD / AUD99 limits for STE streaming (used by the Digi mixer and format drivers).
  */
 #ifndef STE_AUD_CONSTANTS_H
 #define STE_AUD_CONSTANTS_H

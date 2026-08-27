@@ -283,7 +283,7 @@ int main(int argc, char *argv[])
 		DBG_INFO("C&C - Initialising audio");
 
 		/*
-		** Initialize audio system (STe-class DMA 8-bit mono in audio_ste.cpp).
+		** Initialize audio system (Digi HAL + mixer in atarilib/audio.cpp).
 		*/
 		SoundOn = Audio_Init ( NULL , 8 , false , 11025*2 , 0 );
 		if (!SoundOn) {

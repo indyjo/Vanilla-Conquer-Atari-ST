@@ -156,7 +156,7 @@ static int stvq_play_movie_file(CCFileClass& file, int use_audio)
 	}
 	player.hw = &hw;
 
-	/* Digi+DMA path only if hw actually got a ring. */
+	/* Digi path only if HAL Submit is live. */
 	use_audio = use_audio && hw.dma_ok;
 
 	stvq_hw_set_pending_palette(&hw, player.initial_pal);

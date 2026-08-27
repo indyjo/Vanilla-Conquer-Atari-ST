@@ -1,5 +1,5 @@
 /*
- * Automated: load a real .AUD from game MIX archives, decode/play via audio_ste Play_Sample.
+ * Automated: load a real .AUD from game MIX archives, decode/play via Play_Sample.
  * Servicing: VBL hook (DMA mix) from Audio_Init; main thread Sound_Callback for AUDX
  * page-ring refill and deferred teardown.
  *

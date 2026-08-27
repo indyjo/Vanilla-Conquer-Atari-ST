@@ -1,5 +1,8 @@
 /*
- * stvq_hw.h - LoRes ping-pong screens, VBL-synced palette, STE DMA ring audio.
+ * stvq_hw.h - LoRes ping-pong screens, VBL-synced palette, digi audio via Digi_*.
+ *
+ * Audio goes through the process-wide Digi HAL (Digi_Submit / Digi_Capacity).
+ * Caller must have initialized Digi_* (Audio_Init) before enable_audio.
  */
 #ifndef STVQ_HW_H
 #define STVQ_HW_H
@@ -13,9 +16,6 @@
 extern "C" {
 #endif
 
-/* Looping DMA ring in ST-RAM (~82 ms @ 12517 Hz). */
-enum { STVQ_DMA_RING_BYTES = 1024 };
-
 typedef struct StvqHw {
 	void *screen_raw[2]; /* Mxalloc blocks (for free); NULL if caller-supplied */
 	uint8_t *screen[2];  /* planar 320x200 (aligned when owned) */
@@ -26,8 +26,8 @@ typedef struct StvqHw {
 	uint16_t origin_x; /* pixel offset of tile (0,0) */
 	uint16_t origin_y;
 
-	int dma_ok; /* STE/TT/Falcon DMA or YM/Covox timer ring available and audio enabled */
-	int timer_mode; /* 1 = DigiRing via Timer A (YM/Covox); 0 = STE DMA */
+	/* Digi HAL present (Digi_Submit) and enable_audio requested. */
+	int dma_ok;
 
 	/* Present: palette queued for Setpalette on next present/Vsync. */
 	volatile int pending_pal_valid;
@@ -39,15 +39,6 @@ typedef struct StvqHw {
 	short old_rez;
 	uint16_t old_pal[16];
 
-	/* Looping STE DMA ring (ST-RAM). */
-	unsigned char *ring_raw;
-	unsigned char *ring; /* even-aligned */
-	unsigned ring_write; /* next write offset 0 .. STVQ_DMA_RING_BYTES-1 */
-	unsigned ring_queued; /* valid bytes ahead of DMA (software; detects underrun) */
-	unsigned ring_dma_pos; /* last DMA offset observed by ring_sync */
-	int ring_armed;      /* DMA looping */
-	unsigned char dma_rate_idx; /* STE sound-mode rate bits */
-
 	/* present_begin / present_end */
 	int present_new_front;
 	unsigned long present_vbl0; /* _vbclock at begin; skip Vsync if it advanced */
@@ -58,7 +49,7 @@ typedef struct StvqHw {
  * visible page + backplane page; HiddenPage may alias screen1). Game path flips
  * with Setscreen(log=phys=front) then Vsync. If both NULL, allocate ST-RAM
  * screens (standalone stvqview).
- * enable_audio: non-zero to allocate/use DMA ring when hardware supports it.
+ * enable_audio: non-zero to use Digi_* when Digi_Submit is installed.
  */
 int stvq_hw_init(StvqHw *hw, unsigned width, unsigned height, uint8_t *screen0, uint8_t *screen1,
     int enable_audio);
@@ -85,18 +76,14 @@ unsigned long stvq_hw_present_end(StvqHw *hw);
 unsigned long stvq_hw_present(StvqHw *hw);
 
 /*
- * Copy signed-8 PCM into the looping DMA ring (wraps; never overtakes DMA).
- * Cold-arms the ring on first call. sample_rate selects STE rate (12517/25033).
- * `pcm` need only stay valid until this returns (CPU memcpy into ST-RAM ring).
+ * Queue signed-8 PCM into Digi_Submit (DIGI_RATE_12500). Advances across
+ * partial submits; spins while Digi_Capacity is 0.
+ * `pcm` need only stay valid until this returns.
  */
 void stvq_hw_pcm_start(StvqHw *hw, const unsigned char *pcm, size_t len, unsigned sample_rate);
 
 /*
- * Audio master clock: 1 while the ring has fewer than `need` free bytes
- * (cannot submit the next chunk yet without overtaking DMA).
- * Free space uses a software queued count so DMA underrun (DMA lapping the
- * write cursor) is treated as empty — refill immediately instead of waiting
- * on the inverted modular (dma-write) gap.
+ * 1 while Digi_Capacity(DIGI_RATE_12500) < need (cannot submit the next chunk yet).
  */
 int stvq_hw_pcm_busy(StvqHw *hw, size_t need);
 

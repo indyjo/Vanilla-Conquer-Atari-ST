@@ -1,5 +1,5 @@
 /*
- * Interactive: mix two .AUD samples through the production STE DMA path (audio_ste.cpp).
+ * Interactive: mix two .AUD samples through the production Digi mixer (atarilib/audio.cpp).
  *
  * Servicing: Audio_Init installs the VBL hook for DMA-ring mix; the main thread
  * calls Sound_Callback (page-ring refill + Sound_Maintenance) each wait tick.

@@ -27,7 +27,6 @@ struct DigiRing {
 	unsigned queued;
 	unsigned last_consumer;
 	int armed;
-	unsigned stride; /* 1 = game mix, 2 = STVQ on timer DAC */
 	DigiRingOps const* ops;
 	void* hw_ctx;
 };
@@ -36,8 +35,9 @@ void digi_ring_init(DigiRing* r, unsigned char* base, unsigned size, DigiRingOps
 void digi_ring_reset(DigiRing* r);
 void digi_ring_sync(DigiRing* r);
 unsigned digi_ring_free_bytes(DigiRing* r);
-int digi_ring_queue(DigiRing* r, unsigned char const* src, unsigned nbytes);
-void digi_ring_set_stride(DigiRing* r, unsigned stride);
+/* Write up to nbytes of device-native bytes; returns bytes written (may be partial). */
+unsigned digi_ring_write_available(DigiRing* r, unsigned char const* src, unsigned nbytes);
+void digi_ring_silence(DigiRing* r, unsigned char fill);
 
 #ifdef __cplusplus
 }

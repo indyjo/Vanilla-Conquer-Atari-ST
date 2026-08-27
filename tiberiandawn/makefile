@@ -559,12 +559,13 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(if $(filter 1,$(WITH_GITINFO)),,$(PLATFORM_LIB)/st_gitinfo.cpp) $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/st_audio_cfg.cpp $(PLATFORM_LIB)/audio_timer_dac.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/audio_ste.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(if $(filter 1,$(USE_LIBCMINI)),$(PLATFORM_LIB)/libcmini_posix_shim.cpp,) $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(if $(filter 1,$(WITH_GITINFO)),,$(PLATFORM_LIB)/st_gitinfo.cpp) $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/st_audio_cfg.cpp $(PLATFORM_LIB)/st_digi_movie.cpp $(PLATFORM_LIB)/audio.cpp $(PLATFORM_LIB)/audio/audio_dma.cpp $(PLATFORM_LIB)/audio/audio_timer_dac.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(if $(filter 1,$(USE_LIBCMINI)),$(PLATFORM_LIB)/libcmini_posix_shim.cpp,) $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
 
 # Shared STVQ runtime (C) — game + tools/stvqview
 ifeq ($(PLATFORM_LIB),ATARILIB)
 STVQ_C_SOURCES = \
-	$(PLATFORM_LIB)/digi_ring.c \
+	$(PLATFORM_LIB)/audio/digi_ring.c \
+	$(PLATFORM_LIB)/audio/digi_audio.c \
 	$(PLATFORM_LIB)/stvq/stvq_format.c \
 	$(PLATFORM_LIB)/stvq/stvq_hw.c \
 	$(PLATFORM_LIB)/stvq/stvq_player.c \
@@ -582,11 +583,11 @@ ASM_SOURCES = \
 	SUPPORT.ASM TXTPRNT.ASM WINASM.ASM
 # libcmini has no LINE-A helpers; mintlib already provides linea0/__aline.
 ifeq ($(PLATFORM_LIB),ATARILIB)
+ASM_SOURCES += $(PLATFORM_LIB)/audio/audio_timer_dac_ym.S
 ifeq ($(USE_LIBCMINI),1)
 ASM_SOURCES += $(PLATFORM_LIB)/st_linea0.S
 endif
 endif
-
 # Resource files
 RC_SOURCES = \
 	RESOURCE/TiberianDawn.rc
@@ -612,6 +613,8 @@ PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/alloc.o,$(INTDIR)/alloc_$(PLATFORM_LI
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/iconset.o,$(INTDIR)/iconset_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 # misc.cpp exists in ../common/ (VC_COMMON) and ATARILIB/ — keep both objects
 PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/misc.o,$(INTDIR)/misc_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
+# audio.cpp exists in root (Westwood Sound_Effect/Speak) and ATARILIB/ (Digi mixer)
+PLATFORM_LIB_CPP_OBJS := $(subst $(INTDIR)/audio.o,$(INTDIR)/audio_$(PLATFORM_LIB).o,$(PLATFORM_LIB_CPP_OBJS))
 # gadget.cpp exists in ../common/ (VC_COMMON) and root GADGET.CPP — root excluded on ST
 CPP_OBJECTS = $(COMMONLIB_CPP_OBJS) $(VC_COMMON_CPP_OBJS) $(ROOT_CPP_OBJS) $(PLATFORM_LIB_CPP_OBJS)
 ASM_OBJECTS = $(addprefix $(INTDIR)/,$(notdir $(patsubst %.ASM,%.o,$(patsubst %.asm,%.o,$(patsubst %.S,%.o,$(patsubst %.s,%.o,$(ASM_SOURCES)))))))
@@ -735,7 +738,10 @@ ifeq ($(WITH_SYMBOLS),1)
 CFLAGS_STVQ += -g
 endif
 endif
-$(INTDIR)/digi_ring.o: $(PLATFORM_LIB)/digi_ring.c | $(INTDIR)
+$(INTDIR)/digi_ring.o: $(PLATFORM_LIB)/audio/digi_ring.c | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/digi_audio.o: $(PLATFORM_LIB)/audio/digi_audio.c | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
 $(INTDIR)/stvq_format.o: $(PLATFORM_LIB)/stvq/stvq_format.c | $(INTDIR)
@@ -750,6 +756,17 @@ $(INTDIR)/stvq_player.o: $(PLATFORM_LIB)/stvq/stvq_player.c | $(INTDIR)
 $(INTDIR)/stvq_prof.o: $(PLATFORM_LIB)/stvq/stvq_prof.c | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CC) $(CFLAGS_STVQ) $(DEFINE_FLAGS) -o $@ -c $<
+
+# Digi HAL + mixer (atarilib/audio/ HAL, atarilib/audio.cpp mixer)
+$(INTDIR)/audio_dma.o: $(PLATFORM_LIB)/audio/audio_dma.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/audio_timer_dac.o: $(PLATFORM_LIB)/audio/audio_timer_dac.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+$(INTDIR)/audio_timer_dac_ym.o: $(PLATFORM_LIB)/audio/audio_timer_dac_ym.S | $(INTDIR)
+	@echo "Assembling $<..."
+	$(CC) $(FASTCALL_FLAGS) $(CPU_FLAGS) $(ASMFLAGS) -c -o $@ $<
 
 # AUDX runtime (atarilib/audx/)
 $(INTDIR)/audx_pool_file.o: $(PLATFORM_LIB)/audx/audx_pool_file.cpp | $(INTDIR)
@@ -794,6 +811,14 @@ $(INTDIR)/iconset_ATARILIB.o: ATARILIB/iconset.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	@mkdir -p $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+# ATARILIB audio.cpp (Digi mixer) vs root AUDIO.CPP (Sound_Effect / Speak)
+ifeq ($(PLATFORM_LIB),ATARILIB)
+$(INTDIR)/audio_ATARILIB.o: $(PLATFORM_LIB)/audio.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	@mkdir -p $(INTDIR)
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+endif
 
 # Explicit rules for files to work around pattern matching issue with path separators in INTDIR
 ifneq ($(PLATFORM_LIB),ATARILIB)
@@ -1065,8 +1090,8 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTD
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/rawfile.o $(INTDIR)/font.o \
 	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
 	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/keyframe.o $(INTDIR)/wsa.o \
-	$(INTDIR)/audio_ste.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
-	$(INTDIR)/st_audio_cfg.o $(INTDIR)/audio_timer_dac.o $(INTDIR)/digi_ring.o \
+	$(INTDIR)/audio_ATARILIB.o $(INTDIR)/audio_dma.o $(INTDIR)/st_digi_movie.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
+	$(INTDIR)/st_audio_cfg.o $(INTDIR)/audio_timer_dac.o $(INTDIR)/digi_ring.o $(INTDIR)/digi_audio.o \
 	$(INTDIR)/audx_pool_file.o $(INTDIR)/audx_page_cache.o $(INTDIR)/ste_stream_memory_source.o \
 	$(INTDIR)/ste_stream_page_ring_source.o \
 	$(INTDIR)/st_load_uncompress.o \

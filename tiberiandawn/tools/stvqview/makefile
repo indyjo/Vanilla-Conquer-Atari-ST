@@ -8,7 +8,7 @@ CC = $(CROSS_PREFIX)/$(CROSS_TARGET)-gcc
 STVQ_DIR = ../../atarilib/stvq
 
 CFLAGS ?= -O2 -Wall -Wextra -std=c99
-CFLAGS += -I. -I$(STVQ_DIR)
+CFLAGS += -I. -I$(STVQ_DIR) -I../../atarilib
 
 CLI_SRCS = stvqview.c
 LIB_SRCS = $(STVQ_DIR)/stvq_format.c $(STVQ_DIR)/stvq_hw.c $(STVQ_DIR)/stvq_player.c $(STVQ_DIR)/stvq_prof.c

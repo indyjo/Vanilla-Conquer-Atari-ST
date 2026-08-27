@@ -1,26 +1,22 @@
 /*
- * audio_ste.cpp - Atari STe DMA 8-bit mono PCM output for digitized SFX (.AUD in MIX).
+ * audio.cpp - C&C digitized mixer for Atari ST (voices, VBL mix, AUDX, Play_Sample).
  *
- * Requires supervisor (startup calls Super(0)). Probed at init via _MCH/_SND cookies:
- * any DMA-capable machine (_MCH hw != 0) with _SND bit 1 (STE / TT / Falcon). Plain ST
- * is rejected. Microwire mixer ($8922) is STE-only; Falcon uses Devconnect() routing.
- * DMA sound is programmed at **12517 Hz mono 8-bit** when _SND allows it; otherwise 25033 Hz (rr=10).
- * Assets converted for the 25 kHz path carry STE_AUD_FLAG_DUP2X (~11 kHz doubled); DUP2X is
- * ignored at 12.5 kHz so the same buffers play at the correct pitch without resampling. Each refill
- * pulls up to STE_AUDIO_PULL_BLOCK bytes via a caller-supplied LUT
- * (`SteStreamFormat::pull`), so format conversion and per-voice volume can be fused in the driver.
- * Playback uses one `STE_DMA_RING_SAMPLES` byte ring in ST-RAM; DMA is armed once to loop it.
+ * Hardware output is a Digi_* HAL: Audio_Dma_* (STE-era DMA) or Timer_Dac_* (YM/Covox).
+ * `Audio_Init` picks the backend; DUP2X is honoured only when Digi_Info reports ~25 kHz.
+ * Each refill pulls up to STE_AUDIO_PULL_BLOCK bytes via a caller-supplied LUT
+ * (`SteStreamFormat::pull`), so format conversion and per-voice volume can be fused.
  *
- * **Lifetime**: `Audio_Init` allocates the DMA ring (ST-RAM), per-voice `SteStreamPcmFormat` /
- * `SteStreamIma99Format` objects, and `g_mix_pull[][]` decode scratch. Streams are rebound with
- * `bind_from_aud()` per play; no `new`/`delete` on the audio hot path.
+ * **Lifetime**: `Audio_Init` installs a Digi backend (DMA ST-RAM ring or timer soft ring),
+ * per-voice `SteStreamPcmFormat` / `SteStreamIma99Format` objects, and `g_mix_pull[][]`
+ * decode scratch. Streams are rebound with `bind_from_aud()` per play; no `new`/`delete`
+ * on the audio hot path.
  *
  * **Servicing**: `ste_audio_service_core` runs from the **TOS VBL queue** (`nvbls` / `_vblqueue`):
- * read the DMA frame counter ($FF8909/B/D), then cyclically decode/mix into the ring from
- * `g_ring_write_pos` up to the current DMA read offset. Pull counts are always even. VBL does not
- * call malloc/free/delete; DMA-off teardown is deferred via `g_pending_voice_shutdown`.
+ * query Digi_Capacity, mix into a stage buffer, Digi_Submit into the device ring. Pull counts
+ * are always even. VBL does not call malloc/free/delete; DMA-off teardown is deferred via
+ * `g_pending_voice_shutdown`.
  * `Sound_Callback` (main thread, via `Theme.AI`) refills AUDX page-pointer rings (GEMDOS OK)
- * and runs `Sound_Maintenance`. DMA-ring mix stays on the **VBL** path only — never
+ * and runs `Sound_Maintenance`. Device-ring mix stays on the **VBL** path only — never
  * `AUDX_Pool_Read` / `CCFileClass` from VBL. ST tests should call `Sound_Callback` so rings
  * refill. The VBL hook never raises IPL (MFP/IKBD at level 6 must stay serviceable during
  * IMA decode). `Play_Sample` uses brief IPL-5 sections only on the main thread (blocks VBL
@@ -45,22 +41,21 @@
 #include "audx/ste_stream_page_ring_source.h"
 #include "ccfile.h"
 #include "audio.h"
-#include "audio_timer_dac.h"
-#include "digi_ring.h"
-#include "memflag.h"
+#include "audio/audio_dma.h"
+#include "audio/audio_timer_dac.h"
+#include "audio/digi_audio.h"
 #include "ste_aud_constants.h"
 #include "ste_stream_format.h"
 #include "ste_stream_pcm.h"
 #include "ste_stream_ima99.h"
 #include "st_audio_cfg.h"
 #include "st_border_profile.h"
+#include "st_digi_movie.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <mint/osbind.h>
 #include <mint/cookie.h>
-#include <mint/falcon.h>
 #include <mint/ostruct.h>
 #include <mint/sysvars.h>
 
@@ -68,12 +63,6 @@ extern Sample_Type SampleType;
 extern SFX_Type SoundType;
 
 void (*Audio_Focus_Loss_Function)(void) = 0;
-
-/* $FF8921 rate bits rr: 01 = 12517 Hz, 10 = 25033 Hz (mono bit 7 set separately). */
-enum {
-	STE_HW_RATE_12517_IDX = 1,
-	STE_HW_RATE_25033_IDX = 2
-};
 
 enum SteStreamKind {
 	STE_STREAM_NONE = 0,
@@ -112,29 +101,7 @@ static inline unsigned short ste_sr_lock_ipl5(void)
 static inline void ste_sr_restore(unsigned short) {}
 #endif
 
-static volatile unsigned char* const STE_DMA_CTRL = (volatile unsigned char*)0xFF8900UL;
-static volatile unsigned char* const STE_DMA_MODE = (volatile unsigned char*)0xFF8901UL;
-/* Sound mode / sample frequency (Hatari dmaSnd.c): bits 0–1 = rate index, bit 7 = mono (8-bit mono buffer). */
-static volatile unsigned char* const STE_DMA_SOUND_MODE = (volatile unsigned char*)0xFF8921UL;
-enum { STE_DMA_SND_MODE_MONO = 0x80u };
-static volatile unsigned char* const STE_DMA_START_H = (volatile unsigned char*)0xFF8903UL;
-static volatile unsigned char* const STE_DMA_START_M = (volatile unsigned char*)0xFF8905UL;
-static volatile unsigned char* const STE_DMA_START_L = (volatile unsigned char*)0xFF8907UL;
-/* $FF8909/B/D is the READ-ONLY frame address counter (current DMA fetch position). */
-static volatile unsigned char const* const STE_DMA_CNT_H = (volatile unsigned char*)0xFF8909UL;
-static volatile unsigned char const* const STE_DMA_CNT_M = (volatile unsigned char*)0xFF890BUL;
-static volatile unsigned char const* const STE_DMA_CNT_L = (volatile unsigned char*)0xFF890DUL;
-/* Writable frame end address -- writes to the counter at $FF8909/B/D are silently dropped. */
-static volatile unsigned char* const STE_DMA_END_H = (volatile unsigned char*)0xFF890FUL;
-static volatile unsigned char* const STE_DMA_END_M = (volatile unsigned char*)0xFF8911UL;
-static volatile unsigned char* const STE_DMA_END_L = (volatile unsigned char*)0xFF8913UL;
-
-/* STE DMA mixer data ($FFFF8922): many demos poke a small constant; no Microwire framing here. */
-static volatile unsigned char* const STE_DMA_MIXER = (volatile unsigned char*)0xFFFF8922UL;
-
-static int g_ste_dma_ok;
-static int g_audio_ok; /* STE DMA or YM/Covox timer DAC */
-static unsigned char g_ste_dma_rate_idx;
+static int g_audio_ok; /* DMA or YM/Covox timer DAC */
 int g_ste_pcm_dup2x = 1;
 
 static void const* g_voice_src[STE_MIX_VOICES];
@@ -148,20 +115,10 @@ static unsigned long g_stream_file_len;
 static int g_audio_vbl_slot = -1;
 extern "C" void ste_audio_vbl_proc(void);
 /*
- * Play_Sample cold-start arms DMA after ste_dma_stop while voices are already marked active.
- * Without this, a VBL between stop and arm sees DMA off and would tear down streams.
+ * Play_Sample cold-start Flushes then prefills while voices are already marked active.
+ * Without this, a VBL between Flush and prefill would tear down streams.
  */
 static volatile int g_ste_suppress_dma_off_cleanup;
-
-static void* ste_stram_alloc(unsigned long nbytes)
-{
-	return Stram_Alloc(nbytes);
-}
-
-static void ste_stram_free(void* p)
-{
-	Stram_Free(p);
-}
 
 struct SteStreamState {
 	int active;
@@ -182,17 +139,13 @@ static SteStreamIma99Format g_voice_ima[STE_MIX_VOICES];
 static SteStreamMemorySource g_voice_mem_src[STE_MIX_VOICES];
 static SteStreamPageRingSource g_voice_page_src[STE_MIX_VOICES];
 static unsigned char g_mix_pull[STE_MIX_VOICES][STE_AUDIO_PULL_BLOCK];
-static unsigned char* g_dma_pool;
 static volatile int g_pending_voice_shutdown;
 /*
- * Ring streaming state (VBL / Sound_Callback after Play_Sample cold arm).
- *   g_ring_write_pos:        next byte offset to mix into (0 .. STE_DMA_RING_SAMPLES-1).
- *   g_stream_samples_written: total samples committed to the ring (EOF tracking / diagnostics).
+ * Digi HAL fill path (VBL): Digi_Capacity + Digi_Submit; write cursor lives in the backend ring.
+ * g_stream_samples_written: total samples committed (EOF tracking / diagnostics).
  */
-static unsigned g_ring_write_pos;
+static unsigned char g_digi_stage[STE_AUDIO_PULL_BLOCK];
 static unsigned long g_stream_samples_written;
-
-static int ste_ring_dma_offset(void);
 
 static unsigned short read_le16(unsigned char const* p)
 {
@@ -219,128 +172,51 @@ static void write_le32(unsigned char* p, unsigned long v)
 	p[3] = (unsigned char)((v >> 24) & 0xFFUL);
 }
 
-/*
- * 12517 Hz (rr=01) on STE when _SND bit 1 is set. Fall back to 25033 Hz otherwise.
- */
-static int ste_dma_12500_supported(void)
-{
-	long snd = 0;
-
-	if (Getcookie(C__SND, &snd) == C_FOUND && (snd & 2L) == 0L) {
-		return 0;
-	}
-	return 1;
-}
-
-static void ste_dma_mixer_connect(void)
-{
-	if (!g_ste_dma_ok || !ST_Hw_Is_Ste_Sound_Class()) {
-		return;
-	}
-	*STE_DMA_MIXER = 0x03;
-}
-
-static void ste_falcon_dma_matrix_connect(void)
-{
-	if (!g_ste_dma_ok || !ST_Hw_Is_Falcon_Class()) {
-		return;
-	}
-	(void)Devconnect(DMAPLAY, DAC, CLK25M, CLKOLD, NO_SHAKE);
-}
-
-/*
- * TOS sound state, captured before the first change and put back by Sound_End.
- * Devconnect rewires the Falcon connection matrix and clocks the codec for our
- * sample rate; the DAC reconstruction filter follows that clock, so leaving it
- * set makes every later TOS sound - the keyboard click above all - muffled.
- */
-static unsigned char g_tos_sound_mode;
-static int g_tos_sound_saved;
-
-static void ste_audio_capture_tos_sound(void)
-{
-	if (g_tos_sound_saved) {
-		return;
-	}
-	g_tos_sound_saved = 1;
-	/* Same test as the restore below: a plain ST is in neither class and has
-	 * no register at $FF8921 to read. */
-	if (ST_Hw_Is_Ste_Sound_Class()) {
-		g_tos_sound_mode = *STE_DMA_SOUND_MODE;
-	}
-}
-
-static void ste_audio_restore_tos_sound(void)
-{
-	if (!g_tos_sound_saved) {
-		return;
-	}
-	g_tos_sound_saved = 0;
-	if (ST_Hw_Is_Falcon_Class()) {
-		/* The codec clock is what made later TOS sounds dull; DMAPLAY -> DAC
-		 * is the routing TOS uses anyway. */
-		(void)Devconnect(DMAPLAY, DAC, CLK25M, CLK50K, NO_SHAKE);
-	} else if (ST_Hw_Is_Ste_Sound_Class()) {
-		*STE_DMA_SOUND_MODE = g_tos_sound_mode;
-	}
-}
-
-static void ste_dma_set_address(volatile unsigned char* high_reg, unsigned long phys)
-{
-	high_reg[0] = (unsigned char)((phys >> 16) & 0xFFU);
-	high_reg[2] = (unsigned char)((phys >> 8) & 0xFFU);
-	high_reg[4] = (unsigned char)(phys & 0xFFU);
-}
-
-static void ste_dma_stop(void)
-{
-	if (!g_ste_dma_ok) {
-		return;
-	}
-	if (ST_Hw_Is_Falcon_Class()) {
-		*STE_DMA_CTRL &= (unsigned char)~0x03u;
-		*STE_DMA_MODE &= (unsigned char)~0x03u;
-	} else {
-		*STE_DMA_CTRL = 0;
-		/* $FF8901 low bits: DMA off (many STE docs: %01/%11 = on; %00 = off). */
-		*STE_DMA_MODE = 0;
-	}
-}
+static void ste_fill_mixed_region(unsigned char* dst, unsigned nsamp);
 
 static void digi_output_stop(void)
 {
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		Timer_Dac_Game_Stop();
-	} else {
-		ste_dma_stop();
+	if (Digi_Flush) {
+		Digi_Flush();
 	}
 }
 
-static int ste_audio_alloc_init(void)
+static unsigned digi_client_rate_flags(void)
 {
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		DigiRing* r = Timer_Dac_Ring();
-		if (!r || !r->base) {
-			return 0;
+	if (Digi_Info && Digi_Info()->device_rate_hz < 10000u) {
+		return DIGI_RATE_6250;
+	}
+	return DIGI_RATE_12500;
+}
+
+static void digi_submit_mixed(unsigned nbytes)
+{
+	unsigned filled = 0;
+	unsigned const flags = digi_client_rate_flags();
+	nbytes &= ~1U;
+	while (filled < nbytes) {
+		unsigned batch = nbytes - filled;
+		if (batch > (unsigned)STE_AUDIO_PULL_BLOCK) {
+			batch = (unsigned)STE_AUDIO_PULL_BLOCK;
 		}
-		g_dma_pool = r->base;
-		return 1;
+		batch &= ~1U;
+		if (batch == 0) {
+			break;
+		}
+		ste_fill_mixed_region(g_digi_stage, batch);
+		{
+			void const* p = Digi_Submit(g_digi_stage, g_digi_stage + batch, flags);
+			unsigned got = (unsigned)((unsigned char const*)p - g_digi_stage);
+			if (got == 0) {
+				break;
+			}
+			filled += got;
+			if (got < batch) {
+				break;
+			}
+		}
 	}
-	if (g_dma_pool) {
-		return 1;
-	}
-	g_dma_pool = (unsigned char*)ste_stram_alloc((unsigned long)STE_DMA_RING_SAMPLES);
-	return g_dma_pool != 0;
-}
-
-static void ste_audio_alloc_shutdown(void)
-{
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		g_dma_pool = 0;
-		return;
-	}
-	ste_stram_free(g_dma_pool);
-	g_dma_pool = 0;
+	g_stream_samples_written += (unsigned long)filled;
 }
 
 /*
@@ -555,49 +431,6 @@ static void ste_page_ring_service_all(void)
 	}
 }
 
-/* Arm DMA once: loop `len` bytes at `first` in ST-RAM (start/end not rewritten during play). */
-static void ste_dma_arm_loop(unsigned char const* first, unsigned len)
-{
-	unsigned char const mode = (unsigned char)(STE_DMA_SND_MODE_MONO | g_ste_dma_rate_idx);
-
-	ste_dma_stop();
-	ste_dma_mixer_connect();
-	if (ST_Hw_Is_Falcon_Class()) {
-		*STE_DMA_SOUND_MODE =
-		    (unsigned char)((*STE_DMA_SOUND_MODE & (unsigned char)~0x87u) | mode);
-	} else {
-		*STE_DMA_SOUND_MODE = mode;
-	}
-	unsigned long const s = (unsigned long)first;
-	unsigned long const e = s + (unsigned long)len;
-	ste_dma_set_address(STE_DMA_START_H, s);
-	ste_dma_set_address(STE_DMA_END_H, e);
-	/* $FF8901 bits 0+1: %11 = play with loop (auto-reload start/end at end-of-sweep). */
-	if (ST_Hw_Is_Falcon_Class()) {
-		*STE_DMA_MODE = (unsigned char)(*STE_DMA_MODE | 0x03u);
-		*STE_DMA_CTRL = (unsigned char)(*STE_DMA_CTRL | 0x03u);
-	} else {
-		*STE_DMA_MODE = 0x03u;
-	}
-}
-
-/* Byte offset of the current DMA fetch in g_dma_pool, or -1 if the counter is outside the ring. */
-static int ste_ring_dma_offset(void)
-{
-	if (!g_dma_pool) {
-		return -1;
-	}
-	unsigned long const base = (unsigned long)g_dma_pool;
-	unsigned long const h = (unsigned long)*STE_DMA_CNT_H;
-	unsigned long const m = (unsigned long)*STE_DMA_CNT_M;
-	unsigned long const l = (unsigned long)*STE_DMA_CNT_L;
-	unsigned long const cnt = (h << 16) | (m << 8) | l;
-	if (cnt < base || cnt >= base + (unsigned long)STE_DMA_RING_SAMPLES) {
-		return -1;
-	}
-	return (int)(cnt - base);
-}
-
 static int ste_any_voice_active(void)
 {
 	for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
@@ -685,32 +518,6 @@ static void ste_fill_mixed_region(unsigned char* dst, unsigned nsamp)
 	BORDER_RESTORE();
 }
 
-/* Mix `nbytes` (even) into the ring at `ring_off`, wrapping at STE_DMA_RING_SAMPLES. */
-static void ste_ring_write_mixed(unsigned ring_off, unsigned nbytes)
-{
-	unsigned filled = 0;
-	while (filled < nbytes) {
-		unsigned batch = nbytes - filled;
-		if (batch > (unsigned)STE_AUDIO_PULL_BLOCK) {
-			batch = (unsigned)STE_AUDIO_PULL_BLOCK;
-		}
-		/* Each fill is one contiguous slice; never let ring_off + batch pass the pool end. */
-		unsigned const to_end = (unsigned)STE_DMA_RING_SAMPLES - ring_off;
-		if (batch > to_end) {
-			batch = to_end;
-		}
-		batch &= ~1U;
-		if (batch == 0) {
-			ring_off = 0;
-			continue;
-		}
-		ste_fill_mixed_region(g_dma_pool + ring_off, batch);
-		ring_off = (ring_off + batch) % (unsigned)STE_DMA_RING_SAMPLES;
-		filled += batch;
-	}
-	g_stream_samples_written += (unsigned long)nbytes;
-}
-
 static void (**ste_vbl_queue_table(void))(void)
 {
 	return (void (**)(void))*(unsigned long*)0x456UL;
@@ -758,79 +565,41 @@ static void ste_audio_vbl_remove(void)
 
 static void ste_audio_service_core(void)
 {
-	if (!g_audio_ok || !ste_any_voice_active()) {
+	if (!g_audio_ok) {
+		return;
+	}
+	if (!Digi_Submit || !Digi_Capacity || !Digi_Info) {
+		return;
+	}
+	/*
+	 * Play_Sample cold-arm: Digi_Flush then Digi_Submit prefill on the main thread.
+	 * Old DMA path skipped VBL while suppress was set and DMA was off; Digi Capacity
+	 * is non-zero while !armed, so without this guard VBL races the prefill.
+	 */
+	if (g_ste_suppress_dma_off_cleanup) {
+		return;
+	}
+	if (Digi_Movie_Owns()) {
+		return;
+	}
+	if (!ste_any_voice_active()) {
+		if (Digi_Active && Digi_Active()) {
+			digi_output_stop();
+			g_pending_voice_shutdown = 1;
+		}
 		return;
 	}
 
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		DigiRing* r = Timer_Dac_Ring();
-		if (!r || !r->base || Timer_Dac_Movie_Owns()) {
-			return;
-		}
-		if (!Timer_Dac_Active()) {
-			if (g_ste_suppress_dma_off_cleanup) {
-				return;
-			}
-			Timer_Dac_Game_Stop();
-			g_pending_voice_shutdown = 1;
-			g_ste_suppress_dma_off_cleanup = 0;
-			return;
-		}
-		unsigned const consumer = r->ops->consumer_pos(r);
-		unsigned const w = g_ring_write_pos;
-		unsigned to_fill =
-		    (consumer + (unsigned)STE_DMA_RING_SAMPLES - w) % (unsigned)STE_DMA_RING_SAMPLES;
-		to_fill &= ~1U;
+	{
+		unsigned const flags = digi_client_rate_flags();
+		unsigned to_fill = Digi_Capacity(flags) & ~1U;
 		if (to_fill == 0) {
 			return;
 		}
-		ste_ring_write_mixed(w, to_fill);
-		g_ring_write_pos = (w + to_fill) % (unsigned)STE_DMA_RING_SAMPLES;
+		digi_submit_mixed(to_fill);
 		if (!ste_any_voice_active()) {
-			Timer_Dac_Game_Stop();
+			digi_output_stop();
 		}
-		return;
-	}
-
-	if (!g_ste_dma_ok) {
-		return;
-	}
-	// If DMA playback is off, clean up voices and streams unless cleanup is suppressed, then exit.
-	if ((*STE_DMA_MODE & 0x01u) == 0u) {
-		// happens during sample transition or audio shutdown to skip cleanup
-		if (g_ste_suppress_dma_off_cleanup) {
-			return;
-		}
-		ste_dma_stop();
-		g_pending_voice_shutdown = 1;
-		g_ste_suppress_dma_off_cleanup = 0;
-		return;
-	}
-
-	int const dma_off = ste_ring_dma_offset();
-	if (dma_off < 0) {
-		return;
-	}
-
-	unsigned const w = g_ring_write_pos;
-	/* Ring span from the write cursor forward to the DMA read pointer (already-consumed region). */
-	unsigned to_fill =
-	    ((unsigned)dma_off + (unsigned)STE_DMA_RING_SAMPLES - w) % (unsigned)STE_DMA_RING_SAMPLES;
-	to_fill &= ~1U;
-	if (to_fill == 0) {
-		return;
-	}
-
-	if (!ste_any_voice_active()) {
-		ste_dma_stop();
-		return;
-	}
-
-	ste_ring_write_mixed(w, to_fill);
-	g_ring_write_pos = (w + to_fill) % (unsigned)STE_DMA_RING_SAMPLES;
-
-	if (!ste_any_voice_active()) {
-		ste_dma_stop();
 	}
 }
 
@@ -1052,23 +821,19 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 {
 	StAudioDriver want = g_st_audio_driver_preference;
 
-	ste_audio_capture_tos_sound();
+	Audio_Dma_Save_Tos_Sound();
 	ste_process_pending_voice_shutdown();
 	(void)stereo;
 	(void)rate;
-	(void)bits_per_sample; /* STE path is always 8-bit DMA; ignore host request. */
+	(void)bits_per_sample; /* Digi path is always 8-bit; ignore host request. */
 	ste_audio_vbl_remove();
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		g_dma_pool = 0;
-		Timer_Dac_Shutdown();
-	} else {
-		ste_audio_alloc_shutdown();
-		Timer_Dac_Shutdown();
+	if (Digi_Shutdown) {
+		Digi_Shutdown();
 	}
-	g_ste_dma_ok = 0;
 	g_audio_ok = 0;
 	g_st_audio_backend = ST_AUDIO_NONE;
 	g_st_audio_subsample_2 = 0;
+	Digi_Movie_Set_Owns(0);
 	g_pending_voice_shutdown = 0;
 	ste_shutdown_all_voices();
 	g_stream_file_voice = -1;
@@ -1098,37 +863,26 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 			SoundType = SFX_NONE;
 			return FALSE;
 		}
-		g_ste_dma_ok = 1;
 		g_st_audio_backend = ST_AUDIO_STE;
-		if (ste_dma_12500_supported()) {
-			g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_12517_IDX;
-			g_ste_pcm_dup2x = 0;
-		} else {
-			g_ste_dma_rate_idx = (unsigned char)STE_HW_RATE_25033_IDX;
-			g_ste_pcm_dup2x = 1;
-		}
-		for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
-			g_voice_pcm[vi].reset();
-			g_voice_ima[vi].reset();
-		}
-		if (!ste_audio_alloc_init()) {
+		if (!Audio_Dma_Init()) {
 			printf("STE-DMA: Audio_Init failed (DMA ring ST-RAM)\n");
 			fflush(stdout);
-			g_ste_dma_ok = 0;
 			g_st_audio_backend = ST_AUDIO_NONE;
 			SampleType = SAMPLE_NONE;
 			SoundType = SFX_NONE;
 			return FALSE;
 		}
+		g_ste_pcm_dup2x = (Digi_Info && Digi_Info()->device_rate_hz >= 16000u) ? 1 : 0;
+		for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
+			g_voice_pcm[vi].reset();
+			g_voice_ima[vi].reset();
+		}
 		SampleType = SAMPLE_SB;
 		SoundType = SFX_DMA_SOUND;
 		g_audio_ok = 1;
-		ste_dma_stop();
-		ste_falcon_dma_matrix_connect();
-		ste_dma_mixer_connect();
 		ste_audio_vbl_install();
 		DBG_INFO("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d, hw=%d)",
-		    g_ste_dma_rate_idx == STE_HW_RATE_12517_IDX ? 12517u : 25033u,
+		    Digi_Info ? Digi_Info()->device_rate_hz : 0u,
 		    g_ste_pcm_dup2x,
 		    ST_Hw_Machine_Major());
 		return TRUE;
@@ -1136,21 +890,23 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 
 	if (want == ST_AUDIO_YM || want == ST_AUDIO_COVOX) {
 		g_ste_pcm_dup2x = 0;
-		g_st_audio_subsample_2 = 1;
 		g_st_audio_backend = want;
 		if (!Timer_Dac_Init(want)) {
 			g_st_audio_backend = ST_AUDIO_NONE;
-			g_st_audio_subsample_2 = 0;
 			SampleType = SAMPLE_NONE;
 			SoundType = SFX_NONE;
 			return FALSE;
 		}
+		g_st_audio_subsample_2 =
+		    (Digi_Info && Digi_Info()->device_rate_hz < 10000u) ? 1 : 0;
 		for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
 			g_voice_pcm[vi].reset();
 			g_voice_ima[vi].reset();
 		}
-		if (!ste_audio_alloc_init()) {
-			Timer_Dac_Shutdown();
+		if (!Digi_Submit) {
+			if (Digi_Shutdown) {
+				Digi_Shutdown();
+			}
 			g_st_audio_backend = ST_AUDIO_NONE;
 			g_st_audio_subsample_2 = 0;
 			SampleType = SAMPLE_NONE;
@@ -1160,10 +916,11 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 		SampleType = SAMPLE_SB;
 		SoundType = SFX_DMA_SOUND;
 		g_audio_ok = 1;
-		Timer_Dac_Set_Stride(1);
 		ste_audio_vbl_install();
-		DBG_INFO("Timer-DAC: Audio_Init OK (%s, ~6269 Hz, subsample=2)",
-		    ST_Audio_Cfg_Driver_Name(want));
+		DBG_INFO("Timer-DAC: Audio_Init OK (%s, ~%u Hz, subsample=%d)",
+		    ST_Audio_Cfg_Driver_Name(want),
+		    Digi_Info ? Digi_Info()->device_rate_hz : 6250u,
+		    g_st_audio_subsample_2);
 		return TRUE;
 	}
 
@@ -1188,20 +945,17 @@ void Sound_End(void)
 	digi_output_stop();
 	ste_shutdown_all_voices();
 	g_stream_file_voice = -1;
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		g_dma_pool = 0;
-	} else {
-		ste_audio_alloc_shutdown();
+	if (Digi_Shutdown) {
+		Digi_Shutdown();
 	}
-	Timer_Dac_Shutdown();
 	free(g_stream_file_buf);
 	g_stream_file_buf = 0;
 	g_stream_file_len = 0;
 	g_audio_ok = 0;
-	g_ste_dma_ok = 0;
 	g_st_audio_backend = ST_AUDIO_NONE;
 	g_st_audio_subsample_2 = 0;
-	ste_audio_restore_tos_sound();
+	Digi_Movie_Set_Owns(0);
+	Audio_Dma_Restore_Tos_Sound();
 }
 
 void Stop_Sample(int)
@@ -1253,7 +1007,7 @@ void Stop_Sample_Playing(void const* sample)
  */
 static int ste_play_sample(void const* sample, int priority, int volume, int as_score)
 {
-	if (!g_audio_ok || !sample) {
+	if (!g_audio_ok || !sample || !Digi_Submit) {
 		return -1;
 	}
 	unsigned char const* b = (unsigned char const*)sample;
@@ -1273,9 +1027,6 @@ static int ste_play_sample(void const* sample, int priority, int volume, int as_
 		if (compression == STE_AUD_COMP_PCM && szf == 0 && uncomp > 0 && uncomp <= STE_AUD99_MAX_DECODED_PCM_BYTES) {
 			aud_bytes = (unsigned long)STE_AUD_HDR_LEN + uncomp;
 		}
-	}
-	if (!g_dma_pool) {
-		return -1;
 	}
 
 	ste_process_pending_voice_shutdown();
@@ -1346,18 +1097,13 @@ static int ste_play_sample(void const* sample, int priority, int volume, int as_
 		return 1;
 	}
 
-	/* Half-ring prefill, then arm DMA loop or Timer A. */
+	/* Half-ring prefill via Digi_Submit (arms device on first write). */
 	digi_output_stop();
-	memset(g_dma_pool, 0, (size_t)STE_DMA_RING_SAMPLES);
-	g_ring_write_pos = 0;
 	g_stream_samples_written = 0UL;
-	unsigned const prefill = (unsigned)STE_DMA_RING_SAMPLES / 2U;
-	ste_ring_write_mixed(0, prefill);
-	g_ring_write_pos = prefill % (unsigned)STE_DMA_RING_SAMPLES;
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		Timer_Dac_Game_Arm(prefill);
-	} else {
-		ste_dma_arm_loop(g_dma_pool, STE_DMA_RING_SAMPLES);
+	{
+		unsigned const prefill =
+		    Digi_Info ? (Digi_Info()->ring_samples / 2U) : ((unsigned)STE_DMA_RING_SAMPLES / 2U);
+		digi_submit_mixed(prefill & ~1U);
 	}
 	g_ste_suppress_dma_off_cleanup = 0;
 	return 1;
@@ -1417,8 +1163,8 @@ long Sample_Length(void const* sample)
 void Restore_Sound_Buffers(void) {}
 
 /*
- * Yield digi output to STVQ: stop voices, stop DMA/timer, remove audio VBL.
- * Keeps game ring storage for Ste_Audio_Reclaim_Dma.
+ * Yield digi HAL to STVQ: stop voices, Flush, remove mixer VBL.
+ * Digi_* hooks and backend ring stay installed for Digi_Submit from the player.
  */
 void Ste_Audio_Yield_Dma(void)
 {
@@ -1427,43 +1173,34 @@ void Ste_Audio_Yield_Dma(void)
 	g_stream_file_voice = -1;
 	digi_output_stop();
 	ste_audio_vbl_remove();
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		if (g_st_stvq_enable_audio) {
-			Timer_Dac_Set_Movie_Owner(1);
-			Timer_Dac_Resume();
-			DigiRing* r = Timer_Dac_Ring();
-			if (r) {
-				digi_ring_reset(r);
-				if (r->base) {
-					memset(r->base, 0, r->size);
-				}
-			}
-		} else {
-			Timer_Dac_Pause();
+	Digi_Movie_Set_Owns(1);
+	if (Digi_Flush) {
+		Digi_Flush();
+	}
+	if (g_st_stvq_enable_audio) {
+		if (Digi_Resume) {
+			Digi_Resume();
 		}
+	} else if (Digi_Pause) {
+		Digi_Pause();
 	}
 }
 
 /*
- * Reclaim digi after STVQ: reinstall mixer/VBL; idle until Theme/Play_Sample arms.
+ * Reclaim digi after STVQ: Flush, reinstall mixer VBL; idle until Theme/Play_Sample arms.
  */
 void Ste_Audio_Reclaim_Dma(void)
 {
 	if (!g_audio_ok) {
 		return;
 	}
-	if (ST_Audio_Cfg_Is_Timer_Backend()) {
-		Timer_Dac_Set_Movie_Owner(0);
-		Timer_Dac_Game_Stop();
-		ste_audio_vbl_install();
-		return;
+	Digi_Movie_Set_Owns(0);
+	if (Digi_Flush) {
+		Digi_Flush();
 	}
-	if (!g_ste_dma_ok) {
-		return;
+	if (Audio_Dma_Inited()) {
+		Audio_Dma_Connect_Output();
 	}
-	ste_dma_stop();
-	ste_falcon_dma_matrix_connect();
-	ste_dma_mixer_connect();
 	ste_audio_vbl_install();
 }
 

@@ -3,7 +3,7 @@
  */
 #ifdef ATARI_ST
 
-#include "digi_ring.h"
+#include "audio/digi_ring.h"
 
 #include <string.h>
 
@@ -16,7 +16,6 @@ void digi_ring_init(DigiRing* r, unsigned char* base, unsigned size, DigiRingOps
 	r->size = size ? size : (unsigned)DIGI_RING_BYTES;
 	r->ops = ops;
 	r->hw_ctx = 0;
-	r->stride = 1u;
 	digi_ring_reset(r);
 }
 
@@ -31,12 +30,12 @@ void digi_ring_reset(DigiRing* r)
 	r->armed = 0;
 }
 
-void digi_ring_set_stride(DigiRing* r, unsigned stride)
+void digi_ring_silence(DigiRing* r, unsigned char fill)
 {
-	if (!r) {
+	if (!r || !r->base) {
 		return;
 	}
-	r->stride = stride ? stride : 1u;
+	memset(r->base, (int)fill, r->size);
 }
 
 void digi_ring_sync(DigiRing* r)
@@ -55,7 +54,7 @@ void digi_ring_sync(DigiRing* r)
 	r->last_consumer = consumer;
 	if (played >= r->queued) {
 		r->queued = 0;
-		r->write_pos = consumer & ~1u;
+		r->write_pos = consumer;
 	} else {
 		r->queued -= played;
 	}
@@ -94,41 +93,45 @@ static void digi_ring_write_bytes(DigiRing* r, unsigned char const* src, unsigne
 	r->write_pos = off;
 }
 
-int digi_ring_queue(DigiRing* r, unsigned char const* src, unsigned nbytes)
+static unsigned digi_ring_cold_arm(DigiRing* r, unsigned n)
+{
+	r->write_pos = 0;
+	r->queued = 0;
+	r->last_consumer = 0;
+	r->queued = n;
+	if (r->ops && r->ops->arm) {
+		r->ops->arm(r);
+	}
+	r->armed = 1;
+	if (r->ops && r->ops->consumer_pos) {
+		r->last_consumer = r->ops->consumer_pos(r);
+	}
+	return n;
+}
+
+unsigned digi_ring_write_available(DigiRing* r, unsigned char const* src, unsigned nbytes)
 {
 	unsigned freeb;
+	unsigned n;
 
 	if (!r || !r->base || !src || nbytes == 0) {
-		return -1;
-	}
-	nbytes &= ~1u;
-	if (nbytes == 0) {
 		return 0;
 	}
 
 	if (!r->armed) {
-		r->write_pos = 0;
-		r->queued = 0;
-		digi_ring_write_bytes(r, src, nbytes);
-		r->queued = nbytes;
-		r->last_consumer = 0;
-		if (r->ops && r->ops->arm) {
-			r->ops->arm(r);
-		}
-		r->armed = 1;
-		if (r->ops && r->ops->consumer_pos) {
-			r->last_consumer = r->ops->consumer_pos(r);
-		}
-		return 0;
+		n = nbytes < r->size - 1u ? nbytes : r->size - 1u;
+		digi_ring_write_bytes(r, src, n);
+		return digi_ring_cold_arm(r, n);
 	}
 
 	freeb = digi_ring_free_bytes(r);
-	if (nbytes > freeb) {
-		return -1;
+	n = nbytes < freeb ? nbytes : freeb;
+	if (n == 0) {
+		return 0;
 	}
-	digi_ring_write_bytes(r, src, nbytes);
-	r->queued += nbytes;
-	return 0;
+	digi_ring_write_bytes(r, src, n);
+	r->queued += n;
+	return n;
 }
 
 #endif /* ATARI_ST */

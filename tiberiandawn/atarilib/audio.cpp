@@ -55,7 +55,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <mint/cookie.h>
 #include <mint/ostruct.h>
 #include <mint/sysvars.h>
 
@@ -852,7 +851,12 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 	int const dma_avail = ST_Hw_Dma_Audio_Available() ? 1 : 0;
 
 	if (want == ST_AUDIO_AUTO) {
-		want = dma_avail ? ST_AUDIO_STE : ST_AUDIO_NONE;
+		if (dma_avail) {
+			want = ST_AUDIO_STE;
+		} else {
+			DBG_WARN("Atari DMA sound not available; using YM-2149 fallback");
+			want = ST_AUDIO_YM;
+		}
 	}
 
 	if (want == ST_AUDIO_STE) {
@@ -865,27 +869,34 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 		}
 		g_st_audio_backend = ST_AUDIO_STE;
 		if (!Audio_Dma_Init()) {
-			printf("STE-DMA: Audio_Init failed (DMA ring ST-RAM)\n");
-			fflush(stdout);
-			g_st_audio_backend = ST_AUDIO_NONE;
-			SampleType = SAMPLE_NONE;
-			SoundType = SFX_NONE;
-			return FALSE;
+			if (g_st_audio_driver_preference == ST_AUDIO_AUTO) {
+				DBG_WARN("Atari DMA sound not available; using YM-2149 fallback");
+				g_st_audio_backend = ST_AUDIO_NONE;
+				want = ST_AUDIO_YM;
+			} else {
+				printf("STE-DMA: Audio_Init failed (DMA ring ST-RAM)\n");
+				fflush(stdout);
+				g_st_audio_backend = ST_AUDIO_NONE;
+				SampleType = SAMPLE_NONE;
+				SoundType = SFX_NONE;
+				return FALSE;
+			}
+		} else {
+			g_ste_pcm_dup2x = (Digi_Info && Digi_Info()->device_rate_hz >= 16000u) ? 1 : 0;
+			for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
+				g_voice_pcm[vi].reset();
+				g_voice_ima[vi].reset();
+			}
+			SampleType = SAMPLE_SB;
+			SoundType = SFX_DMA_SOUND;
+			g_audio_ok = 1;
+			ste_audio_vbl_install();
+			DBG_INFO("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d, hw=%d)",
+			    Digi_Info ? Digi_Info()->device_rate_hz : 0u,
+			    g_ste_pcm_dup2x,
+			    ST_Hw_Machine_Major());
+			return TRUE;
 		}
-		g_ste_pcm_dup2x = (Digi_Info && Digi_Info()->device_rate_hz >= 16000u) ? 1 : 0;
-		for (int vi = 0; vi < STE_MIX_VOICES; ++vi) {
-			g_voice_pcm[vi].reset();
-			g_voice_ima[vi].reset();
-		}
-		SampleType = SAMPLE_SB;
-		SoundType = SFX_DMA_SOUND;
-		g_audio_ok = 1;
-		ste_audio_vbl_install();
-		DBG_INFO("STE-DMA: Audio_Init OK (%u Hz mono, dup2x=%d, hw=%d)",
-		    Digi_Info ? Digi_Info()->device_rate_hz : 0u,
-		    g_ste_pcm_dup2x,
-		    ST_Hw_Machine_Major());
-		return TRUE;
 	}
 
 	if (want == ST_AUDIO_YM || want == ST_AUDIO_COVOX) {
@@ -924,16 +935,6 @@ BOOL Audio_Init(HWND, int bits_per_sample, BOOL stereo, int rate, int)
 		return TRUE;
 	}
 
-	/* Auto with no DMA → silent */
-	{
-		long mch = 0;
-		long snd = 0;
-		(void)Getcookie(C__MCH, &mch);
-		(void)Getcookie(C__SND, &snd);
-		printf("STE-DMA: Audio_Init failed (_MCH=$%lX _SND=$%lX; need _MCH hw != 0, _SND bit 1)\n",
-		    (unsigned long)mch, (unsigned long)snd);
-		fflush(stdout);
-	}
 	SampleType = SAMPLE_NONE;
 	SoundType = SFX_NONE;
 	return FALSE;

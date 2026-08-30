@@ -4,6 +4,11 @@
 
 #include <mint/osbind.h>
 
+/*
+ * See ikbd.h for the $118 vs mousevec split. USB never feeds the ACIA;
+ * mousevec packets are applied as a whole so they cannot desync ParseState.
+ */
+
 enum IKBDParseStateType {
 	IKBD_PARSE_NORMAL = 0,
 	IKBD_PARSE_REL_DX,
@@ -36,6 +41,23 @@ enum {
 
 static void (*PrevIKBDVector)(void) = NULL;
 static volatile unsigned char HandlerInstalled = 0;
+static volatile unsigned char MousevecHooked = 0;
+
+extern "C" void IKBD_Mousevec_Entry(void);
+extern "C" void (*IKBD_PrevMousevec)(void);
+
+/* BIOS Kbdvbase() layout (TOS / EmuTOS / MiNT). mousevec is the 5th pointer. */
+struct IKBD_KBDVECS {
+	void (*midivec)(unsigned char);
+	void (*vkbderr)(unsigned char);
+	void (*vmiderr)(unsigned char);
+	void (*statvec)(void *);
+	void (*mousevec)(void);
+	void (*clockvec)(void *);
+	void (*joyvec)(void *);
+	void (*midisys)(void);
+	void (*ikbdsys)(void);
+};
 
 static volatile unsigned char * const IKBD_ACIA_STATUS = (volatile unsigned char *)0xFFFFFC00UL;
 static volatile unsigned char * const IKBD_ACIA_DATA = (volatile unsigned char *)0xFFFFFC02UL;
@@ -173,6 +195,18 @@ static inline void IKBD_Handle_Key_Scan(unsigned char scan_with_break)
 	IKBD_Push_Event((unsigned char)((vk & IKBD_EVENT_KEY_MASK) | (release ? IKBD_EVENT_RELEASE_BIT : 0)));
 }
 
+static inline unsigned short IKBD_Swap_SR(unsigned short new_sr)
+{
+	unsigned short old_sr;
+	__asm__ volatile(
+		"move.w %%sr,%0\n\t"
+		"move.w %1,%%sr"
+		: "=&d"(old_sr)
+		: "d"(new_sr)
+		: "memory");
+	return old_sr;
+}
+
 static inline void IKBD_Handle_Mouse_Buttons(unsigned char new_buttons)
 {
 	unsigned char changed = (unsigned char)(MouseButtons ^ new_buttons);
@@ -197,6 +231,45 @@ static inline void IKBD_Handle_Mouse_Buttons(unsigned char new_buttons)
 	MouseButtons = new_buttons;
 }
 
+static inline void IKBD_Apply_Rel_Mouse_Packet(unsigned char header, signed char dx, signed char dy)
+{
+	MouseX = IKBD_Clamp_Mouse_X(MouseX + (int)dx);
+	MouseY = IKBD_Clamp_Mouse_Y(MouseY + (int)dy);
+	/*
+	** Header layout is %111110xy where x=left, y=right.
+	** Normalize to bit0=left, bit1=right with 1=pressed.
+	** On this target/TOS setup, x/y arrive active-high.
+	*/
+	unsigned char raw = (unsigned char)(header & 0x03u);
+	LastRawHeaderBits = raw;
+	MousePacketCount++;
+	unsigned char buttons = 0;
+	if ((raw & 0x02u) != 0u) {
+		buttons |= 0x01u; /* left */
+	}
+	if ((raw & 0x01u) != 0u) {
+		buttons |= 0x02u; /* right */
+	}
+	IKBD_Handle_Mouse_Buttons(buttons);
+}
+
+extern "C" void IKBD_Mousevec_C(unsigned char *pkt) __attribute__((used, externally_visible));
+
+extern "C" void IKBD_Mousevec_C(unsigned char *pkt)
+{
+	unsigned short old_sr;
+
+	if (!pkt || !MousevecHooked) {
+		return;
+	}
+	if (pkt[0] < 0xF8u || pkt[0] > 0xFBu) {
+		return;
+	}
+	old_sr = IKBD_Swap_SR(0x2700);
+	IKBD_Apply_Rel_Mouse_Packet(pkt[0], (signed char)pkt[1], (signed char)pkt[2]);
+	(void)IKBD_Swap_SR(old_sr);
+}
+
 static inline void IKBD_Parse_Byte(unsigned char value)
 {
 	if (ParseState == IKBD_PARSE_SKIP) {
@@ -216,27 +289,7 @@ static inline void IKBD_Parse_Byte(unsigned char value)
 	}
 
 	if (ParseState == IKBD_PARSE_REL_DY) {
-		signed char dy = (signed char)value;
-		MouseX = IKBD_Clamp_Mouse_X(MouseX + (int)RelDX);
-		MouseY = IKBD_Clamp_Mouse_Y(MouseY + (int)dy);
-		/*
-		** Header layout is %111110xy where x=left, y=right.
-		** Normalize to bit0=left, bit1=right with 1=pressed.
-		** On this target/TOS setup, x/y arrive active-high.
-		*/
-		{
-			unsigned char raw = (unsigned char)(RelHeader & 0x03u);
-			LastRawHeaderBits = raw;
-			MousePacketCount++;
-			unsigned char buttons = 0;
-			if ((raw & 0x02u) != 0u) {
-				buttons |= 0x01u; /* left */
-			}
-			if ((raw & 0x01u) != 0u) {
-				buttons |= 0x02u; /* right */
-			}
-			IKBD_Handle_Mouse_Buttons(buttons);
-		}
+		IKBD_Apply_Rel_Mouse_Packet(RelHeader, RelDX, (signed char)value);
 		ParseState = IKBD_PARSE_NORMAL;
 		return;
 	}
@@ -320,11 +373,54 @@ static void IKBD_Restore_Tos_Mouse_Hardware(void)
 	IKBD_Drain_Acia_Rx();
 }
 
+static struct IKBD_KBDVECS *IKBD_Kbdvbase(void)
+{
+	return (struct IKBD_KBDVECS *)Kbdvbase();
+}
+
+static void IKBD_Hook_Mousevec(void)
+{
+	struct IKBD_KBDVECS *kb = IKBD_Kbdvbase();
+	IKBD_PrevMousevec = kb->mousevec;
+	MousevecHooked = 1;
+	kb->mousevec = IKBD_Mousevec_Entry;
+}
+
+static void IKBD_Unhook_Mousevec(void)
+{
+	struct IKBD_KBDVECS *kb;
+	void (*ours)(void) = IKBD_Mousevec_Entry;
+	void (*cur)(void);
+
+	if (!MousevecHooked) {
+		return;
+	}
+	MousevecHooked = 0;
+	kb = IKBD_Kbdvbase();
+	cur = kb->mousevec;
+	if (cur == ours) {
+		kb->mousevec = IKBD_PrevMousevec;
+	} else {
+		while (cur) {
+			unsigned long *raw = (unsigned long *)cur;
+			if (raw[-3] != 0x58425241UL) {
+				break;
+			}
+			if ((void (*)(void))raw[-1] == ours) {
+				raw[-1] = (unsigned long)IKBD_PrevMousevec;
+				break;
+			}
+			cur = (void (*)(void))raw[-1];
+		}
+	}
+}
+
 static long IKBD_Install_Supervisor(void)
 {
 	/*
 	 * Previous run may have exited without restoring the IKBD (OOM, bus error).
 	 * Reset the controller, then enable relative mode before hooking vector $118.
+	 * mousevec is last so USB packets only reach us once ACIA + apply are live.
 	 */
 	{
 		unsigned char reset[] = { 0x80, 0x01 };
@@ -339,15 +435,18 @@ static long IKBD_Install_Supervisor(void)
 	MouseY = IKBD_MOUSE_HEIGHT / 2;
 	PrevIKBDVector = (void (*)(void))Setexc(IKBD_VECTOR_NUMBER, (void (*)())IKBD_ISR_Entry);
 	HandlerInstalled = 1;
+	IKBD_Hook_Mousevec();
 	return 1;
 }
 
 static long IKBD_Shutdown_Supervisor(void)
 {
 	/*
-	 * Restore IKBD hardware and drain stale relative packets before handing
+	 * Unhook mousevec first so USB/TOS stop jumping into this image, then
+	 * restore IKBD hardware and drain stale relative packets before handing
 	 * vector $118 back to TOS; otherwise the desktop mouse stops updating.
 	 */
+	IKBD_Unhook_Mousevec();
 	IKBD_Restore_Tos_Mouse_Hardware();
 	IKBD_Read_Acia_Bytes();
 	if (HandlerInstalled && PrevIKBDVector) {
@@ -366,7 +465,7 @@ BOOL IKBD_Install(void)
 	}
 	BOOL ok = Supexec(IKBD_Install_Supervisor) != 0 ? TRUE : FALSE;
 	if (ok) {
-		DBG_INFO("IKBD: interrupt handler installed");
+		DBG_INFO("IKBD: $118 ACIA + mousevec (XBRA CNCM) installed");
 	} else {
 		printf("IKBD: interrupt handler install failed.\n");
 	}
@@ -376,8 +475,8 @@ BOOL IKBD_Install(void)
 void IKBD_Uninstall(void)
 {
 	/*
-	 * Always restore vector (if hooked) and IKBD mouse mode, even when OOM
-	 * prevented a full install — do not printf here (may re-enter Alloc).
+	 * Always restore mousevec, $118 (if hooked) and IKBD mouse mode, even
+	 * when OOM prevented a full install — do not printf here (may re-enter Alloc).
 	 */
 	Supexec(IKBD_Shutdown_Supervisor);
 }

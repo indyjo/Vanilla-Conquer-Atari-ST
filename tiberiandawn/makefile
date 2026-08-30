@@ -586,6 +586,7 @@ ASM_SOURCES = \
 # libcmini has no LINE-A helpers; mintlib already provides linea0/__aline.
 ifeq ($(PLATFORM_LIB),ATARILIB)
 ASM_SOURCES += $(PLATFORM_LIB)/audio/audio_timer_dac_ym.S
+ASM_SOURCES += $(PLATFORM_LIB)/ikbd_mousevec.S
 ifeq ($(USE_LIBCMINI),1)
 ASM_SOURCES += $(PLATFORM_LIB)/st_linea0.S
 endif
@@ -1091,7 +1092,7 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTD
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/link.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/rawfile.o $(INTDIR)/font.o \
 	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
-	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/keyframe.o $(INTDIR)/wsa.o \
+	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/ikbd_mousevec.o $(INTDIR)/keyframe.o $(INTDIR)/wsa.o \
 	$(INTDIR)/audio_ATARILIB.o $(INTDIR)/audio_dma.o $(INTDIR)/st_digi_movie.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
 	$(INTDIR)/st_audio_cfg.o $(INTDIR)/audio_timer_dac.o $(INTDIR)/digi_ring.o $(INTDIR)/digi_audio.o \
 	$(INTDIR)/audx_pool_file.o $(INTDIR)/audx_page_cache.o $(INTDIR)/ste_stream_memory_source.o \

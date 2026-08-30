@@ -721,7 +721,7 @@ void WWMouseClass::Process_Mouse(void)
 	MousePosX = mouse_x;
 	MousePosY = mouse_y;
 
-	/* Queue-compatible mouse position comes from IKBD packet decoding. */
+	/* Queue-compatible mouse position: IKBD ACIA ($118) and/or USB mousevec. */
 	if (Keyboard) {
 		IKBD_Get_Mouse_XY(&Keyboard->MouseQX, &Keyboard->MouseQY);
 	}

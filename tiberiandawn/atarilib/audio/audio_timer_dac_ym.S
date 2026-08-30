@@ -1,4 +1,5 @@
-/* YM Timer A digi ISR + 64-entry 2-ch movep LUT (PC-relative).
+/* YM Timer A digi ISR + 64-entry 2-ch movep LUT.
+ * LUT sits immediately after rte so (d8,PC,Xn) reaches it (68000: 8-bit disp).
  * Ring bytes are Digi_Submit offsets (s&$FC). LUT is signed-aware
  * (ym_lut --mode grid --pcm signed: silence/index0 = mid amplitude).
  * Assembled via CPP for label prefix.
@@ -20,8 +21,7 @@ SYM(timer_a_ym_s1):
 	move.b	(%a0)+,%d1			| native LUT byte offset; advance a0
 	move.l	%a0,%d0				| keep updated pointer for wrap/store
 	andi.w	#0xFBFF,%d0			| make the cursor wrap every 1024 samples
-	lea	ym_lut(%pc),%a0			| load address of table into a0
-	move.l	(0,%a0,%d1.w),%d1		| read 4 bytes from LUT
+	move.l	ym_lut(%pc,%d1.w),%d1		| 4 YM bytes (LUT must stay within d8 of PC)
 	lea	0xFFFF8800.w,%a0			| this is the soundchip address
 	movep.l	%d1,0(%a0)			| ... and write into soundchip
 	move.l	%d0,%a0				| USP may only be written from An

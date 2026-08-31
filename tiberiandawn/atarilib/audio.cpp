@@ -190,32 +190,18 @@ static unsigned digi_client_rate_flags(void)
 
 static void digi_submit_mixed(unsigned nbytes)
 {
-	unsigned filled = 0;
 	unsigned const flags = digi_client_rate_flags();
+
 	nbytes &= ~1U;
-	while (filled < nbytes) {
-		unsigned batch = nbytes - filled;
-		if (batch > (unsigned)STE_AUDIO_PULL_BLOCK) {
-			batch = (unsigned)STE_AUDIO_PULL_BLOCK;
-		}
-		batch &= ~1U;
-		if (batch == 0) {
-			break;
-		}
-		ste_fill_mixed_region(g_digi_stage, batch);
-		{
-			void const* p = Digi_Submit(g_digi_stage, g_digi_stage + batch, flags);
-			unsigned got = (unsigned)((unsigned char const*)p - g_digi_stage);
-			if (got == 0) {
-				break;
-			}
-			filled += got;
-			if (got < batch) {
-				break;
-			}
-		}
+	if (nbytes > (unsigned)STE_AUDIO_PULL_BLOCK) {
+		nbytes = (unsigned)STE_AUDIO_PULL_BLOCK;
 	}
-	g_stream_samples_written += (unsigned long)filled;
+	if (nbytes == 0) {
+		return;
+	}
+	ste_fill_mixed_region(g_digi_stage, nbytes);
+	(void)Digi_Submit(g_digi_stage, g_digi_stage + nbytes, flags);
+	g_stream_samples_written += (unsigned long)nbytes;
 }
 
 /*
@@ -564,41 +550,29 @@ static void ste_audio_vbl_remove(void)
 
 static void ste_audio_service_core(void)
 {
-	if (!g_audio_ok) {
-		return;
-	}
-	if (!Digi_Submit || !Digi_Capacity || !Digi_Info) {
-		return;
-	}
 	/*
-	 * Play_Sample cold-arm: Digi_Flush then Digi_Submit prefill on the main thread.
-	 * Old DMA path skipped VBL while suppress was set and DMA was off; Digi Capacity
-	 * is non-zero while !armed, so without this guard VBL races the prefill.
+	 * VBL is installed only after Audio_Init has the Digi hooks. Yield/Sound_End
+	 * remove it before teardown. Play_Sample sets suppress around Flush+prefill
+	 * so we do not race the cold arm (Capacity is full while !armed).
 	 */
 	if (g_ste_suppress_dma_off_cleanup) {
 		return;
 	}
-	if (Digi_Movie_Owns()) {
-		return;
-	}
 	if (!ste_any_voice_active()) {
-		if (Digi_Active && Digi_Active()) {
+		if (Digi_Active()) {
 			digi_output_stop();
 			g_pending_voice_shutdown = 1;
 		}
 		return;
 	}
 
-	{
-		unsigned const flags = digi_client_rate_flags();
-		unsigned to_fill = Digi_Capacity(flags) & ~1U;
-		if (to_fill == 0) {
-			return;
-		}
-		digi_submit_mixed(to_fill);
-		if (!ste_any_voice_active()) {
-			digi_output_stop();
-		}
+	unsigned to_fill = Digi_Capacity(digi_client_rate_flags()) & ~1U;
+	if (to_fill == 0) {
+		return;
+	}
+	digi_submit_mixed(to_fill);
+	if (!ste_any_voice_active()) {
+		digi_output_stop();
 	}
 }
 

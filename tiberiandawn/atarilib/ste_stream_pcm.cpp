@@ -13,21 +13,44 @@ static void pcm_linear_lut(unsigned char const *src, unsigned n, unsigned char c
 #if defined(__GNUC__) && defined(__m68k__)
 	{
 		/*
-		 * One moveq, then dbra. .w index is enough after moveq.
+		 * One moveq, then 4× LUT + dbra. .w index is enough after moveq.
 		 * GCC's C loop reloads lut from the stack every sample (~15% CPU in profile).
 		 */
 		unsigned char const *s = src;
 		unsigned char *d = dst;
 		unsigned cnt = n;
 		unsigned idx;
+		unsigned rem;
 		__asm__ __volatile__(
 			"moveq #0,%[idx]\n\t"
+			"move.w %[cnt],%[rem]\n\t"
+			"lsr.w #2,%[cnt]\n\t"
+			"beq.s 1f\n\t"
 			"subq.w #1,%[cnt]\n\t"
 			"0:\n\t"
 			"move.b (%[src])+,%[idx]\n\t"
 			"move.b (%[lut],%[idx].w),(%[dst])+\n\t"
+			"move.b (%[src])+,%[idx]\n\t"
+			"move.b (%[lut],%[idx].w),(%[dst])+\n\t"
+			"move.b (%[src])+,%[idx]\n\t"
+			"move.b (%[lut],%[idx].w),(%[dst])+\n\t"
+			"move.b (%[src])+,%[idx]\n\t"
+			"move.b (%[lut],%[idx].w),(%[dst])+\n\t"
 			"dbra.w %[cnt],0b\n\t"
-			: [src] "+a"(s), [dst] "+a"(d), [cnt] "+d"(cnt), [idx] "=&d"(idx)
+			"1:\n\t"
+			"andi.w #3,%[rem]\n\t"
+			"beq.s 3f\n\t"
+			"subq.w #1,%[rem]\n\t"
+			"2:\n\t"
+			"move.b (%[src])+,%[idx]\n\t"
+			"move.b (%[lut],%[idx].w),(%[dst])+\n\t"
+			"dbra.w %[rem],2b\n\t"
+			"3:\n\t"
+			: [src] "+a"(s),
+			  [dst] "+a"(d),
+			  [cnt] "+d"(cnt),
+			  [idx] "=&d"(idx),
+			  [rem] "=&d"(rem)
 			: [lut] "a"(lut)
 			: "cc", "memory");
 		(void)s;

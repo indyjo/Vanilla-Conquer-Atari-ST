@@ -18,14 +18,21 @@ static bool s_active = false;
 static unsigned long s_hz200_start = 0;
 static int s_frame_start = 0;
 
-void StPlaybackTiming_Start(void)
+extern "C" ST_PLAYBACK_TIMING_HOOK void HatariProfileStart(void)
 {
+    /* Keep a real call frame for Hatari even if a caller is LTO'd. */
+    asm volatile("" ::: "memory");
     s_hz200_start = St_Read_Hz200();
     s_frame_start = Frame;
     s_active = true;
 }
 
-void StPlaybackTiming_EndAndPrint(void)
+void StPlaybackTiming_Start(void)
+{
+    HatariProfileStart();
+}
+
+extern "C" ST_PLAYBACK_TIMING_HOOK void HatariProfileEnd(void)
 {
     if (!s_active) {
         return;
@@ -65,6 +72,11 @@ void StPlaybackTiming_EndAndPrint(void)
 
     Set_Palette(GamePalette);
     WWMessageBox().Process(msg, TXT_OK);
+}
+
+void StPlaybackTiming_EndAndPrint(void)
+{
+    HatariProfileEnd();
 }
 
 #endif /* ATARI_ST */

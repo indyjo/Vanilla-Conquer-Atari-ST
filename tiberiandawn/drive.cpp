@@ -597,7 +597,7 @@ bool DriveClass::While_Moving(void)
     **	visibly move on the map, then process accordingly.
     ** Slow the unit down if he's carrying a flag.
     */
-    MPHType maxspeed = MPHType(min((int)(Class->MaxSpeed * House->GroundspeedBias), (int)MPH_LIGHT_SPEED));
+    MPHType maxspeed = MPHType(min((int)(House->GroundspeedBias * (int)Class->MaxSpeed), (int)MPH_LIGHT_SPEED));
     if (((UnitClass*)this)->Flagged != HOUSE_NONE) {
         actual = SpeedAccum + Fixed_To_Cardinal(maxspeed / 2, Speed);
     } else {
@@ -1321,7 +1321,7 @@ void DriveClass::AI(void)
         if ((Class->Speed == SPEED_FLOAT || Class->Speed == SPEED_HOVER || Class->Speed == SPEED_TRACK
              || (Class->Speed == SPEED_WHEEL && !Special.IsThreePoint))
             && PrimaryFacing.Is_Rotating()) {
-            if (PrimaryFacing.Rotation_Adjust((int)Class->ROT * House->GroundspeedBias)) {
+            if (PrimaryFacing.Rotation_Adjust((int)(House->GroundspeedBias * (int)Class->ROT))) {
                 Mark(MARK_CHANGE);
             }
             if (!IsRotating) {

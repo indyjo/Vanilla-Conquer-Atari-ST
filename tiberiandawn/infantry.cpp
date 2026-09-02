@@ -1500,7 +1500,8 @@ void InfantryClass::AI(void)
                 /*
                 **	Advance the infantry as far as it should go.
                 */
-                MPHType maxspeed = MPHType(min((unsigned)(Class->MaxSpeed * House->GroundspeedBias), MPH_LIGHT_SPEED));
+                MPHType maxspeed =
+                    MPHType(min((unsigned)(House->GroundspeedBias * (int)Class->MaxSpeed), MPH_LIGHT_SPEED));
                 Coord = Coord_Move(Coord, Direction(Head_To_Coord()), Fixed_To_Cardinal(maxspeed, movespeed));
             }
             Mark(MARK_DOWN);

@@ -1060,7 +1060,8 @@ HOST_CXX ?= c++
 HOST_CXXFLAGS ?= -O2 -Wall -Wextra
 HOST_TEST_SRCS = \
 	$(HOST_TEST_DIR)/main.cpp \
-	$(HOST_TEST_DIR)/test_snap_lepton_to_pixel_grid.cpp
+	$(HOST_TEST_DIR)/test_snap_lepton_to_pixel_grid.cpp \
+	$(HOST_TEST_DIR)/test_in_view.cpp
 HOST_TEST_EXE = $(HOST_TEST_OUTDIR)/host_tests
 
 $(HOST_TEST_OUTDIR):

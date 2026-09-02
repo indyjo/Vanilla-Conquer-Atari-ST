@@ -39,6 +39,10 @@
 #include "layer.h"
 #include "common/gadget.h" // For GadgetClass
 
+#ifdef ATARI_ST
+#include "ATARILIB/bitintrin.h"
+#endif
+
 #define ICON_PIXEL_W  24
 #define ICON_PIXEL_H  24
 #define ICON_LEPTON_W 256
@@ -201,11 +205,21 @@ public:
     {
         Flag_To_Redraw(false);
         IsToRedraw = true;
-        CellRedraw[cell] = true;
+#ifdef ATARI_ST
+        Bset_Bit_U16(CellRedraw, (unsigned short)cell);
+#else
+        unsigned n = (unsigned)cell;
+        CellRedraw[n >> 3] |= (unsigned char)(1u << (n & 7));
+#endif
     };
     bool Is_Cell_Flagged(CELL cell) const
     {
-        return CellRedraw.Is_True(cell);
+#ifdef ATARI_ST
+        return Btst_Bit_U16(CellRedraw, (unsigned short)cell) != 0;
+#else
+        unsigned n = (unsigned)cell;
+        return (CellRedraw[n >> 3] & (1u << (n & 7))) != 0;
+#endif
     };
 
 #ifdef ATARI_ST
@@ -361,10 +375,10 @@ private:
     void Redraw_Shadow_Rects(void);
 
     /*
-    **	This bit array is used to flag cells to be redrawn. If the icon needs to
-    **	be redrawn for a cell, then the corresponding flag will be true.
+    **	Packed redraw flags, one bit per map cell (MAP_CELL_TOTAL / 8 bytes).
     */
-    static BooleanVectorClass CellRedraw;
+    static unsigned char CellRedraw[MAP_CELL_TOTAL / 8];
+    static_assert((MAP_CELL_TOTAL % 8) == 0, "CellRedraw packed bits need MAP_CELL_TOTAL % 8 == 0");
 
     //
     // We need a way to bypass visible view checks when we are running in the context of GlyphX without using the

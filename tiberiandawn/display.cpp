@@ -466,9 +466,9 @@ void const* DisplayClass::ShadowShapes;
 unsigned char DisplayClass::ShadowTrans[(SHADOW_COL_COUNT + 1) * 256];
 
 /*
-** Bit array of cell redraw flags
+** Packed redraw flags (one bit per cell).
 */
-BooleanVectorClass DisplayClass::CellRedraw;
+unsigned char DisplayClass::CellRedraw[MAP_CELL_TOTAL / 8];
 
 /*
 ** The main button that intercepts user input to the map
@@ -564,11 +564,7 @@ void DisplayClass::One_Time(void)
 
     MapClass::One_Time();
 
-    /*
-    ** Init the CellRedraw bit array.  Do not do this in the constructor, since the
-    ** BooleanVector may not have been constructed yet.
-    */
-    CellRedraw.Resize(MAP_CELL_TOTAL);
+    memset(CellRedraw, 0, sizeof(CellRedraw));
 
     for (LayerType layer = LAYER_FIRST; layer < LAYER_COUNT; layer++) {
         Layer[layer].One_Time();
@@ -2843,7 +2839,7 @@ void DisplayClass::Draw_It(bool forced)
         **	and let the normal processing take care of the rest.
         */
         if (forced) {
-            CellRedraw.Set();
+            memset(CellRedraw, 0xFF, sizeof(CellRedraw));
         }
 
         ST_FRAME_BAR_MAP_PREP_END();
@@ -2909,7 +2905,7 @@ void DisplayClass::Draw_It(bool forced)
         /*
         **	Clear the redraw flags so that normal redraw flag setting can resume.
         */
-        CellRedraw.Reset();
+        memset(CellRedraw, 0, sizeof(CellRedraw));
         if (Debug_Coalesced_Clipped_Redraw) {
             for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
                 for (int index = 0; index < Layer[layer].Count(); index++) {
@@ -5561,13 +5557,22 @@ void DisplayClass::Repair_Mode_Control(int control)
  *=============================================================================================*/
 bool DisplayClass::In_View(register CELL cell)
 {
-    COORDINATE coord = Coord_Whole(Cell_Coord(cell));
-    COORDINATE tcoord = Coord_Whole(TacticalCoord);
+    /*
+    **	After Coord_Whole, the lepton compares are this cell-index test.
+    **	Keep it small so it stays inlined; do not pack COORDINATE on the miss path.
+    */
+    int const dx = Cell_X(cell) - Coord_XCell(TacticalCoord);
+    if (dx < 0)
+        return (false);
+    if (dx > ((TacLeptonWidth + 255) >> 8))
+        return (false);
 
-    if ((Coord_X(coord) - Coord_X(tcoord)) > TacLeptonWidth + 255)
+    int const dy = Cell_Y(cell) - Coord_YCell(TacticalCoord);
+    if (dy < 0)
         return (false);
-    if ((Coord_Y(coord) - Coord_Y(tcoord)) > TacLeptonHeight + 255)
+    if (dy > ((TacLeptonHeight + 255) >> 8))
         return (false);
+
     return (true);
 
 #ifdef OBSOLETE

@@ -44,4 +44,34 @@ static inline int Get_Bit(void const * array, int bit)
 	return (byte_array[byte_index] >> bit_index) & 1;
 }
 
+/*
+** Packed bit array: 68000 btst/bset with a word byte-offset.
+** Memory btst/bset use Dn modulo 8, so the full bit index can stay in Dn.
+** Caller must pass a live buffer and bit >= 0.
+*/
+static inline void Bset_Bit_U16(unsigned char* array, unsigned short bit)
+{
+	unsigned short byte_off;
+	__asm__ volatile("move.w %2,%0\n\t"
+	                 "lsr.w #3,%0\n\t"
+	                 "bset.b %2,(%1,%0.w)"
+	                 : "=&d"(byte_off)
+	                 : "a"(array), "d"(bit)
+	                 : "memory", "cc");
+}
+
+static inline int Btst_Bit_U16(unsigned char const* array, unsigned short bit)
+{
+	unsigned short byte_off;
+	unsigned char flagged;
+	__asm__ volatile("move.w %3,%1\n\t"
+	                 "lsr.w #3,%1\n\t"
+	                 "btst.b %3,(%2,%1.w)\n\t"
+	                 "sne.b %0"
+	                 : "=d"(flagged), "=&d"(byte_off)
+	                 : "a"(array), "d"(bit)
+	                 : "cc");
+	return flagged;
+}
+
 #endif /* ATARILIB_BITINTRIN_H */

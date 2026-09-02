@@ -373,7 +373,15 @@ void CellClass::Redraw_Objects(CELL cell, bool forced)
 {
 	Validate();
 
-	if (Map.In_View(cell) && (forced || !Map.Is_Cell_Flagged(cell))) {
+	/*
+	**	Already-flagged cells need no In_View work unless forced. The bit test is
+	**	cheap; In_View is not (packed Cell_Coord).
+	*/
+	if (!forced && Map.Is_Cell_Flagged(cell)) {
+		return;
+	}
+
+	if (Map.In_View(cell)) {
 
 		Map.Flag_Cell(cell);
 

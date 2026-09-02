@@ -101,6 +101,38 @@ static bool In_View_New(Cell cell, Coordinate tactical, int tac_w, int tac_h)
 	return true;
 }
 
+static void Tactical_Cell_Rect(Coordinate tactical, int tac_w, int tac_h, int* x0, int* y0, int* x1, int* y1)
+{
+	*x0 = Coord_XCell(tactical);
+	*y0 = Coord_YCell(tactical);
+	*x1 = *x0 + ((tac_w + 255) >> 8) + 1;
+	*y1 = *y0 + ((tac_h + 255) >> 8) + 1;
+	if (*x0 < 0) {
+		*x0 = 0;
+	}
+	if (*y0 < 0) {
+		*y0 = 0;
+	}
+	if (*x0 > MAP_W) {
+		*x0 = MAP_W;
+	}
+	if (*y0 > MAP_H) {
+		*y0 = MAP_H;
+	}
+	if (*x1 > MAP_W) {
+		*x1 = MAP_W;
+	}
+	if (*y1 > MAP_H) {
+		*y1 = MAP_H;
+	}
+	if (*x1 < *x0) {
+		*x1 = *x0;
+	}
+	if (*y1 < *y0) {
+		*y1 = *y0;
+	}
+}
+
 static int Fail(Cell cell, Coordinate tac, int w, int h, char const* why)
 {
 	std::printf("FAIL %s cell=%d (%d,%d) tac_cell=(%d,%d) lep=(%d,%d) size=%d x %d old=%d new=%d\n",
@@ -133,14 +165,18 @@ static int Compare_One(Coordinate tac, int w, int h, unsigned long* checked, uns
 			if (dx >= 0 && dy >= 0) {
 				if (old_v != new_v)
 					return Fail(cell, tac, w, h, "mismatch with dx>=0 and dy>=0");
-				continue;
+			} else {
+				if (new_v)
+					return Fail(cell, tac, w, h, "new accepted dx<0 or dy<0");
+				if (old_v != new_v)
+					++*left_top_diff;
 			}
 
-			/* New rejects left/above the camera; original signed lepton subtract does not. */
-			if (new_v)
-				return Fail(cell, tac, w, h, "new accepted dx<0 or dy<0");
-			if (old_v != new_v)
-				++*left_top_diff;
+			int rx0, ry0, rx1, ry1;
+			Tactical_Cell_Rect(tac, w, h, &rx0, &ry0, &rx1, &ry1);
+			bool const in_rect = (x >= rx0 && x < rx1 && y >= ry0 && y < ry1);
+			if (in_rect != new_v)
+				return Fail(cell, tac, w, h, "Tactical_Cell_Rect disagrees with In_View");
 		}
 	}
 	return 0;
@@ -177,7 +213,6 @@ int test_in_view(void)
 		}
 	}
 
-	/* Dense cameras for one typical ST view size (cell-aligned and mid-lepton). */
 	int const st_w = 13 * 256;
 	int const st_h = 8 * 256;
 	for (int ty = 0; ty < MAP_H; ++ty) {

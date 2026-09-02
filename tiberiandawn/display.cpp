@@ -3068,16 +3068,13 @@ static void ST_Draw_Cell_Shroud(CELL cell, CellClass* cellptr, int xpixel, int y
 static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	unsigned char* shadow_trans)
 {
-	int const x_start = -Coord_XLepton(Map.TacticalCoord);
-	int const y_start = -Coord_YLepton(Map.TacticalCoord);
-	int cols = 0;
-	int rows = 0;
-	for (int x = x_start; x <= Map.TacLeptonWidth; x += CELL_LEPTON_W) {
-		cols++;
-	}
-	for (int y = y_start; y <= Map.TacLeptonHeight; y += CELL_LEPTON_H) {
-		rows++;
-	}
+	int origin_cx = 0;
+	int origin_cy = 0;
+	int origin_x1 = 0;
+	int origin_y1 = 0;
+	Map.Tactical_Cell_Rect(origin_cx, origin_cy, origin_x1, origin_y1);
+	int cols = origin_x1 - origin_cx;
+	int rows = origin_y1 - origin_cy;
 	if (cols > REDRAW_RECT_VIEW_W_MAX) {
 		cols = REDRAW_RECT_VIEW_W_MAX;
 	}
@@ -3088,10 +3085,7 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 		return;
 	}
 
-	COORDINATE const tl = Coord_Add(Map.TacticalCoord, XY_Coord(x_start, y_start));
-	CELL const cell00 = Coord_Cell(tl);
-	int const origin_cx = Cell_X(cell00);
-	int const origin_cy = Cell_Y(cell00);
+	CELL const cell00 = XY_Cell(origin_cx, origin_cy);
 	int origin_px = 0;
 	int origin_py = 0;
 	Map.Coord_To_Pixel(Coord_Whole(Cell_Coord(cell00)), origin_px, origin_py);
@@ -3100,14 +3094,18 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 	memset(remain, 0, sizeof(remain));
 
 	int dirty_n = 0;
+	CELL cell = cell00;
+	CELL const stride = MAP_CELL_W - cols;
 	for (int vr = 0; vr < rows; vr++) {
+		unsigned char* const row = remain + vr * cols;
 		for (int vc = 0; vc < cols; vc++) {
-			CELL const cell = XY_Cell(origin_cx + vc, origin_cy + vr);
-			if (Map.In_View(cell) && Map.Is_Cell_Flagged(cell)) {
-				remain[vr * cols + vc] = 1;
+			if (Map.Is_Cell_Flagged(cell)) {
+				row[vc] = 1;
 				dirty_n++;
 			}
+			cell++;
 		}
+		cell += stride;
 	}
 	if (dirty_n == 0) {
 #ifdef ATARI_ST
@@ -3270,12 +3268,10 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 #endif
 		Redraw_Rect const& rc = rects[ri];
 
+		CELL cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);
+		CELL const stride = MAP_CELL_W - (rc.c1 - rc.c0);
 		for (int vr = rc.r0; vr < rc.r1; vr++) {
 			for (int vc = rc.c0; vc < rc.c1; vc++) {
-				CELL const cell = XY_Cell(origin_cx + vc, origin_cy + vr);
-				if (!Map.In_View(cell)) {
-					continue;
-				}
 				int const xpixel = origin_px + vc * CELL_PIXEL_W;
 				int const ypixel = origin_py + vr * CELL_PIXEL_H;
 				CellClass* cellptr = &Map[cell];
@@ -3284,7 +3280,9 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 					&& !Map.Tactical_Cell_Hides_Objects_For_Local_Player(cell, cellptr)) {
 					cellptr->Draw_It(xpixel, ypixel, draw_flags, cell);
 				}
+				cell++;
 			}
+			cell += stride;
 		}
 
 		WindowList[WINDOW_TACTICAL][WINDOWX] = sx + rc.vx0;
@@ -3310,16 +3308,15 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 		WindowList[WINDOW_TACTICAL][WINDOWWIDTH] = sw;
 		WindowList[WINDOW_TACTICAL][WINDOWHEIGHT] = sh;
 
+		cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);
 		for (int vr = rc.r0; vr < rc.r1; vr++) {
 			for (int vc = rc.c0; vc < rc.c1; vc++) {
-				CELL const cell = XY_Cell(origin_cx + vc, origin_cy + vr);
-				if (!Map.In_View(cell)) {
-					continue;
-				}
 				int const xpixel = origin_px + vc * CELL_PIXEL_W;
 				int const ypixel = origin_py + vr * CELL_PIXEL_H;
 				ST_Draw_Cell_Shroud(cell, &Map[cell], xpixel, ypixel, shadow_shapes, shadow_trans);
+				cell++;
 			}
+			cell += stride;
 		}
 	}
 }
@@ -5539,6 +5536,44 @@ void DisplayClass::Repair_Mode_Control(int control)
 }
 
 /***********************************************************************************************
+ * DisplayClass::Tactical_Cell_Rect -- Half-open cell rectangle matching In_View.              *
+ *                                                                                             *
+ *    [x0,x1) × [y0,y1) in map cell coordinates. Same dx/dy limits as In_View, then clipped    *
+ *    to the 64×64 cell array.                                                                 *
+ *=============================================================================================*/
+void DisplayClass::Tactical_Cell_Rect(int& x0, int& y0, int& x1, int& y1) const
+{
+    x0 = Coord_XCell(TacticalCoord);
+    y0 = Coord_YCell(TacticalCoord);
+    x1 = x0 + ((TacLeptonWidth + 255) >> 8) + 1;
+    y1 = y0 + ((TacLeptonHeight + 255) >> 8) + 1;
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x0 > MAP_CELL_W) {
+        x0 = MAP_CELL_W;
+    }
+    if (y0 > MAP_CELL_H) {
+        y0 = MAP_CELL_H;
+    }
+    if (x1 > MAP_CELL_W) {
+        x1 = MAP_CELL_W;
+    }
+    if (y1 > MAP_CELL_H) {
+        y1 = MAP_CELL_H;
+    }
+    if (x1 < x0) {
+        x1 = x0;
+    }
+    if (y1 < y0) {
+        y1 = y0;
+    }
+}
+
+/***********************************************************************************************
  * DisplayClass::In_View -- Determines if cell is visible on screen.                           *
  *                                                                                             *
  *    Use this routine to determine if the specified cell is visible on                        *
@@ -5560,6 +5595,7 @@ bool DisplayClass::In_View(register CELL cell)
     /*
     **	After Coord_Whole, the lepton compares are this cell-index test.
     **	Keep it small so it stays inlined; do not pack COORDINATE on the miss path.
+    **	Same bounds as Tactical_Cell_Rect().
     */
     int const dx = Cell_X(cell) - Coord_XCell(TacticalCoord);
     if (dx < 0)

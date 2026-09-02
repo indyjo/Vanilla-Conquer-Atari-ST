@@ -186,6 +186,7 @@ public:
     void Submit(ObjectClass const* object, LayerType layer);
     CELL Calculated_Cell(SourceType dir, HousesType house);
     bool In_View(register CELL cell);
+    void Tactical_Cell_Rect(int& x0, int& y0, int& x1, int& y1) const;
     bool Passes_Proximity_Check(ObjectTypeClass const* object);
 #ifdef USE_RA_AI
     bool Passes_Proximity_Check(ObjectTypeClass const* object, HousesType house, short const* list, CELL trycell) const;

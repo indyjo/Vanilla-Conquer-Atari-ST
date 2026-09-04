@@ -66,6 +66,13 @@ Existing pipeline (see also `tiberiandawn/atari.md`):
   - **Follow-on (not only paltool):** extend `C2P_WeightSet` or sidecar format if a single `.W16` must carry multiple partitions; runtime hook in WSA/C2P to select partition by palette index or blit context (mapsel progress animation + interactive map selection are the acceptance tests).
   - **Reference assets:** `GREYERTH.WSA`, `E-BWTOCL.WSA`, `EARTH_E.WSA` / `EARTH_A.WSA`, `EUROPE.WSA`, `MAP_LOCL.PAL`, `MAP_GRY2.PAL`, `MAP_PROG.PAL` interpolation tables.
 
+## Pathfinding
+
+- [ ] **`Find_Path` treats a stub as success, so incomplete polite paths beat complete rude ones**
+  - `FootClass::Find_Path` never returns `NULL` when the search stops short of `dest`. The 1991 comment promised `IMPOSSIBLE_MOVES`; the 1995 `PathType*` path still pokes `END`, runs `Optimize_Moves`, and returns the command list. Failed wall-follow (impassable dest, full-circle, overlap) leaves `startcell != dest` with a short LOS prefix and a tiny `Cost` (often 1).
+  - `Basic_Path` does an aggressive (`maxtype`, AI: `MOVE_DESTROYABLE`) search first, then a polite `MOVE_CLOAK` search, and replaces the rude result when `path && path->Cost && path->Cost < max(rudeCost + rudeCost/2, 3)`. A cloak **stub** with `Cost == 1` therefore wins over a complete destroyable path (e.g. rude `Cost` 13). Units inch along the stub instead of taking the path that actually reaches the goal; later threshholds are skipped once cloak “succeeds.”
+  - Vanilla TD/RA behave the same; NOD1 `record2.bin` playback will desync if this is fixed. Stashed WIP: return `NULL` when `startcell != dest` (before Optimize). Primary files: `tiberiandawn/findpath.cpp`, `tiberiandawn/foot.cpp` (`Basic_Path`).
+
 ## Low Priority Cleanup
 
 - [ ] Review legacy `PG_TO_FIX` / old ST marker comments and convert still-relevant ones into explicit TODOs or remove obsolete ones.

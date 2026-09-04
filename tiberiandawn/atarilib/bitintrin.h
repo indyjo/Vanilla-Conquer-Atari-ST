@@ -60,6 +60,17 @@ static inline void Bset_Bit_U16(unsigned char* array, unsigned short bit)
 	                 : "memory", "cc");
 }
 
+static inline void Bclr_Bit_U16(unsigned char* array, unsigned short bit)
+{
+	unsigned short byte_off;
+	__asm__ volatile("move.w %2,%0\n\t"
+	                 "lsr.w #3,%0\n\t"
+	                 "bclr.b %2,(%1,%0.w)"
+	                 : "=&d"(byte_off)
+	                 : "a"(array), "d"(bit)
+	                 : "memory", "cc");
+}
+
 static inline int Btst_Bit_U16(unsigned char const* array, unsigned short bit)
 {
 	unsigned short byte_off;

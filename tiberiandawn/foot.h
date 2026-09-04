@@ -42,6 +42,7 @@
 
 class UnitClass;
 class BuildingClass;
+class EdgeFollowSearch;
 
 /****************************************************************************
 **	Movable objects are handled by this class definition. Moveable objects
@@ -49,6 +50,8 @@ class BuildingClass;
 */
 class FootClass : public TechnoClass
 {
+    friend class EdgeFollowSearch;
+
 public:
     /*
     **	If this unit has officially joined the team's group, then this flag is
@@ -302,6 +305,15 @@ private:
                      int threat_stage,
                      int max_cells,
                      MoveType threshhold);
+    bool Follow_Edge_Pair(CELL start,
+                          CELL target,
+                          PathType* path,
+                          FacingType olddir,
+                          int threat,
+                          int threat_stage,
+                          int max_cells,
+                          int copy_maxlen,
+                          MoveType threshhold);
     bool Register_Cell(PathType* path, CELL cell, FacingType dir, int cost, MoveType threshhold);
     bool Unravel_Loop(PathType* path, CELL& cell, FacingType& dir, int sx, int sy, int dx, int dy, MoveType threshhold);
 

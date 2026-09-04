@@ -42,6 +42,7 @@
  *   Find_Path -- Find a path from point a to point b.                                         *
  *   Find_Path_Cell -- Finds a given cell on a specified path                                  *
  *   Follow_Edge -- Follow an edge to get around an impassable spot.                           *
+ *   Follow_Edge_Pair -- CLOCK and COUNTERCLOCK Follow_Edge in lockstep.                       *
  *   FootClass::Unravel_Loop -- Unravels a loop in the movement path                           *
  *   Get_New_XY -- Get the new x,y based on current position and direction.                    *
  *   Optimize_Moves -- Optimize the move list.                                                 *
@@ -146,13 +147,128 @@ inline static FacingType Next_Direction(FacingType facing, FacingType dir)
 /* Define a couple of variables which are private to the module they are   */
 /*      declared in.                                                       */
 /*=========================================================================*/
-static unsigned int MainOverlap[MAP_CELL_TOTAL / 32];  // overlap list for the main path
-static unsigned int LeftOverlap[MAP_CELL_TOTAL / 32];  // overlap list for the left path
-static unsigned int RightOverlap[MAP_CELL_TOTAL / 32]; // overlap list for the right path
+static unsigned int MainOverlap[MAP_CELL_TOTAL / 32]; // overlap list for the main path
 
 // static CELL MoveMask = 0;
 static CELL DestLocation;
 static CELL StartLocation;
+
+/***************************************************************************
+ * EdgeFollowSearch -- Interruptible Follow_Edge for lockstep L/R search   *
+ *                                                                         *
+ * Same algorithm as FootClass::Follow_Edge, split so Find_Path can run    *
+ * CLOCK and COUNTERCLOCK one Follow_Edge iteration at a time.             *
+ *                                                                         *
+ * INPUT:   Init() arguments match Follow_Edge, plus a path prefix to copy.*
+ *          Step() runs one outer Follow_Edge iteration.                   *
+ *                                                                         *
+ * OUTPUT:  Status Running, Found (reached target), or Failed.             *
+ *                                                                         *
+ * WARNINGS: Each instance owns command and overlap buffers. Two file-     *
+ *           static instances are used so they are not on Find_Path's stack.*
+ *=========================================================================*/
+class EdgeFollowSearch
+{
+public:
+    enum StatusType : unsigned char
+    {
+        Running,
+        Found,
+        Failed
+    };
+
+    /*
+    **	Copy the straight-line prefix, then set up the first peek around
+    **	the obstacle (same as the top of Follow_Edge).
+    */
+    void Init(FootClass* unit,
+              CELL start,
+              CELL target,
+              FacingType search,
+              FacingType olddir,
+              int threat,
+              int threat_stage,
+              int max_cells,
+              MoveType threshhold,
+              PathType const* prefix);
+
+    /*
+    **	One outer Follow_Edge iteration: scan neighbours in search
+    **	direction, Register_Cell / Unravel_Loop, then target / full-circle /
+    **	cellcount tests.
+    */
+    void Step();
+
+    /*
+    **	A finished path of this Length already exists. This search may still
+    **	tie (Length == cap) or win (shorter after unravel), but it cannot keep
+    **	growing past cap unless a step shortens the list.
+    */
+    void CapMaxCells(int cap);
+
+    StatusType Status() const
+    {
+        return status;
+    }
+    bool Is_Running() const
+    {
+        return status == Running;
+    }
+    bool Is_Found() const
+    {
+        return status == Found;
+    }
+    PathType const* Path() const
+    {
+        return &path;
+    }
+    int Length() const
+    {
+        return path.Length;
+    }
+
+private:
+    void Fail();
+
+    FootClass* unit; // Object whose Passable_Cell / Register_Cell we use.
+    PathType path;   // Command/Overlap point at the arrays below.
+
+    /*
+    **	Hot state first so 68000 d16(An) displacements stay small. Mint GCC
+    **	uses 32-bit int; shorts here are one bus word instead of two.
+    */
+    FacingType search;   // CLOCK or COUNTERCLOCK.
+    FacingType olddir;   // Facing the impassable from the current cell.
+    FacingType newdir;   // Facing before the surrounding-cell check.
+    FacingType firstdir; // Facing at the first recorded edge cell (loop detect).
+    MoveType threshhold;
+    StatusType status;
+    bool online;   // Still on the start-to-target line?
+    bool forceout; // Target seen but not enterable from this facing.
+
+    CELL start;     // Cell we head from.
+    CELL target;    // Passable cell on the far side of the obstacle.
+    CELL oldcell;   // Current cell.
+    CELL newcell;   // Tentative next cell.
+    CELL firstcell; // First recorded edge cell (loop detect).
+
+    short cost; // Working enter-cell cost (Passable_Cell is 0..10).
+    short startx;
+    short starty;
+    short targetx;
+    short targety;
+    short oldval;        // Last Point_Relative_To_Line sign (diagonal cross check).
+    short cellcount;     // Steps along the edge; fail at MAX_PATH_EDGE_FOLLOW.
+    short max_cells;     // Stop when path.Length reaches this (Follow_Edge max_cells).
+    short threat_stage;
+    int threat;          // -1, or house threat; kept 32-bit for Passable_Cell.
+
+    FacingType commands[MAX_MLIST_SIZE + 2];   // Owned move list (was moves_left/right).
+    unsigned int overlap[MAP_CELL_TOTAL / 32]; // Cells already on this candidate path.
+};
+
+static EdgeFollowSearch EdgeSearchLeft;  // COUNTERCLOCK
+static EdgeFollowSearch EdgeSearchRight; // CLOCK
 
 /***************************************************************************
  * Point_Relative_To_Line -- Relation between a point and a line           *
@@ -188,7 +304,22 @@ static CELL StartLocation;
  *=========================================================================*/
 int Point_Relative_To_Line(int x, int z, int x1, int z1, int x2, int z2)
 {
-    return (((x - x2) * (z1 - z2)) - ((z - z2) * (x1 - x2)));
+    /*
+    **	Cell coordinates fit in 16 bits (map is 64 or 128 on a side). 16x16
+    **	signed multiply is native on 68000 (muls.w); 32-bit int multiply is
+    **	a helper call. Only the sign of the result is used.
+    */
+    int a = (short)(x - x2);
+    int b = (short)(z1 - z2);
+    int c = (short)(z - z2);
+    int d = (short)(x1 - x2);
+#if defined(__m68k__) && !defined(__mcoldfire__)
+    __asm__("muls.w %1,%0" : "+d"(a) : "d"(b));
+    __asm__("muls.w %1,%0" : "+d"(c) : "d"(d));
+    return (a - c);
+#else
+    return ((a * b) - (c * d));
+#endif
 }
 
 /***************************************************************************
@@ -494,6 +625,377 @@ bool FootClass::Register_Cell(PathType* path, CELL cell, FacingType dir, int cos
 }
 #endif
 
+void EdgeFollowSearch::Init(FootClass* unit_in,
+                            CELL start_in,
+                            CELL target_in,
+                            FacingType search_in,
+                            FacingType olddir_in,
+                            int threat_in,
+                            int threat_stage_in,
+                            int max_cells_in,
+                            MoveType threshhold_in,
+                            PathType const* prefix)
+{
+    unit = unit_in;
+    search = search_in;
+    olddir = olddir_in;
+    start = start_in;
+    target = target_in;
+    threat = threat_in;
+    threat_stage = (short)threat_stage_in;
+    max_cells = (short)max_cells_in;
+    threshhold = threshhold_in;
+    status = Running;
+    cost = 0;
+    online = true;
+    oldval = 0;
+    cellcount = 0;
+    forceout = false;
+    firstdir = (FacingType)-1;
+    firstcell = -1;
+    startx = Cell_X(start);
+    starty = Cell_Y(start);
+    targetx = Cell_X(target);
+    targety = Cell_Y(target);
+
+    /*
+    **	Own copies of the command list and overlap bitset, starting from the
+    **	straight-line path Find_Path has built so far.
+    */
+    path.Command = commands;
+    path.Overlap = overlap;
+    path.Start = prefix->Start;
+    path.Cost = prefix->Cost;
+    path.Length = prefix->Length;
+    path.LastOverlap = -1;
+    path.LastFixup = -1;
+    if (prefix->Length > 0) {
+        memcpy(commands, prefix->Command, prefix->Length);
+    }
+    memcpy(overlap, prefix->Overlap, sizeof(overlap));
+
+    /*
+    **	First peek around the obstacle in the search direction.
+    */
+    newdir = Next_Direction(olddir, search);
+    oldcell = start;
+    newcell = Adjacent_Cell(oldcell, newdir);
+}
+
+void EdgeFollowSearch::Fail()
+{
+    status = Failed;
+}
+
+void EdgeFollowSearch::CapMaxCells(int cap)
+{
+    /*
+    **	Follow_Edge stops when Length >= max_cells, so max_cells = cap+1
+    **	still allows a finished list of length cap (needed for CLOCK ties).
+    **	Do not Fail here: Length is not monotonic (Register_Cell / Unravel_Loop
+    **	can shrink it), and we may already be sitting at or past cap.
+    */
+    if (status != Running) {
+        return;
+    }
+    int const limit = cap + 1;
+    if (limit < max_cells) {
+        max_cells = (short)limit;
+    }
+}
+
+void EdgeFollowSearch::Step()
+{
+    if (status != Running) {
+        return;
+    }
+
+    /*
+    **	One Follow_Edge iteration. If Length is already at max_cells, still
+    **	take the step so overlap/unravel can shorten the list; Fail only if
+    **	this iteration does not shrink it.
+    */
+    int const len_before = path.Length;
+        /*
+        **	Look in all the adjacent cells to determine a passable one that
+        **	most closely matches the desired direction (working in the specified
+        **	direction).
+        */
+        newdir = olddir;
+        for (;;) {
+            bool forcefail = false;
+
+            /*
+            **	Rotate 45/90 degrees in desired direction.
+            */
+            newdir = Next_Direction(newdir, search);
+
+            /*
+            **	If facing a diagonal we must check the next 90 degree location
+            **	to make sure that we don't walk right by the destination. This
+            **	will happen if the destination it is at the corner edge of an
+            **	impassable that we are moving around.
+            */
+            if (newdir & FACING_NE) {
+                CELL checkcell = Adjacent_Cell(oldcell, Next_Direction(newdir, search));
+
+                if (checkcell == target) {
+                    /*
+                    **	This only works if in fact, it is possible to move to the
+                    **	cell from the current location.
+                    */
+                    cost = unit->Passable_Cell(checkcell, Next_Direction(newdir, search), threat, threshhold);
+                    if (cost) {
+                        Draw_Cell_Point(checkcell, true, threat_stage);
+
+                        /*
+                        **	YES! The destination is at the corner of an impassable, so
+                        **	set the direction to point directly at it and then the
+                        **	scanning will terminate later.
+                        */
+                        newdir = Next_Direction(newdir, search);
+                        newcell = Adjacent_Cell(oldcell, newdir);
+                        break;
+                    } else {
+                        Draw_Cell_Point(checkcell, false, threat_stage);
+                    }
+                }
+
+                /*
+                **	Perform special diagonal check. If the edge follower would cross the
+                **	diagonal or fall on the diagonal line from the source, then consider
+                **	that cell impassible. Otherwise, the find path algorithm will fail
+                **	when there are two impassible locations located on a diagonal
+                **	that is lined up between the source and destination location.
+                */
+                checkcell = Adjacent_Cell(oldcell, newdir);
+
+                int checkx = Cell_X(checkcell);
+                int checky = Cell_Y(checkcell);
+                int checkval = Point_Relative_To_Line(checkx, checky, startx, starty, targetx, targety);
+                if (checkval && !online) {
+                    forcefail = ((checkval ^ oldval) < 0);
+                } else {
+                    forcefail = false;
+                }
+                /*
+                ** The only exception to the above is when we are directly backtracking
+                ** because we could be trying to escape from a culdesack!
+                */
+                if (forcefail && path.Length > 0 && (FacingType)(newdir ^ 4) == path.Command[path.Length - 1]) {
+                    forcefail = false;
+                }
+            }
+
+            /*
+            **	If we have just checked the same heading we started with,
+            **	we are surrounded by impassable characters and we exit.
+            */
+            if (newdir == olddir) {
+                Fail();
+                return;
+            }
+
+            /*
+            **	Get the new cell.
+            */
+            newcell = Adjacent_Cell(oldcell, newdir);
+
+            /*
+            **	If we found a passable position, this is where we should move.
+            */
+            if (!forcefail && ((cost = unit->Passable_Cell(newcell, newdir, threat, threshhold)) != 0)) {
+                Draw_Cell_Point(newcell, true, threat_stage);
+                break;
+            } else {
+                Draw_Cell_Point(newcell, false, threat_stage, (forcefail) ? BROWN : 0);
+                if (newcell == target) {
+                    forceout = true;
+                    break;
+                }
+            }
+        }
+
+        /*
+        **	Record the direction.
+        */
+        if (!forceout) {
+            /*
+            ** Mark the cell because this is where we need to be.  If register
+            ** cell fails then the list has been shortened and we need to adjust
+            ** the new direction.
+            */
+            if (!unit->Register_Cell(&path, newcell, newdir, cost, threshhold)) {
+                /*
+                ** The only reason we could not register a cell is that we are in
+                ** a looping situation.  So we need to try and unravel the loop if
+                ** we can.
+                */
+                if (!unit->Unravel_Loop(&path, newcell, newdir, startx, starty, targetx, targety, threshhold)) {
+                    Fail();
+                    return;
+                }
+                /*
+                ** Since we need to eliminate a diagonal we must pretend that upon
+                ** attaining this square, we were moving turned farther in the
+                ** search direction than we really were.
+                */
+                newdir = Next_Direction(newdir, (FacingType)(search * 2));
+            }
+            /*
+            ** Find out which side of the line this cell is on.  If it is on
+            ** a side, then store off that side.
+            */
+            int newx = Cell_X(newcell);
+            int newy = Cell_Y(newcell);
+            int val = Point_Relative_To_Line(newx, newy, startx, starty, targetx, targety);
+            if (val) {
+                oldval = val;
+                online = false;
+            } else {
+                online = true;
+            }
+            cellcount++;
+            if (cellcount == MAX_PATH_EDGE_FOLLOW) {
+                Fail();
+                return;
+            }
+        }
+
+        /*
+        **	If we have found the target spot, we are done.
+        */
+        if (newcell == target) {
+            path.Command[path.Length] = END;
+            status = Found;
+            return;
+        }
+
+        /*
+        **	If we make a full circle back to our original spot, get out.
+        */
+        if (newcell == firstcell && newdir == firstdir) {
+            Fail();
+            return;
+        }
+
+        if (firstcell == -1) {
+            firstcell = newcell;
+            firstdir = newdir;
+        }
+
+        /*
+        **	Because we moved, our facing is now incorrect. We want to face toward
+        **	the impassable edge we are following (well, not actually toward, but
+        **	a little past so that we can turn corners). We have to turn 45/90 degrees
+        **	more than expected in anticipation of the pending 45/90 degree turn at
+        **	the start of this loop.
+        */
+        olddir = Next_Direction(newdir, (FacingType)(-(int)search * 3));
+        oldcell = newcell;
+
+        if (status == Running && path.Length >= max_cells && path.Length >= len_before) {
+            Fail();
+        }
+}
+
+static EdgeFollowSearch* Edge_Pick_Winner(EdgeFollowSearch& left, EdgeFollowSearch& right)
+{
+    bool const lf = left.Is_Found();
+    bool const rf = right.Is_Found();
+    if (!lf && !rf) {
+        return 0;
+    }
+    if (!rf) {
+        return &left;
+    }
+    if (!lf) {
+        return &right;
+    }
+    if (left.Path()->Length < right.Path()->Length) {
+        return &left;
+    }
+    return &right;
+}
+
+static void Edge_Cap_Loser(EdgeFollowSearch& left, EdgeFollowSearch& right)
+{
+    EdgeFollowSearch* const winner = Edge_Pick_Winner(left, right);
+    if (!winner) {
+        return;
+    }
+    int const cap = winner->Path()->Length;
+    if (&left != winner) {
+        left.CapMaxCells(cap);
+    }
+    if (&right != winner) {
+        right.CapMaxCells(cap);
+    }
+}
+
+/***********************************************************************************************
+ * Follow_Edge_Pair -- CLOCK and COUNTERCLOCK edge follow in lockstep.                         *
+ *                                                                                             *
+ *    Same pick rule as the old sequential Follow_Edge pair: shorter Length wins,              *
+ *    ties keep CLOCK. Work is given to the search with the smaller Length so far.             *
+ *=============================================================================================*/
+bool FootClass::Follow_Edge_Pair(CELL start,
+                                 CELL target,
+                                 PathType* path,
+                                 FacingType olddir,
+                                 int threat,
+                                 int threat_stage,
+                                 int max_cells,
+                                 int copy_maxlen,
+                                 MoveType threshhold)
+{
+    /*
+    **	Always expand the still-running search whose command list is shortest
+    **	(COUNTERCLOCK / left on a Length tie), one Follow_Edge iteration at a
+    **	time. When one Finds, cap the others at that Length so they may still
+    **	tie or unravel shorter, but cannot keep growing a longer route. Final
+    **	pick: shorter Length wins; equal length keeps CLOCK.
+    */
+    EdgeSearchLeft.Init(this, start, target, COUNTERCLOCK, olddir, threat, threat_stage, max_cells, threshhold, path);
+    EdgeSearchRight.Init(this, start, target, CLOCK, olddir, threat, threat_stage, max_cells, threshhold, path);
+
+    while (EdgeSearchLeft.Is_Running() || EdgeSearchRight.Is_Running()) {
+        EdgeFollowSearch* next;
+
+        if (EdgeSearchLeft.Is_Running() && EdgeSearchRight.Is_Running()) {
+            if (EdgeSearchLeft.Length() <= EdgeSearchRight.Length()) {
+                next = &EdgeSearchLeft;
+            } else {
+                next = &EdgeSearchRight;
+            }
+        } else if (EdgeSearchLeft.Is_Running()) {
+            next = &EdgeSearchLeft;
+        } else {
+            next = &EdgeSearchRight;
+        }
+
+        next->Step();
+        Edge_Cap_Loser(EdgeSearchLeft, EdgeSearchRight);
+    }
+
+    EdgeFollowSearch* const winner = Edge_Pick_Winner(EdgeSearchLeft, EdgeSearchRight);
+    if (!winner) {
+        return false;
+    }
+
+    int len = winner->Path()->Length;
+    len = MIN(len, copy_maxlen);
+    if (len > 0) {
+        memcpy(&path->Overlap[0], &winner->Path()->Overlap[0], sizeof(MainOverlap));
+        memcpy(&path->Command[0], &winner->Path()->Command[0], len);
+        path->Length = len;
+        path->Cost = winner->Path()->Cost;
+        path->LastOverlap = -1;
+        path->LastFixup = -1;
+    }
+    return (len > 0);
+}
+
 /***********************************************************************************************
  * Find_Path -- Find a path from point a to point b.                                           *
  *                                                                                             *
@@ -524,13 +1026,8 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
     bool left = false, // Was leftward path legal?
         right = false; // Was rightward path legal?
 
-    int len;                                   // Length of detour command list.
     int unit_threat;                           // Calculated unit threat rating
     int cost;                                  // Cost to enter the square
-    FacingType moves_left[MAX_MLIST_SIZE + 2], // Counterclockwise move list.
-        moves_right[MAX_MLIST_SIZE + 2];       // Clockwise move list.
-    PathType pleft, pright;                    // Path control structures.
-    PathType* which;                           // Which path to actually use.
     int threat = 0;                            //
     int threat_stage = 0;                      // These weren't initialized. ST - 1/8/2019 12:03PM
 
@@ -717,28 +1214,18 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
                 **	the edge of the blocking object in both CLOCKwise and
                 **	COUNTERCLOCKwise fashions.
                 */
-                int follow_len = maxlen + (maxlen >> 1);
-
                 Debug_Draw_Map("Follow left edge", startcell, next, true);
-                Mem_Copy(&path, &pleft, sizeof(PathType));
-                pleft.Command = &moves_left[0];
-                pleft.Overlap = LeftOverlap;
-                Mem_Copy(path.Command, pleft.Command, path.Length);
-                Mem_Copy(path.Overlap, pleft.Overlap, sizeof(LeftOverlap));
-// MBL 09.30.2019: We hit a runtime bounds crash where END (-1 / 0xFF) was being poked into +1 just past the end of the
-// moves_right[] array; The FacingType moves_left[] and moves_right[] arrays already have MAX_MLIST_SIZE+2 as their
-// size, which may have been a previous attempted fix; We are now passing MAX_MLIST_SIZE, since the sizeof calculations
-// included the +2 buffering;
-#if 0
-				left = Follow_Edge(startcell, next, &pleft, COUNTERCLOCK, direction, threat, threat_stage, sizeof(moves_left), threshhold);
-//				left = Follow_Edge(startcell, next, &pleft, COUNTERCLOCK, direction, threat, threat_stage, follow_len, threshhold);
-#endif
-                left = Follow_Edge(
-                    startcell, next, &pleft, COUNTERCLOCK, direction, threat, threat_stage, MAX_MLIST_SIZE, threshhold);
-
-                if (left) {
-                    follow_len = MIN(maxlen, pleft.Length + (pleft.Length >> 1));
-                }
+                bool const found_edge = Follow_Edge_Pair(startcell,
+                                                         next,
+                                                         &path,
+                                                         direction,
+                                                         threat,
+                                                         threat_stage,
+                                                         MAX_MLIST_SIZE,
+                                                         maxlen,
+                                                         threshhold);
+                left = EdgeSearchLeft.Is_Found();
+                right = EdgeSearchRight.Is_Found();
 
                 /*
                 ** If we are in debug mode then let us know how well our left path
@@ -748,28 +1235,13 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
                     Fancy_Text_Print("   Left", 0, 92, WHITE, BLACK, TPF_6POINT);
                     Fancy_Text_Print("Total Steps", 0, 100, WHITE, BLACK, TPF_6POINT);
                     if (left) {
-                        Fancy_Text_Print("    %d", 0, 108, WHITE, BLACK, TPF_6POINT, pleft.Length);
+                        Fancy_Text_Print("    %d", 0, 108, WHITE, BLACK, TPF_6POINT, EdgeSearchLeft.Path()->Length);
                     } else {
                         Fancy_Text_Print("   FAIL", 0, 108, WHITE, BLACK, TPF_6POINT);
                     }
                 }
 
                 Debug_Draw_Map("Follow right edge", startcell, next, true);
-                Mem_Copy(&path, &pright, sizeof(PathType));
-                pright.Command = &moves_right[0];
-                pright.Overlap = RightOverlap;
-                Mem_Copy(path.Command, pright.Command, path.Length);
-                Mem_Copy(path.Overlap, pright.Overlap, sizeof(RightOverlap));
-// MBL 09.30.2019: We hit a runtime bounds crash where END (-1 / 0xFF) was being poked into +1 just past the end of the
-// moves_right[] array; The FacingType moves_left[] and moves_right[] arrays already have MAX_MLIST_SIZE+2 as their
-// size, which may have been a previous attempted fix; We are now passing MAX_MLIST_SIZE, since the sizeof calculations
-// included the +2 buffering;
-#if 0
-				right = Follow_Edge(startcell, next, &pright, CLOCK, direction, threat, threat_stage, sizeof(moves_right), threshhold);
-//				right = Follow_Edge(startcell, next, &pright, CLOCK, direction, threat, threat_stage, follow_len, threshhold);
-#endif
-                right = Follow_Edge(
-                    startcell, next, &pright, CLOCK, direction, threat, threat_stage, MAX_MLIST_SIZE, threshhold);
 
                 /*
                 ** If we are in debug mode then let us know how well our right path
@@ -779,7 +1251,7 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
                     Fancy_Text_Print("  Right", 0, 92, WHITE, BLACK, TPF_6POINT);
                     Fancy_Text_Print("Total Steps", 0, 100, WHITE, BLACK, TPF_6POINT);
                     if (right) {
-                        Fancy_Text_Print("    %d", 0, 108, WHITE, BLACK, TPF_6POINT, pright.Length);
+                        Fancy_Text_Print("    %d", 0, 108, WHITE, BLACK, TPF_6POINT, EdgeSearchRight.Path()->Length);
                     } else {
                         Fancy_Text_Print("   FAIL", 0, 108, WHITE, BLACK, TPF_6POINT);
                     }
@@ -791,7 +1263,7 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
                 **	cannot be reached by normal means. Scan forward looking for
                 **	the other side of the "doughnut".
                 */
-                if (left || right)
+                if (found_edge)
                     break;
 
                 /*
@@ -837,37 +1309,9 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
                 break;
 
             /*
-            **	We found a path around the impassable locations, so figure out
-            **	which one was the smallest and copy those moves into the
-            **	path.Command array.
+            **	The shorter edge path is already copied into path by Follow_Edge_Pair.
             */
-            which = &pleft;
-            if (right) {
-                which = &pright;
-                if (left) {
-                    if (pleft.Length < pright.Length) {
-                        which = &pleft;
-                    } else {
-                        which = &pright;
-                    }
-                }
-            }
-
-            /*
-            **	Record as much as possible of the shorter of the two
-            **	paths. The trailing EOL command is not copied because
-            **	this may not be the end of the find path logic.
-            */
-            len = which->Length;
-            len = MIN(len, maxlen);
-            if (len > 0) {
-                memcpy(&path.Overlap[0], &which->Overlap[0], sizeof(LeftOverlap));
-                memcpy(&path.Command[0], &which->Command[0], len);
-                path.Length = len;
-                path.Cost = which->Cost;
-                path.LastOverlap = -1;
-                path.LastFixup = -1;
-            } else {
+            if (path.Length <= 0) {
                 break;
             }
             Debug_Draw_Map("Walking to next obstacle", next, dest, true);

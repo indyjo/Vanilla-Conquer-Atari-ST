@@ -405,9 +405,7 @@ void GraphicBufferClass::Swap_Planar_Buffer_With(GraphicBufferClass &other)
  *=========================================================================*/
 BOOL GraphicBufferClass::Lock(void)
 {
-	// For Atari ST, we don't have DirectDraw, so locking always succeeds
-	LockCount++;
-	return(TRUE);
+	return TRUE;
 }
 
 /***************************************************************************
@@ -422,11 +420,7 @@ BOOL GraphicBufferClass::Lock(void)
  *=========================================================================*/
 BOOL GraphicBufferClass::Unlock(void)
 {
-	// For Atari ST, we don't have DirectDraw, so unlocking always succeeds
-	if (LockCount > 0) {
-		LockCount--;
-	}
-	return(TRUE);
+	return TRUE;
 }
 
 // Global variable for hardware blit fills (stub for Atari ST)

@@ -200,7 +200,7 @@ class GraphicBufferClass : public GraphicViewPortClass, public BufferClass {
 // Inline implementations
 inline int GraphicViewPortClass::Get_LockCount(void)
 {
-	return (LockCount);
+	return 0;
 }
 
 inline BOOL GraphicViewPortClass::Get_IsDirectDraw(void)
@@ -212,25 +212,12 @@ inline BOOL GraphicViewPortClass::Get_IsDirectDraw(void)
 
 inline BOOL GraphicViewPortClass::Lock(void)
 {
-	if (!GraphicBuff) return(FALSE);
-	BOOL lock = GraphicBuff->Lock();
-	if ( !lock ) return(FALSE);
-
-	if (this != GraphicBuff) {
-		Attach(GraphicBuff, XPos, YPos,  Width, Height);
-	}
-	return(TRUE);
+	return TRUE;
 }
 
 inline BOOL GraphicViewPortClass::Unlock(void)
 {
-	if (!GraphicBuff) return(FALSE);
-	BOOL unlock = GraphicBuff->Unlock();
-	if (!unlock) return(FALSE);
-	if (this != GraphicBuff && IsDirectDraw && !GraphicBuff->LockCount) {
-		Offset = 0;
-	}
-	return(TRUE);
+	return TRUE;
 }
 
 class VideoViewPortClass {

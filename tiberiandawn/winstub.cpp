@@ -428,11 +428,15 @@ void Colour_Debug(int call_number)
 
 bool Any_Locked()
 {
+#ifdef ATARI_ST
+    return false;
+#else
     if (SeenBuff.Get_LockCount() || HidPage.Get_LockCount()) {
         return true;
     } else {
         return false;
     }
+#endif
 }
 
 #ifdef POSIX

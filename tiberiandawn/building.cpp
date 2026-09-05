@@ -3886,7 +3886,7 @@ COORDINATE BuildingClass::Sort_Y(void) const
     if (*this == STRUCT_REFINERY) {
         return (Center_Coord());
     }
-    return (Coord_Add(Center_Coord(), XY_Coord(0, (Class->Height() * 256) / 3)));
+    return (Coord_Add(Center_Coord(), XY_Coord(0, Class->Height() * (256 / 3))));
 }
 
 /***********************************************************************************************

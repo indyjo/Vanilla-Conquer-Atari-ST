@@ -1076,12 +1076,6 @@ void TechnoClass::Draw_It(int x, int y, WindowNumberType window)
             int yy = y - (height / 2);
 
             /*
-            **	Draw the outline of the bargraph.
-            */
-            draw_window.Remap(xx + 1, yy + 1, width - 1, 3 - 1, Map.FadingShade);
-            draw_window.Draw_Rect(xx, yy, xx + width - 1, yy + 3, BLACK);
-
-            /*
             **	Determine the width of the interior strength
             **	graph.
             */
@@ -1096,7 +1090,19 @@ void TechnoClass::Draw_It(int x, int y, WindowNumberType window)
             if (ratio < 0x3F) {
                 color = RED;
             }
+
+            /*
+            **	ST: solid fills. Remap+Draw_Rect is a planar decode/dither of the
+            **	sprite plus four edge strokes; two Fill_Rects are H-spans only.
+            */
+#ifdef ATARI_ST
+            draw_window.Fill_Rect(xx, yy, xx + width - 1, yy + 3, BLACK);
+            draw_window.Fill_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
+#else
+            draw_window.Remap(xx + 1, yy + 1, width - 1, 3 - 1, Map.FadingShade);
+            draw_window.Draw_Rect(xx, yy, xx + width - 1, yy + 3, BLACK);
             draw_window.Draw_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
+#endif
         }
 
         /*

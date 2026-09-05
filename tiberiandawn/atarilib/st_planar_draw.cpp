@@ -88,6 +88,71 @@ static void Apply_Flat_HSpan_To_Row(
 	}
 }
 
+/*
+ * ST color 0: clear bits in the span. Full 16-pixel groups are four zero stores
+ * (no RMW). Partial groups AND-clear. Same geometry as Apply_Flat_HSpan_To_Row.
+ */
+static void Apply_Clear_HSpan_To_Row(uint16_t *row, short w1, short w2, short b1, short b2)
+{
+	uint16_t *start = row + (size_t)w1 * 4u;
+	uint16_t *end = row + (size_t)w2 * 4u;
+
+	if (w1 == w2) {
+		const uint16_t inv = (uint16_t)~(uint16_t)(kLeftMask[b1] & kRightMask[b2]);
+		if (inv == 0) {
+			start[0] = 0;
+			start[1] = 0;
+			start[2] = 0;
+			start[3] = 0;
+		} else {
+			start[0] = (uint16_t)(start[0] & inv);
+			start[1] = (uint16_t)(start[1] & inv);
+			start[2] = (uint16_t)(start[2] & inv);
+			start[3] = (uint16_t)(start[3] & inv);
+		}
+		return;
+	}
+
+	if (b1 == 0) {
+		start[0] = 0;
+		start[1] = 0;
+		start[2] = 0;
+		start[3] = 0;
+	} else {
+		const uint16_t inv = (uint16_t)~kLeftMask[b1];
+		start[0] = (uint16_t)(start[0] & inv);
+		start[1] = (uint16_t)(start[1] & inv);
+		start[2] = (uint16_t)(start[2] & inv);
+		start[3] = (uint16_t)(start[3] & inv);
+	}
+
+	for (uint16_t *p = start + 4; p < end; p += 4) {
+#if defined(__m68k__)
+		uint32_t *pd = (uint32_t *)(void *)p;
+		pd[0] = 0;
+		pd[1] = 0;
+#else
+		p[0] = 0;
+		p[1] = 0;
+		p[2] = 0;
+		p[3] = 0;
+#endif
+	}
+
+	if (b2 == 15) {
+		end[0] = 0;
+		end[1] = 0;
+		end[2] = 0;
+		end[3] = 0;
+	} else {
+		const uint16_t inv = (uint16_t)~kRightMask[b2];
+		end[0] = (uint16_t)(end[0] & inv);
+		end[1] = (uint16_t)(end[1] & inv);
+		end[2] = (uint16_t)(end[2] & inv);
+		end[3] = (uint16_t)(end[3] & inv);
+	}
+}
+
 void ST_Planar_Get_Fill_Words(uint16_t color4, uint16_t out[4])
 {
 	const uint8_t c = (uint8_t)color4;
@@ -181,6 +246,15 @@ void ST_Planar_Fill_Rect_Fast(
 	const short w2 = (short)(xb >> 4);
 	const short b1 = (short)(xa & 15);
 	const short b2 = (short)(xb & 15);
+
+	if (c == 0) {
+		for (short y = ya; y <= yb; ++y) {
+			uint16_t *row = planar_root + (size_t)y * (size_t)planar_row_words;
+			Apply_Clear_HSpan_To_Row(row, w1, w2, b1, b2);
+		}
+		return;
+	}
+
 	const uint16_t *fills = kFillWordsByNibble[c];
 	const uint16_t fill0 = fills[0];
 	const uint16_t fill1 = fills[1];

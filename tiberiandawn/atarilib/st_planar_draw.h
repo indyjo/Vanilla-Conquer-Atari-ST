@@ -20,6 +20,7 @@ void ST_Planar_Draw_HLine_Fast(
  * Inclusive axis-aligned rectangle fill with a flat ST nibble (0..15).
  * Same 16-pixel masking and middle packing as ST_Planar_Draw_HLine_Fast, but mask/fill
  * work is done once per rectangle instead of once per scanline.
+ * color4 == 0 clears bits (full 16-pixel groups are stores of zero, not RMW).
  */
 void ST_Planar_Fill_Rect_Fast(
 	uint16_t *planar_root,

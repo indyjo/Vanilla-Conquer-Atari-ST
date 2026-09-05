@@ -253,7 +253,13 @@ void Debug_Redraw_Hotkeys_Service(void)
     int const c = (alt && IKBD_Key_Is_Down(VK_C)) ? 1 : 0;
     int const r = (alt && IKBD_Key_Is_Down(VK_R)) ? 1 : 0;
     if (c && !prev_c) {
-        Debug_Coalesced_Clipped_Redraw = (Debug_Coalesced_Clipped_Redraw == false);
+        if (Debug_Coalesced_Clipped_Redraw) {
+            Debug_Coalesced_Clipped_Redraw = false;
+            Map.Rebuild_Overlappers();
+        } else {
+            Debug_Coalesced_Clipped_Redraw = true;
+            Map.Clear_Overlappers();
+        }
         Map.Flag_To_Redraw(true);
     }
     if (r && !prev_r) {

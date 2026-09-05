@@ -591,6 +591,38 @@ void MapClass::Overlap_Up(CELL cell, ObjectClass * object)
 }
 
 
+void MapClass::Clear_Overlappers(void)
+{
+	for (int cell = 0; cell < MAP_CELL_TOTAL; cell++) {
+		memset((*this)[cell].Overlapper, 0, sizeof((*this)[cell].Overlapper));
+	}
+}
+
+
+void MapClass::Rebuild_Overlappers(void)
+{
+	Clear_Overlappers();
+
+	for (LayerType layer = LAYER_FIRST; layer < LAYER_COUNT; layer++) {
+		int const count = DisplayClass::Layer[layer].Count();
+		for (int index = 0; index < count; index++) {
+			ObjectClass* obj = DisplayClass::Layer[layer][index];
+			if (obj == NULL || !obj->IsActive || !obj->IsDown || obj->IsInLimbo) {
+				continue;
+			}
+			if (obj->What_Am_I() == RTTI_BUILDING) {
+				BuildingClass* bldg = (BuildingClass*)obj;
+				if (bldg->Class && bldg->Class->IsWall) {
+					continue;
+				}
+			}
+			obj->Mark(MARK_UP);
+			obj->Mark(MARK_DOWN);
+		}
+	}
+}
+
+
 /***********************************************************************************************
  * MapClass::Overpass -- Performs any final cleanup to a freshly constructed map.              *
  *                                                                                             *

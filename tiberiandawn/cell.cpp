@@ -740,10 +740,15 @@ void CellClass::Occupy_Up(ObjectClass * object)
  *=============================================================================================*/
 void CellClass::Overlap_Down(ObjectClass * object)
 {
+	if (!object) return;
+	/*
+	**	CCR draws from Layer[] vs dirty rects; overlapper slots are unused.
+	**	MapClass::Overlap_Down still Redraw_Objects the spilled cells.
+	*/
+	if (Debug_Coalesced_Clipped_Redraw) return;
+
 	Validate();
 	ObjectClass **ptr = 0;
-
-	if (!object) return;
 	int index;
 	for (index = 0; index < sizeof(Overlapper)/sizeof(Overlapper[0]); index++) {
 		if (Overlapper[index] == object) return;
@@ -816,6 +821,8 @@ void CellClass::Overlap_Down(ObjectClass * object)
  *=============================================================================================*/
 void CellClass::Overlap_Up(ObjectClass *object)
 {
+	if (Debug_Coalesced_Clipped_Redraw) return;
+
 	Validate();
 	for (int index = 0; index < sizeof(Overlapper)/sizeof(Overlapper[0]); index++) {
 		if (Overlapper[index] == object) {

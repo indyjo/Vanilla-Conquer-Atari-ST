@@ -106,6 +106,9 @@ public:
     */
     void Clean(void);
 
+    void Clear_Overlappers(void);
+    void Rebuild_Overlappers(void);
+
 #ifdef USE_RA_AI
     /*
     ** Pulled in from RA for AI. ST - 7/24/2019 5:53PM

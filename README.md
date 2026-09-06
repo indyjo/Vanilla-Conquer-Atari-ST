@@ -1,10 +1,10 @@
 # Command & Conquer — Atari ST port
 
-Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`, 320×200 planar graphics (BLiTTER), STE DMA audio.
+Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`, 320×200 planar graphics (BLiTTER), STE DMA audio, YM-2149 digi on plain ST.
 
 ![In-game screenshot (Nod base, 320×200)](docs/atari-st/screenshot-ingame.png)
 
-**Status:** Game is rendered in 16 colors; playable in emulation. Performance has improved somewhat (still single-digit FPS on 8 MHz ST/STe; more comfortable on Falcon). FMV cutscenes are supported. 
+**Status:** Game is rendered in 16 colors; playable in emulation. 8 MHz ST/STe is still a few frames per second (about 2–4 with digi, 4–5 with audio mostly off); Falcon is around 11–12 fps, TT around 30. FMV cutscenes are supported. 
 
 - Performance measurements in **[Benchmark.md](Benchmark.md)**.
 - Upstream Vanilla Conquer (PC, other platforms): **[README-vanilla-conquer.md](README-vanilla-conquer.md)**
@@ -16,7 +16,8 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 - CPU: Acceptable framerates on Falcon+. FMV also works on 8 MHz.
 - RAM: 4 MB supported (more RAM is better, especially TT-RAM)
 - Blitter is supported; if unavailable or slower than CPU, software blitting is used
-- Digitized audio: STe/TT/Falcon DMA by default (`[AtariST] Audio=Auto`). Optional YM-2149 or Covox digi on plain ST via `Audio=YM` / `Audio=Covox` (see `tiberiandawn/atari.md`).
+- Digitized audio: `[AtariST] Audio=Auto` uses STE DMA when present, otherwise YM-2149 (~6.25 kHz). Force with `Audio=STE` / `Audio=YM` / `Audio=Covox` / `Audio=None` (see `tiberiandawn/atari.md`).
+- On ≤16 MHz-class machines, a boot CPU probe (autotune) turns on idle-animation throttles and freezes AI during map gestures. Override in `CONQUER.INI` `[AtariST]` (see [Benchmark.md](Benchmark.md) / `tiberiandawn/atari.md`).
 
 ## Run
 
@@ -31,7 +32,7 @@ cd tiberiandawn
 make LIBCMINI_PREFIX="$HOME/opt/libcmini/usr" -j4
 ```
 
-Output: `bin/AtariST/cnc.tos`. Host tests: `make tests` ([tests/README](tiberiandawn/tests/README.md)). On-target tests: `make st-tests` ([st_suite readme](tiberiandawn/tests/st_suite/readme.md)).
+Output: `bin/AtariST/cnc.tos` (link-time optimization is on by default). Host tests: `make tests` ([tests/README](tiberiandawn/tests/README.md)). On-target tests: `make st-tests` ([st_suite readme](tiberiandawn/tests/st_suite/readme.md)).
 
 ## Host tools
 
@@ -47,6 +48,7 @@ Output: `bin/AtariST/cnc.tos`. Host tests: `make tests` ([tests/README](tiberian
 | [w16sort](tiberiandawn/tools/w16sort/) | Reorder `.W16` pens by YUV Hamiltonian path (needs `.PAL`) |
 | [wsa_palette_report.py](tiberiandawn/tools/wsa_palette_report.py) | Dump WSA header/palette info; compare against a reference `.PAL` |
 | [list_mix](tiberiandawn/list_mix/readme.md) | List MIX contents (CRC, names) |
+| [ym_lut](tiberiandawn/tools/ym_lut/README.md) | Generate YM-2149 digi LUTs (`audio_timer_dac_ym.S`) |
 
 ## Contributors
 

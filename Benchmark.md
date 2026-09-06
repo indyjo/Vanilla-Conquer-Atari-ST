@@ -4,7 +4,7 @@ Format modelled on [STDOOM Benchmark.txt](https://github.com/indyjo/STDOOM/blob/
 
 ## How to run
 
-Playback benchmark (`RECORD.BIN` in the game directory). TOS cannot take argv; rename `cnc.tos` to `cnc.ttp` so GEMDOS will pass the flags:
+Playback benchmark (`RECORD.BIN` in the game directory). TOS cannot take argv; rename `cnc.tos` to `cnc.ttp` so GEMDOS will pass the flags. The engine always opens `RECORD.BIN`; for the NOD 1 AI-heavy run, copy `record2.bin` over it first.
 
 ```text
 cnc.ttp -XY          # default audio
@@ -51,28 +51,9 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 - **0.3.2** — drop BLiTTER cache-sync; soft blit on 040+ / TT-RAM; keep HW blit on 030 (2026-08-07)
 - **0.3.3** — coalesced clipped redraw (CCR), partial HidPage present, idle-anim throttles (2026-08-20)
 - **0.3.4** — YM-2149 audio support, link-time optimization (LTO) (2026-08-27)
+- **0.3.5** — CCR/redraw hot-path, pathfinding overlap, Lock/Unlock NOPs; NOD1 `record2.bin` (2026-09-06)
 
 ## Results
-
-### 8 MHz Atari ST (68000), 4 MB RAM (no BLiTTER)
-
-`-XY` (YM-2149 digi auto-enabled from **0.3.4**; no earlier ST `-XY` row):
-
-| Version | Ticks | Time | FPS |
-|---------|-------|------|-----|
-| 0.3.4 | 163561 | 13:37.80 | 1.9198 |
-
-`-XYQ`:
-
-| Version | Ticks | Time | FPS |
-|---------|-------|------|-----|
-| 0.3.0 | 255603 | 21:18.01 | 1.2285 |
-| 0.3.1 | 153904 | 12:49.52 | 2.0402 |
-| 0.3.2 | 141694 | 11:48.47 | 2.2160 |
-| 0.3.3 | 99945 | 8:19.72 | 3.1417 |
-| 0.3.4 | 92515 | 7:42.57 | 3.3940 |
-
-`0.3.1` is about **65%** faster than `0.3.0` on plain ST (`-XYQ`). `0.3.3` is about **42%** faster than `0.3.2` (and about **54%** faster than `0.3.1`). `0.3.4` is about **8%** faster than `0.3.3` on ST `-XYQ`. With YM digi auto-on, ST `-XY` runs at about **57%** of ST `-XYQ` fps.
 
 ### 8 MHz Atari STe (68000), EmuTOS 1.3 (US), 60 Hz (emulated)
 
@@ -87,6 +68,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 | 0.3.2 | 156058 | 13:00.29 | 2.0121 |
 | 0.3.3 | 105805 | 8:49.02 | 2.9677 |
 | 0.3.4 | 97843 | 8:09.21 | 3.2092 |
+| 0.3.5 | 81887 | 6:49.43 | 3.8346 |
 
 `-XYQ`:
 
@@ -99,8 +81,42 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 | 0.3.2 | 128066 | 10:40.33 | 2.4519 |
 | 0.3.3 | 84882 | 7:04.41 | 3.6993 |
 | 0.3.4 | 75097 | 6:15.48 | 4.1813 |
+| 0.3.5 | 63812 | 5:19.06 | 4.9207 |
 
-STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on plain ST. `0.3.3` is about **51%** faster than `0.3.2` on STe `-XYQ`. `0.3.4` is about **8%** faster than `0.3.3` on STe `-XY` and about **13%** faster on STe `-XYQ`.
+STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on plain ST. `0.3.3` is about **51%** faster than `0.3.2` on STe `-XYQ`. `0.3.4` is about **8%** faster than `0.3.3` on STe `-XY` and about **13%** faster on STe `-XYQ`. `0.3.5` is about **19%** faster than `0.3.4` on STe `-XY` and about **18%** faster on STe `-XYQ`.
+
+#### `record2.bin` (NOD 1, 2285 frames)
+
+Copy `record2.bin` to `RECORD.BIN` before the run. This recording is longer and heavier on AI/pathfinding than the default 1570-frame `RECORD.BIN`. `-XYQ`:
+
+| Version | Ticks | Time | FPS |
+|---------|-------|------|-----|
+| 0.3.4 | 168632 | 14:03.16 | 2.7100 |
+| 0.3.5 | 131576 | 10:57.88 | 3.4733 |
+
+`0.3.5` is about **28%** faster than `0.3.4` on this recording (STe `-XYQ`).
+
+### 8 MHz Atari ST (68000), 4 MB RAM (no BLiTTER)
+
+`-XY` (YM-2149 digi auto-enabled from **0.3.4**; no earlier ST `-XY` row):
+
+| Version | Ticks | Time | FPS |
+|---------|-------|------|-----|
+| 0.3.4 | 163561 | 13:37.80 | 1.9198 |
+| 0.3.5 | 137759 | 11:28.79 | 2.2793 |
+
+`-XYQ`:
+
+| Version | Ticks | Time | FPS |
+|---------|-------|------|-----|
+| 0.3.0 | 255603 | 21:18.01 | 1.2285 |
+| 0.3.1 | 153904 | 12:49.52 | 2.0402 |
+| 0.3.2 | 141694 | 11:48.47 | 2.2160 |
+| 0.3.3 | 99945 | 8:19.72 | 3.1417 |
+| 0.3.4 | 92515 | 7:42.57 | 3.3940 |
+| 0.3.5 | 81568 | 6:47.84 | 3.8495 |
+
+`0.3.1` is about **65%** faster than `0.3.0` on plain ST (`-XYQ`). `0.3.3` is about **42%** faster than `0.3.2` (and about **54%** faster than `0.3.1`). `0.3.4` is about **8%** faster than `0.3.3` on ST `-XYQ`. `0.3.5` is about **19%** faster than `0.3.4` on ST `-XY` and about **13%** faster on ST `-XYQ`. With YM digi auto-on, ST `-XY` runs at about **59%** of ST `-XYQ` fps.
 
 ### 16 MHz Atari Falcon (68030), EmuTOS 1.3 512 KB (US), 60 Hz (emulated)
 
@@ -115,6 +131,7 @@ STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on pl
 | 0.3.2 | 46995 | 3:54.97 | 6.6816 |
 | 0.3.3 | 36298 | 3:01.49 | 8.6506 |
 | 0.3.4 | 32269 | 2:41.34 | 9.7307 |
+| 0.3.5 | 28108 | 2:20.54 | 11.1712 |
 
 `-XYQ`:
 
@@ -127,8 +144,9 @@ STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on pl
 | 0.3.2 | 44044 | 3:40.22 | 7.1292 |
 | 0.3.3 | 33982 | 2:49.91 | 9.2402 |
 | 0.3.4 | 29991 | 2:29.95 | 10.4698 |
+| 0.3.5 | 26125 | 2:10.62 | 12.0191 |
 
-`0.3.4` is about **12%** faster than `0.3.3` on this Falcon (`-XY`) and about **13%** faster (`-XYQ`).
+`0.3.4` is about **12%** faster than `0.3.3` on this Falcon (`-XY`) and about **13%** faster (`-XYQ`). `0.3.5` is about **15%** faster than `0.3.4` on this Falcon (`-XY`) and about **15%** faster (`-XYQ`).
 
 #### Same Falcon, TT-RAM, no BLiTTER (software blits)
 
@@ -140,8 +158,9 @@ EmuTOS reports no blitter (`AllowHardwareBlitFills` forced off → software path
 | 0.3.2 | 31182 | 2:35.91 | 10.0699 |
 | 0.3.3 | 24059 | 2:00.29 | 13.0512 |
 | 0.3.4 | 22492 | 1:52.46 | 13.9605 |
+| 0.3.5 | 19645 | 1:38.22 | 15.9837 |
 
-`0.3.4` is about **7%** faster than `0.3.3` on this Falcon with TT-RAM (`-XYQ`).
+`0.3.4` is about **7%** faster than `0.3.3` on this Falcon with TT-RAM (`-XYQ`). `0.3.5` is about **14%** faster than `0.3.4`.
 
 ### 32 MHz Atari TT (68030), 4 MB ST-RAM + 4 MB TT-RAM, EmuTOS 1.3
 
@@ -152,5 +171,6 @@ EmuTOS reports no blitter (`AllowHardwareBlitFills` forced off → software path
 | 0.3.2 | 15387 | 1:16.93 | 20.4068 |
 | 0.3.3 | 11904 | 0:59.52 | 26.3777 |
 | 0.3.4 | 11103 | 0:55.51 | 28.2806 |
+| 0.3.5 | 9702 | 0:48.51 | 32.3645 |
 
-`0.3.3` is about **29%** faster than `0.3.2` on this TT (`-XYQ`). `0.3.4` is about **7%** faster than `0.3.3`.
+`0.3.3` is about **29%** faster than `0.3.2` on this TT (`-XYQ`). `0.3.4` is about **7%** faster than `0.3.3`. `0.3.5` is about **14%** faster than `0.3.4`.

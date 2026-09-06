@@ -410,7 +410,7 @@ Optional keys next to `cnc.tos`. Missing keys keep the listed default.
 | `ThrottleInfantryIdleAnims` | auto | Draw stand pose instead of idle/salute/gesture fidgets. Facing and RNG still run so recordings match. Nikoomba and civilian scatter stay full rate. |
 | `SkipBuildingConstructionAnims` | off | Hold a static buildup/sell frame and freeze the construction yard while it is producing; construction time is unchanged. Off by default on all CPUs. |
 | `FreezeAIDuringMapGestures` | auto | Pause simulation while scrolling or rubber-banding (single-player only). Sound and drawing continue. |
-| `Audio` | `Auto` | Digitized audio backend: `Auto` (STE DMA if present, else silent), `STE`, `YM` (YM-2149 digi via Timer A ~6.25 kHz), `Covox` (Speech Thing on YM Port B / Centronics data), or `None` (hard off). Only one driver at a time. YM/Covox early-÷2 stream assets that remain at STE ~12.5 kHz. |
+| `Audio` | `Auto` | Digitized audio backend: `Auto` (STE DMA if present, else YM-2149), `STE`, `YM` (YM-2149 digi via Timer A ~6.25 kHz), `Covox` (Speech Thing on YM Port B / Centronics data), or `None` (hard off). Only one driver at a time. YM/Covox early-÷2 stream assets that remain at STE ~12.5 kHz. |
 | `StvqEnableAudio` | `1` | When `Audio=YM` or `Covox`, play digi during STVQ movies (`1`) or keep FMV silent (`0`). Ignored for STE DMA movies. |
 
 Throttle keys and `FreezeAIDuringMapGestures`: omit or `-1` = auto, `0` = off, `1` = on. Auto runs a short 200 Hz CPU probe at boot (`atarilib/st_autotune.cpp`) and enables on ≤16 MHz-class machines (`ST_AUTOTUNE_16MHZ_MAX_LOOPS`). `SkipBuildingConstructionAnims`: omit or `-1` / `0` = play construction frames, `1` = skip. Decisions are logged in `cnc.log`.

@@ -174,25 +174,3 @@ EmuTOS reports no blitter (`AllowHardwareBlitFills` forced off → software path
 | 0.3.5 | 9702 | 0:48.51 | 32.3645 |
 
 `0.3.3` is about **29%** faster than `0.3.2` on this TT (`-XYQ`). `0.3.4` is about **7%** faster than `0.3.3`. `0.3.5` is about **14%** faster than `0.3.4`.
-
-### Real Mega STe (Gazag, itch.io)
-
-FPS-only reports from **Gazag** on a real Mega STe, default `RECORD.BIN` (`-XY` / `-XYQ`). Sources: [0.3.3](https://indyjo.itch.io/commandconquer/devlog/1634962/version-033-released), [0.3.4](https://indyjo.itch.io/commandconquer/devlog/1642510/version-034-released), [0.3.5](https://indyjo.itch.io/commandconquer/devlog/1654274/version-035-released). Decimal commas in the comments are written as periods here.
-
-`-XYQ`:
-
-| Version | 8 MHz | 16 MHz, cache off | 16 MHz, cache on |
-|---------|-------|-------------------|------------------|
-| 0.3.3 | 3.38 | 3.54 | 4.84 |
-| 0.3.4 | 3.80 | 3.98 | 5.39 |
-| 0.3.5 | 4.39 | 4.58 | 6.06 |
-
-`-XY`:
-
-| Version | 8 MHz | 16 MHz, cache off | 16 MHz, cache on |
-|---------|-------|-------------------|------------------|
-| 0.3.3 | 2.48 | 2.59 | 3.71 |
-| 0.3.4 | 2.66 | 2.79 | 4.01 |
-| 0.3.5 | 3.08 | 3.25 | 4.47 |
-
-`0.3.5` vs `0.3.4` on this machine: about **16%** faster at 8 MHz (`-XY` and `-XYQ`), about **15–16%** at 16 MHz with cache off, about **12%** (`-XYQ`) / **11%** (`-XY`) with cache on. That is a bit below the emulated 8 MHz STe (about **19%** / **18%**). Absolute fps at 8 MHz is also below Hatari STe (`-XY` 3.08 vs 3.83, `-XYQ` 4.39 vs 4.92).

@@ -21,7 +21,7 @@ Work-in-progress port of **Tiberian Dawn** to the Atari ST/STE: native `cnc.tos`
 
 ## Run
 
-See the [itch.io project page](https://indyjo.itch.io/cnc-atari-st), or [Benchmark.md](Benchmark.md) for measuring performance.
+See the [itch.io project page](https://indyjo.itch.io/commandconquer), or [Benchmark.md](Benchmark.md) for measuring performance.
 
 ## Build
 

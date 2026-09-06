@@ -18,13 +18,11 @@
 # Options:
 #   -o FILE         write FILE instead of stdout
 #   -d, --demangle  run c++filt (Hatari profile/breakpoints will drop many names)
-#   -p, --profile   drop LTO clones and static-init glue
 #   -h, --help
 
 set -e
 
 OUT=
-PROFILE=0
 DEMANGLE=0
 TOOLDIR=
 TOS=
@@ -44,10 +42,6 @@ while [ $# -gt 0 ]; do
 			;;
 		-d|--demangle)
 			DEMANGLE=1
-			shift
-			;;
-		-p|--profile)
-			PROFILE=1
 			shift
 			;;
 		--)
@@ -141,19 +135,6 @@ filter_syms() {
 		}
 	'
 }
-
-if [ "$PROFILE" = 1 ]; then
-	filter_syms() {
-		awk '
-			$2 ~ /^[TtDdBbRr]$/ && $3 != "" {
-				t = toupper($2)
-				if (t == "R") t = "D"
-				print $1, t, $3
-			}
-		' | grep -v -E '\.(isra|constprop|lto_priv|part)\.[0-9]' \
-		  | grep -v '__static_initialization_and_destruction' || true
-	}
-fi
 
 dump() {
 	printf '# Hatari ASCII symbols from %s\n' "$TOS"

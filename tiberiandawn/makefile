@@ -1227,7 +1227,6 @@ remix-web-itch:
 #=============================================================================
 ifeq ($(PLATFORM_LIB),ATARILIB)
 
-NM = $(CROSS_PREFIX)/$(CROSS_TARGET)-nm
 STRIP = $(CROSS_PREFIX)/$(CROSS_TARGET)-strip
 ITCH_DIST_DIR = dist/itch
 ITCH_STAGE_DIR = $(ITCH_DIST_DIR)/stage
@@ -1266,9 +1265,7 @@ itch-release:
 	rm -rf "$(ITCH_DIST_DIR)"; \
 	mkdir -p "$(ITCH_STAGE_DIR)"; \
 	echo "Extracting Hatari-compatible symbols..."; \
-	{ echo "# $$RELEASE_TAG — generated from cnc.tos for Hatari debugger/profiler"; \
-	  "$(NM)" -n "$(ITCH_RELEASE_TOS)" | awk '$$2 ~ /^[tTdDbB]$$/ {print $$1, $$2, $$3}'; } \
-	  > "$(ITCH_DIST_DIR)/cnc.sym"; \
+	./dump_symbols.sh -o "$(ITCH_DIST_DIR)/cnc.sym" "$(CROSS_PREFIX)" "$(ITCH_RELEASE_TOS)"; \
 	cp "$(ITCH_RELEASE_TOS)" "$(ITCH_STAGE_DIR)/cnc.tos"; \
 	echo "Stripping debug symbols from staged cnc.tos..."; \
 	"$(STRIP)" "$(ITCH_STAGE_DIR)/cnc.tos"; \

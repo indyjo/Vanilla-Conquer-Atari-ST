@@ -1290,6 +1290,9 @@ itch-release:
 		exit 1; \
 	fi; \
 	cp atari-assets/record.bin "$(ITCH_STAGE_DIR)/"; \
+	if [ -f atari-assets/record2.bin ]; then \
+		cp atari-assets/record2.bin "$(ITCH_STAGE_DIR)/"; \
+	fi; \
 	printf '%s\r\n' \
 		"Command & Conquer for Atari ST" \
 		"" \
@@ -1299,6 +1302,7 @@ itch-release:
 		"Prepare MIX files for Atari ST with remix-web (see source tree) before running cnc.tos." \
 		"" \
 		"Playback benchmark: record.bin is included. Run cnc.tos -XY (or -XYQ for mostly silent audio)." \
+		"For the longer NOD 1 / AI-heavy run, copy record2.bin over RECORD.BIN first." \
 		"" \
 		"Further information:" \
 		"https://indyjo.itch.io/commandconquer" \

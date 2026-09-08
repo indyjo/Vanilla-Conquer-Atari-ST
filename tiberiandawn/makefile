@@ -769,7 +769,7 @@ $(INTDIR)/audio_timer_dac.o: $(PLATFORM_LIB)/audio/audio_timer_dac.cpp | $(INTDI
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 $(INTDIR)/audio_timer_dac_ym.o: $(PLATFORM_LIB)/audio/audio_timer_dac_ym.S | $(INTDIR)
 	@echo "Assembling $<..."
-	$(CC) $(FASTCALL_FLAGS) $(CPU_FLAGS) $(ASMFLAGS) -c -o $@ $<
+	$(CC) $(FASTCALL_FLAGS) $(ASMFLAGS) -c -o $@ $<
 
 # AUDX runtime (atarilib/audx/)
 $(INTDIR)/audx_pool_file.o: $(PLATFORM_LIB)/audx/audx_pool_file.cpp | $(INTDIR)
@@ -880,7 +880,7 @@ $(INTDIR)/%.o: $(PLATFORM_LIB)/%.S | $(INTDIR)
 	@echo "Assembling $<..."
 	@mkdir -p $(INTDIR)
 	@if [ "$(PLATFORM_LIB)" = "ATARILIB" ]; then \
-		$(CC) $(FASTCALL_FLAGS) $(CPU_FLAGS) $(ASMFLAGS) -c -o $@ $<; \
+		$(CC) $(FASTCALL_FLAGS) $(ASMFLAGS) -c -o $@ $<; \
 	else \
 		echo "WARNING: x86 assembly on m68k target"; \
 		echo "Error: x86 assembly files cannot be assembled for m68k target"; \

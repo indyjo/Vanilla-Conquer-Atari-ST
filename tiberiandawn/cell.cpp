@@ -362,7 +362,9 @@ ObjectClass * CellClass::Cell_Object(int x, int y) const
  *                                                                                             *
  * OUTPUT:  none                                                                               *
  *                                                                                             *
- * WARNINGS:   Not redundant with DisplayClass::Flag_Cell: enforces In_View and Validate.      *
+ * WARNINGS:   Not redundant with DisplayClass::Flag_Cell: Validate, and In_View              *
+ *             on the unclipped path (occupier Mark). CCR only paints Tactical_Cell_Rect,     *
+ *             so off-screen bits are ignored; Flag_Cell still latches incremental IsToRedraw.*
  *                                                                                             *
  * HISTORY:                                                                                    *
  *   05/18/1994 JLB : Created.                                                                 *
@@ -374,8 +376,16 @@ void CellClass::Redraw_Objects(CELL cell, bool forced)
 	Validate();
 
 	/*
-	**	Already-flagged cells need no In_View work unless forced. The bit test is
-	**	cheap; In_View is not (packed Cell_Coord).
+	**	CCR consumes CellRedraw only inside Tactical_Cell_Rect. Skip In_View:
+	**	Flag_Cell latches an incremental map pass; empty vis rects exit in CCR.
+	*/
+	if (Debug_Coalesced_Clipped_Redraw) {
+		Map.Flag_Cell(cell);
+		return;
+	}
+
+	/*
+	**	Already-flagged cells need no more work unless forced.
 	*/
 	if (!forced && Map.Is_Cell_Flagged(cell)) {
 		return;
@@ -385,27 +395,25 @@ void CellClass::Redraw_Objects(CELL cell, bool forced)
 
 		Map.Flag_Cell(cell);
 
-		if (!Debug_Coalesced_Clipped_Redraw) {
-			/*
-			**	Unclipped redraw: mark occupiers/overlappers for layer Render(IsToDisplay).
-			*/
-			if (Cell_Occupier()) {
-				ObjectClass * optr = Cell_Occupier();
-				while (optr) {
-					if (optr->IsActive) {
-						optr->Mark(MARK_CHANGE);
-					}
-					optr = optr->Next;
+		/*
+		**	Unclipped redraw: mark occupiers/overlappers for layer Render(IsToDisplay).
+		*/
+		if (Cell_Occupier()) {
+			ObjectClass * optr = Cell_Occupier();
+			while (optr) {
+				if (optr->IsActive) {
+					optr->Mark(MARK_CHANGE);
 				}
+				optr = optr->Next;
 			}
-			for (int index = 0; index < (int)(sizeof(Overlapper)/sizeof(Overlapper[0]));
-			    index++) {
-				if (Overlapper[index]) {
-					if (!Overlapper[index]->IsActive) {
-						Overlapper[index] = 0;
-					} else {
-						Overlapper[index]->Mark(MARK_CHANGE);
-					}
+		}
+		for (int index = 0; index < (int)(sizeof(Overlapper)/sizeof(Overlapper[0]));
+		    index++) {
+			if (Overlapper[index]) {
+				if (!Overlapper[index]->IsActive) {
+					Overlapper[index] = 0;
+				} else {
+					Overlapper[index]->Mark(MARK_CHANGE);
 				}
 			}
 		}

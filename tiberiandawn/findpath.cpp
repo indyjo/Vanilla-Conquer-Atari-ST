@@ -87,6 +87,14 @@
 
 #define MAX_PATH_EDGE_FOLLOW 400
 
+/*
+**	|f(P)| <= 2*(MAP_CELL_W-1)^2. Signed 16-bit holds that for 64 and 128
+**	wide maps (MEGAMAPS: 2*127*127 = 32258).
+*/
+#if (2 * (MAP_CELL_W - 1) * (MAP_CELL_W - 1)) > 32767
+#error signed line_val does not fit in 16 bits for this map size
+#endif
+
 #ifdef NEVER
 typedef enum
 {
@@ -109,6 +117,24 @@ static bool DrawPath;
 inline FacingType Opposite(FacingType face)
 {
     return ((FacingType)(face ^ 4));
+}
+
+/*
+**	Δf for one step in each facing, from ΔN = Sx-Tx and ΔE = Sy-Ty.
+**	f(P+D) = f(P) + Δ[facing]. Opposite facing is a negate (face^4).
+*/
+static void Line_Face_Deltas(short* d, int sx, int sy, int tx, int ty)
+{
+    short const dn = (short)(sx - tx);
+    short const de = (short)(sy - ty);
+    d[FACING_N] = dn;
+    d[FACING_E] = de;
+    d[FACING_S] = (short)-dn;
+    d[FACING_W] = (short)-de;
+    d[FACING_NE] = (short)(dn + de);
+    d[FACING_SE] = (short)(de - dn);
+    d[FACING_SW] = (short)(-(dn + de));
+    d[FACING_NW] = (short)(dn - de);
 }
 
 static inline void Draw_Cell_Point(CELL cell, bool passable, int threat_stage, int overide = 0)
@@ -261,6 +287,26 @@ public:
     {
         return path.Length;
     }
+    CELL Current_Cell() const
+    {
+        return oldcell;
+    }
+    int Cell_Count() const
+    {
+        return cellcount;
+    }
+    int Prefix_Length() const
+    {
+        return prefix_len;
+    }
+    FacingType Move(int index) const
+    {
+        return commands[index];
+    }
+    void Abort()
+    {
+        Fail();
+    }
 
 private:
     void Fail();
@@ -278,7 +324,6 @@ private:
     FacingType firstdir; // Facing at the first recorded edge cell (loop detect).
     MoveType threshhold;
     StatusType status;
-    bool online;   // Still on the start-to-target line?
     bool forceout; // Target seen but not enterable from this facing.
 
     CELL start;     // Cell we head from.
@@ -288,12 +333,10 @@ private:
     CELL firstcell; // First recorded edge cell (loop detect).
 
     short cost; // Working enter-cell cost (Passable_Cell is 0..10).
-    short startx;
-    short starty;
-    short targetx;
-    short targety;
-    short oldval;        // Last Point_Relative_To_Line sign (diagonal cross check).
+    short line_val;      // f(oldcell) vs start-target line; 0 means on the line.
+    short face_delta[FACING_COUNT]; // Incremental Δf per facing (from ΔN, ΔE).
     short cellcount;     // Steps along the edge; fail at MAX_PATH_EDGE_FOLLOW.
+    short prefix_len;    // Command count copied from Find_Path before the edge.
     short max_cells;     // Stop when path.Length reaches this (Follow_Edge max_cells).
     short threat_stage;
     int threat;          // -1, or house threat; kept 32-bit for Passable_Cell.
@@ -304,6 +347,13 @@ private:
 
 static EdgeFollowSearch EdgeSearchLeft;  // COUNTERCLOCK
 static EdgeFollowSearch EdgeSearchRight; // CLOCK
+
+/*
+**	Set when lockstep walkers close an inner wall (cavity). Find_Path then
+**	stops doughnut retries: further zip targets along the same ray are
+**	still outside the pocket.
+*/
+static bool EdgeFollowCavity;
 
 /***************************************************************************
  * Point_Relative_To_Line -- Relation between a point and a line           *
@@ -371,10 +421,9 @@ int Point_Relative_To_Line(int x, int z, int x1, int z1, int x2, int z2)
  *                        double overlap condition.                        *
  *               dir    -   the direction we tried to enter from when we   *
  *                        generated the double overlap condition           *
- *               startx -   the start x position of this path segment      *
- *               starty - the start y position of this path segment        *
- *               destx    - the dest x position for this path segment      *
- *               desty    - the dest y position for this path segment      *
+ *               face_delta - Δf per facing for this start-target line     *
+ *               line_val   - f at the cell before the failed enter;       *
+ *                            updated to f of the returned cell            *
  *                                                                         *
  * OUTPUT:      TRUE    - loop has been sucessfully unravelled             *
  *               FALSE  - loop can not be unravelled so abort follow edge  *
@@ -387,10 +436,8 @@ int Point_Relative_To_Line(int x, int z, int x1, int z1, int x2, int z2)
 bool FootClass::Unravel_Loop(PathType* path,
                              CELL& cell,
                              FacingType& dir,
-                             int sx,
-                             int sy,
-                             int dx,
-                             int dy,
+                             short const* face_delta,
+                             short& line_val,
                              MoveType threshhold)
 {
     /*
@@ -400,20 +447,15 @@ bool FootClass::Unravel_Loop(PathType* path,
     CELL curr_pos = Adjacent_Cell(cell, Opposite(curr_dir));
     int idx = path->Length;                     // start at the last position
     FacingType* list = &path->Command[idx - 1]; // point to the last command
-    int checkx;
-    int checky;
     int last_was_line = false;
 
     /*
     ** loop backward through the list searching for a point that is
     ** on the line.  If the point was a diagonal move then adjust
-    ** it.
+    ** it. line_val is f(curr_pos); undo a command with -= Δ[command].
     */
     while (idx) {
-        checkx = Cell_X(curr_pos);
-        checky = Cell_Y(curr_pos);
-
-        if (!Point_Relative_To_Line(checkx, checky, sx, sy, dx, dy) || last_was_line) {
+        if (!line_val || last_was_line) {
 
             /*
             ** We have now found a point on the line.  Now we must check to see
@@ -452,6 +494,7 @@ bool FootClass::Unravel_Loop(PathType* path,
         */
         curr_dir = *list--;
         curr_pos = Adjacent_Cell(curr_pos, Opposite(curr_dir));
+        line_val = (short)(line_val - face_delta[curr_dir]);
         idx--;
     }
 
@@ -678,16 +721,12 @@ void EdgeFollowSearch::Init(FootClass* unit_in,
     threshhold = threshhold_in;
     status = Running;
     cost = 0;
-    online = true;
-    oldval = 0;
+    line_val = 0;
     cellcount = 0;
     forceout = false;
     firstdir = (FacingType)-1;
     firstcell = -1;
-    startx = Cell_X(start);
-    starty = Cell_Y(start);
-    targetx = Cell_X(target);
-    targety = Cell_Y(target);
+    Line_Face_Deltas(face_delta, Cell_X(start), Cell_Y(start), Cell_X(target), Cell_Y(target));
 
     /*
     **	Own copies of the command list and overlap bitset, starting from the
@@ -700,6 +739,7 @@ void EdgeFollowSearch::Init(FootClass* unit_in,
     path.Length = prefix->Length;
     path.LastOverlap = -1;
     path.LastFixup = -1;
+    prefix_len = (short)prefix->Length;
     if (prefix->Length > 0) {
         memcpy(commands, prefix->Command, prefix->Length);
     }
@@ -801,11 +841,9 @@ void EdgeFollowSearch::Step()
                 */
                 checkcell = Adjacent_Cell(oldcell, newdir);
 
-                int checkx = Cell_X(checkcell);
-                int checky = Cell_Y(checkcell);
-                int checkval = Point_Relative_To_Line(checkx, checky, startx, starty, targetx, targety);
-                if (checkval && !online) {
-                    forcefail = ((checkval ^ oldval) < 0);
+                short const checkval = (short)(line_val + face_delta[newdir]);
+                if (checkval && line_val) {
+                    forcefail = ((checkval ^ line_val) < 0);
                 } else {
                     forcefail = false;
                 }
@@ -862,7 +900,7 @@ void EdgeFollowSearch::Step()
                 ** a looping situation.  So we need to try and unravel the loop if
                 ** we can.
                 */
-                if (!unit->Unravel_Loop(&path, newcell, newdir, startx, starty, targetx, targety, threshhold)) {
+                if (!unit->Unravel_Loop(&path, newcell, newdir, face_delta, line_val, threshhold)) {
                     Fail();
                     return;
                 }
@@ -872,19 +910,8 @@ void EdgeFollowSearch::Step()
                 ** search direction than we really were.
                 */
                 newdir = Next_Direction(newdir, (FacingType)(search * 2));
-            }
-            /*
-            ** Find out which side of the line this cell is on.  If it is on
-            ** a side, then store off that side.
-            */
-            int newx = Cell_X(newcell);
-            int newy = Cell_Y(newcell);
-            int val = Point_Relative_To_Line(newx, newy, startx, starty, targetx, targety);
-            if (val) {
-                oldval = val;
-                online = false;
             } else {
-                online = true;
+                line_val = (short)(line_val + face_delta[newdir]);
             }
             cellcount++;
             if (cellcount == MAX_PATH_EDGE_FOLLOW) {
@@ -964,6 +991,53 @@ static void Edge_Cap_Loser(EdgeFollowSearch& left, EdgeFollowSearch& right)
     }
 }
 
+/*
+**	Signed heading change in 45° ticks. Map facings increase clockwise, so a
+**	counterclockwise loop (inner wall / cavity with left-then-reverse-right)
+**	sums to -8 and a clockwise loop (outer island) sums to +8.
+*/
+static inline int Facing_Turn(FacingType prev, FacingType next)
+{
+    int d = ((int)next - (int)prev) & 7;
+    if (d > 4) {
+        d -= 8;
+    }
+    return d;
+}
+
+static inline FacingType Edge_Loop_Face(EdgeFollowSearch const& left,
+                                        EdgeFollowSearch const& right,
+                                        int prefix,
+                                        int nleft,
+                                        int nright,
+                                        int index)
+{
+    if (index < nleft) {
+        return left.Move(prefix + index);
+    }
+    return Opposite(right.Move(prefix + nright - 1 - (index - nleft)));
+}
+
+static int Edge_Closed_Turning(EdgeFollowSearch const& left, EdgeFollowSearch const& right)
+{
+    int const prefix = left.Prefix_Length();
+    int const nleft = left.Length() - prefix;
+    int const nright = right.Length() - prefix;
+    if (prefix != right.Prefix_Length() || nleft < 1 || nright < 1) {
+        return 0;
+    }
+
+    int const n = nleft + nright;
+    int sum = 0;
+    FacingType prev = Edge_Loop_Face(left, right, prefix, nleft, nright, n - 1);
+    for (int i = 0; i < n; i++) {
+        FacingType const next = Edge_Loop_Face(left, right, prefix, nleft, nright, i);
+        sum += Facing_Turn(prev, next);
+        prev = next;
+    }
+    return sum;
+}
+
 /***********************************************************************************************
  * Follow_Edge_Pair -- CLOCK and COUNTERCLOCK edge follow in lockstep.                         *
  *                                                                                             *
@@ -986,7 +1060,11 @@ bool FootClass::Follow_Edge_Pair(CELL start,
     **	time. When one Finds, cap the others at that Length so they may still
     **	tie or unravel shorter, but cannot keep growing a longer route. Final
     **	pick: shorter Length wins; equal length keeps CLOCK.
+    **	If the walkers meet without hitting the zip cell, the closed loop's
+    **	turning (±8) is a cavity (abort doughnut) or an island (this pair
+    **	fails, Find_Path keeps scanning holes).
     */
+    EdgeFollowCavity = false;
     EdgeSearchLeft.Init(this, start, target, COUNTERCLOCK, olddir, threat, threat_stage, max_cells, threshhold, path);
     EdgeSearchRight.Init(this, start, target, CLOCK, olddir, threat, threat_stage, max_cells, threshhold, path);
 
@@ -1007,6 +1085,25 @@ bool FootClass::Follow_Edge_Pair(CELL start,
 
         next->Step();
         Edge_Cap_Loser(EdgeSearchLeft, EdgeSearchRight);
+
+        /*
+        **	Meet test only while both still run (the usual success path Finds
+        **	and must not pay turning work on the capped loser). Cell equality
+        **	after both have left the Init cell closes the contour.
+        */
+        if (EdgeSearchLeft.Is_Running() && EdgeSearchRight.Is_Running()
+            && EdgeSearchLeft.Cell_Count() > 0 && EdgeSearchRight.Cell_Count() > 0
+            && EdgeSearchLeft.Current_Cell() == EdgeSearchRight.Current_Cell()) {
+            int const turn = Edge_Closed_Turning(EdgeSearchLeft, EdgeSearchRight);
+            if (turn == 8 || turn == -8) {
+                EdgeSearchLeft.Abort();
+                EdgeSearchRight.Abort();
+                if (turn < 0) {
+                    EdgeFollowCavity = true;
+                }
+                break;
+            }
+        }
     }
 
     EdgeFollowSearch* const winner = Edge_Pick_Winner(EdgeSearchLeft, EdgeSearchRight);
@@ -1298,6 +1395,14 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
                     break;
 
                 /*
+                **	Walkers closed an inner wall: zip targets along this ray are
+                **	outside the pocket. Do not spend the remaining doughnut scans.
+                */
+                if (EdgeFollowCavity) {
+                    break;
+                }
+
+                /*
                 **	If no path can be found to the intermediate cell, then
                 **	presume we have found a doughnut of some sort. Scan
                 **	forward until the next impassable is found and then
@@ -1413,21 +1518,14 @@ bool FootClass::Follow_Edge(CELL start,
     CELL oldcell,      // Current cell.
         newcell;       // Tentative new cell.
     int cost;          // Working cost value.
-    int startx;
-    int starty;
-    int online = true;
-    int targetx;
-    int targety;
-    int oldval = 0;
+    short face_delta[FACING_COUNT];
+    short line_val = 0;
     int cellcount = 0;
     int forceout = false;
     FacingType firstdir = (FacingType)-1;
     CELL firstcell = -1;
     bool stepped_off_line = false;
-    startx = Cell_X(start);
-    starty = Cell_Y(start);
-    targetx = Cell_X(target);
-    targety = Cell_Y(target);
+    Line_Face_Deltas(face_delta, Cell_X(start), Cell_Y(start), Cell_X(target), Cell_Y(target));
 
     if (!path)
         return (false);
@@ -1508,11 +1606,9 @@ bool FootClass::Follow_Edge(CELL start,
 
                 checkcell = Adjacent_Cell(oldcell, newdir);
 
-                int checkx = Cell_X(checkcell);
-                int checky = Cell_Y(checkcell);
-                int checkval = Point_Relative_To_Line(checkx, checky, startx, starty, targetx, targety);
-                if (checkval && !online) {
-                    forcefail = ((checkval ^ oldval) < 0);
+                short const checkval = (short)(line_val + face_delta[newdir]);
+                if (checkval && line_val) {
+                    forcefail = ((checkval ^ line_val) < 0);
                 } else {
                     forcefail = false;
                 }
@@ -1570,7 +1666,7 @@ bool FootClass::Follow_Edge(CELL start,
                 ** a looping situation.  So we need to try and unravel the loop if
                 ** we can.
                 */
-                if (!Unravel_Loop(path, newcell, newdir, startx, starty, targetx, targety, threshhold)) {
+                if (!Unravel_Loop(path, newcell, newdir, face_delta, line_val, threshhold)) {
                     return (false);
                 }
                 /*
@@ -1579,19 +1675,8 @@ bool FootClass::Follow_Edge(CELL start,
                 ** search direction then we really were.
                 */
                 newdir = Next_Direction(newdir, (FacingType)(search * 2));
-            }
-            /*
-            ** Find out which side of the line this cell is on.  If it is on
-            ** a side, then store off that side.
-            */
-            int newx = Cell_X(newcell);
-            int newy = Cell_Y(newcell);
-            int val = Point_Relative_To_Line(newx, newy, startx, starty, targetx, targety);
-            if (val) {
-                oldval = val;
-                online = false;
             } else {
-                online = true;
+                line_val = (short)(line_val + face_delta[newdir]);
             }
             cellcount++;
             if (cellcount == MAX_PATH_EDGE_FOLLOW) {

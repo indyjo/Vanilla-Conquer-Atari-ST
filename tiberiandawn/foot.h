@@ -315,7 +315,7 @@ private:
                           int copy_maxlen,
                           MoveType threshhold);
     bool Register_Cell(PathType* path, CELL cell, FacingType dir, int cost, MoveType threshhold);
-    bool Unravel_Loop(PathType* path, CELL& cell, FacingType& dir, int sx, int sy, int dx, int dy, MoveType threshhold);
+    bool Unravel_Loop(PathType* path, CELL& cell, FacingType& dir, short const* face_delta, short& line_val, MoveType threshhold);
 
     /*
     **	This is the coordinate that the unit is heading to

@@ -114,6 +114,25 @@ void *Stram_Alloc(unsigned long bytes_to_alloc)
 	return a > 0L ? (void *)a : (void *)0;
 }
 
+void *Ttram_Alloc(unsigned long bytes_to_alloc)
+{
+	long a;
+
+	/* No Mxalloc means no alternate RAM at all -- Malloc would hand out ST-RAM. */
+	if (!gemdos_has_mxalloc())
+		return (void *)0;
+
+	a = Mxalloc((long)bytes_to_alloc, MX_TTRAM);
+	return a > 0L ? (void *)a : (void *)0;
+}
+
+void Ttram_Free(void *pointer)
+{
+	if (pointer) {
+		Mfree(pointer);
+	}
+}
+
 void Stram_Free(void *pointer)
 {
 	if (pointer) {
@@ -261,6 +280,25 @@ long Total_Ram_Free(MemoryFlagType flag)
 	walk_gemdos_free_pool(0, 0, "ST-RAM", &st);
 	walk_gemdos_free_pool(1, 0, "TT-RAM", &tt);
 	return st.total + tt.total;
+}
+
+/*
+ * Largest single free block per GEMDOS pool. An allocation has to fit in one
+ * block, so this -- not the total -- is what a caller sizing a big buffer must
+ * test against. Either pointer may be NULL. ttram is 0 on machines without
+ * alternate RAM.
+ */
+void ST_Largest_Free_Blocks(long *stram, long *ttram)
+{
+	StFreePoolStats st;
+	StFreePoolStats tt;
+
+	walk_gemdos_free_pool(0, 0, "ST-RAM", &st);
+	walk_gemdos_free_pool(1, 0, "TT-RAM", &tt);
+	if (stram != NULL)
+		*stram = st.largest;
+	if (ttram != NULL)
+		*ttram = tt.largest;
 }
 
 void ST_Log_Free_Memory(const char *label)

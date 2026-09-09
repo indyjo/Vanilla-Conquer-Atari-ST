@@ -349,9 +349,8 @@ static EdgeFollowSearch EdgeSearchLeft;  // COUNTERCLOCK
 static EdgeFollowSearch EdgeSearchRight; // CLOCK
 
 /*
-**	Set when lockstep walkers close an inner wall (cavity). Find_Path then
-**	stops doughnut retries: further zip targets along the same ray are
-**	still outside the pocket.
+**	Set when lockstep walkers close an inner wall (cavity). Find_Path
+**	stops remaining doughnut scans only if threat is already -1.
 */
 static bool EdgeFollowCavity;
 
@@ -1061,8 +1060,9 @@ bool FootClass::Follow_Edge_Pair(CELL start,
     **	tie or unravel shorter, but cannot keep growing a longer route. Final
     **	pick: shorter Length wins; equal length keeps CLOCK.
     **	If the walkers meet without hitting the zip cell, the closed loop's
-    **	turning (±8) is a cavity (abort doughnut) or an island (this pair
-    **	fails, Find_Path keeps scanning holes).
+    **	turning (±8) is a cavity or an island: abort this pair. Find_Path
+    **	only skips remaining doughnut scans on a cavity when threat is
+    **	already -1 (no further RoundAbout staging).
     */
     EdgeFollowCavity = false;
     EdgeSearchLeft.Init(this, start, target, COUNTERCLOCK, olddir, threat, threat_stage, max_cells, threshhold, path);
@@ -1142,7 +1142,7 @@ bool FootClass::Follow_Edge_Pair(CELL start,
  * HISTORY:                                                                                    *
  *   07/08/1991  CY : Created.                                                                 *
  *=============================================================================================*/
-PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, MoveType threshhold)
+PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, MoveType threshhold, bool ignore_threat)
 {
     CELL source = Coord_Cell(Coord); // Source expressed as cell
     static PathType path;            // Main path control.
@@ -1179,7 +1179,7 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
     Debug_Draw_Map("Initial Draw", source, dest, false);
 
     //	MoveMask = flags;
-    if (Team && Team->Class->IsRoundAbout) {
+    if (!ignore_threat && Team && Team->Class->IsRoundAbout) {
         unit_threat = (Team) ? Team->Risk : Risk();
         threat_stage = 0;
         threat = 0;
@@ -1395,10 +1395,28 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
                     break;
 
                 /*
-                **	Walkers closed an inner wall: zip targets along this ray are
-                **	outside the pocket. Do not spend the remaining doughnut scans.
+                **	Walkers closed an inner wall. Further zip targets along this
+                **	ray are outside the pocket. Doughnut Follow_Edge cannot reach
+                **	them. Restage threat from startcell (same origin as dest-blocked),
+                **	or stop when already ignoring threat.
                 */
                 if (EdgeFollowCavity) {
+                    if (threat != -1) {
+                        switch (threat_stage++) {
+                        case 0:
+                            threat = unit_threat >> 1;
+                            break;
+
+                        case 1:
+                            threat += unit_threat;
+                            break;
+
+                        case 2:
+                            threat = -1;
+                            break;
+                        }
+                        goto top_of_list;
+                    }
                     break;
                 }
 

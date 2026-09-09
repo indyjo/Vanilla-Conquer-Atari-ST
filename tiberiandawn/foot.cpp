@@ -438,35 +438,57 @@ bool FootClass::Basic_Path(void)
 
             /*
             **	Determine if ANY path could be calculated by first examining the most
-            **	aggressive case. If this fails, then no path will succeed. Further
-            **	scanning is unnecessary.
+            **	aggressive case (ignore threat). If this fails, then no path will succeed.
+            **	Further scanning is unnecessary.
             */
-            path = Find_Path(cell, &workpath1[0], sizeof(workpath1), maxtype);
+            path = Find_Path(cell, &workpath1[0], sizeof(workpath1), maxtype, true);
             if (path && path->Cost) {
                 memcpy(&path1, path, sizeof(path1));
                 found1 = true;
+                bool polite_found = false;
+                bool cloak_accepted = false;
 
                 /*
                 **	Scan for the best path possible. If this succeeds, then do a simple
                 **	comparison with the most agressive path. If they are very close, then
                 **	go with the best (easiest) path method.
                 */
-                path = Find_Path(cell, &workpath2[0], sizeof(workpath2), MOVE_CLOAK);
-                if (path && path->Cost && path->Cost < MAX((path1.Cost + (path1.Cost / 2)), 3)) {
-                    memcpy(&path1, path, sizeof(path1));
-                    memcpy(workpath1, workpath2, sizeof(workpath1));
-                } else {
+                path = Find_Path(cell, &workpath2[0], sizeof(workpath2), MOVE_CLOAK, true);
+                if (path && path->Cost) {
+                    polite_found = true;
+                    if (path->Cost < MAX((path1.Cost + (path1.Cost / 2)), 3)) {
+                        memcpy(&path1, path, sizeof(path1));
+                        memcpy(workpath1, workpath2, sizeof(workpath1));
+                        cloak_accepted = true;
+                    }
+                }
 
+                if (!cloak_accepted) {
                     /*
                     **	The easiest path method didn't result in a satisfactory path. Scan through
                     **	the rest of the path options, looking for the best one.
                     */
                     for (MoveType move = MOVE_MOVING_BLOCK; move < maxtype; move++) {
-                        path = Find_Path(cell, &workpath2[0], sizeof(workpath2), move);
-                        if (path && path->Cost && path->Cost < MAX((path1.Cost + (path1.Cost / 2)), 3)) {
-                            memcpy(&path1, path, sizeof(path1));
-                            memcpy(workpath1, workpath2, sizeof(workpath1));
+                        path = Find_Path(cell, &workpath2[0], sizeof(workpath2), move, true);
+                        if (path && path->Cost) {
+                            polite_found = true;
+                            if (path->Cost < MAX((path1.Cost + (path1.Cost / 2)), 3)) {
+                                memcpy(&path1, path, sizeof(path1));
+                                memcpy(workpath1, workpath2, sizeof(workpath1));
+                            }
                         }
+                    }
+                }
+
+                /*
+                **	If no politer path exists, RoundAbout teams may still find a
+                **	threat-avoiding route. Prefer that over the ignore-threat fallback.
+                */
+                if (!polite_found && Team && Team->Class->IsRoundAbout) {
+                    path = Find_Path(cell, &workpath2[0], sizeof(workpath2), maxtype, false);
+                    if (path && path->Cost) {
+                        memcpy(&path1, path, sizeof(path1));
+                        memcpy(workpath1, workpath2, sizeof(workpath1));
                     }
                 }
             }
@@ -500,7 +522,7 @@ bool FootClass::Basic_Path(void)
             */
             if (found1) {
                 Fixup_Path(&path1);
-                memcpy(&Path[0], &workpath1[0], MIN(path->Length, (int)sizeof(Path)));
+                memcpy(&Path[0], &workpath1[0], MIN(path1.Length, (int)sizeof(Path)));
             }
 
             Mark(MARK_DOWN);

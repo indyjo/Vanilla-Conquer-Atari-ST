@@ -293,7 +293,7 @@ public:
 
 private:
     int Passable_Cell(CELL cell, FacingType face, int threat, MoveType threshhold);
-    PathType* Find_Path(CELL dest, FacingType* final_moves, int maxlen, MoveType threshhold);
+    PathType* Find_Path(CELL dest, FacingType* final_moves, int maxlen, MoveType threshhold, bool ignore_threat = false);
     void Debug_Draw_Map(const char* txt, CELL start, CELL dest, bool pause);
     void Debug_Draw_Path(PathType* path);
     bool Follow_Edge(CELL start,

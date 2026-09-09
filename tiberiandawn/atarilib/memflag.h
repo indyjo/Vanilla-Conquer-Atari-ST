@@ -67,6 +67,16 @@ long Total_Ram_Free(MemoryFlagType flag);
 void *Stram_Alloc(unsigned long bytes_to_alloc);
 void Stram_Free(void *pointer);
 
+/* Alternate (TT/fast) RAM. Returns NULL on machines that have none. */
+void *Ttram_Alloc(unsigned long bytes_to_alloc);
+void Ttram_Free(void *pointer);
+
+/*
+ * Largest single free block per GEMDOS pool -- what a big allocation must fit
+ * into. Either pointer may be NULL; ttram is 0 without alternate RAM.
+ */
+void ST_Largest_Free_Blocks(long *stram, long *ttram);
+
 /*
  * Log all GEMDOS free ST-RAM / TT-RAM blocks (sizes + total + largest).
  * label may be NULL. Ram_Free() also dumps the ST-RAM block list when called.

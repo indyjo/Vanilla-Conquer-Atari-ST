@@ -291,6 +291,17 @@ public:
     {
         return oldcell;
     }
+    /*
+    **	Facing used to enter Current_Cell (last edge command). FACING_NONE
+    **	before the first Register_Cell.
+    */
+    FacingType Current_Facing() const
+    {
+        if (path.Length <= prefix_len) {
+            return FACING_NONE;
+        }
+        return commands[path.Length - 1];
+    }
     int Cell_Count() const
     {
         return cellcount;
@@ -1037,6 +1048,64 @@ static int Edge_Closed_Turning(EdgeFollowSearch const& left, EdgeFollowSearch co
     return sum;
 }
 
+/*
+**	Proper (not endpoint-touch) intersection of cell-center segments AB and CD.
+**	Uses Point_Relative_To_Line: opposite strict signs on both pairs.
+*/
+static bool Edge_Seg_Proper_Cross(int ax, int ay, int bx, int by, int cx, int cy, int dx, int dy)
+{
+    int const ab_c = Point_Relative_To_Line(cx, cy, ax, ay, bx, by);
+    int const ab_d = Point_Relative_To_Line(dx, dy, ax, ay, bx, by);
+    int const cd_a = Point_Relative_To_Line(ax, ay, cx, cy, dx, dy);
+    int const cd_b = Point_Relative_To_Line(bx, by, cx, cy, dx, dy);
+    return (((ab_c > 0 && ab_d < 0) || (ab_c < 0 && ab_d > 0))
+            && ((cd_a > 0 && cd_b < 0) || (cd_a < 0 && cd_b > 0)));
+}
+
+/*
+**	True if the closed left+right contour crosses the start→zip segment, not
+**	counting edges that touch start (the two exits from the bay). A mouth
+**	needle sits behind the unit and never cuts that ray; a real inner wall
+**	(cavity) or far shore (island) does.
+*/
+static bool Edge_Loop_Crosses_Zip(CELL start,
+                                  CELL zip,
+                                  EdgeFollowSearch const& left,
+                                  EdgeFollowSearch const& right)
+{
+    int const prefix = left.Prefix_Length();
+    int const nleft = left.Length() - prefix;
+    int const nright = right.Length() - prefix;
+    if (prefix != right.Prefix_Length() || nleft < 1 || nright < 1 || start == zip) {
+        return false;
+    }
+
+    int const sx = Cell_X(start);
+    int const sy = Cell_Y(start);
+    int const zx = Cell_X(zip);
+    int const zy = Cell_Y(zip);
+    CELL a = start;
+    int i;
+
+    for (i = 0; i < nleft; i++) {
+        CELL const b = Adjacent_Cell(a, left.Move(prefix + i));
+        if (a != start && b != start
+            && Edge_Seg_Proper_Cross(sx, sy, zx, zy, Cell_X(a), Cell_Y(a), Cell_X(b), Cell_Y(b))) {
+            return true;
+        }
+        a = b;
+    }
+    for (i = 0; i < nright; i++) {
+        CELL const b = Adjacent_Cell(a, Opposite(right.Move(prefix + nright - 1 - i)));
+        if (a != start && b != start
+            && Edge_Seg_Proper_Cross(sx, sy, zx, zy, Cell_X(a), Cell_Y(a), Cell_X(b), Cell_Y(b))) {
+            return true;
+        }
+        a = b;
+    }
+    return false;
+}
+
 /***********************************************************************************************
  * Follow_Edge_Pair -- CLOCK and COUNTERCLOCK edge follow in lockstep.                         *
  *                                                                                             *
@@ -1059,10 +1128,11 @@ bool FootClass::Follow_Edge_Pair(CELL start,
     **	time. When one Finds, cap the others at that Length so they may still
     **	tie or unravel shorter, but cannot keep growing a longer route. Final
     **	pick: shorter Length wins; equal length keeps CLOCK.
-    **	If the walkers meet without hitting the zip cell, the closed loop's
-    **	turning (±8) is a cavity or an island: abort this pair. Find_Path
-    **	only skips remaining doughnut scans on a cavity when threat is
-    **	already -1 (no further RoundAbout staging).
+    **	If the walkers occupy the same cell after leaving start, this zip is
+    **	done: either a shared mouth needle or a closed contour. Turning -8
+    **	is a cavity only when that loop crosses start→zip. A bay mouth must
+    **	not stop doughnut retries. Find_Path skips remaining doughnut scans
+    **	on a cavity when threat is already -1.
     */
     EdgeFollowCavity = false;
     EdgeSearchLeft.Init(this, start, target, COUNTERCLOCK, olddir, threat, threat_stage, max_cells, threshhold, path);
@@ -1088,21 +1158,24 @@ bool FootClass::Follow_Edge_Pair(CELL start,
 
         /*
         **	Meet test only while both still run (the usual success path Finds
-        **	and must not pay turning work on the capped loser). Cell equality
-        **	after both have left the Init cell closes the contour.
+        **	and must not pay turning work on the capped loser). Same cell ends
+        **	this zip; opposing facing is not required (mouth walkers can share
+        **	a heading, then only meet head-on after circling the map). Cavity
+        **	only if turning is -8 and the loop crosses start→zip.
         */
         if (EdgeSearchLeft.Is_Running() && EdgeSearchRight.Is_Running()
             && EdgeSearchLeft.Cell_Count() > 0 && EdgeSearchRight.Cell_Count() > 0
-            && EdgeSearchLeft.Current_Cell() == EdgeSearchRight.Current_Cell()) {
+            && EdgeSearchLeft.Current_Cell() == EdgeSearchRight.Current_Cell()
+            && EdgeSearchLeft.Current_Facing() != FACING_NONE
+            && EdgeSearchRight.Current_Facing() != FACING_NONE) {
             int const turn = Edge_Closed_Turning(EdgeSearchLeft, EdgeSearchRight);
-            if (turn == 8 || turn == -8) {
-                EdgeSearchLeft.Abort();
-                EdgeSearchRight.Abort();
-                if (turn < 0) {
-                    EdgeFollowCavity = true;
-                }
-                break;
+            bool const crosses = Edge_Loop_Crosses_Zip(start, target, EdgeSearchLeft, EdgeSearchRight);
+            EdgeSearchLeft.Abort();
+            EdgeSearchRight.Abort();
+            if (crosses && turn == -8) {
+                EdgeFollowCavity = true;
             }
+            break;
         }
     }
 

@@ -642,7 +642,8 @@ void ScoreClass::Presentation(void)
 	ST_Log_Free_Memory("Score:Presentation before sprite reconfigure (0,0,64,0)");
 	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 64, 0);
 	ST_Log_Free_Memory("Score:Presentation after sprite reconfigure");
-	C2P_Context *c2p_saved = C2P_SaveContext();
+	C2P_Context c2p_saved;
+	C2P_SaveContext(&c2p_saved);
 	ST_Log_Free_Memory("Score:Presentation after C2P_SaveContext");
 #else
 	PseudoSeenBuff = new GraphicBufferClass(320,200,(void*)NULL);
@@ -1058,11 +1059,7 @@ void ScoreClass::Presentation(void)
 	ST_Log_Free_Memory("Score:Presentation before sprite reconfigure (defaults)");
 	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
 	ST_Log_Free_Memory("Score:Presentation after sprite reconfigure (defaults)");
-	if (c2p_saved) {
-		C2P_RestoreContext(c2p_saved);
-		C2P_FreeContext(c2p_saved);
-		c2p_saved = NULL;
-	}
+	C2P_RestoreContext(&c2p_saved);
 	#endif
 	Set_Palette(GamePalette);
 
@@ -2038,7 +2035,8 @@ void Multi_Score_Presentation(void)
 	char const *pal;
 
 #ifdef ATARI_ST
-	C2P_Context *c2p_saved = C2P_SaveContext();
+	C2P_Context c2p_saved;
+	C2P_SaveContext(&c2p_saved);
 #endif
 
 	FontXSpacing = 0;
@@ -2152,11 +2150,7 @@ void Multi_Score_Presentation(void)
 	VisiblePage.Clear();
 	#ifdef ATARI_ST
 	ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
-	if (c2p_saved) {
-		C2P_RestoreContext(c2p_saved);
-		C2P_FreeContext(c2p_saved);
-		c2p_saved = NULL;
-	}
+	C2P_RestoreContext(&c2p_saved);
 	#endif
 	Set_Palette(GamePalette);
 

@@ -7,7 +7,6 @@
 #include "st_frame_meter.h"
 #include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* Avoid pulling in mouse/sprite headers; implemented elsewhere. */
@@ -58,14 +57,7 @@ uint8_t C2P_HW_Palette_Subset[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1
 /* Pair LUTs: 4 pair positions (pixels 0-1,2-3,4-5,6-7) and two-nibble index. */
 static uint32_t C2P_PairLUT[4][256];
 static int C2P_LUT_InitDone = 0;
-
-struct C2P_Context {
-	uint8_t map_dither[16][256];
-	uint8_t map_nearest[256];
-	uint8_t palette_index_clean4[256];
-	uint8_t hw_palette_subset[16];
-	uint32_t stdoom_frag[4][256][8];
-};
+static C2P_WeightSet C2P_Installed_WeightSet;
 
 /*
  * STDOOM-style full-width C2P (see STDOOM atari_c2p.c: bayer4_* + c2p_1x_lorez).
@@ -277,8 +269,8 @@ extern "C" unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char p
 }
 
 /*
-** Bake MapDither / nearest / clean4 / STDOOM_FragLUT from a 256×16 weight matrix read only
-** during this rebuild (no copy of the matrix is retained in C2P).
+** Bake MapDither / nearest / clean4 / STDOOM_FragLUT from a 256×16 weight matrix.
+** C2P_Install_WeightSet keeps a copy of the .W16 for C2P_SaveContext.
 **
 ** C2P_InitPairLUT_Once: fills C2P_PairLUT from nibble pairs (independent of weights; lazy one-time).
 ** MapDither[][]: Bayer cell (x&3,y&3) × weights -> ST nibble for C2P_Map8ToPlanar4.
@@ -355,6 +347,7 @@ extern "C" int C2P_Install_WeightSet(const C2P_WeightSet *weight_set)
 		return 0;
 	}
 
+	memcpy(&C2P_Installed_WeightSet, weight_set, sizeof(C2P_Installed_WeightSet));
 	C2P_Rebuild_Tables_From_WeightRows(weight_set->subset, weight_set->weights);
 	C2P_Weights_Ready = 1;
 	C2P_Notify_Weights_Changed();
@@ -366,47 +359,25 @@ extern "C" int C2P_Weights_Are_Ready(void)
 	return C2P_Weights_Ready ? 1 : 0;
 }
 
-static void C2P_Copy_Active_Luts_To_Context(C2P_Context *ctx)
-{
-	memcpy(ctx->map_dither, C2P_MapDither, sizeof(ctx->map_dither));
-	memcpy(ctx->map_nearest, C2P_MapNearestLUT, sizeof(ctx->map_nearest));
-	memcpy(ctx->palette_index_clean4, C2P_PaletteIndexClean4LUT, sizeof(ctx->palette_index_clean4));
-	memcpy(ctx->hw_palette_subset, C2P_HW_Palette_Subset, sizeof(ctx->hw_palette_subset));
-	memcpy(ctx->stdoom_frag, C2P_STDOOM_FragLUT, sizeof(ctx->stdoom_frag));
-}
-
-static void C2P_Apply_Context_Luts(const C2P_Context *ctx)
-{
-	memcpy(C2P_MapDither, ctx->map_dither, sizeof(C2P_MapDither));
-	memcpy(C2P_MapNearestLUT, ctx->map_nearest, sizeof(C2P_MapNearestLUT));
-	memcpy(C2P_PaletteIndexClean4LUT, ctx->palette_index_clean4, sizeof(C2P_PaletteIndexClean4LUT));
-	memcpy(C2P_HW_Palette_Subset, ctx->hw_palette_subset, sizeof(C2P_HW_Palette_Subset));
-	memcpy(C2P_STDOOM_FragLUT, ctx->stdoom_frag, sizeof(C2P_STDOOM_FragLUT));
-}
-
-extern "C" C2P_Context *C2P_SaveContext(void)
-{
-	C2P_Context *ctx = (C2P_Context *)malloc(sizeof(C2P_Context));
-	if (!ctx) {
-		return NULL;
-	}
-	C2P_Copy_Active_Luts_To_Context(ctx);
-	return ctx;
-}
-
-extern "C" void C2P_RestoreContext(C2P_Context *ctx)
+extern "C" void C2P_SaveContext(C2P_Context *ctx)
 {
 	if (!ctx) {
 		return;
 	}
-	C2P_InitPairLUT_Once();
-	C2P_Apply_Context_Luts(ctx);
-	C2P_Notify_Weights_Changed();
+	ctx->valid = 0;
+	if (!C2P_Weights_Ready) {
+		return;
+	}
+	ctx->weight_set = C2P_Installed_WeightSet;
+	ctx->valid = 1;
 }
 
-extern "C" void C2P_FreeContext(C2P_Context *ctx)
+extern "C" void C2P_RestoreContext(const C2P_Context *ctx)
 {
-	free(ctx);
+	if (!ctx || !ctx->valid) {
+		return;
+	}
+	(void)C2P_Install_WeightSet(&ctx->weight_set);
 }
 
 extern "C" int C2P_Load_WeightSet(const char *stem, const char *tag)

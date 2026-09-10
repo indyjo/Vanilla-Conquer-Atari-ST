@@ -29,23 +29,28 @@ typedef struct C2P_WeightSet {
 
 enum { C2P_WEIGHTSET_FILE_BYTES = (int)sizeof(C2P_WeightSet) };
 
-typedef struct C2P_Context C2P_Context;
+/*
+ * Stack-safe snapshot: the installed .W16 plus valid. Restore rebuilds LUTs via C2P_Install_WeightSet.
+ */
+typedef struct C2P_Context {
+	int valid;
+	C2P_WeightSet weight_set;
+} C2P_Context;
 
 /* Returns non-zero if magic, row sums, and subset indices are valid. */
 int C2P_WeightSet_Validate(const C2P_WeightSet *weight_set);
 
-/* Install weights + subset; LUTs are rebuilt during this call only (buffer may be freed after return). */
+/* Install weights + subset; LUTs are rebuilt during this call. The .W16 is retained for SaveContext. */
 int C2P_Install_WeightSet(const C2P_WeightSet *weight_set);
 /* Load <stem>.W16 and install; returns 1 on success. Logs and leaves weights unchanged on failure. */
 int C2P_Load_WeightSet(const char *stem, const char *tag);
 /* TRUE after a successful C2P_Install_WeightSet / C2P_Load_WeightSet. */
 int C2P_Weights_Are_Ready(void);
 
-/* Snapshot of active C2P lookup tables (heap-allocated). NULL only on allocation failure. */
-C2P_Context *C2P_SaveContext(void);
-/* Restore lookup tables from a prior snapshot; does not free ctx. */
-void C2P_RestoreContext(C2P_Context *ctx);
-void C2P_FreeContext(C2P_Context *ctx);
+/* Copy the last installed .W16 into caller storage (stack). Sets ctx->valid. */
+void C2P_SaveContext(C2P_Context *ctx);
+/* Reinstall a prior SaveContext snapshot if ctx->valid (rebuilds LUTs). */
+void C2P_RestoreContext(const C2P_Context *ctx);
 
 /* Map 8-bit palette index to one ST 4-bit color using current dither tables (absolute pixel coords). */
 unsigned char C2P_Map8ToPlanar4(int abs_x, int abs_y, unsigned char pal_idx);

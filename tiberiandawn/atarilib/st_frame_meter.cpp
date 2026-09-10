@@ -263,11 +263,8 @@ static void St_FrameMeter_XorFPSText(
 static void St_FrameMeter_DrawFPS(GraphicViewPortClass *page, int x0, int bw)
 {
 	char text[ST_FRAME_BAR_FPS_MAX_CHARS + 1];
-	int prefix = Debug_Coalesced_Clipped_Redraw ? 1 : 0;
-	if (prefix) {
-		text[0] = 'c';
-	}
-	int len = St_FrameMeter_FormatFPS(text + prefix, s_disp_fps_x100) + prefix;
+	text[0] = 'c';
+	int len = St_FrameMeter_FormatFPS(text + 1, s_disp_fps_x100) + 1;
 	int text_x = x0 + bw - (len * ST_FRAME_BAR_FPS_CHAR_W);
 	St_FrameMeter_XorFPSText(page, text_x, text, len);
 }

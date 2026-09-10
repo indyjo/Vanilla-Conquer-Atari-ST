@@ -49,7 +49,6 @@
  *   AircraftClass::In_Which_Layer -- Determine which render layer the aircraft lies.          *
  *   AircraftClass::Init -- Initialize the aircraft system to an empty state.                  *
  *   AircraftClass::Is_LZ_Clear -- Determines if landing zone is free for landing.             *
- *   AircraftClass::Mark -- Flags cells under the aircraft so that they will be redrawn.       *
  *   AircraftClass::Mission_Attack -- Handles the attack mission for aircraft.                 *
  *   AircraftClass::Mission_Enter -- Control aircraft to fly to the helipad or repair center.  *
  *   AircraftClass::Mission_Guard -- Handles aircraft in guard mode.                           *
@@ -742,7 +741,7 @@ void AircraftClass::AI(void)
     */
     if (PrimaryFacing.Is_Rotating()) {
         if (PrimaryFacing.Rotation_Adjust(Class->ROT)) {
-            Mark();
+            Mark(MARK_CHANGE);
         }
     }
     if (Class->IsFixedWing) {
@@ -750,7 +749,7 @@ void AircraftClass::AI(void)
     }
     if (SecondaryFacing.Is_Rotating()) {
         if (SecondaryFacing.Rotation_Adjust(Class->ROT)) {
-            Mark();
+            Mark(MARK_CHANGE);
         }
     }
 
@@ -764,7 +763,7 @@ void AircraftClass::AI(void)
         }
     }
     if (do_physics && Physics(Coord, PrimaryFacing) != IMPACT_NONE) {
-        Mark();
+        Mark(MARK_CHANGE);
     }
 
     /*
@@ -783,7 +782,7 @@ void AircraftClass::AI(void)
     **	layer.
     */
     if (Is_Door_Closed() && (IsLanding || IsTakingOff)) {
-        Mark();
+        Mark(MARK_CHANGE);
         LayerType layer = In_Which_Layer();
 
         if (IsLanding) {
@@ -932,36 +931,6 @@ void AircraftClass::AI(void)
         }
 #endif
     }
-}
-
-/***********************************************************************************************
- * AircraftClass::Mark -- Flags cells under the aircraft so that they will be redrawn.         *
- *                                                                                             *
- *    This routine is used to flag the cells under the aircraft so that those cells will       *
- *    be redrawn during the next map drawing process. This is a necessary step whenever the    *
- *    aircraft moves or changes shape.                                                         *
- *                                                                                             *
- * INPUT:   none                                                                               *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   07/26/1994 JLB : Created.                                                                 *
- *=============================================================================================*/
-bool AircraftClass::Mark(MarkType mark)
-{
-    Validate();
-    if (!FootClass::Mark(mark)) {
-        return (false);
-    }
-    if (!Debug_Coalesced_Clipped_Redraw) {
-        CELL const c = Coord_Cell(Coord);
-        Map.Refresh_Cells(c, Occupy_List());
-        Map.Refresh_Cells(c, Overlap_List());
-    }
-    return (true);
 }
 
 /***********************************************************************************************

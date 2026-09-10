@@ -137,12 +137,9 @@ public:
     HousesType InfType;
 
     /*
-    **	These point to the object(s) that are located in this cell or overlap
-    **	this cell.
+    **	These point to the object(s) that are located in this cell.
     */
     ObjectClass* OccupierPtr;
-        #define MAX_OVERLAPPERS 7
-        ObjectClass* Overlapper[MAX_OVERLAPPERS];
 
     /*
     **	Per-player view of whether a cell is mapped. One bit for each house type. ST - 3/5/2019 3:00PM
@@ -247,8 +244,6 @@ public:
     */
     void Occupy_Down(ObjectClass* object);
     void Occupy_Up(ObjectClass* object);
-    void Overlap_Down(ObjectClass* object);
-    void Overlap_Up(ObjectClass* object);
     bool Flag_Place(HousesType house);
     bool Flag_Remove(void);
     void Flag_Update(void);
@@ -268,8 +263,8 @@ public:
     **	Display and rendering controls.
     */
     void Draw_It(int x, int y, int draw_flags = 0, CELL cell = (CELL)-1) const;
-    void Redraw_Objects(CELL cell, bool forced = false);
-    void Redraw_Objects(bool forced = false);
+    void Redraw_Objects(CELL cell);
+    void Redraw_Objects(void);
     void Shimmer(void);
 
     /*
@@ -328,9 +323,9 @@ private:
     AnimClass* CTFFlag;
 
     /*
-    ** Some additional padding in case we need to add data to the class and maintain backwards compatibility for
-    *save/load
+    **	Pad to 32 bytes on m68k (2-byte alignment). Save/load writes sizeof(*this).
     */
+    unsigned char Reserved[2];
 };
 
 #endif

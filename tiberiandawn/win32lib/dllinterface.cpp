@@ -1625,13 +1625,6 @@ extern "C" __declspec(dllexport) bool __cdecl CNC_Advance_Instance(uint64 player
 		DLLExportClass::Computer_Message(false);
 	}
 
-	/*
-	** The code is often leaving dangling pointers in overlappers. We can afford the CPU time to just clean them up. I suspect
-	** the underlying cause was probably fixed in RA.
-	** ST - 4/14/2020 11:45AM
-	*/
-	Map.Clean();
-
 #ifndef NDEBUG
 	/*
 	** Is there a memory trasher altering the map??

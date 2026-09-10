@@ -196,7 +196,6 @@ public:
     */
     virtual void Do_Shimmer(void);
     virtual int Exit_Object(TechnoClass*);
-    virtual bool Render(bool forced);
     virtual short const* Occupy_List(bool placement = false) const;
     virtual short const* Overlap_List(void) const;
     virtual void Get_AABB(int& x0, int& y0, int& x1, int& y1) const;

@@ -376,33 +376,13 @@ bool BaseClass::Is_Built(int index)
  *=============================================================================================*/
 BuildingClass* BaseClass::Get_Building(int index)
 {
-    ObjectClass* obj[1 + ARRAY_SIZE(Map[(CELL)0].Overlapper)];
-
-    /*
-    ** Check the location on the map where this building should be; if it's
-    ** there, return a pointer to it.
-    */
     CELL cell = Coord_Cell(Nodes[index].Coord);
-
-    obj[0] = Map[cell].Cell_Building();
-    int count = 1;
-    for (int xindex = 0; xindex < ARRAY_SIZE(Map[cell].Overlapper); xindex++) {
-        if (Map[cell].Overlapper[xindex] != NULL) {
-            obj[count++] = Map[cell].Overlapper[xindex];
-        }
+    ObjectClass* obj = Map[cell].Cell_Building();
+    if (obj && obj->Coord == Nodes[index].Coord && obj->What_Am_I() == RTTI_BUILDING
+        && ((BuildingClass*)obj)->Class->Type == Nodes[index].Type) {
+        return (BuildingClass*)obj;
     }
-
-    BuildingClass* bldg = NULL;
-    for (int i = 0; i < count; i++) {
-        if (obj[i] && obj[i]->Coord == Nodes[index].Coord && obj[i]->What_Am_I() == RTTI_BUILDING
-            && ((BuildingClass*)obj[i])->Class->Type == Nodes[index].Type) {
-
-            bldg = (BuildingClass*)obj[i];
-            break;
-        }
-    }
-
-    return (bldg);
+    return NULL;
 }
 
 /***********************************************************************************************

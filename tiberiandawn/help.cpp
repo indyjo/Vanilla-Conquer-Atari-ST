@@ -633,7 +633,7 @@ bool HelpClass::Blit_Help_Cache(void)
 
 void HelpClass::Present_Help_Once(void)
 {
-    if (HelpPresented || !Debug_Coalesced_Clipped_Redraw) {
+    if (HelpPresented) {
         return;
     }
     int const x0 = DrawX - 1;

@@ -43,7 +43,6 @@
  *   ObjectClass::ObjectClass -- Default constructor for objects.                              *
  *   ObjectClass::Passive_Click_With -- Right mouse button click process.                      *
  *   ObjectClass::Receive_Message -- Processes an incoming radio message.                      *
- *   ObjectClass::Render -- Displays the object onto the map.                                  *
  *   ObjectClass::Repair -- Handles object repair control.                                     *
  *   ObjectClass::Revealed -- Reveals this object to the house specified.                      *
  *   ObjectClass::Select -- Try to make this object the "selected" object.                     *
@@ -895,93 +894,6 @@ bool ObjectClass::Select(bool allow_mixed)
     return (true);
 }
 
-/***********************************************************************************************
- * ObjectClass::Render -- Displays the object onto the map.                                    *
- *                                                                                             *
- *    This routine will determine the location of the object and if it is roughly on the       *
- *    visible screen, it will display it. Not displaying objects that are not on the screen    *
- *    will save valuable time.                                                                 *
- *                                                                                             *
- * INPUT:   bool; Should the render be forced regardless of whether the object is flagged to   *
- *                be redrawn?                                                                  *
- *                                                                                             *
- * OUTPUT:  bool; Was the draw code called for this object?                                    *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   06/19/1994 JLB : Created.                                                                 *
- *=============================================================================================*/
-bool ObjectClass::Render(bool forced)
-{
-    int x, y;
-    COORDINATE coord = Render_Coord();
-
-    bool const allow_draw = Debug_Map || Debug_Unshroud || ((forced || IsToDisplay) && IsDown && !IsInLimbo);
-
-    if (allow_draw) {
-
-        /*
-        **	Draw the path as lines on the map if so directed and the object is one that
-        **	contains a path.
-        */
-
-        // if (Special.IsShowPath && IsSelected) {
-        // Updated to function for multiplayer - 6/26/2019 JAS
-        if (Special.IsShowPath && Is_Selected_By_Player()) {
-            switch (What_Am_I()) {
-            case RTTI_INFANTRY:
-            case RTTI_UNIT:
-                FootClass* foot = (FootClass*)this;
-                CELL cell;
-                int oldx, oldy;
-
-                if (foot->Head_To_Coord() && foot->Path[0] != FACING_NONE) {
-                    cell = Adjacent_Cell(Coord_Cell(foot->Head_To_Coord()),
-                                         (FacingType)((foot->Path[0] + FACING_S) & FACING_NW));
-                    Map.Coord_To_Pixel(Cell_Coord(cell), oldx, oldy);
-                    for (int index = 0; index < CONQUER_PATH_MAX; index++) {
-                        if (foot->Path[index] == FACING_NONE)
-                            break;
-                        cell = Adjacent_Cell(cell, foot->Path[index]);
-                        if (Map.Coord_To_Pixel(Cell_Coord(cell), x, y)) {
-                            LogicPage->Draw_Line(oldx, 8 + oldy, x, 8 + y, BLACK);
-                        }
-                        oldx = x;
-                        oldy = y;
-                    }
-                }
-                break;
-            }
-        }
-
-        if (Map.Coord_To_Pixel(coord, x, y)) {
-
-            /*
-            **	Draw the object itself
-            */
-            Draw_It(x, y, WINDOW_TACTICAL);
-            if (!Debug_Coalesced_Clipped_Redraw) {
-                IsToDisplay = false;
-            }
-
-#ifdef SCENARIO_EDITOR
-            /*
-            **	Draw the trigger attached to the object. Draw_It is window-
-            **	relative, so add the window's x-coord to 'x'.
-            */
-            if (Debug_Map && Trigger) {
-                Fancy_Text_Print(
-                    Trigger->Get_Name(), x + (WinX << 3), y, PINK, TBLACK, TPF_CENTER | TPF_NOSHADOW | TPF_6POINT);
-            }
-#endif
-
-            return (true);
-        }
-    }
-    return (false);
-}
-
 #ifdef CHEAT_KEYS
 /***********************************************************************************************
  * ObjectClass::Debug_Dump -- Displays status of the object class to the mono monitor.         *
@@ -1507,7 +1419,7 @@ bool ObjectClass::Mark(MarkType mark)
         */
         if (mark == MARK_OVERLAP_UP) {
             if (IsDown == true) {
-                Map.Overlap_Up(Coord_Cell(Coord), this);
+                Map.Overlap_Down(Coord_Cell(Coord), this);
                 Mark_For_Redraw();
                 return (true);
             }
@@ -1553,7 +1465,7 @@ bool ObjectClass::Mark(MarkType mark)
             if (tech && GameToPlay == GAME_NORMAL) {
                 Map[cell].Adjust_Threat(house, -threat, cell);
             }
-            Map.Overlap_Up(Coord_Cell(Coord), this);
+            Map.Overlap_Down(Coord_Cell(Coord), this);
             IsDown = false;
             return (true);
         }

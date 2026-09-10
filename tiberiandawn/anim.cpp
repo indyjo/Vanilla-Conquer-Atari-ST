@@ -182,30 +182,6 @@ COORDINATE AnimClass::Center_Coord(void) const
 }
 
 /***********************************************************************************************
- * AnimClass::Render -- Draws an animation object.                                             *
- *                                                                                             *
- *    This is the working routine that renders the animation shape. It gets called once        *
- *    per animation per frame. It needs to be fast.                                            *
- *                                                                                             *
- * INPUT:   bool; Should the animation be rendered in spite of render flag?                    *
- *                                                                                             *
- * OUTPUT:  bool; Was the animation rendered?                                                  *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   05/31/1994 JLB : Created.                                                                 *
- *=============================================================================================*/
-bool AnimClass::Render(bool forced)
-{
-    Validate();
-    if (Delay)
-        return (false);
-    IsToDisplay = true;
-    return (ObjectClass::Render(forced));
-}
-
-/***********************************************************************************************
  * AnimClass::Draw_It -- Draws the animation at the location specified.                        *
  *                                                                                             *
  *    This routine is used to render the animation object at the location specified. This is   *
@@ -343,7 +319,7 @@ bool AnimClass::Mark(MarkType mark)
 {
     Validate();
     if (ObjectClass::Mark(mark)) {
-        if (Debug_Coalesced_Clipped_Redraw && mark == MARK_DOWN && IsDown) {
+        if (mark == MARK_DOWN && IsDown) {
             Map.Overlap_Down(Coord_Cell(Center_Coord()), this);
         }
         Map.Refresh_Cells(Coord_Cell(Center_Coord()), Overlap_List());

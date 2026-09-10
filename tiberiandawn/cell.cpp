@@ -56,12 +56,8 @@
  *   CellClass::Occupy_Down -- Flag occupation of specified cell.                              *
  *   CellClass::Occupy_Unit -- Marks cell as unit occupied.                                    *
  *   CellClass::Occupy_Up -- Removes occupation flag from the specified cell.                  *
- *   CellClass::Overlap_Down -- This routine is used to mark a cell as being spilled over (overla*
- *   CellClass::Overlap_Unit -- Marks cell as being overlapped by unit.                        *
- *   CellClass::Overlap_Up -- Removes overlap flag for the cell.                               *
  *   CellClass::Read -- Reads a particular cell value from a save game file.                   *
  *   CellClass::Recalc_Attributes -- Recalculates the ground type attributes for the cell.     *
- *   CellClass::Redraw_Objects -- Flags this tactical cell for redraw (CellRedraw map).       *
  *   CellClass::Reduce_Tiberium -- Reduces the tiberium in the cell by the amount specified.   *
  *   CellClass::Reduce_Wall -- Damages a wall, if damage is high enough.                       *
  *   CellClass::Reserve_Cell -- Marks a cell as being occupied by the specified unit ID.       *
@@ -349,81 +345,6 @@ ObjectClass * CellClass::Cell_Object(int x, int y) const
 	ptr = Cell_Terrain();
 	if (ptr) return(ptr);
 	return(ptr);
-}
-
-
-/***********************************************************************************************
- * CellClass::Redraw_Objects -- Flag this cell for tactical layer terrain + object pass.       *
- *                                                                                             *
- *    Sets DisplayClass::CellRedraw for this cell only (see Map.Flag_Cell / Redraw_Icons);      *
- *    tactical object draws key off the same mask via footprint vs Is_Cell_Flagged.           *
- *                                                                                             *
- * INPUT:   forced   -- If true, always flag; if false, skip when already flagged this pass.   *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS:   Not redundant with DisplayClass::Flag_Cell: Validate, and In_View              *
- *             on the unclipped path (occupier Mark). CCR only paints Tactical_Cell_Rect,     *
- *             so off-screen bits are ignored; Flag_Cell still latches incremental IsToRedraw.*
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   05/18/1994 JLB : Created.                                                                 *
- *   06/20/1994 JLB : Simplified to use object pointers.                                       *
- *   12/24/1994 JLB : Only checks if cell is in view and not flagged already.                  *
- *=============================================================================================*/
-void CellClass::Redraw_Objects(CELL cell, bool forced)
-{
-	Validate();
-
-	/*
-	**	CCR consumes CellRedraw only inside Tactical_Cell_Rect. Skip In_View:
-	**	Flag_Cell latches an incremental map pass; empty vis rects exit in CCR.
-	*/
-	if (Debug_Coalesced_Clipped_Redraw) {
-		Map.Flag_Cell(cell);
-		return;
-	}
-
-	/*
-	**	Already-flagged cells need no more work unless forced.
-	*/
-	if (!forced && Map.Is_Cell_Flagged(cell)) {
-		return;
-	}
-
-	if (Map.In_View(cell)) {
-
-		Map.Flag_Cell(cell);
-
-		/*
-		**	Unclipped redraw: mark occupiers/overlappers for layer Render(IsToDisplay).
-		*/
-		if (Cell_Occupier()) {
-			ObjectClass * optr = Cell_Occupier();
-			while (optr) {
-				if (optr->IsActive) {
-					optr->Mark(MARK_CHANGE);
-				}
-				optr = optr->Next;
-			}
-		}
-		for (int index = 0; index < (int)(sizeof(Overlapper)/sizeof(Overlapper[0]));
-		    index++) {
-			if (Overlapper[index]) {
-				if (!Overlapper[index]->IsActive) {
-					Overlapper[index] = 0;
-				} else {
-					Overlapper[index]->Mark(MARK_CHANGE);
-				}
-			}
-		}
-	}
-}
-
-
-void CellClass::Redraw_Objects(bool forced)
-{
-	Redraw_Objects(Cell_Number(), forced);
 }
 
 
@@ -725,121 +646,6 @@ void CellClass::Occupy_Up(ObjectClass * object)
 		default:
 			break;
 	}
-}
-
-
-/***********************************************************************************************
- * CellClass::Overlap_Down -- This routine is used to mark a cell as being spilled over (overla*
- *                                                                                             *
- *    Most game objects can often have their graphic imagery spill into more than one cell     *
- *    even though they are considered to "occupy" only one cell. All cells overlapped are      *
- *    flagged by this routine. Using this information it is possible to keep the tactical map  *
- *    display correct.                                                                         *
- *                                                                                             *
- * INPUT:   object   -- The object to mark as overlapping this cell.                           *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   07/18/1994 JLB : Created.                                                                 *
- *   07/04/1995 JLB : Ensures that buildings are always marked down.                           *
- *=============================================================================================*/
-void CellClass::Overlap_Down(ObjectClass * object)
-{
-	if (!object) return;
-	/*
-	**	CCR draws from Layer[] vs dirty rects; overlapper slots are unused.
-	**	MapClass::Overlap_Down still Redraw_Objects the spilled cells.
-	*/
-	if (Debug_Coalesced_Clipped_Redraw) return;
-
-	Validate();
-	ObjectClass **ptr = 0;
-	int index;
-	for (index = 0; index < sizeof(Overlapper)/sizeof(Overlapper[0]); index++) {
-		if (Overlapper[index] == object) return;
-		if (!Overlapper[index]) ptr = &Overlapper[index];
-	}
-
-	/*
-	**	Buildings must ALWAYS succeed in marking the cell as overlapped. Bump somebody
-	**	else out in this case.
-	*/
-	if (!ptr && object->What_Am_I() == RTTI_BUILDING) {
-		for (index = 0; index < sizeof(Overlapper)/sizeof(Overlapper[0]); index++) {
-			switch (Overlapper[index]->What_Am_I()) {
-				case RTTI_BUILDING:
-				case RTTI_TERRAIN:
-					break;
-
-				default:
-					Overlapper[index] = object;
-					index = sizeof(Overlapper)/sizeof(Overlapper[0]);
-					break;
-			}
-		}
-	}
-	if (ptr) *ptr = object;
-
-	/*
-	**	If being placed down on a visible square, then flag this
-	**	techno object as being revealed to the player.
-	*/
-	// Changes for GlyphX multiplayer. ST - 4/18/2019 9:50AM
-	//if (IsVisible) {
-	//	object->Revealed(PlayerPtr);
-	//}
-	if (GameToPlay != GAME_GLYPHX_MULTIPLAYER) {
-		if (IsVisible) {
-			object->Revealed(PlayerPtr);
-		}
-	} else {
-		
-		if (object->Is_Techno()) {
-			TechnoClass *tech = static_cast<TechnoClass*>(object);
-			object->Revealed(tech->House);
-		} else {
-		
-			for (int i = 0; i < MPlayerCount; i++) {
-				HousesType house_type = MPlayerHouses[i];
-				HouseClass *house = HouseClass::As_Pointer(house_type);
-				object->Revealed(house);
-			}
-		}	
-	}	
-}
-
-
-/***********************************************************************************************
- * CellClass::Overlap_Up -- Removes overlap flag for the cell.                                 *
- *                                                                                             *
- *    This is the counterpart to Overlap_Down and is used to remove the overlap flag for the   *
- *    specified unit on the cell.                                                              *
- *                                                                                             *
- * INPUT:   object   -- The object to remove the overlap flag for.                             *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   07/18/1994 JLB : Created.                                                                 *
- *=============================================================================================*/
-void CellClass::Overlap_Up(ObjectClass *object)
-{
-	if (Debug_Coalesced_Clipped_Redraw) return;
-
-	Validate();
-	for (int index = 0; index < sizeof(Overlapper)/sizeof(Overlapper[0]); index++) {
-		if (Overlapper[index] == object) {
-			Overlapper[index] = 0;
-			break;
-		}
-	}
-
-	//Map.Validate();
 }
 
 

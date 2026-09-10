@@ -116,7 +116,6 @@ public:
         return true;
     }
     virtual bool Mark(MarkType mark = MARK_CHANGE);
-    virtual bool Render(bool forced);
     virtual COORDINATE Center_Coord(void) const;
     virtual COORDINATE Sort_Y(void) const;
     virtual LayerType In_Which_Layer(void) const;

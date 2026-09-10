@@ -55,8 +55,6 @@
  *   DisplayClass::Passes_Proximity_Check -- Determines if building placement is near friendly sq*
  *   DisplayClass::Pixel_To_Coord -- converts screen coord to COORDINATE                            *
  *   DisplayClass::Read_INI -- Reads map control data from INI file.                           *
- *   DisplayClass::Redraw_Icons -- Draws all terrain icons necessary.                          *
- *   DisplayClass::Redraw_Shadow -- Draw the shadow overlay.                                   *
  *   DisplayClass::Refresh_Band -- Causes all cells under the rubber band to be redrawn.       *
  *   DisplayClass::Refresh_Cells -- Redraws all cells in list.                                 *
  *   DisplayClass::Remove -- Removes a game object from the rendering system.                  *
@@ -2015,7 +2013,7 @@ void DisplayClass::Refresh_Cells(CELL cell, short const* list)
     while (*list != REFRESH_EOL) {
         CELL newcell = cell + *list++;
         if (In_Radar(newcell)) {
-            (*this)[newcell].Redraw_Objects(newcell);
+            Flag_Cell(newcell);
         }
     }
 }
@@ -2528,6 +2526,10 @@ ObjectClass* DisplayClass::Cell_Object(CELL cell, int x, int y)
  *   12/24/1994 JLB : Combined with old Refresh_Map() function.                                *
  *   01/10/1995 JLB : Rubber band drawing.                                                     *
  *=============================================================================================*/
+namespace {
+void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes, unsigned char* shadow_trans);
+}
+
 void DisplayClass::Draw_It(bool forced)
 {
     int x, y; // Working cell index values.
@@ -2544,17 +2546,16 @@ void DisplayClass::Draw_It(bool forced)
         **	(HidPage still has the last box) and only flags outline deltas.
         */
 #ifdef ATARI_ST
-        if (Debug_Coalesced_Clipped_Redraw && IsRubberBand) {
+        if (IsRubberBand) {
             if (!RubberbandPainted) {
                 Refresh_Band();
             } else if (NewX != RubberbandDrawnX || NewY != RubberbandDrawnY) {
                 Flag_Band_Changed(RubberbandDrawnX, RubberbandDrawnY, NewX, NewY);
             }
-        } else
-#endif
-        {
-            Refresh_Band();
         }
+#else
+        Refresh_Band();
+#endif
 
         /*
         ** If the multiplayer message system is displaying one or more messages,
@@ -2623,11 +2624,6 @@ void DisplayClass::Draw_It(bool forced)
             /*
             ** Work out which map edges need to be redrawn
             */
-            bool redraw_right = (oldx < 0) ? true : false;  // Right hand edge
-            bool redraw_left = (oldx > 0) ? true : false;   // Left hand edge
-            bool redraw_bottom = (oldy < 0) ? true : false; // Bottom edge
-            bool redraw_top = (oldy > 0) ? true : false;    // Top edge
-
             // Colour_Debug(2);
             /*
             **	Blit any replicable block to avoid having to drawstamp.
@@ -2683,140 +2679,35 @@ void DisplayClass::Draw_It(bool forced)
                 int startx = -Lepton_To_Pixel(Coord_XLepton(TacticalCoord));
                 int starty = -Lepton_To_Pixel(Coord_YLepton(TacticalCoord));
 
-                if (Debug_Coalesced_Clipped_Redraw) {
-                    /*
-                    **	Clipped mode: stamp only cells whose visible pixels were not
-                    **	covered by the hidpage copy (the true entering edge). A 24x24
-                    **	stamp that hangs off the view still counts as copied if the
-                    **	on-screen part moved with the blit. No extra_x/y seam band
-                    **	and no 24px shrink of the copy rect.
-                    */
-                    int const view_w = Lepton_To_Pixel(TacLeptonWidth);
-                    int const view_h = Lepton_To_Pixel(TacLeptonHeight);
-                    int const copy_x1 = oldx + oldw;
-                    int const copy_y1 = oldy + oldh;
-                    for (y = starty; y < view_h; y += CELL_PIXEL_H) {
-                        for (x = startx; x < view_w; x += CELL_PIXEL_W) {
-                            int const vis_x0 = (x > 0) ? x : 0;
-                            int const vis_y0 = (y > 0) ? y : 0;
-                            int const vis_x1 = (x + CELL_PIXEL_W < view_w) ? x + CELL_PIXEL_W : view_w;
-                            int const vis_y1 = (y + CELL_PIXEL_H < view_h) ? y + CELL_PIXEL_H : view_h;
-                            if (vis_x1 <= vis_x0 || vis_y1 <= vis_y0) {
-                                continue;
-                            }
-                            if (vis_x0 < oldx || vis_y0 < oldy || vis_x1 > copy_x1
-                                || vis_y1 > copy_y1) {
-                                CELL c = Click_Cell_Calc(Bound(x, 0, view_w - 1) + TacPixelX,
-                                                         Bound(y, 0, view_h - 1) + TacPixelY);
-                                if (c > 0) {
-                                    (*this)[c].Redraw_Objects(c, true);
-                                }
+                /*
+                **	Stamp only cells whose visible pixels were not covered by the
+                **	hidpage copy (the true entering edge). A 24x24 stamp that hangs
+                **	off the view still counts as copied if the on-screen part moved
+                **	with the blit. No extra_x/y seam band and no 24px shrink of the
+                **	copy rect.
+                */
+                int const view_w = Lepton_To_Pixel(TacLeptonWidth);
+                int const view_h = Lepton_To_Pixel(TacLeptonHeight);
+                int const copy_x1 = oldx + oldw;
+                int const copy_y1 = oldy + oldh;
+                for (y = starty; y < view_h; y += CELL_PIXEL_H) {
+                    for (x = startx; x < view_w; x += CELL_PIXEL_W) {
+                        int const vis_x0 = (x > 0) ? x : 0;
+                        int const vis_y0 = (y > 0) ? y : 0;
+                        int const vis_x1 = (x + CELL_PIXEL_W < view_w) ? x + CELL_PIXEL_W : view_w;
+                        int const vis_y1 = (y + CELL_PIXEL_H < view_h) ? y + CELL_PIXEL_H : view_h;
+                        if (vis_x1 <= vis_x0 || vis_y1 <= vis_y0) {
+                            continue;
+                        }
+                        if (vis_x0 < oldx || vis_y0 < oldy || vis_x1 > copy_x1
+                            || vis_y1 > copy_y1) {
+                            CELL c = Click_Cell_Calc(Bound(x, 0, view_w - 1) + TacPixelX,
+                                                     Bound(y, 0, view_h - 1) + TacPixelY);
+                            if (c > 0) {
+                                (*this)[c].Redraw_Objects(c);
                             }
                         }
                     }
-                } else {
-                oldw -= 24;
-                oldh -= 24;
-
-                if (abs(oldx) < 0x25 && abs(oldy) < 0x25) {
-
-                    /*
-                    ** The width of the area we redraw depends on the scroll speed
-                    */
-                    int extra_x = (abs(oldx) >= 16) ? 2 : 1;
-                    int extra_y = (abs(oldy) >= 16) ? 2 : 1;
-
-                    /*
-                    ** Flag the cells across the top of the visible area if required
-                    */
-                    if (redraw_top) {
-                        for (y = starty; y <= starty + CELL_PIXEL_H * extra_y; y += CELL_PIXEL_H) {
-                            for (x = startx; x <= Lepton_To_Pixel(TacLeptonWidth) + ((CELL_PIXEL_W * 2));
-                                 x += CELL_PIXEL_W) {
-                                CELL c = Click_Cell_Calc(Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1) + TacPixelX,
-                                                         Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
-
-                                if (c > 0)
-                                    (*this)[c].Redraw_Objects(c, true);
-                            }
-                        }
-                    }
-
-                    /*
-                    ** Flag the cells across the bottom of the visible area if required
-                    */
-                    if (redraw_bottom) {
-                        for (y = Lepton_To_Pixel(TacLeptonHeight) - CELL_PIXEL_H * (1 + extra_y);
-                             y <= Lepton_To_Pixel(TacLeptonHeight) + CELL_PIXEL_H * 3;
-                             y += CELL_PIXEL_H) {
-                            for (x = startx; x <= Lepton_To_Pixel(TacLeptonWidth) + ((CELL_PIXEL_W * 2));
-                                 x += CELL_PIXEL_W) {
-                                CELL c = Click_Cell_Calc(Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1) + TacPixelX,
-                                                         Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
-
-                                if (c > 0)
-                                    (*this)[c].Redraw_Objects(c, true);
-                            }
-                        }
-                    }
-
-                    /*
-                    ** Flag the cells down the left of the visible area if required
-                    */
-                    if (redraw_left) {
-                        for (x = startx; x <= startx + CELL_PIXEL_W * extra_x; x += CELL_PIXEL_W) {
-                            for (y = starty; y <= Lepton_To_Pixel(TacLeptonHeight) + ((CELL_PIXEL_H * 2));
-                                 y += CELL_PIXEL_H) {
-                                CELL c = Click_Cell_Calc(Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1) + TacPixelX,
-                                                         Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
-
-                                if (c > 0)
-                                    (*this)[c].Redraw_Objects(c, true);
-                            }
-                        }
-                    }
-
-                    /*
-                    ** Flag the cells down the right of the visible area if required
-                    */
-                    if (redraw_right) {
-                        for (x = Lepton_To_Pixel(TacLeptonWidth) - CELL_PIXEL_W * (extra_x + 1);
-                             x <= Lepton_To_Pixel(TacLeptonWidth) + CELL_PIXEL_W * 3;
-                             x += CELL_PIXEL_W) {
-                            for (y = starty; y <= Lepton_To_Pixel(TacLeptonHeight) + ((CELL_PIXEL_H * 2));
-                                 y += CELL_PIXEL_H) {
-                                CELL c = Click_Cell_Calc(Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1) + TacPixelX,
-                                                         Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
-
-                                if (c > 0)
-                                    (*this)[c].Redraw_Objects(c, true);
-                            }
-                        }
-                    }
-
-                } else {
-
-                    /*
-                    **	Set the 'redraw stamp' bit for any cells that could not be copied.
-                    */
-                    int startx = -Lepton_To_Pixel(Coord_XLepton(TacticalCoord));
-                    int starty = -Lepton_To_Pixel(Coord_YLepton(TacticalCoord));
-                    oldw -= 24;
-                    oldh -= 24;
-                    for (y = starty; y <= Lepton_To_Pixel(TacLeptonHeight) + ((CELL_PIXEL_H * 2)); y += CELL_PIXEL_H) {
-                        for (x = startx; x <= Lepton_To_Pixel(TacLeptonWidth) + ((CELL_PIXEL_W * 2));
-                             x += CELL_PIXEL_W) {
-                            if (x <= oldx || x >= oldx + oldw || y <= oldy || y >= oldy + oldh) {
-                                CELL c = Click_Cell_Calc(Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1) + TacPixelX,
-                                                         Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1) + TacPixelY);
-
-                                if (c > 0) {
-                                    (*this)[c].Redraw_Objects(c, true);
-                                }
-                            }
-                        }
-                    }
-                }
                 }
             }
 
@@ -2848,40 +2739,15 @@ void DisplayClass::Draw_It(bool forced)
 #ifdef FIX_ME_LATER
 //		HidPage.Blit(HidPage, 0, HidPage.Get_Height()-1, 0, HidPage.Get_Height(), HidPage.Get_Width(), 1, false);
 #endif // FIX_ME_LATER
-        if (Debug_Coalesced_Clipped_Redraw) {
-            /*
-            **	Coalesced clipped redraw: few WINDOW_TACTICAL clips, Layer[] objects,
-            **	tiles + shroud per rectangle (see ST_Redraw_Coalesced_Clipped).
-            */
-            ST_FRAME_BAR_MAP_ICONS_BEGIN();
-            if (HidPage.Lock()) {
-                Redraw_Coalesced_Clipped(0);
-            }
-            ST_FRAME_BAR_MAP_ICONS_END();
-        } else {
-            ST_FRAME_BAR_MAP_ICONS_BEGIN();
-            Redraw_Icons(0);
-            ST_FRAME_BAR_MAP_ICONS_END();
-
-            if (HidPage.Lock()) {
-                for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
-                    ST_FRAME_BAR_MAP_LAYER_BEGIN((int)layer);
-#ifdef ATARI_ST
-                    Call_Back();
-#endif
-                    for (int index = 0; index < Layer[layer].Count(); index++) {
-                        Layer[layer][index]->Render(forced);
-                    }
-                    ST_FRAME_BAR_MAP_LAYER_END((int)layer);
-                }
-
-                ST_FRAME_BAR_MAP_SHADOW_BEGIN();
-                Redraw_Shadow();
-            }
-
-            Redraw_Shadow_Rects();
-            ST_FRAME_BAR_MAP_SHADOW_END();
+        /*
+        **	Coalesced clipped redraw: few WINDOW_TACTICAL clips, Layer[] objects,
+        **	tiles + shroud per rectangle (see ST_Redraw_Coalesced_Clipped).
+        */
+        ST_FRAME_BAR_MAP_ICONS_BEGIN();
+        if (HidPage.Lock()) {
+            ST_Redraw_Coalesced_Clipped(0, ShadowShapes, ShadowTrans);
         }
+        ST_FRAME_BAR_MAP_ICONS_END();
 
         HidPage.Unlock();
 
@@ -2906,13 +2772,11 @@ void DisplayClass::Draw_It(bool forced)
         **	Clear the redraw flags so that normal redraw flag setting can resume.
         */
         memset(CellRedraw, 0, sizeof(CellRedraw));
-        if (Debug_Coalesced_Clipped_Redraw) {
-            for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
-                for (int index = 0; index < Layer[layer].Count(); index++) {
-                    ObjectClass* obj = Layer[layer][index];
-                    if (obj != NULL) {
-                        obj->IsToDisplay = false;
-                    }
+        for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
+            for (int index = 0; index < Layer[layer].Count(); index++) {
+                ObjectClass* obj = Layer[layer][index];
+                if (obj != NULL) {
+                    obj->IsToDisplay = false;
                 }
             }
         }
@@ -2929,31 +2793,15 @@ void DisplayClass::Draw_It(bool forced)
         */
         if (Debug_Map && PendingObjectPtr) {
             PendingObjectPtr->Coord = PendingObjectPtr->Class_Of().Coord_Fixup(Cell_Coord(ZoneCell + ZoneOffset));
-            PendingObjectPtr->Render(true);
+            int px, py;
+            if (Coord_To_Pixel(PendingObjectPtr->Render_Coord(), px, py)) {
+                PendingObjectPtr->Draw_It(px, py, WINDOW_TACTICAL);
+            }
         }
 #endif
     }
 }
 
-/***********************************************************************************************
- * DisplayClass::Redraw_Icons -- Draws all terrain icons necessary.                            *
- *                                                                                             *
- *    This routine will redraw all of the terrain icons that are flagged                       *
- *    to be redrawn.                                                                           *
- *                                                                                             *
- * INPUT:   none                                                                               *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS:   none.                                                                           *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   02/14/1994 JLB : Created.                                                                 *
- *   05/01/1994 JLB : Converted to member function.                                            *
- *   06/20/1994 JLB : Uses cell drawing support function.                                      *
- *   12/06/1994 JLB : Scans tactical view in separate row/colum loops                          *
- *   12/24/1994 JLB : Uses the cell bit flag array to determine what to redraw.                *
- *=============================================================================================*/
 namespace {
 
 enum {
@@ -3065,7 +2913,7 @@ static void ST_Draw_Cell_Shroud(CELL cell, CellClass* cellptr, int xpixel, int y
 	}
 }
 
-static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
+void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	unsigned char* shadow_trans)
 {
 	int origin_cx = 0;
@@ -3202,7 +3050,10 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 
 #ifdef ATARI_ST
 	for (int i = 0; i < nrect; i++) {
-		Map.Present_Add_Tactical_Rect(rects[i].vx0, rects[i].vy0, rects[i].vx1, rects[i].vy1);
+		Map.Present_Add_Screen_Rect(Map.TacPixelX + rects[i].vx0,
+			Map.TacPixelY + rects[i].vy0,
+			Map.TacPixelX + rects[i].vx1,
+			Map.TacPixelY + rects[i].vy1);
 	}
 #endif
 
@@ -3323,11 +3174,6 @@ static void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shape
 
 } // namespace
 
-void DisplayClass::Redraw_Coalesced_Clipped(int draw_flags)
-{
-	ST_Redraw_Coalesced_Clipped(draw_flags, ShadowShapes, ShadowTrans);
-}
-
 #ifdef ATARI_ST
 
 enum {
@@ -3414,14 +3260,9 @@ void DisplayClass::Present_Add_Screen_Rect(int x0, int y0, int x1, int y1)
 	}
 }
 
-void DisplayClass::Present_Add_Tactical_Rect(int vx0, int vy0, int vx1, int vy1)
-{
-	Present_Add_Screen_Rect(TacPixelX + vx0, TacPixelY + vy0, TacPixelX + vx1, TacPixelY + vy1);
-}
-
 void DisplayClass::Present_Write_Through_Rect(int x0, int y0, int x1, int y1)
 {
-	if (!Debug_Coalesced_Clipped_Redraw || !Present_Clip_Align(x0, y0, x1, y1)) {
+	if (!Present_Clip_Align(x0, y0, x1, y1)) {
 		return;
 	}
 	Conditional_Hide_Mouse(x0, y0, x1 - 1, y1 - 1);
@@ -3486,8 +3327,7 @@ void DisplayClass::Present_Begin(bool complete)
 	** without Scroll_Map, so DidScrollThisFrame is false. HidPage still scroll-copies
 	** in Draw_It; SeenBuff must get a full present or only the entering edge updates.
 	*/
-	Present_Full = complete || !Debug_Coalesced_Clipped_Redraw || DidScrollThisFrame
-		|| DesiredTacticalCoord != TacticalCoord;
+	Present_Full = complete || DidScrollThisFrame || DesiredTacticalCoord != TacticalCoord;
 	if (!Present_Full) {
 		Present_Snapshot_Chrome();
 	}
@@ -3530,212 +3370,6 @@ void DisplayClass::Present_Blit(void)
 
 #endif /* ATARI_ST */
 
-void DisplayClass::Redraw_Icons(int draw_flags)
-{
-#ifdef ATARI_ST
-    int y_start = -Coord_YLepton(TacticalCoord);
-#endif
-    IsShadowPresent = false;
-#ifdef ATARI_ST
-    for (int y = y_start; y <= TacLeptonHeight; y += CELL_LEPTON_H) {
-#else
-    for (int y = -Coord_YLepton(TacticalCoord); y <= TacLeptonHeight; y += CELL_LEPTON_H) {
-#endif
-        for (int x = -Coord_XLepton(TacticalCoord); x <= TacLeptonWidth; x += CELL_LEPTON_W) {
-            COORDINATE coord = Coord_Add(TacticalCoord, XY_Coord(x, y));
-            CELL cell = Coord_Cell(coord);
-            coord = Coord_Whole(Cell_Coord(cell));
-
-            /*
-            **	Only cells flagged to be redraw are examined.
-            */
-            if (In_View(cell) && Is_Cell_Flagged(cell)) {
-                int xpixel;
-                int ypixel;
-
-                if (Coord_To_Pixel(coord, xpixel, ypixel)) {
-                    CellClass* cellptr = &(*this)[Coord_Cell(coord)];
-
-                    /*
-                    **	If there is a portion of the underlying icon that could be visible,
-                    **	then draw it.  Also draw the cell if the shroud is off.
-                    */
-                    bool cell_visible = cellptr->Is_Visible(PlayerPtr) || Debug_Unshroud;
-                    if (cell_visible) {
-                        if (!Debug_Coalesced_Clipped_Redraw
-                            || !Tactical_Cell_Hides_Objects_For_Local_Player(cell, cellptr)) {
-                            cellptr->Draw_It(xpixel, ypixel, draw_flags, cell);
-                        }
-                    }
-
-                    /*
-                    **	If any cell is not fully mapped, then flag it so that the shadow drawing
-                    **	process will occur.  Only draw the shadow if Debug_Unshroud is false.
-                    */
-                    if (!cellptr->Is_Mapped(PlayerPtr)
-                        && !Debug_Unshroud) { // Use PlayerPtr since we won't be rendering in MP. ST - 3/6/2019 2:49PM
-                        IsShadowPresent = true;
-                    }
-                }
-            }
-        }
-    }
-}
-
-/***********************************************************************************************
- * DisplayClass::Redraw_Shadow -- Draw the shadow overlay.                                     *
- *                                                                                             *
- *    This routine is called after all other tactical map rendering takes place. It draws      *
- *    the shadow map over the tactical map.                                                    *
- *                                                                                             *
- * INPUT:   none                                                                               *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   01/01/1995 JLB : Created.                                                                 *
- *   08/06/1995 JLB : Clips the fill rect if necessary.                                        *
- *=============================================================================================*/
-void DisplayClass::Redraw_Shadow(void)
-{
-    if (IsShadowPresent) {
-        for (int y = -Coord_YLepton(TacticalCoord); y <= TacLeptonHeight; y += CELL_LEPTON_H) {
-            for (int x = -Coord_XLepton(TacticalCoord); x <= TacLeptonWidth; x += CELL_LEPTON_W) {
-                COORDINATE coord = Coord_Add(TacticalCoord, XY_Coord(x, y));
-                CELL cell = Coord_Cell(coord);
-                coord = Cell_Coord(cell) & 0xFF00FF00;
-
-                /*
-                **	Only cells flagged to be redraw are examined.
-                */
-                if (In_View(cell) && Is_Cell_Flagged(cell)) {
-                    int xpixel;
-                    int ypixel;
-
-                    if (Coord_To_Pixel(coord, xpixel, ypixel)) {
-                        CellClass* cellptr = &(*this)[Coord_Cell(coord)];
-
-                        if (!cellptr->Is_Mapped(PlayerPtr)) { // Pass player pointer since we will only be rendering in
-                                                              // single player mode. ST - 3/6/2019 1:36PM
-                            if (cellptr->Is_Visible(PlayerPtr)) { // Pass player pointer since we will only be rendering
-                                                                  // in single player mode. ST - 3/6/2019 1:36PM
-                                int shadow =
-                                    Cell_Shadow(cell, PlayerPtr); // Pass player pointer since we will only be rendering
-                                                                  // in single player mode. ST - 3/6/2019 1:36PM
-                                if (shadow >= 0) {
-#ifdef ATARI_ST
-                                    if (!ST_Draw_Shadow_Mask_Slot((short)shadow, xpixel, ypixel))
-#endif
-                                    CC_Draw_Shape(ShadowShapes,
-                                                  shadow,
-                                                  xpixel,
-                                                  ypixel,
-                                                  WINDOW_TACTICAL,
-                                                  SHAPE_GHOST,
-                                                  NULL,
-                                                  ShadowTrans);
-                                } else if (shadow == -2 && Debug_Coalesced_Clipped_Redraw) {
-#ifdef ATARI_ST
-                                    if (!ST_Draw_Shadow_Mask_Slot((short)ST_SHADOW_FULL_SLOT, xpixel, ypixel))
-#endif
-                                    {
-                                        int ww = CELL_PIXEL_W;
-                                        int hh = CELL_PIXEL_H;
-                                        int lx = xpixel;
-                                        int ly = ypixel;
-                                        if (Clip_Rect(&lx, &ly, &ww, &hh, Lepton_To_Pixel(TacLeptonWidth), Lepton_To_Pixel(TacLeptonHeight)) >= 0) {
-                                            LogicPage->Fill_Rect(TacPixelX + lx, TacPixelY + ly,
-                                                TacPixelX + lx + ww - 1, TacPixelY + ly + hh - 1,
-                                                (unsigned char)BLACK);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/***********************************************************************************************
- * DisplayClass::Redraw_Shadow -- Draw the shadow overlay.                                     *
- *                                                                                             *
- *    This routine is called after all other tactical map rendering takes place. It draws      *
- *    the shadow map over the tactical map.                                                    *
- *                                                                                             *
- * INPUT:   none                                                                               *
- *                                                                                             *
- * OUTPUT:  none                                                                               *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   01/01/1995 JLB : Created.                                                                 *
- *   08/06/1995 JLB : Clips the fill rect if necessary.                                        *
- *=============================================================================================*/
-void DisplayClass::Redraw_Shadow_Rects(void)
-{
-    if (IsShadowPresent) {
-#ifdef ATARI_ST
-        int y_start = -Coord_YLepton(TacticalCoord);
-
-        for (int y = y_start; y <= TacLeptonHeight; y += CELL_LEPTON_H) {
-            Call_Back();
-#else
-        for (int y = -Coord_YLepton(TacticalCoord); y <= TacLeptonHeight; y += CELL_LEPTON_H) {
-#endif
-            for (int x = -Coord_XLepton(TacticalCoord); x <= TacLeptonWidth; x += CELL_LEPTON_W) {
-                COORDINATE coord = Coord_Add(TacticalCoord, XY_Coord(x, y));
-                CELL cell = Coord_Cell(coord);
-                coord = Cell_Coord(cell) & 0xFF00FF00;
-
-                /*
-                **	Only cells flagged to be redraw are examined.
-                */
-                if (In_View(cell) && Is_Cell_Flagged(cell)) {
-                    int xpixel;
-                    int ypixel;
-
-                    if (Coord_To_Pixel(coord, xpixel, ypixel)) {
-                        CellClass* cellptr = &(*this)[Coord_Cell(coord)];
-
-                        if (!cellptr->Is_Mapped(
-                                PlayerPtr)) { // Use PlayerPtr since we won't be rendering in MP. ST - 3/6/2019 2:49PM
-                            if (!cellptr->Is_Visible(PlayerPtr)) { // Use PlayerPtr since we won't be rendering in MP.
-                                                                   // ST - 3/6/2019 2:49PM
-#ifdef ATARI_ST
-                                if (ST_Draw_Shadow_Mask_Slot(ST_SHADOW_FULL_SLOT, xpixel, ypixel)) {
-                                    continue;
-                                }
-#endif
-                                int ww = CELL_PIXEL_W;
-                                int hh = CELL_PIXEL_H;
-
-                                if (Clip_Rect(&xpixel,
-                                              &ypixel,
-                                              &ww,
-                                              &hh,
-                                              Lepton_To_Pixel(TacLeptonWidth),
-                                              Lepton_To_Pixel(TacLeptonHeight))
-                                    >= 0) {
-                                    LogicPage->Fill_Rect(TacPixelX + xpixel,
-                                                         TacPixelY + ypixel,
-                                                         TacPixelX + xpixel + ww - 1,
-                                                         TacPixelY + ypixel + hh - 1,
-                                                         BLACK);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 /***********************************************************************************************
  * DisplayClass::Next_Object -- Searches for next object on display.                           *
@@ -4299,23 +3933,21 @@ void DisplayClass::Flag_Band_H(int x1, int x2, int y)
         if (cell != -1) {
             (*this)[cell].Redraw_Objects(cell);
 #ifdef ATARI_ST
-            if (Debug_Coalesced_Clipped_Redraw) {
-                int const cx = Cell_X(cell);
-                int const cy = Cell_Y(cell);
-                if (!any || cx < minc) {
-                    minc = cx;
-                }
-                if (!any || cy < minr) {
-                    minr = cy;
-                }
-                if (!any || cx > maxc) {
-                    maxc = cx;
-                }
-                if (!any || cy > maxr) {
-                    maxr = cy;
-                }
-                any = true;
+            int const cx = Cell_X(cell);
+            int const cy = Cell_Y(cell);
+            if (!any || cx < minc) {
+                minc = cx;
             }
+            if (!any || cy < minr) {
+                minr = cy;
+            }
+            if (!any || cx > maxc) {
+                maxc = cx;
+            }
+            if (!any || cy > maxr) {
+                maxr = cy;
+            }
+            any = true;
 #endif
         }
         if (x >= sx2) {
@@ -4352,23 +3984,21 @@ void DisplayClass::Flag_Band_V(int x, int y1, int y2)
         if (cell != -1) {
             (*this)[cell].Redraw_Objects(cell);
 #ifdef ATARI_ST
-            if (Debug_Coalesced_Clipped_Redraw) {
-                int const cx = Cell_X(cell);
-                int const cy = Cell_Y(cell);
-                if (!any || cx < minc) {
-                    minc = cx;
-                }
-                if (!any || cy < minr) {
-                    minr = cy;
-                }
-                if (!any || cx > maxc) {
-                    maxc = cx;
-                }
-                if (!any || cy > maxr) {
-                    maxr = cy;
-                }
-                any = true;
+            int const cx = Cell_X(cell);
+            int const cy = Cell_Y(cell);
+            if (!any || cx < minc) {
+                minc = cx;
             }
+            if (!any || cy < minr) {
+                minr = cy;
+            }
+            if (!any || cx > maxc) {
+                maxc = cx;
+            }
+            if (!any || cy > maxr) {
+                maxr = cy;
+            }
+            any = true;
 #endif
         }
         if (y >= sy2) {
@@ -5282,12 +4912,6 @@ void DisplayClass::Mouse_Left_Held(int x, int y)
         if (x != NewX || y != NewY) {
             x = Bound(x, 0, Lepton_To_Pixel(TacLeptonWidth) - 1);
             y = Bound(y, 0, Lepton_To_Pixel(TacLeptonHeight) - 1);
-#ifdef ATARI_ST
-            if (!Debug_Coalesced_Clipped_Redraw)
-#endif
-            {
-                Refresh_Band();
-            }
             NewX = x;
             NewY = y;
             IsToRedraw = true;

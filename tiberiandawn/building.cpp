@@ -730,9 +730,6 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
                       + ((int)Lepton_To_Pixel((int)Coord_Y(contact->Render_Coord()))
                          - (int)Lepton_To_Pixel((int)Coord_Y(Render_Coord())));
             contact->Draw_It(xxx, yyy, window);
-            if (!Debug_Coalesced_Clipped_Redraw) {
-                contact->IsToDisplay = false;
-            }
         }
 
         /*

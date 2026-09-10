@@ -77,7 +77,6 @@ public:
     void Place_Down(CELL cell, ObjectClass* object);
     void Pick_Up(CELL cell, ObjectClass* object);
     void Overlap_Down(CELL cell, ObjectClass* object);
-    void Overlap_Up(CELL cell, ObjectClass* object);
     bool Read_Binary(char const* root, uint32_t* crc);
     bool Write_Binary(char const* root);
     bool Place_Random_Crate(void);
@@ -100,14 +99,6 @@ public:
     ** Debug routine
     */
     int Validate(void);
-
-    /*
-    ** Catch-all for bad overlappers
-    */
-    void Clean(void);
-
-    void Clear_Overlappers(void);
-    void Rebuild_Overlappers(void);
 
 #ifdef USE_RA_AI
     /*

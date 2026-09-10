@@ -484,13 +484,11 @@ void GScreenClass::Blit_Display(void)
     } else {
 #else //(0)
 #ifdef ATARI_ST
-    if (Debug_Coalesced_Clipped_Redraw) {
-        Map.Present_Blit();
+    Map.Present_Blit();
 #ifdef CHEAT_KEYS
-        Add_Current_Screen();
+    Add_Current_Screen();
 #endif
-        return;
-    }
+    return;
 #endif
     WWMouse->Draw_Mouse(&HidPage);
     HidPage.Blit(SeenBuff, 0, 0, 0, 0, HidPage.Get_Width(), HidPage.Get_Height(), false);

@@ -936,6 +936,16 @@ inline CELL CellClass::Cell_Number(void) const
 	return(Map.ID(this));
 }
 
+inline void CellClass::Redraw_Objects(CELL cell)
+{
+	Map.Flag_Cell(cell);
+}
+
+inline void CellClass::Redraw_Objects(void)
+{
+	Map.Flag_Cell(Cell_Number());
+}
+
 #ifndef NOMEMCHECK
 #define NO_INTERCEPT
 #include	"memcheck.h"

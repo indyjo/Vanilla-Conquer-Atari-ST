@@ -47,7 +47,6 @@ bool Debug_Quiet = false;
 bool Debug_Cheat = false;
 bool Debug_Remap = false;
 bool Debug_Icon = false;
-bool Debug_Coalesced_Clipped_Redraw = true; /* Alt+C: false = unclipped full redraw */
 bool Debug_Redraw_Rects = false; /* Alt+R: cycle a color rect on every cell/unit Draw_It */
 static unsigned char Debug_Redraw_Cycle = 1;
 
@@ -247,26 +246,12 @@ void Debug_Redraw_Mark_Unit(int x, int y, WindowNumberType window, int width, in
 void Debug_Redraw_Hotkeys_Service(void)
 {
 #ifdef ATARI_ST
-    static int prev_c;
     static int prev_r;
-    int const alt = IKBD_Key_Is_Down(VK_MENU);
-    int const c = (alt && IKBD_Key_Is_Down(VK_C)) ? 1 : 0;
-    int const r = (alt && IKBD_Key_Is_Down(VK_R)) ? 1 : 0;
-    if (c && !prev_c) {
-        if (Debug_Coalesced_Clipped_Redraw) {
-            Debug_Coalesced_Clipped_Redraw = false;
-            Map.Rebuild_Overlappers();
-        } else {
-            Debug_Coalesced_Clipped_Redraw = true;
-            Map.Clear_Overlappers();
-        }
-        Map.Flag_To_Redraw(true);
-    }
+    int const r = (IKBD_Key_Is_Down(VK_MENU) && IKBD_Key_Is_Down(VK_R)) ? 1 : 0;
     if (r && !prev_r) {
         Debug_Redraw_Rects = (Debug_Redraw_Rects == false);
         Map.Flag_To_Redraw(true);
     }
-    prev_c = c;
     prev_r = r;
 #endif
 }

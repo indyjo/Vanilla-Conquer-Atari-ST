@@ -39,7 +39,6 @@
  *   MapClass::Logic -- Handles map related logic functions.                                   *
  *   MapClass::One_Time -- Performs special one time initializations for the map.              *
  *   MapClass::Overlap_Down -- computes & marks object's overlap cells                         *
- *   MapClass::Overlap_Up -- Computes & clears object's overlap cells                          *
  *   MapClass::Overpass -- Performs any final cleanup to a freshly constructed map.            *
  *   MapClass::Pick_Up -- Removes specified object from the map.                               *
  *   MapClass::Place_Down -- Places the specified object onto the map.                         *
@@ -71,8 +70,6 @@ int const MapClass::RadiusOffset[] = {
 
 int const MapClass::RadiusCount[11] = {1,9,21,37,61,89,121,161,205,253,309};
 
-
-CellClass *BlubCell;
 
 /***********************************************************************************************
  * MapClass::One_Time -- Performs special one time initializations for the map.                *
@@ -461,18 +458,11 @@ void MapClass::Place_Down(CELL cell, ObjectClass * object)
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Occupy_Down(object);
 			(*this)[newcell].Recalc_Attributes();
-			(*this)[newcell].Redraw_Objects(newcell);
+			Map.Flag_Cell(newcell);
 		}
 	}
 
-	list = object->Overlap_List();
-	while (*list != REFRESH_EOL) {
-		CELL newcell = cell + *list++;
-		if ((unsigned)newcell < MAP_CELL_TOTAL) {
-			(*this)[newcell].Overlap_Down(object);
-			(*this)[newcell].Redraw_Objects(newcell);
-		}
-	}
+	Overlap_Down(cell, object);
 }
 
 
@@ -504,18 +494,11 @@ void MapClass::Pick_Up(CELL cell, ObjectClass * object)
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
 			(*this)[newcell].Occupy_Up(object);
 			(*this)[newcell].Recalc_Attributes();
-			(*this)[newcell].Redraw_Objects(newcell);
+			Map.Flag_Cell(newcell);
 		}
 	}
 
-	list = object->Overlap_List();
-	while (*list != REFRESH_EOL) {
-		CELL newcell = cell + *list++;
-		if ((unsigned)newcell < MAP_CELL_TOTAL) {
-			(*this)[newcell].Overlap_Up(object);
-			(*this)[newcell].Redraw_Objects(newcell);
-		}
-	}
+	Overlap_Down(cell, object);
 }
 
 
@@ -548,76 +531,7 @@ void MapClass::Overlap_Down(CELL cell, ObjectClass * object)
 	while (*list != REFRESH_EOL) {
 		CELL newcell = cell + *list++;
 		if ((unsigned)newcell < MAP_CELL_TOTAL) {
-			(*this)[newcell].Overlap_Down(object);
-			(*this)[newcell].Redraw_Objects(newcell);
-		}
-	}
-}
-
-
-/***********************************************************************************************
- * MapClass::Overlap_Up -- Computes & clears object's overlap cells                            *
- *                                                                                             *
- * This routine is just like Pick_Up, but it doesn't mark the cell's Occupier.                 *
- * This routine is used to implement MARK_OVERLAP_UP, which is useful for changing             *
- * an object's render size, but not its logical size (ie when it's selected or an              *
- * animation is attached to it).                                                               *
- *                                                                                             *
- * INPUT:                                                                                      *
- *      cell -- The cell to base object overlap around.                                        *
- *    object   -- The object to place onto the map.                                            *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *      none.                                                                                  *
- *                                                                                             *
- * WARNINGS:                                                                                   *
- *      none.                                                                                  *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   07/12/1995 BRR : Created.                                                                 *
- *=============================================================================================*/
-void MapClass::Overlap_Up(CELL cell, ObjectClass * object)
-{
-	if (!object) return;
-
-	short const *list = object->Overlap_List();
-	while (*list != REFRESH_EOL) {
-		CELL newcell = cell + *list++;
-		if ((unsigned)newcell < MAP_CELL_TOTAL) {
-			(*this)[newcell].Overlap_Up(object);
-			(*this)[newcell].Redraw_Objects(newcell);
-		}
-	}
-}
-
-
-void MapClass::Clear_Overlappers(void)
-{
-	for (int cell = 0; cell < MAP_CELL_TOTAL; cell++) {
-		memset((*this)[cell].Overlapper, 0, sizeof((*this)[cell].Overlapper));
-	}
-}
-
-
-void MapClass::Rebuild_Overlappers(void)
-{
-	Clear_Overlappers();
-
-	for (LayerType layer = LAYER_FIRST; layer < LAYER_COUNT; layer++) {
-		int const count = DisplayClass::Layer[layer].Count();
-		for (int index = 0; index < count; index++) {
-			ObjectClass* obj = DisplayClass::Layer[layer][index];
-			if (obj == NULL || !obj->IsActive || !obj->IsDown || obj->IsInLimbo) {
-				continue;
-			}
-			if (obj->What_Am_I() == RTTI_BUILDING) {
-				BuildingClass* bldg = (BuildingClass*)obj;
-				if (bldg->Class && bldg->Class->IsWall) {
-					continue;
-				}
-			}
-			obj->Mark(MARK_UP);
-			obj->Mark(MARK_DOWN);
+			Map.Flag_Cell(newcell);
 		}
 	}
 }
@@ -1209,17 +1123,6 @@ int MapClass::Validate(void)
 	SmudgeType smudge;
 	ObjectClass *obj;
 	LandType land;
-	int i;
-
-BlubCell = &((*this)[797]);
-
-if (BlubCell->Overlapper[1]) {
-	obj = BlubCell->Overlapper[1];
-	if (obj) {
-		if (obj->IsInLimbo)
-		obj = obj;
-	}
-}
 
 	/*------------------------------------------------------------------------
 	Check every cell on the map, even those that aren't displayed,
@@ -1293,157 +1196,9 @@ if (BlubCell->Overlapper[1]) {
 				return (false);
 			}
 		}
-
-		/*.....................................................................
-		Validate Overlappers
-		.....................................................................*/
-		for (i = 0; i < 3; i++) {
-			obj = (*this)[cell].Overlapper[i];
-			if (obj) {
-				
-				volatile TARGET target = obj->As_Target();		// This will do some internal verification
-
-				if (!obj->IsActive) {
-					return false;
-				}
-
-				if (obj->IsInLimbo) {
-					return false;
-				}
-				
-				if (((unsigned int)Coord_Cell(obj->Coord) > 4095)) {
-					return (false);
-				}
-			}
-		}
 	}
 
 	return (true);
-}
-
-
-
-/***********************************************************************************************
- * MapClass::Clean -- Clean up dangling pointers caused by bugs in the originl code.           *
- *                                                                                             *
- *   Ideally, we'd fix the underlying cause of the overlappers not being cleared               *
- *   but we can afford the CPU time now                                                        *
- *                                                                                             *
- * INPUT:   none                                                                               *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *                                                                                             *
- * WARNINGS:   none                                                                            *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   4/14/2020 11:48AM ST : Created.                                                           *
- *=============================================================================================*/
-void MapClass::Clean(void)
-{
-	CELL cell;
-	ObjectClass *obj;
-	int i;
-#ifndef NDEBUG	
-	char debug_message[256];
-#endif
-	bool active_fail = false;
-	bool limbo_fail = false;
-	const char *type_text = NULL;
-	const char *ini_name = NULL;
-	AbstractClass abstract_object;
-	unsigned long abstract_vtable = *(unsigned long*)&abstract_object;
-
-	/*------------------------------------------------------------------------
-	Check every cell on the map, even those that aren't displayed.
-	------------------------------------------------------------------------*/
-	for (cell = 0; cell < MAP_CELL_TOTAL; cell++) {
-
-		/*.....................................................................
-		Validate Occupier
-		.....................................................................*/
-		(*this)[cell].Cell_Occupier();
-
-		/*.....................................................................
-		Validate Overlappers
-		.....................................................................*/
-		for (i = 0; i < 3; i++) {
-			obj = (*this)[cell].Overlapper[i];
-			if (obj) {
-				
-				if (!obj->IsActive) {
-					(*this)[cell].Overlapper[i] = NULL;
-					active_fail = true;
-				}
-
-				if (!active_fail && obj->IsInLimbo) {
-					(*this)[cell].Overlapper[i] = NULL;
-					limbo_fail = true;
-				}
-
-				if (active_fail || limbo_fail) {
-#ifndef NDEBUG					
-					/*
-					** This object is likely deleted. 
-					*/
-					if (abstract_vtable == *(unsigned long*)obj) {
-						type_text = "Abstract";
-						ini_name = "UNKNOWN";
-					} else {
-
-						RTTIType type = obj->What_Am_I();
-	
-						switch (type) {
-							default:
-								type_text = "Unknown";
-								break;
-
-							case RTTI_INFANTRY:
-								type_text = "Infantry";
-								break;
-						
-							case RTTI_UNIT:
-								type_text = "Unit";
-								break;
-						
-							case RTTI_AIRCRAFT:
-								type_text = "Aircraft";
-								break;
-					
-							case RTTI_BUILDING:
-								type_text = "Building";
-								break;
-
-							case RTTI_BULLET:
-								type_text = "Bullet";
-								break;
-
-							case RTTI_ANIM:
-								type_text = "Anim";
-								break;
-
-							case RTTI_SMUDGE:
-								type_text = "Smudge";
-								break;
-
-							case RTTI_TERRAIN:
-								type_text = "Terrain";
-								break;
-						}
-
-					ini_name = obj->Class_Of().IniName;
-				}
-
-#ifdef POSIX
-				snprintf(debug_message, sizeof(debug_message), "Cleaned %s overlapper in cell %08X. Type=%s, IniName=%s", active_fail ? "inactive" : "limbo", cell, type_text, ini_name);
-#else
-				sprintf_s(debug_message, sizeof(debug_message) - 1, "Cleaned %s overlapper in cell %08X. Type=%s, IniName=%s", active_fail ? "inactive" : "limbo", cell, type_text, ini_name);
-#endif
-				GlyphX_Debug_Print(debug_message);
-#endif //NDEBUG					
-				}
-			}
-		}
-	}
 }
 
 

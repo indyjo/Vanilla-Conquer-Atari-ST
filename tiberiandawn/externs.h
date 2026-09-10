@@ -90,7 +90,6 @@ extern bool Debug_Lose;
 extern bool Debug_Map;
 extern bool Debug_Win;
 extern bool Debug_Icon;
-extern bool Debug_Coalesced_Clipped_Redraw;
 extern bool Debug_Redraw_Rects;
 unsigned char Debug_Next_Redraw_Color(void);
 void Debug_Redraw_Mark_Tile(int x, int y);

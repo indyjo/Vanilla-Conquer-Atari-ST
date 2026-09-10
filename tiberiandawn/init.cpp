@@ -53,6 +53,8 @@
 #include "st_temperat_palette.h"
 #include "st_playback_timing.h"
 #include "audx/audx_page_cache.h"
+#include "st_sprite_cache.h"
+#include "page_region_cache.h"
 #endif
 
 /****************************************
@@ -545,6 +547,11 @@ bool Init_Game(int, char*[])
         Show_Mouse();
     }
     Call_Back();
+
+#ifdef ATARI_ST
+    ST_SPRITE_CACHE_Init();
+    Page_Region_Cache_Init();
+#endif
 
     if (Is_Demo()) {
         MFCD::Cache("DEMO.MIX");

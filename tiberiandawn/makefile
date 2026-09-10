@@ -550,7 +550,7 @@ endif
 # ATARILIB files use lowercase .cpp (as tracked in git), WIN32LIB files use uppercase .CPP
 PLATFORM_LIB_CPP_SOURCES = \
 	$(PLATFORM_LIB)/alloc.cpp \
-	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st16_iconset.cpp $(PLATFORM_LIB)/st16_draw.cpp $(PLATFORM_LIB)/st16_convert.cpp $(PLATFORM_LIB)/st16_preshift.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blit.cpp $(PLATFORM_LIB)/st_blitter_hw.cpp $(PLATFORM_LIB)/st_soft_blit.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/shpx.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
+	$(PLATFORM_LIB)/drawbuff.cpp $(PLATFORM_LIB)/st16_iconset.cpp $(PLATFORM_LIB)/st16_draw.cpp $(PLATFORM_LIB)/st16_convert.cpp $(PLATFORM_LIB)/st16_preshift.cpp $(PLATFORM_LIB)/st_planar_draw.cpp $(PLATFORM_LIB)/st_blit.cpp $(PLATFORM_LIB)/st_blitter_hw.cpp $(PLATFORM_LIB)/st_soft_blit.cpp $(PLATFORM_LIB)/st_sprite_cache.cpp $(PLATFORM_LIB)/page_region_cache.cpp $(PLATFORM_LIB)/shpx.cpp $(PLATFORM_LIB)/font.cpp $(PLATFORM_LIB)/gbuffer.cpp \
 	$(PLATFORM_LIB)/getshape.cpp $(PLATFORM_LIB)/iconset.cpp $(PLATFORM_LIB)/iff.cpp $(PLATFORM_LIB)/ikbd.cpp \
 	$(PLATFORM_LIB)/keyboard.cpp $(PLATFORM_LIB)/wwkeyboard_st.cpp \
 	$(PLATFORM_LIB)/mouseww.cpp \
@@ -1088,7 +1088,7 @@ ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
 endif
 ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_audx_autotest.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
-	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/iconset_ATARILIB.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blit.o $(INTDIR)/st_blitter_hw.o $(INTDIR)/st_soft_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/shpx.o \
+	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/iconset_ATARILIB.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blit.o $(INTDIR)/st_blitter_hw.o $(INTDIR)/st_soft_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/page_region_cache.o $(INTDIR)/shpx.o \
 	$(INTDIR)/st_planar_draw.o $(INTDIR)/st_hw_probe.o \
 	$(INTDIR)/ccfile.o $(INTDIR)/mixfile.o $(INTDIR)/link.o $(INTDIR)/newdel.o \
 	$(INTDIR)/alloc_ATARILIB.o $(INTDIR)/rawfile.o $(INTDIR)/font.o \

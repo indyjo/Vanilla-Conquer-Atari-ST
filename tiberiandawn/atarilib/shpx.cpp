@@ -7,6 +7,7 @@
 #include "function.h"
 #include "debugstring.h"
 #include "memflag.h"
+#include "page_region_cache.h"
 
 #include <string.h>
 
@@ -22,25 +23,78 @@ static int shpx_format_pool_name(uint16_t pool_id, char *out, size_t out_cap)
 	return 1;
 }
 
-static struct {
-	int loaded;
+/*
+ * Keep streamed pool files open (CONQUER + one theatre). CCFileClass::Open
+ * probes Is_Available (fopen/fclose per search path) before the real Fopen;
+ * doing that on every slice miss is the GEMDOS storm in Hatari traces.
+ */
+enum { SHPX_STREAM_SLOTS = 2 };
+
+static struct ShpxStreamSlot {
 	uint16_t pool_id;
-	uint32_t begin;
-	uint32_t size;
-	uint8_t buf[SHPX_POOL_SLICE_MAX];
-} g_shpx_pool_slice;
+	uint32_t next_off;
+	int in_use;
+	CCFileClass file;
+} g_shpx_stream[SHPX_STREAM_SLOTS];
+
+static void shpx_stream_slot_close(ShpxStreamSlot *slot)
+{
+	if (!slot || !slot->in_use)
+		return;
+	if (slot->file.Is_Open())
+		slot->file.Close();
+	slot->in_use = 0;
+	slot->pool_id = 0;
+	slot->next_off = 0;
+}
+
+static ShpxStreamSlot *shpx_stream_open(uint16_t pool_id)
+{
+	char name[16];
+	ShpxStreamSlot *slot = 0;
+	int i;
+
+	for (i = 0; i < SHPX_STREAM_SLOTS; ++i) {
+		if (g_shpx_stream[i].in_use && g_shpx_stream[i].pool_id == pool_id
+		    && g_shpx_stream[i].file.Is_Open()) {
+			return &g_shpx_stream[i];
+		}
+	}
+
+	if (!shpx_format_pool_name(pool_id, name, sizeof(name)))
+		return 0;
+
+	for (i = 0; i < SHPX_STREAM_SLOTS; ++i) {
+		if (!g_shpx_stream[i].in_use) {
+			slot = &g_shpx_stream[i];
+			break;
+		}
+	}
+	if (!slot) {
+		slot = &g_shpx_stream[0];
+		shpx_stream_slot_close(slot);
+	}
+
+	if (slot->file.Is_Open())
+		slot->file.Close();
+	if (!slot->file.Open(name, READ))
+		return 0;
+	slot->pool_id = pool_id;
+	slot->in_use = 1;
+	slot->next_off = 0;
+	return slot;
+}
 
 /*
  * Whole-pool residency.
  *
- * SHPX streams shape payloads from poolnnnn.bin through the single slice buffer
- * above, which is what lets the game run on a 4 MB STE. The cache holds exactly
- * one (pool_id, begin, size) triple, so alternating sprites cost a full
- * open/seek/read/close per draw. On a machine with memory to spare, read each
- * pool once and hand out pointers into it instead; the caller only needs `size`
- * bytes readable at the returned address, so it cannot tell the difference.
+ * SHPX streams shape payloads from poolnnnn.bin through Page_Region_Cache
+ * (168 KiB, size-tiered). The pool file stays open so a miss is seek+read, not
+ * open/close. On a machine with memory to spare, read each pool once and hand
+ * out pointers into it instead; the caller only needs `size` bytes readable at
+ * the returned address.
  *
- * Machines without the headroom keep the streaming path unchanged.
+ * Machines without the headroom keep the streaming path.
  */
 /*
  * SHPX sidecars are 1 CONQUER, 2 TEMPERAT, 3 DESERT, 4 WINTER (atari.md,
@@ -180,11 +234,32 @@ static void shpx_try_load_whole_pool(uint16_t pool_id)
 	    (void *)base, (long)file_size / 1024L);
 }
 
+static int shpx_region_fill(void *ctx, uint16_t pool_id, uint32_t begin, uint32_t size, void *dst)
+{
+	ShpxStreamSlot *slot;
+
+	(void)ctx;
+	slot = shpx_stream_open(pool_id);
+	if (!slot)
+		return -1;
+
+	if (slot->next_off != begin) {
+		if (slot->file.Seek((long)begin, SEEK_SET) != (long)begin) {
+			slot->next_off = 0;
+			return -1;
+		}
+	}
+
+	if (slot->file.Read(dst, (long)size) != (long)size) {
+		slot->next_off = 0;
+		return -1;
+	}
+	slot->next_off = begin + size;
+	return 0;
+}
+
 void *SHPX_Pool_Read_Slice(uint16_t pool_id, uint32_t begin, uint32_t size)
 {
-	char name[16];
-	CCFileClass file;
-
 	if (size == 0 || pool_id == 0 || size > SHPX_POOL_SLICE_MAX)
 		return NULL;
 
@@ -201,38 +276,7 @@ void *SHPX_Pool_Read_Slice(uint16_t pool_id, uint32_t begin, uint32_t size)
 		}
 	}
 
-	if (g_shpx_pool_slice.loaded
-	    && g_shpx_pool_slice.pool_id == pool_id
-	    && g_shpx_pool_slice.begin == begin
-	    && g_shpx_pool_slice.size == size) {
-		return g_shpx_pool_slice.buf;
-	}
-
-	if (!shpx_format_pool_name(pool_id, name, sizeof(name)))
-		return NULL;
-
-	file.Set_Name(name);
-	if (!file.Is_Available())
-		return NULL;
-	if (!file.Open(READ))
-		return NULL;
-
-	if (file.Seek((long)begin, SEEK_SET) != (long)begin) {
-		file.Close();
-		return NULL;
-	}
-
-	if (file.Read(g_shpx_pool_slice.buf, (long)size) != (long)size) {
-		file.Close();
-		return NULL;
-	}
-	file.Close();
-
-	g_shpx_pool_slice.loaded = 1;
-	g_shpx_pool_slice.pool_id = pool_id;
-	g_shpx_pool_slice.begin = begin;
-	g_shpx_pool_slice.size = size;
-	return g_shpx_pool_slice.buf;
+	return Page_Region_Cache_Get(pool_id, begin, size, shpx_region_fill, 0);
 }
 
 int SHPX_Get_Frame_Clip(void const *meta, unsigned frame, uint16_t *cx, uint16_t *cy, uint16_t *cw,

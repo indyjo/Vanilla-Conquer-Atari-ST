@@ -17,7 +17,7 @@ extern "C" {
 
 #define SHPX_MAGIC_NATIVE 0x53485058u /* 'SHPX' longword on 68000 */
 #define SHPX_PREFIX_SIZE 38u
-#define SHPX_POOL_SLICE_MAX 65536u /* static pool read buffer for SHPX slice I/O */
+#define SHPX_POOL_SLICE_MAX (168u * 1024u) /* Page_Region_Cache slab / max streamed slice */
 
 typedef struct ShpxKfHeader {
 	uint16_t frames;
@@ -62,9 +62,10 @@ static inline int SHPX_Is_Meta(void const *meta)
 }
 
 /**
- * Load `size` bytes from pool%04x.bin at file offset `begin` into a global 64 KiB buffer.
- * Returns a pointer to the first byte on success, NULL on error.
- * Re-reads from disk only when (pool_id, begin, size) differs from the last successful call.
+ * Load `size` bytes from pool%04x.bin at file offset `begin`.
+ * Resident pools return a pointer into the loaded file. Streamed pools use
+ * Page_Region_Cache (168 KiB, keep-open seek+read on miss). Pointer is valid
+ * until a later streamed miss retargets that cache slot.
  */
 void *SHPX_Pool_Read_Slice(uint16_t pool_id, uint32_t begin, uint32_t size);
 

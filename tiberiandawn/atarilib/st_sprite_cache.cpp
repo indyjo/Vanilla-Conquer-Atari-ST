@@ -28,8 +28,8 @@
 
 /*
  * Each tier is a set of independent RankCache directories ("shards").
- * Defaults: 32/8/2/1 shards × (8/6/8/8) slots → capacities 256/48/16/8 (dims 16/32/64/96).
- * On 4MB machines the default slab must stay larger than the score-screen reconfigure
+ * Defaults: 64/8/2/1 shards × (8/8/8/8) slots → capacities 512/64/16/8 (dims 16/32/64/96),
+ * ~220 KiB slab. On 4MB machines the default slab must stay larger than the score-screen reconfigure
  * (~64×64-tier slots): GEMDOS free RAM is fragmented, so a later Alloc of a similar
  * contiguous size can fail even when total free looks sufficient.
  * Shard index comes only from shape address + frame, never remap/fade/ghost.
@@ -41,7 +41,7 @@
 #define ST_SPRITE_CACHE_SHARD_SIZE_16 ST_SPRITE_CACHE_SHARD_SIZE
 #endif
 #ifndef ST_SPRITE_CACHE_SHARD_SIZE_32
-#define ST_SPRITE_CACHE_SHARD_SIZE_32 6
+#define ST_SPRITE_CACHE_SHARD_SIZE_32 ST_SPRITE_CACHE_SHARD_SIZE
 #endif
 #ifndef ST_SPRITE_CACHE_SHARD_SIZE_64
 #define ST_SPRITE_CACHE_SHARD_SIZE_64 ST_SPRITE_CACHE_SHARD_SIZE
@@ -50,7 +50,7 @@
 #define ST_SPRITE_CACHE_SHARD_SIZE_96 ST_SPRITE_CACHE_SHARD_SIZE
 #endif
 #ifndef ST_SPRITE_CACHE_SHARDS_16
-#define ST_SPRITE_CACHE_SHARDS_16 32
+#define ST_SPRITE_CACHE_SHARDS_16 64
 #endif
 #ifndef ST_SPRITE_CACHE_SHARDS_32
 #define ST_SPRITE_CACHE_SHARDS_32 8
@@ -236,7 +236,7 @@ static inline unsigned sprite_cache_shard_index(uint32_t shape_id, uint16_t fram
 	if (shard_count <= 1)
 		return 0u;
 	const uint32_t bits = shape_id ^ (uint32_t)frame;
-	/* Default shard counts are powers of two (32/8/2/1). */
+	/* Default shard counts are powers of two (64/8/2/1). */
 	if ((shard_count & (shard_count - 1)) == 0)
 		return (unsigned)bits & (unsigned)(shard_count - 1);
 	return (unsigned)(bits % (uint32_t)shard_count);

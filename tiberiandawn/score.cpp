@@ -2049,7 +2049,7 @@ void Multi_Score_Presentation(void)
 #endif
 #ifdef ATARI_ST
 	TextPrintBuffer = HidPage.Get_Graphic_Buffer();
-	/* Fit within the resident default-sized slab (~163 KiB); (32,32) does not. */
+	/* Fit within the resident default-sized slab (~220 KiB); (32,32) does not. */
 	ST_SPRITE_CACHE_Reconfigure_TierCapacities(0, 0, 24, 16);
 #else
 	TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height(), (void*)NULL);

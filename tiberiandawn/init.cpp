@@ -2394,6 +2394,8 @@ void Load_Recording_Values(void)
     RecordFile.Read(&Options, sizeof(GameOptionsClass));
     RecordFile.Read(&FrameSendRate, sizeof(FrameSendRate));
     RecordFile.Read(&CommProtocol, sizeof(CommProtocol));
+
+    RecordPlayback.Bind(RecordFile);
 }
 
 /***********************************************************************************************

@@ -37,6 +37,7 @@
 #define EXTERNS_H
 
 #include "cell.h"
+#include "buffered_input.h"
 
 #ifdef SCENARIO_EDITOR
 #include "mapedit.h"
@@ -245,6 +246,7 @@ extern GameType GameToPlay;
 extern CommProtocolType CommProtocol;
 
 extern CCFileClass RecordFile;
+extern BufferedInput RecordPlayback;
 extern int RecordGame;
 extern int SuperRecord;
 extern int PlaybackGame;

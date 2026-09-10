@@ -522,6 +522,7 @@ void Main_Game(int argc, char* argv[])
         **	Playback timing dialog must run before fading to black.
         */
         if ((RecordGame && !SuperRecord) || PlaybackGame) {
+            RecordPlayback.Unbind();
             RecordFile.Close();
         }
 
@@ -4364,13 +4365,13 @@ static void Do_Record_Playback(void)
         /*.....................................................................
         Read & set the map's location.
         .....................................................................*/
-        if (RecordFile.Read(&coord, sizeof(coord)) == sizeof(coord)) {
+        if (RecordPlayback.Read(&coord, sizeof(coord)) == sizeof(coord)) {
             if (coord != Map.DesiredTacticalCoord) {
                 Map.Set_Tactical_Position(coord);
             }
         }
 
-        if (RecordFile.Read(&count, sizeof(count)) == sizeof(count)) {
+        if (RecordPlayback.Read(&count, sizeof(count)) == sizeof(count)) {
             /*..................................................................
             Compute a CRC of the current object-selection list.
             ..................................................................*/
@@ -4384,14 +4385,14 @@ static void Do_Record_Playback(void)
             Load the CRC of the objects on disk; if it doesn't match, select
             all objects as they're loaded.
             ..................................................................*/
-            RecordFile.Read(&sum2, sizeof(sum2));
+            RecordPlayback.Read(&sum2, sizeof(sum2));
             if (sum2 != sum)
                 Unselect_All();
 
             AllowVoice = true;
 
             for (i = 0; i < count; i++) {
-                if (RecordFile.Read(&tgt, sizeof(tgt)) == sizeof(tgt)) {
+                if (RecordPlayback.Read(&tgt, sizeof(tgt)) == sizeof(tgt)) {
                     obj = As_Object(tgt);
                     if (obj && (sum2 != sum)) {
                         obj->Select();

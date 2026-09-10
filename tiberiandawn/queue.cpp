@@ -3163,9 +3163,9 @@ static void Queue_Playback(void)
     //	Read the DoList from disk
     //------------------------------------------------------------------------
     ok = 1;
-    if (RecordFile.Read(&numevents, sizeof(numevents)) == sizeof(numevents)) {
+    if (RecordPlayback.Read(&numevents, sizeof(numevents)) == sizeof(numevents)) {
         for (i = 0; i < numevents; i++) {
-            if (RecordFile.Read(&event, sizeof(EventClass)) == sizeof(EventClass)) {
+            if (RecordPlayback.Read(&event, sizeof(EventClass)) == sizeof(EventClass)) {
                 event.IsExecuted = 0;
                 DoList.Add(event);
             } else {

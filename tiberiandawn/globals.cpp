@@ -630,6 +630,7 @@ CommProtocolType CommProtocol;
 **	These values are used for recording & playing back a game.
 */
 CCFileClass RecordFile("RECORD.BIN");
+BufferedInput RecordPlayback;
 int RecordGame = 0;   // 1 = record a game
 int SuperRecord = 0;  // 1 = reopen record file with every write
 int PlaybackGame = 0; // 1 = play back a game

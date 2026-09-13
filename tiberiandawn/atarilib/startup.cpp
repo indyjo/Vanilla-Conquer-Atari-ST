@@ -47,6 +47,7 @@
 #include	"ikbd.h"
 #include	"st_blit.h"
 #include	"st_screen.h"
+#include	"st_slow_hbl.h"
 #include	"st_autotune.h"
 #include	"st_audio_cfg.h"
 #include	"palette.h"
@@ -514,6 +515,7 @@ void Prog_End(const char *why, bool fatal)
 	// }
 #endif
 	DBG_INFO("C&C - About to call Sound_End");
+	ST_Slow_Hbl_Remove();
 	IKBD_Uninstall();
 	Sound_End();
 	DBG_INFO("C&C - Returned from Sound_End");

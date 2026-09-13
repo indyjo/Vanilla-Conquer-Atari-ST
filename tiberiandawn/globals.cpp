@@ -37,6 +37,8 @@
 #include "ikbd.h"
 #include "c2p.h"
 #include "st_planar_draw.h"
+#include "st_screen.h"
+#include "st_slow_hbl.h"
 #endif
 
 #ifdef JAPANESE
@@ -247,12 +249,39 @@ void Debug_Redraw_Hotkeys_Service(void)
 {
 #ifdef ATARI_ST
     static int prev_r;
+    static int prev_h;
+    static int prev_s;
+    static int hid_phys;
     int const r = (IKBD_Key_Is_Down(VK_MENU) && IKBD_Key_Is_Down(VK_R)) ? 1 : 0;
     if (r && !prev_r) {
         Debug_Redraw_Rects = (Debug_Redraw_Rects == false);
         Map.Flag_To_Redraw(true);
     }
     prev_r = r;
+
+    /* Alt+H: point the shifter at HidPage's backing store, or restore SeenBuff. */
+    int const h = (IKBD_Key_Is_Down(VK_MENU) && IKBD_Key_Is_Down(VK_H)) ? 1 : 0;
+    if (h && !prev_h) {
+        void* const hid = HiddenPage.Get_Buffer();
+        unsigned long const a = (unsigned long)hid;
+        /* Video base must be ST-RAM; TT-RAM HiddenPage cannot be displayed. */
+        if (hid != NULL && a < 0x01000000UL) {
+            hid_phys = hid_phys ? 0 : 1;
+            if (hid_phys) {
+                ST_Screen_Hardware_Set_Phys_Base(hid);
+            } else {
+                ST_Screen_Apply_Game_Video_Hardware();
+            }
+        }
+    }
+    prev_h = h;
+
+    /* Alt+S: HBL ISR that burns ~95% of each scanline. */
+    int const s = (IKBD_Key_Is_Down(VK_MENU) && IKBD_Key_Is_Down(VK_S)) ? 1 : 0;
+    if (s && !prev_s) {
+        ST_Slow_Hbl_Toggle();
+    }
+    prev_s = s;
 #endif
 }
 /*

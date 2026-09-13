@@ -561,7 +561,7 @@ PLATFORM_LIB_CPP_SOURCES = \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/MiscAsm.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/tcpip.cpp,) \
 	$(if $(filter WIN32LIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/DLLInterface.cpp,) \
-	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(if $(filter 1,$(WITH_GITINFO)),,$(PLATFORM_LIB)/st_gitinfo.cpp) $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/st_audio_cfg.cpp $(PLATFORM_LIB)/st_digi_movie.cpp $(PLATFORM_LIB)/audio.cpp $(PLATFORM_LIB)/audio/audio_dma.cpp $(PLATFORM_LIB)/audio/audio_timer_dac.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(if $(filter 1,$(USE_LIBCMINI)),$(PLATFORM_LIB)/libcmini_posix_shim.cpp,) $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
+	$(if $(filter ATARILIB,$(PLATFORM_LIB)),$(PLATFORM_LIB)/direct.cpp $(PLATFORM_LIB)/misc.cpp $(if $(filter 1,$(WITH_GITINFO)),,$(PLATFORM_LIB)/st_gitinfo.cpp) $(PLATFORM_LIB)/st_link_stubs.cpp $(PLATFORM_LIB)/st_hw_probe.cpp $(PLATFORM_LIB)/st_autotune.cpp $(PLATFORM_LIB)/st_audio_cfg.cpp $(PLATFORM_LIB)/st_digi_movie.cpp $(PLATFORM_LIB)/audio.cpp $(PLATFORM_LIB)/audio/audio_dma.cpp $(PLATFORM_LIB)/audio/audio_timer_dac.cpp $(PLATFORM_LIB)/windows_time.cpp $(PLATFORM_LIB)/title_pcx_load.cpp $(PLATFORM_LIB)/ste_stream_pcm.cpp $(PLATFORM_LIB)/ste_stream_ima99.cpp $(PLATFORM_LIB)/ws_adpcm_68k.cpp $(PLATFORM_LIB)/st_frame_meter.cpp $(PLATFORM_LIB)/st_playback_timing.cpp $(PLATFORM_LIB)/st_screen.cpp $(PLATFORM_LIB)/st_slow_hbl.cpp $(if $(filter 1,$(USE_LIBCMINI)),$(PLATFORM_LIB)/libcmini_posix_shim.cpp,) $(PLATFORM_LIB)/audx/audx_pool_file.cpp $(PLATFORM_LIB)/audx/audx_page_cache.cpp $(PLATFORM_LIB)/audx/ste_stream_memory_source.cpp $(PLATFORM_LIB)/audx/ste_stream_page_ring_source.cpp,)
 
 # Shared STVQ runtime (C) — game + tools/stvqview
 ifeq ($(PLATFORM_LIB),ATARILIB)
@@ -587,6 +587,7 @@ ASM_SOURCES = \
 ifeq ($(PLATFORM_LIB),ATARILIB)
 ASM_SOURCES += $(PLATFORM_LIB)/audio/audio_timer_dac_ym.S
 ASM_SOURCES += $(PLATFORM_LIB)/ikbd_mousevec.S
+ASM_SOURCES += $(PLATFORM_LIB)/st_slow_hbl_isr.S
 ifeq ($(USE_LIBCMINI),1)
 ASM_SOURCES += $(PLATFORM_LIB)/st_linea0.S
 endif

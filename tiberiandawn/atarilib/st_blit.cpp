@@ -268,17 +268,22 @@ static ST_Blit_Backend &ST_Blit_Active_Backend(void)
 	return *g_blit_backend;
 }
 
-void ST_Blit_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
-    uint16_t lines, bool hog)
+void ST_Blit_Backend::Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
 {
-	/* Only here does the plan reach real registers. */
-	Program(plan);
 	for (int pl = 0; pl < 4; ++pl) {
 		const void *src_addr = job.src_plane0
 			+ (job.src_addr_per_plane ? (size_t)pl * 2u : 0u);
 		uint8_t *const dst_addr = job.dst_plane0 + (size_t)pl * 2u;
 		Execute(hog, lines, (void *)src_addr, dst_addr);
 	}
+}
+
+void ST_Blit_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
+    uint16_t lines, bool hog)
+{
+	/* Only here does the plan reach real registers. */
+	Program(plan);
+	Kick_Planes(job, lines, hog);
 }
 
 void ST_Blit_Backend::Program(const ST_Blitter &plan)
@@ -312,6 +317,76 @@ static void ST_Blit_Run_4_Planes(
 
 	backend.Run_Planes(plan, job, (uint16_t)lines, hog);
 	backend.Await();
+}
+
+static ST_Blitter g_stamp24_col_plan;
+static bool g_stamp24_col_open;
+
+BOOL ST_Blit_Stamp24_Column_Begin(
+	int src_row_bytes,
+	int dst_row_bytes,
+	int dx_abs,
+	BOOL write_through_last)
+{
+	if (g_stamp24_col_open) {
+		ST_Blit_Stamp24_Column_End();
+	}
+	if (src_row_bytes <= 0 || dst_row_bytes <= 0
+		|| src_row_bytes > ST_BLITTER_SHORT_MAX
+		|| dst_row_bytes > ST_BLITTER_SHORT_MAX) {
+		return FALSE;
+	}
+
+	static uint8_t dummy;
+	ST_Blit_Job job;
+	ST_Blit_Backend &backend = ST_Blit_Active_Backend();
+	backend.Await();
+	if (!ST_Blit_Prepare_88(
+			&g_stamp24_col_plan,
+			&job,
+			&dummy,
+			&dummy,
+			(short)src_row_bytes,
+			(short)dst_row_bytes,
+			0,
+			dx_abs,
+			24,
+			24)) {
+		return FALSE;
+	}
+	g_stamp24_col_plan.hop = 2;
+	g_stamp24_col_plan.op = 3;
+	if (write_through_last && g_stamp24_col_plan.x_count > 1) {
+		g_stamp24_col_plan.endmask3 = 0xFFFFu;
+	}
+	backend.Program(g_stamp24_col_plan);
+	g_stamp24_col_open = true;
+	return TRUE;
+}
+
+void ST_Blit_Stamp24_Column_Kick(const uint8_t *src_planar, uint8_t *dst)
+{
+	if (!g_stamp24_col_open || !src_planar || !dst) {
+		return;
+	}
+
+	ST_Blit_Job job;
+	job.src_plane0 = src_planar;
+	job.dst_plane0 = dst;
+	job.src_addr_per_plane = true;
+
+	ST_FRAME_BAR_BLIT_BEGIN();
+	ST_Blit_Active_Backend().Kick_Planes(job, 24, true);
+	ST_FRAME_BAR_BLIT_END();
+}
+
+void ST_Blit_Stamp24_Column_End(void)
+{
+	if (!g_stamp24_col_open) {
+		return;
+	}
+	ST_Blit_Active_Backend().Await();
+	g_stamp24_col_open = false;
 }
 
 static BOOL ST_Blit_Planar_Rect_With_Op(
@@ -350,6 +425,7 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 	ST_FRAME_BAR_BLIT_BEGIN();
 
 	ST_Blit_Backend &backend = ST_Blit_Active_Backend();
+
 	ST_Blitter plan{};
 	ST_Blitter &regs = plan;
 	backend.Await();

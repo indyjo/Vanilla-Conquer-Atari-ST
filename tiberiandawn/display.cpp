@@ -88,6 +88,8 @@
 #include "st_blit.h"
 #include "c2p.h"
 #include "st16_convert.h"
+#include "st16_draw.h"
+#include "st16_iconset.h"
 #include "st_sprite_cache.h"
 #include "memflag.h"
 
@@ -2830,10 +2832,14 @@ static bool Redraw_Rect_Fill_Clip(Redraw_Rect& rc, int origin_px, int origin_py)
 {
 	int const tac_w = Lepton_To_Pixel(Map.TacLeptonWidth);
 	int const tac_h = Lepton_To_Pixel(Map.TacLeptonHeight);
-	int vx0 = origin_px + rc.c0 * CELL_PIXEL_W;
-	int vy0 = origin_py + rc.r0 * CELL_PIXEL_H;
-	int vx1 = origin_px + rc.c1 * CELL_PIXEL_W;
-	int vy1 = origin_py + rc.r1 * CELL_PIXEL_H;
+	int const raw_x0 = origin_px + rc.c0 * CELL_PIXEL_W;
+	int const raw_y0 = origin_py + rc.r0 * CELL_PIXEL_H;
+	int const raw_x1 = origin_px + rc.c1 * CELL_PIXEL_W;
+	int const raw_y1 = origin_py + rc.r1 * CELL_PIXEL_H;
+	int vx0 = raw_x0;
+	int vy0 = raw_y0;
+	int vx1 = raw_x1;
+	int vy1 = raw_y1;
 	if (vx0 < 0) {
 		vx0 = 0;
 	}
@@ -2913,9 +2919,140 @@ static void ST_Draw_Cell_Shroud(CELL cell, CellClass* cellptr, int xpixel, int y
 	}
 }
 
+#ifdef ATARI_ST
+static bool ST_Ccr_Cell_Has_Extras(CellClass const* cellptr)
+{
+	return cellptr->Smudge != SMUDGE_NONE || cellptr->Overlay != OVERLAY_NONE
+		|| cellptr->IsCursorHere || Debug_Icon;
+}
+
+/*
+ * Visible stamps column by column (one blitter Program per dest-X), then
+ * smudge/overlay/cursor. Cells whose 24×24 box sits inside the tactical
+ * window Kick; only overhanging cells use Draw_It clipping. Draw_It
+ * clobbers the column plan — End before it.
+ */
+static void ST_Ccr_Draw_Terrain_Unclipped(Redraw_Rect const& rc, int origin_cx, int origin_cy,
+	int origin_px, int origin_py, int draw_flags)
+{
+	GraphicViewPortClass tac(
+		LogicPage->Get_Graphic_Buffer(),
+		WindowList[WINDOW_TACTICAL][WINDOWX] + LogicPage->Get_XPos(),
+		WindowList[WINDOW_TACTICAL][WINDOWY] + LogicPage->Get_YPos(),
+		WindowList[WINDOW_TACTICAL][WINDOWWIDTH],
+		WindowList[WINDOW_TACTICAL][WINDOWHEIGHT]);
+	int const tac_w = tac.Get_Width();
+	int const tac_h = tac.Get_Height();
+	GraphicBufferClass* const gb = tac.Get_Graphic_Buffer();
+	uint8_t* const dst_root = (uint8_t*)gb->Get_Buffer();
+	int dst_bpl = gb->Get_Pitch();
+	if (dst_bpl <= 0) {
+		dst_bpl = ST_Planar_Row_Bytes(gb->Get_Width());
+	}
+
+	int const xpos = tac.Get_XPos();
+	int const ypos = tac.Get_YPos();
+	CELL const col_stride = MAP_CELL_W;
+
+	for (int vc = rc.c0; vc < rc.c1; vc++) {
+		int const xpixel = origin_px + vc * CELL_PIXEL_W;
+		int const dx_abs = xpos + xpixel;
+		size_t const dst_x_off = (size_t)(dx_abs >> 4) * 8u;
+		int const next_x = origin_px + (vc + 1) * CELL_PIXEL_W;
+		BOOL const write_through_last =
+			(vc + 1 < rc.c1 && next_x >= 0 && next_x + CELL_PIXEL_W <= tac_w)
+			? TRUE : FALSE;
+		bool col_open = false;
+		CELL cell = XY_Cell(origin_cx + vc, origin_cy + rc.r0);
+
+		for (int vr = rc.r0; vr < rc.r1; vr++) {
+			CellClass* const cellptr = &Map[cell];
+			if (cellptr->Is_Visible(PlayerPtr) || Debug_Unshroud) {
+				int const ypixel = origin_py + vr * CELL_PIXEL_H;
+				bool const in_view = (xpixel >= 0 && ypixel >= 0
+					&& xpixel + CELL_PIXEL_W <= tac_w
+					&& ypixel + CELL_PIXEL_H <= tac_h);
+
+				if (!in_view) {
+					if (col_open) {
+						ST_Blit_Stamp24_Column_End();
+						col_open = false;
+					}
+					cellptr->Draw_It(xpixel, ypixel, draw_flags, cell);
+					cell += col_stride;
+					continue;
+				}
+
+				TemplateTypeClass const* ttype;
+				int icon;
+
+				if (cellptr->TType != TEMPLATE_NONE) {
+					ttype = &TemplateTypeClass::As_Reference(cellptr->TType);
+					icon = cellptr->TIcon;
+				} else {
+					ttype = &TemplateTypeClass::As_Reference(TEMPLATE_CLEAR1);
+					icon = cellptr->Clear_Icon();
+				}
+
+				void const* const image = ttype->Get_Image_Data();
+				uint8_t const* const planar =
+					image ? ST16_Stamp24_Unmasked_Planar(image, icon) : NULL;
+				if (planar) {
+					if (!col_open) {
+						if (!ST_Blit_Stamp24_Column_Begin(
+								ST16_TILE_PLANAR_ROW_BYTES, dst_bpl, dx_abs,
+								write_through_last)) {
+							tac.Draw_Stamp(image, icon, xpixel, ypixel, NULL);
+							cell += col_stride;
+							continue;
+						}
+						col_open = true;
+					}
+					int const dy_abs = ypos + ypixel;
+					uint8_t* const dst = dst_root
+						+ (size_t)dy_abs * (size_t)dst_bpl
+						+ dst_x_off;
+					ST_Blit_Stamp24_Column_Kick(planar, dst);
+				} else if (image) {
+					if (col_open) {
+						ST_Blit_Stamp24_Column_End();
+						col_open = false;
+					}
+					tac.Draw_Stamp(image, icon, xpixel, ypixel, NULL);
+				}
+			}
+			cell += col_stride;
+		}
+		if (col_open) {
+			ST_Blit_Stamp24_Column_End();
+		}
+	}
+
+	CELL cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);
+	CELL const stride = MAP_CELL_W - (rc.c1 - rc.c0);
+	for (int vr = rc.r0; vr < rc.r1; vr++) {
+		for (int vc = rc.c0; vc < rc.c1; vc++) {
+			int const xpixel = origin_px + vc * CELL_PIXEL_W;
+			int const ypixel = origin_py + vr * CELL_PIXEL_H;
+			bool const in_view = (xpixel >= 0 && ypixel >= 0
+				&& xpixel + CELL_PIXEL_W <= tac_w
+				&& ypixel + CELL_PIXEL_H <= tac_h);
+			CellClass* const cellptr = &Map[cell];
+			if (in_view && (cellptr->Is_Visible(PlayerPtr) || Debug_Unshroud)
+				&& ST_Ccr_Cell_Has_Extras(cellptr)) {
+				cellptr->Draw_It(xpixel, ypixel, CELL_DRAW_ONLY, cell);
+			}
+			cell++;
+		}
+		cell += stride;
+	}
+}
+#endif
+
 void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	unsigned char* shadow_trans)
 {
+	/* On-screen cell grid (half-open), then pixel origin of view cell (0,0). */
 	int origin_cx = 0;
 	int origin_cy = 0;
 	int origin_x1 = 0;
@@ -2938,6 +3075,7 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	int origin_py = 0;
 	Map.Coord_To_Pixel(Coord_Whole(Cell_Coord(cell00)), origin_px, origin_py);
 
+	/* Copy CellRedraw bits for that grid into remain[]. */
 	unsigned char remain[REDRAW_RECT_VIEW_H_MAX * REDRAW_RECT_VIEW_W_MAX];
 	memset(remain, 0, sizeof(remain));
 
@@ -2962,6 +3100,7 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 		return;
 	}
 
+	/* Pack remain[] into <=8 cell rects (rubber-band edges first, then greedy). */
 	Rect_Cover<Rect_Cover_Idx> boxes[REDRAW_RECT_MAX];
 	Rect_Cover_Idx nbox = 0;
 #ifdef ATARI_ST
@@ -3030,6 +3169,7 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 		(Rect_Cover_Idx)REDRAW_RECT_GROW_DEN);
 #endif
 
+	/* Clip each box to the tactical pixel view; build lepton AABBs for objects. */
 	Redraw_Rect rects[REDRAW_RECT_MAX];
 	int nrect = 0;
 	for (Rect_Cover_Idx i = 0; i < nbox; i++) {
@@ -3049,14 +3189,17 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	}
 
 #ifdef ATARI_ST
+	/* Queue HidPage→SeenBuff copies for these pixel boxes. */
 	for (int i = 0; i < nrect; i++) {
-		Map.Present_Add_Screen_Rect(Map.TacPixelX + rects[i].vx0,
-			Map.TacPixelY + rects[i].vy0,
-			Map.TacPixelX + rects[i].vx1,
-			Map.TacPixelY + rects[i].vy1);
+		int const x0 = Map.TacPixelX + rects[i].vx0;
+		int const y0 = Map.TacPixelY + rects[i].vy0;
+		int const x1 = Map.TacPixelX + rects[i].vx1;
+		int const y1 = Map.TacPixelY + rects[i].vy1;
+		Map.Present_Add_Screen_Rect(x0, y0, x1, y1);
 	}
 #endif
 
+	/* Sort rects by lepton X; bin Layer[] objects whose AABB hits a rect. */
 	ObjectClass* olists[REDRAW_RECT_MAX][REDRAW_RECT_OBJ_CAP];
 	int nobj[REDRAW_RECT_MAX];
 	int rorder[REDRAW_RECT_MAX];
@@ -3108,6 +3251,7 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 		}
 	}
 
+	/* Per rect: restamp tiles, draw binned objects (window = this rect), then shroud. */
 	int const sx = WindowList[WINDOW_TACTICAL][WINDOWX];
 	int const sy = WindowList[WINDOW_TACTICAL][WINDOWY];
 	int const sw = WindowList[WINDOW_TACTICAL][WINDOWWIDTH];
@@ -3119,23 +3263,31 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 #endif
 		Redraw_Rect const& rc = rects[ri];
 
-		CELL cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);
-		CELL const stride = MAP_CELL_W - (rc.c1 - rc.c0);
-		for (int vr = rc.r0; vr < rc.r1; vr++) {
-			for (int vc = rc.c0; vc < rc.c1; vc++) {
-				int const xpixel = origin_px + vc * CELL_PIXEL_W;
-				int const ypixel = origin_py + vr * CELL_PIXEL_H;
-				CellClass* cellptr = &Map[cell];
-				bool const cell_visible = cellptr->Is_Visible(PlayerPtr) || Debug_Unshroud;
-				if (cell_visible
-					&& !Map.Tactical_Cell_Hides_Objects_For_Local_Player(cell, cellptr)) {
-					cellptr->Draw_It(xpixel, ypixel, draw_flags, cell);
+		/* Terrain / smudge / overlay for every cell in the rect (skip solid black). */
+#ifdef ATARI_ST
+		if (!Debug_Icon) {
+			ST_Ccr_Draw_Terrain_Unclipped(rc, origin_cx, origin_cy, origin_px, origin_py,
+				draw_flags);
+		} else
+#endif
+		{
+			CELL cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);
+			CELL const stride = MAP_CELL_W - (rc.c1 - rc.c0);
+			for (int vr = rc.r0; vr < rc.r1; vr++) {
+				for (int vc = rc.c0; vc < rc.c1; vc++) {
+					int const xpixel = origin_px + vc * CELL_PIXEL_W;
+					int const ypixel = origin_py + vr * CELL_PIXEL_H;
+					CellClass* cellptr = &Map[cell];
+					if (cellptr->Is_Visible(PlayerPtr) || Debug_Unshroud) {
+						cellptr->Draw_It(xpixel, ypixel, draw_flags, cell);
+					}
+					cell++;
 				}
-				cell++;
+				cell += stride;
 			}
-			cell += stride;
 		}
 
+		/* Clip WINDOW_TACTICAL to this rect and draw its object list. */
 		WindowList[WINDOW_TACTICAL][WINDOWX] = sx + rc.vx0;
 		WindowList[WINDOW_TACTICAL][WINDOWY] = sy + rc.vy0;
 		WindowList[WINDOW_TACTICAL][WINDOWWIDTH] = rc.vx1 - rc.vx0;
@@ -3159,7 +3311,9 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 		WindowList[WINDOW_TACTICAL][WINDOWWIDTH] = sw;
 		WindowList[WINDOW_TACTICAL][WINDOWHEIGHT] = sh;
 
-		cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);
+		/* Shroud over the same cells (edge icons or full black). */
+		CELL cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);
+		CELL const stride = MAP_CELL_W - (rc.c1 - rc.c0);
 		for (int vr = rc.r0; vr < rc.r1; vr++) {
 			for (int vc = rc.c0; vc < rc.c1; vc++) {
 				int const xpixel = origin_px + vc * CELL_PIXEL_W;
@@ -3188,7 +3342,7 @@ static int Present_X1[PRESENT_RECT_MAX];
 static int Present_Y1[PRESENT_RECT_MAX];
 static int Present_Area;
 
-static bool Present_Clip_Align(int& x0, int& y0, int& x1, int& y1)
+static bool Present_Clip_Screen(int& x0, int& y0, int& x1, int& y1)
 {
 	int const sw = HidPage.Get_Width();
 	int const sh = HidPage.Get_Height();
@@ -3204,9 +3358,15 @@ static bool Present_Clip_Align(int& x0, int& y0, int& x1, int& y1)
 	if (y1 > sh) {
 		y1 = sh;
 	}
-	if (x1 <= x0 || y1 <= y0) {
+	return (x1 > x0 && y1 > y0);
+}
+
+static bool Present_Clip_Align(int& x0, int& y0, int& x1, int& y1)
+{
+	if (!Present_Clip_Screen(x0, y0, x1, y1)) {
 		return false;
 	}
+	int const sw = HidPage.Get_Width();
 	x0 &= ~15;
 	x1 = (x1 + 15) & ~15;
 	if (x1 > sw) {

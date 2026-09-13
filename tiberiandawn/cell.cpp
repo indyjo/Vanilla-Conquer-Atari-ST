@@ -764,9 +764,6 @@ void CellClass::Draw_It(int x, int y, int draw_type, CELL cell) const
 	Validate();
 	TemplateTypeClass const *ttype = 0;
 	int	icon;		// The icon number to use from the template set.
-	if ((unsigned)cell >= (unsigned)MAP_CELL_TOTAL) {
-		cell = Cell_Number();
-	}
 	void * remap = NULL;
 #ifdef SCENARIO_EDITOR
 	TemplateTypeClass * tptr;

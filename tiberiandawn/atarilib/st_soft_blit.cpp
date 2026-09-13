@@ -1113,6 +1113,12 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 #undef ST_SOFT_P4_DISPATCH
 #undef ST_SOFT_P4_CALL
 }
+
+void ST_Soft_Backend::Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
+{
+	Run_Planes(plan_, job, lines, hog);
+}
+
 /*
  * One merged mask+planar column. LONG_DST pairs the four destination planes
  * into two long accesses; with SHIFT0 the planar source is two long loads too,

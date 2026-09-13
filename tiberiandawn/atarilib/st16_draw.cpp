@@ -16,6 +16,30 @@
 
 #include <stdint.h>
 
+const uint8_t *ST16_Stamp24_Unmasked_Planar(const void *icondata, int logical_icon)
+{
+	const IControl_Type *const iconset = (const IControl_Type *)icondata;
+	if (!iconset || !ST16_Has_Native_Chunk(iconset)) {
+		return NULL;
+	}
+	if (iconset->Width != ST16_TILE_W || iconset->Height != ST16_TILE_H) {
+		return NULL;
+	}
+	if ((ST16_Chunk(iconset)->flags & ST16_FLAG_HAS_MASK) != 0) {
+		return NULL;
+	}
+
+	int16_t const map_count = iconset->Count;
+	if (logical_icon < 0 || logical_icon >= map_count) {
+		return NULL;
+	}
+
+	const uint8_t *const base = (const uint8_t *)iconset;
+	const uint8_t *const map = (iconset->Map != 0) ? (base + iconset->Map) : NULL;
+	int16_t const image_index = map ? (int16_t)map[logical_icon] : (int16_t)logical_icon;
+	return base + iconset->Icons + (size_t)image_index * (size_t)ST16_TILE_ICON_STRIDE;
+}
+
 static BOOL ST16_Blit_Planar_Rect(
 	const uint8_t *planar,
 	uint16_t planar_row_bytes,

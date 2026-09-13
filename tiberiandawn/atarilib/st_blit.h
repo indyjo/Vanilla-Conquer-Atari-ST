@@ -141,6 +141,21 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 	int pixel_width,
 	int pixel_height);
 
+/*
+ * Unclipped 24×24 copy (op=3, source x=0). Program once for a dest-X column,
+ * then Kick only src/dst/y_count. End Awaits. Pair Begin/End; Kick only while open.
+ * write_through_last: force endmask3=0xFFFF (no dest read on the last word).
+ * Caller must restamp the pixels that share that word (next column). Do not
+ * set when x_count would be 1.
+ */
+BOOL ST_Blit_Stamp24_Column_Begin(
+	int src_row_bytes,
+	int dst_row_bytes,
+	int dx_abs,
+	BOOL write_through_last);
+void ST_Blit_Stamp24_Column_Kick(const uint8_t *src_planar, uint8_t *dst);
+void ST_Blit_Stamp24_Column_End(void);
+
 #ifdef __cplusplus
 }
 #endif
@@ -174,6 +189,9 @@ public:
 	virtual void Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 	    uint16_t lines, bool hog);
 
+	/** Four planes with addresses only; chip/plan must already be Programmed. */
+	virtual void Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog);
+
 protected:
 	explicit ST_Blit_Backend(volatile ST_Blitter &regs) : regs_(regs) {}
 
@@ -195,6 +213,7 @@ public:
 	void Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr) override;
 	void Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 	    uint16_t lines, bool hog) override;
+	void Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog) override;
 	/* Plain memory, no hardware behind it. */
 	void Program(const ST_Blitter &plan) override { plan_ = plan; }
 

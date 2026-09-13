@@ -30,6 +30,9 @@ BOOL ST16_Blit_Stamp(
 	int16_t x_pixel,
 	int16_t y_pixel);
 
+/* Native unmasked 24×24 stamp plane 0, or NULL (masked, wrong size, empty slot). */
+const uint8_t *ST16_Stamp24_Unmasked_Planar(const void *icondata, int logical_icon);
+
 #ifdef __cplusplus
 }
 #endif

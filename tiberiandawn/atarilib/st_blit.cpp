@@ -281,9 +281,10 @@ void ST_Blit_Backend::Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool h
 void ST_Blit_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
     uint16_t lines, bool hog)
 {
-	/* Only here does the plan reach real registers. */
+	/* Only here does the plan reach real registers.
+	 * Qualify Kick_Planes so a software override cannot re-enter Run_Planes. */
 	Program(plan);
-	Kick_Planes(job, lines, hog);
+	ST_Blit_Backend::Kick_Planes(job, lines, hog);
 }
 
 void ST_Blit_Backend::Program(const ST_Blitter &plan)

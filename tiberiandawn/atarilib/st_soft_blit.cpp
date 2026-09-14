@@ -1043,7 +1043,13 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 		? (src_x_inc == (reverse_x ? -8 : 8) && dst_x_inc == (reverse_x ? -8 : 8))
 		: (!reverse_x && src_x_inc == 2 && dst_x_inc == 8);
 	if (!strides_ok) {
-		ST_Blit_Backend::Run_Planes(plan, job, lines, hog);
+		/*
+		 * Per-plane Execute via the base Kick_Planes. Do not call
+		 * ST_Blit_Backend::Run_Planes: that Programs and then Kick_Planes(),
+		 * which is virtual and lands back here (unbounded recursion).
+		 */
+		Program(plan);
+		ST_Blit_Backend::Kick_Planes(job, lines, hog);
 		return;
 	}
 

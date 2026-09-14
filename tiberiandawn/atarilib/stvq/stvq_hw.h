@@ -70,16 +70,18 @@ void stvq_hw_set_pending_palette(StvqHw *hw, const uint16_t ste_be[16]);
 void stvq_hw_present_begin(StvqHw *hw);
 
 /* Wait until queued present has taken effect. Vsync only if _vbclock unchanged. */
-unsigned long stvq_hw_present_end(StvqHw *hw);
+void stvq_hw_present_end(StvqHw *hw);
 
-/* present_begin + present_end. Returns _hz200 ticks spent in present_end's Vsync. */
-unsigned long stvq_hw_present(StvqHw *hw);
+/* present_begin + present_end. */
+void stvq_hw_present(StvqHw *hw);
 
 /*
- * Queue signed-8 PCM into Digi_Submit (DIGI_RATE_12500). Advances across
- * partial submits; spins while Digi_Capacity is 0.
- * `pcm` need only stay valid until this returns.
+ * Queue signed-8 PCM into Digi_Submit (DIGI_RATE_12500).
+ * pcm_write: one chunk of whatever fits now (may be 0). Returns bytes written.
+ * pcm_start: pcm_write until `len` is queued (spins while the ring is full).
+ * `pcm` need only stay valid until the matching start/write returns.
  */
+unsigned stvq_hw_pcm_write(StvqHw *hw, const unsigned char *pcm, unsigned len, unsigned sample_rate);
 void stvq_hw_pcm_start(StvqHw *hw, const unsigned char *pcm, size_t len, unsigned sample_rate);
 
 /*

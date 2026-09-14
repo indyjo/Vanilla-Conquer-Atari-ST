@@ -6,7 +6,7 @@ bitstream.
 
 The decode/hw runtime lives in [`../../atarilib/stvq/`](../../atarilib/stvq/)
 (shared with the game `Play_Movie` path). This directory is a thin CLI
-(`stvqview.c` + FILE* `StvqIo` adapter + profiling).
+(`stvqview.c` + FILE* `StvqIo` adapter).
 
 ## Build
 
@@ -37,22 +37,5 @@ stvqview.ttp file.stv
 - STE DMA audio @ 12.517 kHz is the clock when sound + DMA are available
 - STFM / no-DMA: silent video, paced by VBL ~= `50/fps`
 - Streams from disk; `STFI` ignored (no seek yet)
-
-## Profiling
-
-On exit (ESC or end of clip), prints a `_hz_200` (200 Hz) timing report and writes
-`STVQPROF.TXT` in the current directory:
-
-| Bucket | Meaning |
-|--------|---------|
-| `read` | One `fread` of the full `STFR` payload |
-| `stcr` | Codebook replaces from memory |
-| `decode` | `STVD` -> `movep` into back buffer |
-| `wait` | Audio DMA drain or silent VBL pace |
-| `audio` | DMA ring submit (`memcpy` from `frame_buf` SND0) |
-| `present` | Queue swap+palette and block until reveal VBL |
-
-Missed-deadline line:
-- **Late present** - present-to-present gap longer than the fps period by >=1 VBL
 
 Startup also prints `dma_ok` / whether STE-DMA clocking is active.

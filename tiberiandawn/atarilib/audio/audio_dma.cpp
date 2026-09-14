@@ -116,14 +116,25 @@ static void dma_arm_loop(unsigned char const* first, unsigned len)
 
 static int ring_dma_offset(void)
 {
+	int i;
+
 	if (!g_pool) {
 		return -1;
 	}
 	unsigned long const base = (unsigned long)g_pool;
-	unsigned long const h = (unsigned long)*STE_DMA_CNT_H;
-	unsigned long const m = (unsigned long)*STE_DMA_CNT_M;
-	unsigned long const l = (unsigned long)*STE_DMA_CNT_L;
-	unsigned long const cnt = (h << 16) | (m << 8) | l;
+	unsigned long cnt = 0;
+	for (i = 0; i < 8; i++) {
+		unsigned long const h = (unsigned long)*STE_DMA_CNT_H;
+		unsigned long const m = (unsigned long)*STE_DMA_CNT_M;
+		unsigned long const l = (unsigned long)*STE_DMA_CNT_L;
+		unsigned long const h2 = (unsigned long)*STE_DMA_CNT_H;
+		unsigned long const m2 = (unsigned long)*STE_DMA_CNT_M;
+		unsigned long const l2 = (unsigned long)*STE_DMA_CNT_L;
+		cnt = (h << 16) | (m << 8) | l;
+		if (h == h2 && m == m2 && l == l2) {
+			break;
+		}
+	}
 	if (cnt < base || cnt >= base + (unsigned long)AUDIO_DMA_RING_BYTES) {
 		return -1;
 	}

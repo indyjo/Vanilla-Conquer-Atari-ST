@@ -334,17 +334,9 @@ fail:
 
 int stvq_player_read_frame(StvqPlayer *p)
 {
-	StvqProf *prof = p->prof;
 	uint32_t size;
 	size_t need;
 	size_t got;
-	unsigned long t_read0;
-	unsigned long t_read1;
-
-	if (prof) {
-		prof->last_read = 0;
-		prof->last_stfr_bytes = 0;
-	}
 
 	if (p->load_ready)
 		return 1;
@@ -356,15 +348,9 @@ int stvq_player_read_frame(StvqPlayer *p)
 	if (ensure_frame_buf(p, need) != 0)
 		return -1;
 
-	t_read0 = stvq_hz200();
 	got = p->io->read(p->io->user, p->frame_buf, need);
-	t_read1 = stvq_hz200();
 	if (got != need && got != (size_t)size)
 		return -1;
-	if (prof) {
-		prof->last_read = t_read1 - t_read0;
-		prof->last_stfr_bytes = size;
-	}
 
 	p->load_size = size;
 	p->load_got = got;
@@ -375,21 +361,12 @@ int stvq_player_read_frame(StvqPlayer *p)
 int stvq_player_decode_frame(StvqPlayer *p, StvqFrame *out)
 {
 	int got_stvd = 0;
-	StvqProf *prof = p->prof;
 	uint32_t size;
 	size_t got;
 	const unsigned char *rp;
 	const unsigned char *end;
 
 	memset(out, 0, sizeof(*out));
-
-	if (prof) {
-		prof->last_stcr = 0;
-		prof->last_decode = 0;
-		prof->last_audio = 0;
-		prof->last_stcr_n = 0;
-		prof->last_pcm_bytes = 0;
-	}
 
 	if (!p->load_ready)
 		return -1;
@@ -410,26 +387,15 @@ int stvq_player_decode_frame(StvqPlayer *p, StvqFrame *out)
 				return -1;
 			out->have_stpl = 1;
 		} else if (cid == STVQ_CHUNK_STCR) {
-			unsigned long n = 0;
-			unsigned long ts = stvq_hz200();
-			if (mem_apply_stcr(p, rp, csize, &n) != 0)
+			if (mem_apply_stcr(p, rp, csize, 0) != 0)
 				return -1;
-			if (prof) {
-				prof->last_stcr += stvq_hz200() - ts;
-				prof->last_stcr_n = n;
-			}
 		} else if (cid == STVQ_CHUNK_STVD) {
-			unsigned long ts = stvq_hz200();
 			if (mem_decode_stvd(p, rp, csize) != 0)
 				return -1;
-			if (prof)
-				prof->last_decode += stvq_hz200() - ts;
 			got_stvd = 1;
 		} else if (cid == STVQ_CHUNK_SND0) {
 			out->pcm = rp;
 			out->pcm_len = csize;
-			if (prof)
-				prof->last_pcm_bytes = csize;
 		}
 		rp += csize;
 	}

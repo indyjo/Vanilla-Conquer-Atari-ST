@@ -7,7 +7,6 @@
 #include "stvq_format.h"
 #include "stvq_hw.h"
 #include "stvq_io.h"
-#include "stvq_prof.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,7 +41,6 @@ typedef struct StvqPlayer {
 	int load_ready;
 	uint32_t load_size;
 	size_t load_got;
-	StvqProf *prof; /* optional; filled each next_frame */
 } StvqPlayer;
 
 /* Open via caller-owned IO (already positioned at start). Does not close IO. */
@@ -69,7 +67,7 @@ int stvq_player_decode_frame(StvqPlayer *p, StvqFrame *out);
 /*
  * read_frame + decode_frame (read is a no-op when already prefetched).
  * Returns 1 ok, 0 at end, -1 error.
- * Submit out->pcm via stvq_hw_pcm_start before the next read/prefetch.
+ * Submit out->pcm via stvq_hw_pcm_write (retry until queued) before the next read/prefetch.
  */
 int stvq_player_next_frame(StvqPlayer *p, StvqFrame *out);
 

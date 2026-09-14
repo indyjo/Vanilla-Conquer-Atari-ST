@@ -3,7 +3,6 @@
  *
  * Usage: stvqview.ttp file.stv
  * Keys: ESC quit, Space pause/resume.
- * Writes STVQPROF.TXT with 200Hz timing on exit.
  *
  * Thin CLI over atarilib/stvq (FILE* StvqIo adapter; private screens).
  * Play runs under Supexec (hardware paths expect supervisor).
@@ -12,7 +11,6 @@
 #include "stvq_hw.h"
 #include "stvq_io.h"
 #include "stvq_player.h"
-#include "stvq_prof.h"
 
 #include <mint/osbind.h>
 
@@ -38,21 +36,6 @@ static void usage(void)
 	printf("  ESC quit, Space pause/resume\n");
 }
 
-static void dump_prof(const StvqProf *prof)
-{
-	FILE *fp;
-
-	stvq_prof_print(prof, stdout);
-	fflush(stdout);
-
-	fp = fopen("STVQPROF.TXT", "w");
-	if (fp) {
-		stvq_prof_print(prof, fp);
-		fclose(fp);
-		printf("(also wrote STVQPROF.TXT)\n");
-	}
-}
-
 static int play(const char *path)
 {
 	FILE *fp;
@@ -60,7 +43,6 @@ static int play(const char *path)
 	StvqHw hw;
 	StvqPlayer player;
 	StvqFrame frame;
-	StvqProf prof;
 	int paused = 0;
 	int first = 1;
 	int use_audio;
@@ -70,21 +52,12 @@ static int play(const char *path)
 	int key;
 	int pr;
 	int dma_ok;
-	unsigned fps;
-	unsigned long t_frame0 = 0;
-	unsigned long t_prev_present = 0;
-	unsigned long tw0;
-	unsigned long ta0;
-	unsigned long tp0;
-	unsigned long t_done;
-	unsigned long dt;
 	const char *err = NULL;
 
 	memset(&io, 0, sizeof(io));
 	memset(&hw, 0, sizeof(hw));
 	memset(&player, 0, sizeof(player));
 	memset(&frame, 0, sizeof(frame));
-	stvq_prof_reset(&prof);
 
 	fp = fopen(path, "rb");
 	if (!fp) {
@@ -103,12 +76,6 @@ static int play(const char *path)
 		fclose(fp);
 		return 1;
 	}
-
-	player.prof = &prof;
-	fps = player.hdr.fps ? player.hdr.fps : 15u;
-	prof.budget_ticks = (STVQ_HZ200_PER_SEC + fps / 2u) / fps;
-	if (!prof.budget_ticks)
-		prof.budget_ticks = 1;
 
 	printf("STVQ %u x %u %u frames fps=%u cb=%u max_frame=%u\n",
 	    (unsigned)player.hdr.width,
@@ -155,8 +122,15 @@ static int play(const char *path)
 			continue;
 		}
 
-		t_frame0 = stvq_hz200();
-		pr = stvq_player_next_frame(&player, &frame);
+		pr = stvq_player_read_frame(&player);
+		if (pr == 0)
+			break;
+		if (pr < 0) {
+			err = "frame failed";
+			rc = 1;
+			goto done;
+		}
+		pr = stvq_player_decode_frame(&player, &frame);
 		if (pr == 0)
 			break;
 		if (pr < 0) {
@@ -165,13 +139,7 @@ static int play(const char *path)
 			goto done;
 		}
 
-		tw0 = stvq_hz200();
-		if (use_audio && !first) {
-			while (stvq_hw_pcm_busy(&hw, frame.pcm_len)) {
-				if (stvq_hw_poll_key() == 27)
-					goto done;
-			}
-		} else if (!use_audio && !first) {
+		if (!use_audio && !first) {
 			while (vbl_accum < vbls_per_frame) {
 				stvq_hw_wait_vbl(&hw);
 				vbl_accum++;
@@ -180,44 +148,42 @@ static int play(const char *path)
 			}
 			vbl_accum = 0;
 		}
-		prof.last_wait = stvq_hz200() - tw0;
 
 		/* After pacing waits: mutating pending_pal before wait would race TOS colorptr. */
 		if (frame.have_stpl)
 			stvq_hw_set_pending_palette(&hw, frame.stpl);
 
-		/* Submit PCM before present so the VBL wait cannot drain the ring dry. */
+		/* Submit PCM before present so the VBL wait cannot drain the ring dry.
+		 * Write whatever fits immediately; retry until the whole SND0 is queued. */
 		if (use_audio && frame.pcm && frame.pcm_len >= 1) {
-			ta0 = stvq_hz200();
-			stvq_hw_pcm_start(&hw, frame.pcm, frame.pcm_len, player.hdr.sample_rate);
-			prof.last_audio = stvq_hz200() - ta0;
+			const unsigned char *s = frame.pcm;
+			size_t left = frame.pcm_len;
+
+			while (left > 0) {
+				unsigned got = stvq_hw_pcm_write(&hw, s, (unsigned)left, player.hdr.sample_rate);
+				if (got == 0) {
+					if (stvq_hw_poll_key() == 27)
+						goto done;
+					continue;
+				}
+				s += got;
+				left -= got;
+			}
 		}
 
-		tp0 = stvq_hz200();
 		/*
 		 * Queue flip, then read the next STFR before Vsync so disk time
 		 * collapses into the present VBL wait when the read is short enough.
 		 */
 		stvq_hw_present_begin(&hw);
 		pr = stvq_player_read_frame(&player);
-		(void)stvq_hw_present_end(&hw);
-		t_done = stvq_hz200();
-		prof.last_present = t_done - tp0;
+		stvq_hw_present_end(&hw);
 		if (pr < 0) {
 			err = "prefetch read failed";
 			rc = 1;
 			goto done;
 		}
 
-		if (t_prev_present && prof.budget_ticks) {
-			dt = t_done - t_prev_present;
-			if (dt > prof.budget_ticks + STVQ_HZ200_PER_VBL)
-				prof.late_present++;
-		}
-		t_prev_present = t_done;
-
-		prof.last_total = stvq_hz200() - t_frame0;
-		stvq_prof_add(&prof);
 		first = 0;
 	}
 
@@ -230,7 +196,6 @@ done:
 	stvq_hw_shutdown(&hw);
 	printf("Audio session: dma_ok=%d use_audio=%d\n", dma_ok, use_audio);
 	fclose(fp);
-	dump_prof(&prof);
 	return rc;
 }
 

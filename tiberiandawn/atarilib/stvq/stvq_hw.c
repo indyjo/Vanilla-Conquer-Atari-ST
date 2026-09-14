@@ -10,7 +10,6 @@
 #include "stvq_hw.h"
 
 #include "audio/digi_audio.h"
-#include "stvq_prof.h"
 
 #include <mint/osbind.h>
 
@@ -267,12 +266,10 @@ void stvq_hw_present_begin(StvqHw *hw)
 	Setscreen((void *)hw->screen[new_front], (void *)hw->screen[new_front], -1);
 }
 
-unsigned long stvq_hw_present_end(StvqHw *hw)
+void stvq_hw_present_end(StvqHw *hw)
 {
 	int new_front = hw->present_new_front;
-	unsigned long t0, t1;
 
-	t0 = stvq_hz200();
 	if (*(volatile unsigned long *)0x462UL == hw->present_vbl0)
 		Vsync();
 	if (hw->pending_pal_valid) {
@@ -283,52 +280,57 @@ unsigned long stvq_hw_present_end(StvqHw *hw)
 	}
 	hw->front = new_front;
 	hw->back = 1 - new_front;
-	t1 = stvq_hz200();
-	return t1 - t0;
 }
 
-unsigned long stvq_hw_present(StvqHw *hw)
+void stvq_hw_present(StvqHw *hw)
 {
 	stvq_hw_present_begin(hw);
-	return stvq_hw_present_end(hw);
+	stvq_hw_present_end(hw);
+}
+
+unsigned stvq_hw_pcm_write(StvqHw *hw, const unsigned char *pcm, unsigned len, unsigned sample_rate)
+{
+	unsigned cap;
+	unsigned freeb;
+	unsigned chunk;
+	void const *p;
+	unsigned got;
+
+	(void)sample_rate;
+	if (!hw || !hw->dma_ok || !pcm || len < 1 || !Digi_Submit || !Digi_Capacity)
+		return 0;
+
+	cap = digi_ring_cap();
+	if (len > cap)
+		len = cap;
+	len &= ~1u;
+	if (len < 1)
+		return 0;
+
+	freeb = Digi_Capacity(digi_src_rate_flags());
+	if (freeb == 0)
+		return 0;
+	chunk = len < freeb ? len : freeb;
+	chunk &= ~1u;
+	if (chunk == 0)
+		return 0;
+	p = Digi_Submit(pcm, pcm + chunk, digi_src_rate_flags());
+	got = (unsigned)((unsigned char const *)p - pcm);
+	return got;
 }
 
 void stvq_hw_pcm_start(StvqHw *hw, const unsigned char *pcm, size_t len, unsigned sample_rate)
 {
 	unsigned char const *s;
 	unsigned left;
-	unsigned cap;
 
-	(void)sample_rate;
-	if (!hw || !hw->dma_ok || !pcm || len < 1 || !Digi_Submit)
-		return;
-
-	cap = digi_ring_cap();
-	if (len > (size_t)cap)
-		len = (size_t)cap;
-	len &= ~1u;
-	if (len < 1)
+	if (!hw || !hw->dma_ok || !pcm || len < 1)
 		return;
 
 	s = pcm;
 	left = (unsigned)len;
 	while (left > 0) {
-		unsigned freeb;
-		unsigned chunk;
-		void const *p;
-		unsigned got;
-
-		if (!Digi_Capacity)
-			return;
-		freeb = Digi_Capacity(digi_src_rate_flags());
-		if (freeb == 0)
-			continue; /* spin until HAL drains */
-		chunk = left < freeb ? left : freeb;
-		chunk &= ~1u;
-		if (chunk == 0)
-			continue;
-		p = Digi_Submit(s, s + chunk, digi_src_rate_flags());
-		got = (unsigned)((unsigned char const *)p - s);
+		unsigned got = stvq_hw_pcm_write(hw, s, left, sample_rate);
 		if (got == 0)
 			continue;
 		s += got;

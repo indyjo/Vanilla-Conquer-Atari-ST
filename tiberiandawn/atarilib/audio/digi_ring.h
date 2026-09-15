@@ -24,22 +24,14 @@ typedef struct DigiRingOps {
 } DigiRingOps;
 
 /*
- * Software producer cursor over a looping hardware ring. One byte is never
- * queued (free = size-1-queued) so a full buffer is distinct from empty.
- * digi_ring_sync() reads ops->consumer_pos. queued is the forward distance
- * from the consumer to write_pos (never size, so 0 is empty). A true
- * underrun (DMA walked onto write_pos) parks write_pos on the consumer.
- * A 1-byte backward glitch at the full watermark (write_pos == consumer-1)
- * used to look like played==size-1 and wipe the queue; that is ignored.
+ * write_pos stays ahead of the play cursor. Free space is
+ * (play - write - 1) mod size, so one slot is never filled (empty ≠ full).
  */
 struct DigiRing {
 	unsigned char* base;     /* device-native samples; DMA must be ST-RAM */
 	unsigned size;           /* power of two, typically DIGI_RING_BYTES */
 	unsigned write_pos;      /* next producer index in [0, size) */
-	unsigned queued;         /* unplayed bytes; 0 = empty, max size-1 */
-	unsigned last_consumer;  /* consumer offset at last sync (armed only) */
-	unsigned long last_hz200; /* _hz_200 at last sync; bounds played */
-	int have_hz200;
+	unsigned last_play;      /* last in-range consumer (DMA read fail) */
 	int armed;               /* 1 after first write (ops->arm has run) */
 	DigiRingOps const* ops;
 	void* hw_ctx;            /* unused; reserved for a backend cookie */
@@ -47,7 +39,6 @@ struct DigiRing {
 
 void digi_ring_init(DigiRing* r, unsigned char* base, unsigned size, DigiRingOps const* ops);
 void digi_ring_reset(DigiRing* r);
-void digi_ring_sync(DigiRing* r);
 unsigned digi_ring_free_bytes(DigiRing* r);
 /* Write up to nbytes of device-native bytes; returns bytes written (may be partial). */
 unsigned digi_ring_write_available(DigiRing* r, unsigned char const* src, unsigned nbytes);

@@ -70,7 +70,7 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 | 0.3.3 | 105805 | 8:49.02 | 2.9677 |
 | 0.3.4 | 97843 | 8:09.21 | 3.2092 |
 | 0.3.5 | 81887 | 6:49.43 | 3.8346 |
-| 0.3.6 | 80103 | 6:40.51 | 3.9200 |
+| 0.3.6 | 74724 | 6:13.62 | 4.2021 |
 
 `-XYQ`:
 
@@ -84,9 +84,9 @@ Higher fps / lower ticks = faster. Use the **same recording** when comparing ver
 | 0.3.3 | 84882 | 7:04.41 | 3.6993 |
 | 0.3.4 | 75097 | 6:15.48 | 4.1813 |
 | 0.3.5 | 63812 | 5:19.06 | 4.9207 |
-| 0.3.6 | 57885 | 4:49.42 | 5.4245 |
+| 0.3.6 | 57877 | 4:49.38 | 5.4253 |
 
-STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on plain ST. `0.3.3` is about **51%** faster than `0.3.2` on STe `-XYQ`. `0.3.4` is about **8%** faster than `0.3.3` on STe `-XY` and about **13%** faster on STe `-XYQ`. `0.3.5` is about **19%** faster than `0.3.4` on STe `-XY` and about **18%** faster on STe `-XYQ`. `0.3.6` is about **2%** faster than `0.3.5` on STe `-XY` and about **10%** faster on STe `-XYQ`.
+STe `-XYQ` uses default `ST16_USE_PRESHIFT=0`; soft-blit gains show mainly on plain ST. `0.3.3` is about **51%** faster than `0.3.2` on STe `-XYQ`. `0.3.4` is about **8%** faster than `0.3.3` on STe `-XY` and about **13%** faster on STe `-XYQ`. `0.3.5` is about **19%** faster than `0.3.4` on STe `-XY` and about **18%** faster on STe `-XYQ`. `0.3.6` is about **10%** faster than `0.3.5` on STe `-XY` and about **10%** faster on STe `-XYQ`.
 
 #### `record2.bin` (NOD 1, 2285 frames)
 
@@ -96,7 +96,7 @@ Copy `record2.bin` to `RECORD.BIN` before the run. This recording is longer and 
 |---------|-------|------|-----|
 | 0.3.4 | 168632 | 14:03.16 | 2.7100 |
 | 0.3.5 | 131576 | 10:57.88 | 3.4733 |
-| 0.3.6 | 115298 | 9:36.49 | 3.9636 |
+| 0.3.6 | 115315 | 9:36.57 | 3.9631 |
 
 `0.3.5` is about **28%** faster than `0.3.4` on this recording (STe `-XYQ`). `0.3.6` is about **14%** faster than `0.3.5`.
 
@@ -108,7 +108,7 @@ Copy `record2.bin` to `RECORD.BIN` before the run. This recording is longer and 
 |---------|-------|------|-----|
 | 0.3.4 | 163561 | 13:37.80 | 1.9198 |
 | 0.3.5 | 137759 | 11:28.79 | 2.2793 |
-| 0.3.6 | 152460 | 12:42.30 | 2.0596 |
+| 0.3.6 | 132739 | 11:03.69 | 2.3655 |
 
 `-XYQ`:
 
@@ -120,9 +120,9 @@ Copy `record2.bin` to `RECORD.BIN` before the run. This recording is longer and 
 | 0.3.3 | 99945 | 8:19.72 | 3.1417 |
 | 0.3.4 | 92515 | 7:42.57 | 3.3940 |
 | 0.3.5 | 81568 | 6:47.84 | 3.8495 |
-| 0.3.6 | 76198 | 6:20.99 | 4.1208 |
+| 0.3.6 | 75896 | 6:19.48 | 4.1372 |
 
-`0.3.1` is about **65%** faster than `0.3.0` on plain ST (`-XYQ`). `0.3.3` is about **42%** faster than `0.3.2` (and about **54%** faster than `0.3.1`). `0.3.4` is about **8%** faster than `0.3.3` on ST `-XYQ`. `0.3.5` is about **19%** faster than `0.3.4` on ST `-XY` and about **13%** faster on ST `-XYQ`. `0.3.6` is about **7%** faster than `0.3.5` on ST `-XYQ`, but about **10%** slower on ST `-XY`. With YM digi auto-on, ST `-XY` runs at about **50%** of ST `-XYQ` fps.
+`0.3.1` is about **65%** faster than `0.3.0` on plain ST (`-XYQ`). `0.3.3` is about **42%** faster than `0.3.2` (and about **54%** faster than `0.3.1`). `0.3.4` is about **8%** faster than `0.3.3` on ST `-XYQ`. `0.3.5` is about **19%** faster than `0.3.4` on ST `-XY` and about **13%** faster on ST `-XYQ`. `0.3.6` is about **4%** faster than `0.3.5` on ST `-XY` and about **7%** faster on ST `-XYQ`. With YM digi auto-on, ST `-XY` runs at about **57%** of ST `-XYQ` fps.
 
 ### 16 MHz Atari Falcon (68030), EmuTOS 1.3 512 KB (US), 60 Hz (emulated)
 
@@ -138,7 +138,7 @@ Copy `record2.bin` to `RECORD.BIN` before the run. This recording is longer and 
 | 0.3.3 | 36298 | 3:01.49 | 8.6506 |
 | 0.3.4 | 32269 | 2:41.34 | 9.7307 |
 | 0.3.5 | 28108 | 2:20.54 | 11.1712 |
-| 0.3.6 | 25452 | 2:07.26 | 12.3369 |
+| 0.3.6 | 25362 | 2:06.81 | 12.3807 |
 
 `-XYQ`:
 
@@ -152,9 +152,9 @@ Copy `record2.bin` to `RECORD.BIN` before the run. This recording is longer and 
 | 0.3.3 | 33982 | 2:49.91 | 9.2402 |
 | 0.3.4 | 29991 | 2:29.95 | 10.4698 |
 | 0.3.5 | 26125 | 2:10.62 | 12.0191 |
-| 0.3.6 | 23469 | 1:57.34 | 13.3794 |
+| 0.3.6 | 23454 | 1:57.27 | 13.3879 |
 
-`0.3.4` is about **12%** faster than `0.3.3` on this Falcon (`-XY`) and about **13%** faster (`-XYQ`). `0.3.5` is about **15%** faster than `0.3.4` on this Falcon (`-XY`) and about **15%** faster (`-XYQ`). `0.3.6` is about **10%** faster than `0.3.5` on this Falcon (`-XY`) and about **11%** faster (`-XYQ`).
+`0.3.4` is about **12%** faster than `0.3.3` on this Falcon (`-XY`) and about **13%** faster (`-XYQ`). `0.3.5` is about **15%** faster than `0.3.4` on this Falcon (`-XY`) and about **15%** faster (`-XYQ`). `0.3.6` is about **11%** faster than `0.3.5` on this Falcon (`-XY`) and about **11%** faster (`-XYQ`).
 
 #### Same Falcon, TT-RAM, no BLiTTER (software blits)
 
@@ -167,9 +167,9 @@ EmuTOS reports no blitter (`AllowHardwareBlitFills` forced off → software path
 | 0.3.3 | 24059 | 2:00.29 | 13.0512 |
 | 0.3.4 | 22492 | 1:52.46 | 13.9605 |
 | 0.3.5 | 19645 | 1:38.22 | 15.9837 |
-| 0.3.6 | 18359 | 1:31.79 | 17.1033 |
+| 0.3.6 | 18134 | 1:30.67 | 17.3155 |
 
-`0.3.4` is about **7%** faster than `0.3.3` on this Falcon with TT-RAM (`-XYQ`). `0.3.5` is about **14%** faster than `0.3.4`. `0.3.6` is about **7%** faster than `0.3.5`.
+`0.3.4` is about **7%** faster than `0.3.3` on this Falcon with TT-RAM (`-XYQ`). `0.3.5` is about **14%** faster than `0.3.4`. `0.3.6` is about **8%** faster than `0.3.5`.
 
 ### 32 MHz Atari TT (68030), 4 MB ST-RAM + 4 MB TT-RAM, EmuTOS 1.3
 
@@ -181,6 +181,6 @@ EmuTOS reports no blitter (`AllowHardwareBlitFills` forced off → software path
 | 0.3.3 | 11904 | 0:59.52 | 26.3777 |
 | 0.3.4 | 11103 | 0:55.51 | 28.2806 |
 | 0.3.5 | 9702 | 0:48.51 | 32.3645 |
-| 0.3.6 | 9083 | 0:45.41 | 34.5701 |
+| 0.3.6 | 8962 | 0:44.81 | 35.0368 |
 
-`0.3.3` is about **29%** faster than `0.3.2` on this TT (`-XYQ`). `0.3.4` is about **7%** faster than `0.3.3`. `0.3.5` is about **14%** faster than `0.3.4`. `0.3.6` is about **7%** faster than `0.3.5`.
+`0.3.3` is about **29%** faster than `0.3.2` on this TT (`-XYQ`). `0.3.4` is about **7%** faster than `0.3.3`. `0.3.5` is about **14%** faster than `0.3.4`. `0.3.6` is about **8%** faster than `0.3.5`.

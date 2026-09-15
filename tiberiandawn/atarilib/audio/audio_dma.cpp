@@ -145,7 +145,7 @@ static unsigned dma_digi_consumer_pos(DigiRing* r)
 {
 	int const off = ring_dma_offset();
 	if (off < 0) {
-		return r ? r->last_consumer : 0;
+		return r ? r->last_play : 0;
 	}
 	return (unsigned)off;
 }

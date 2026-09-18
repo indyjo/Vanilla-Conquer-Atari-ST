@@ -21,6 +21,7 @@
 /** Input already written to MEMFS by JS (see remix_wasm_memfs_input()). */
 #define WASM_MEMFS_INPUT (-1)
 
+static char g_wasm_last_error[256];
 static RemixEntry *g_wasm_entries = NULL;
 static unsigned g_wasm_entry_count;
 static unsigned g_wasm_entry_cap;
@@ -240,6 +241,12 @@ int remix_wasm_install_w16(const uint8_t *data, int len)
 	return remix_st16_install_weights_from_buffer(data, (size_t)len);
 }
 
+EMSCRIPTEN_KEEPALIVE
+const char *remix_wasm_last_error(void)
+{
+	return g_wasm_last_error;
+}
+
 /**
  * Encode one VQA payload to STVQ.
  * JS writes the VQA to /in.vqa and video/{crc}.*.w16 into MEMFS first.
@@ -255,9 +262,12 @@ int remix_wasm_encode_vqa(uint32_t crc)
 	uint32_t stv_len = 0;
 	int rc;
 
+	g_wasm_last_error[0] = '\0';
+
 	vqa = read_file(WASM_IN_VQA_PATH, &vqa_len);
 	if (!vqa || vqa_len == 0) {
 		free(vqa);
+		snprintf(g_wasm_last_error, sizeof(g_wasm_last_error), "could not read /in.vqa");
 		return 0;
 	}
 
@@ -275,10 +285,17 @@ int remix_wasm_encode_vqa(uint32_t crc)
 	if (rc == 1) {
 		if (!write_file(WASM_OUT_STV_PATH, stv, (size_t)stv_len)) {
 			free(stv);
+			snprintf(g_wasm_last_error, sizeof(g_wasm_last_error), "could not write /out.stv");
 			return 0;
 		}
 		free(stv);
 	} else {
+		const char *why = remix_vqa_last_error();
+		if (why && why[0])
+			snprintf(g_wasm_last_error, sizeof(g_wasm_last_error), "%s", why);
+		else
+			snprintf(g_wasm_last_error, sizeof(g_wasm_last_error),
+			    rc < 0 ? "STVQ encode omitted" : "VQA encode I/O error");
 		free(stv);
 	}
 	return rc;

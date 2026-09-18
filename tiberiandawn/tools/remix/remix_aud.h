@@ -29,6 +29,7 @@ RemixImaCtx *remix_ima_stream_create(
     RemixAudReadFn read_fn, void *read_ctx);
 unsigned long remix_ima_stream_total_samples(const RemixImaCtx *ctx);
 unsigned remix_ima_stream_pending_frame_samples(RemixImaCtx *ctx);
+unsigned remix_ima_stream_pull_s16(RemixImaCtx *ctx, int16_t *dst, unsigned max_out);
 unsigned remix_ima_stream_pull_s8(RemixImaCtx *ctx, signed char *dst, unsigned max_out);
 void remix_ima_stream_destroy(RemixImaCtx *ctx);
 

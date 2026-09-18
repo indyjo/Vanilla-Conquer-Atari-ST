@@ -9,10 +9,32 @@
 #include "stvq_format.h"
 #include "stvq_palette.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+static char g_remix_vqa_error[256];
+
+const char *remix_vqa_last_error(void)
+{
+	return g_remix_vqa_error;
+}
+
+static void remix_vqa_clear_error(void)
+{
+	g_remix_vqa_error[0] = '\0';
+}
+
+static void remix_vqa_set_error(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(g_remix_vqa_error, sizeof(g_remix_vqa_error), fmt, ap);
+	va_end(ap);
+}
 
 int remix_vqa_is_stvq(const unsigned char *data, size_t len)
 {
@@ -255,10 +277,16 @@ static int encode_vqa_file(
 	enc_rc = stvq_encode(&opts);
 	unlink(vqa_path);
 	if (enc_rc != 0) {
-		fprintf(stderr, "warning: omit %08x — STVQ encode failed\n", (unsigned)crc);
+		const char *why = stvq_encode_error();
+		if (why && why[0])
+			remix_vqa_set_error("%s", why);
+		else
+			remix_vqa_set_error("STVQ encode failed");
+		fprintf(stderr, "warning: omit %08X — %s\n", (unsigned)crc, g_remix_vqa_error);
 		unlink(stv_path);
 		return -1;
 	}
+	remix_vqa_clear_error();
 	return 1;
 }
 
@@ -275,19 +303,22 @@ int remix_vqa_convert_payload(
 		return 0;
 
 	if (!any_crc_w16_present(cfg, crc)) {
-		fprintf(stderr, "warning: omit %08x — missing video/%08x.*.w16\n", (unsigned)crc,
-		    (unsigned)crc);
+		remix_vqa_set_error("missing video/%08x.0.w16", (unsigned)crc);
+		fprintf(stderr, "warning: omit %08X — %s\n", (unsigned)crc, g_remix_vqa_error);
 		return -1;
 	}
 
 	fd = mkstemp(vqa_path);
-	if (fd < 0)
+	if (fd < 0) {
+		remix_vqa_set_error("mkstemp failed for VQA temp file");
 		return 0;
+	}
 	close(fd);
 	/* mkstemp already created an empty file; overwrite with VQA payload. */
 	snprintf(stv_path, sizeof(stv_path), "%s.stv", vqa_path);
 
 	if (!write_payload_temp(in, in_pos, probe, probe_len, payload_size, vqa_path)) {
+		remix_vqa_set_error("could not write VQA temp file");
 		unlink(vqa_path);
 		return 0;
 	}
@@ -319,18 +350,21 @@ int remix_vqa_convert_buffer(
 	*out_len = 0;
 
 	if (!any_crc_w16_present(cfg, crc)) {
-		fprintf(stderr, "warning: omit %08x — missing video/%08x.*.w16\n", (unsigned)crc,
-		    (unsigned)crc);
+		remix_vqa_set_error("missing video/%08x.0.w16", (unsigned)crc);
+		fprintf(stderr, "warning: omit %08X — %s\n", (unsigned)crc, g_remix_vqa_error);
 		return -1;
 	}
 
 	fd = mkstemp(vqa_path);
-	if (fd < 0)
+	if (fd < 0) {
+		remix_vqa_set_error("mkstemp failed for VQA temp file");
 		return 0;
+	}
 	close(fd);
 	snprintf(stv_path, sizeof(stv_path), "%s.stv", vqa_path);
 
 	if (!write_buffer_temp(vqa, vqa_len, vqa_path)) {
+		remix_vqa_set_error("could not write VQA temp file");
 		unlink(vqa_path);
 		return 0;
 	}
@@ -340,6 +374,7 @@ int remix_vqa_convert_buffer(
 		return enc_rc;
 
 	if (!read_file_alloc(stv_path, out_stv, out_len)) {
+		remix_vqa_set_error("could not read encoded STVQ (%s)", stv_path);
 		unlink(stv_path);
 		return 0;
 	}

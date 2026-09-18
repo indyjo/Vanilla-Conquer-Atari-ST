@@ -96,11 +96,13 @@ Classic AUD entries in `TRANSIT.MIX` (side-select, map theme, Kane ending clips,
 
 ### Movie sequences (0.3.x)
 
-When targeting **0.3.x**, enable **Movie sequences** to extract `MOVIES.MIX` and convert VQA payloads to STVQ using CRC-named `video/xxxxxxxx.N.w16` sidecars from the release ZIP. GDI and NOD `MOVIES.MIX` are merged first (union by CRC) so shared clips are encoded only once. Encoding runs in a windowed worker pool (configurable 1–8 parallel encodes, default 4) with ordered MIX writeout. Quality and encoding-effort selects map to remix STVQ presets — **Low** quality is suited for 8 MHz Atari ST computers. Missing sidecars omit that clip (with a warning). Encoding is still slow in the browser, but parallel workers use multiple CPU cores.
+When targeting **0.3.x**, enable **Movie sequences** to extract `MOVIES.MIX` and convert VQA payloads to STVQ using CRC-named `video/xxxxxxxx.N.w16` sidecars from the release ZIP. GDI and NOD `MOVIES.MIX` are merged first (union by CRC) so shared clips are encoded only once. Encoding runs in a windowed worker pool (configurable 1–8 parallel encodes, default 4) with ordered MIX writeout. Quality and encoding-effort selects map to remix STVQ presets — **Low** quality is suited for 8 MHz Atari ST computers. Missing sidecars or encoder failure **omit** that clip; the log line is `vqa → omit (reason)`. Encoding is still slow in the browser, but parallel workers use multiple CPU cores.
 
 ## Legal
 
 You must legally own Command &amp; Conquer. This tool does not distribute Electronic Arts assets.
+
+Audio resampling in `remix.wasm` uses [libsamplerate](../third_party/libsamplerate/) (BSD-2-Clause). The notice is shipped as `licenses/libsamplerate.COPYING` next to the WASM (also in the itch zip). It is **not** added to the game checkout ZIP.
 
 ## Roadmap
 

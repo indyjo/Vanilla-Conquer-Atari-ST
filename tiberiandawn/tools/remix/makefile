@@ -8,10 +8,15 @@ PALETTE_OPT = ../palette-opt
 
 HOST_CC ?= cc
 HOST_CXX ?= c++
-HOST_CFLAGS ?= -O2 -Wall -Wextra -std=c99 -I. -I$(TDROOT) -I$(COMMON) -I$(ATARILIB) -I$(VQATOOL) -I$(PALETTE_OPT)
+HOST_CFLAGS ?= -O2 -Wall -Wextra -std=c99 -I. -I$(TDROOT) -I$(COMMON) -I$(ATARILIB) -I$(VQATOOL) -I$(PALETTE_OPT) -I../host_audio -I../third_party/libsamplerate -I../third_party/libsamplerate/include -I../third_party/libsamplerate/src -DHAVE_CONFIG_H
 HOST_CXXFLAGS ?= -O2 -Wall -Wextra -std=c++17 -I. -I$(ATARILIB) -I$(TDROOT) -I$(COMMON) -I$(VQATOOL) -DREMIX_BUILD
 
-COMMON_SRCS = remix_mix.c remix_merge.c remix_detect.c remix_print.c remix_audio.c remix_aud.c remix_audx.c remix_unzap.c remix_vqa.c
+COMMON_SRCS = remix_mix.c remix_merge.c remix_detect.c remix_print.c remix_audio.c remix_aud.c remix_audx.c remix_unzap.c remix_vqa.c \
+	../host_audio/st_host_resample.c \
+	../third_party/libsamplerate/src/samplerate.c \
+	../third_party/libsamplerate/src/src_sinc.c \
+	../third_party/libsamplerate/src/src_linear.c \
+	../third_party/libsamplerate/src/src_zoh.c
 COMMON_OBJS = $(COMMON_SRCS:.c=.o)
 
 ST16_CXX_SRCS = remix_st16_host.cpp remix_st16_stubs.cpp \

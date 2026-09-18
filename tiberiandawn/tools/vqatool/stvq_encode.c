@@ -10,11 +10,31 @@
 #include "stvq_palette.h"
 #include "stvq_write.h"
 #include "vqa_decode.h"
+#include "vqa_format.h"
+#include "st_host_resample.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+static char g_stvq_encode_error[256];
+
+const char *stvq_encode_error(void)
+{
+	return g_stvq_encode_error;
+}
+
+static void stvq_encode_set_error(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(g_stvq_encode_error, sizeof(g_stvq_encode_error), fmt, ap);
+	va_end(ap);
+	fprintf(stderr, "error: %s\n", g_stvq_encode_error);
+}
 
 static uint64_t enc_ns_now(void)
 {
@@ -169,56 +189,169 @@ static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t
 	return stvq_write_chunk_end(w, size_pos);
 }
 
-static void resample_frame_audio(const int16_t *pcm16, size_t pcm_n, unsigned src_rate, unsigned fps,
-    unsigned frame_index, unsigned char **out, unsigned *out_n)
-{
-	/* Target cumulative samples at 12517 Hz */
-	uint64_t t0 = ((uint64_t)frame_index * STVQ_SAMPLE_RATE + fps / 2u) / (fps ? fps : 15u);
-	uint64_t t1 = ((uint64_t)(frame_index + 1u) * STVQ_SAMPLE_RATE + fps / 2u) / (fps ? fps : 15u);
-	unsigned n = (unsigned)(t1 - t0);
-	unsigned i;
-	unsigned char *buf;
+typedef struct EncSlot {
+	VqaDecodedFrame fr;
+	uint8_t *tiles;
+	uint8_t *src64;
+} EncSlot;
 
-	*out = NULL;
-	*out_n = 0;
-	if (!n)
+typedef struct PcmFifo {
+	int16_t *p;
+	unsigned n;
+	unsigned cap;
+} PcmFifo;
+
+static void enc_slot_clear(EncSlot *sl)
+{
+	if (!sl)
 		return;
-	/* Even sample count keeps SND0 word-aligned (IFF + native BE16 STVD). */
-	if (n & 1u)
-		n++;
-	buf = (unsigned char *)malloc(n);
-	if (!buf)
+	vqa_decoded_frame_clear(&sl->fr);
+	free(sl->tiles);
+	free(sl->src64);
+	memset(sl, 0, sizeof(*sl));
+}
+
+static void pcm_fifo_free(PcmFifo *q)
+{
+	if (!q)
 		return;
-	/*
-	 * pcm16 is this frame's slice only. Map output sample i ∈ [0,n) into that
-	 * buffer — do not use absolute timeline positions (those clamp to the last
-	 * sample for every frame after the first → silence + crackles).
-	 */
-	for (i = 0; i < n; i++) {
-		int16_t s = 0;
-		if (pcm_n) {
-			size_t idx = (size_t)(((uint64_t)i * pcm_n) / n);
-			if (idx >= pcm_n)
-				idx = pcm_n - 1;
-			s = pcm16[idx];
-		}
-		(void)src_rate;
-		buf[i] = (unsigned char)((int)(s >> 8)); /* signed 8-bit */
+	free(q->p);
+	memset(q, 0, sizeof(*q));
+}
+
+static int pcm_fifo_append(PcmFifo *q, const int16_t *s, size_t n)
+{
+	unsigned need;
+
+	if (!q || !n)
+		return 0;
+	if (!s)
+		return -1;
+	need = q->n + (unsigned)n;
+	if (need < q->n)
+		return -1;
+	if (need > q->cap) {
+		unsigned ncap = q->cap ? q->cap * 2u : 16384u;
+		int16_t *np;
+		while (ncap < need)
+			ncap *= 2u;
+		np = (int16_t *)realloc(q->p, (size_t)ncap * sizeof(int16_t));
+		if (!np)
+			return -1;
+		q->p = np;
+		q->cap = ncap;
 	}
-	*out = buf;
-	*out_n = n;
+	memcpy(q->p + q->n, s, n * sizeof(int16_t));
+	q->n = need;
+	return 0;
+}
+
+static unsigned pcm_fifo_pop(PcmFifo *q, int16_t *dst, unsigned n)
+{
+	unsigned take;
+
+	if (!q || !n || !q->n)
+		return 0;
+	take = n < q->n ? n : q->n;
+	if (dst)
+		memcpy(dst, q->p, take * sizeof(int16_t));
+	q->n -= take;
+	if (q->n)
+		memmove(q->p, q->p + take, (size_t)q->n * sizeof(int16_t));
+	return take;
+}
+
+/* Picture-tick dest length at 12517 Hz; odd delta rounded up to even (15 fps: 834 or 836). */
+static unsigned fps_tick_samples(unsigned fps, unsigned frame_index)
+{
+	uint64_t t0, t1;
+	unsigned n;
+	if (!fps)
+		fps = 15;
+	t0 = ((uint64_t)frame_index * STVQ_SAMPLE_RATE + fps / 2u) / fps;
+	t1 = ((uint64_t)(frame_index + 1u) * STVQ_SAMPLE_RATE + fps / 2u) / fps;
+	n = (unsigned)(t1 - t0);
+	return (n + 1u) & ~1u;
+}
+
+static int fifo_push_to_src(StHostSrc *src, PcmFifo *fifo)
+{
+	int16_t tmp[512];
+	unsigned sp, chunk, got;
+
+	sp = st_host_src_in_space(src);
+	if (!sp || !fifo->n)
+		return 0;
+	chunk = fifo->n < sp ? fifo->n : sp;
+	if (chunk > 512u)
+		chunk = 512u;
+	chunk &= ~1u;
+	if (!chunk) {
+		chunk = fifo->n < sp ? fifo->n : sp;
+		if (chunk > 512u)
+			chunk = 512u;
+	}
+	if (!chunk)
+		return 0;
+	got = pcm_fifo_pop(fifo, tmp, chunk);
+	if (got != chunk)
+		return -1;
+	return st_host_src_push_s16(src, tmp, chunk) ? 0 : -1;
+}
+
+static int pull_fps_snd(StHostSrc *src, int *opened, unsigned src_rate, PcmFifo *fifo, signed char *dst,
+    unsigned dest_n)
+{
+	unsigned got = 0;
+
+	if (!dest_n)
+		return 0;
+	if (!*opened && src_rate && fifo->n) {
+		if (!st_host_src_open(src, src_rate))
+			return -1;
+		*opened = 1;
+	}
+	if (!*opened) {
+		memset(dst, 0, dest_n);
+		return 0;
+	}
+	while (got < dest_n) {
+		unsigned g = st_host_src_pull_s8(src, dst + got, dest_n - got);
+		unsigned n_before;
+		if (g) {
+			got += g;
+			continue;
+		}
+		if (!fifo->n) {
+			memset(dst + got, 0, dest_n - got);
+			break;
+		}
+		n_before = fifo->n;
+		if (fifo_push_to_src(src, fifo) != 0)
+			return -1;
+		if (fifo->n == n_before) {
+			if (fifo->n == 1u) {
+				pcm_fifo_pop(fifo, NULL, 1u);
+				continue;
+			}
+			return -1;
+		}
+	}
+	return 0;
 }
 
 int stvq_encode(const StvqEncodeOpts *opts)
 {
-	VqaDecode dec;
+	VqaStream *st = NULL;
+	EncSlot *win = NULL;
+	unsigned win_n = 0, win_cap = 0;
 	StvqSegPalette *segpal = NULL;
 	StvqC2P *c2ps = NULL;
-	uint8_t **frame_tiles = NULL;
-	uint8_t **frame_src = NULL;
-	int *frame_seg = NULL;
+	uint8_t **pal_copy = NULL;
 	const uint8_t **seg_pal768 = NULL;
 	const uint8_t **seg_subset = NULL;
+	unsigned seg_ready = 0, seg_cap = 0;
+	VqaPalSegment dummy_seg;
 	uint8_t *recon[2] = {NULL, NULL};
 	uint8_t *recon_work = NULL;
 	unsigned *cb_nearest = NULL;
@@ -226,23 +359,33 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	StvqCodebook cb;
 	StvqWriter w;
 	StvqHeader hdr;
+	StHostSrc asrc;
 	char out_path[1024];
 	unsigned tiles_x, tiles_y, tiles_n;
-	unsigned f, s;
+	unsigned f = 0, s = 0;
 	unsigned max_frame = 0;
 	const char *outp;
 	int rc = -1;
 	StvqSelectProf sel_prof;
 	uint64_t prof_ns_raster = 0, prof_ns_stvd = 0, prof_ns_frame_misc = 0;
 	uint64_t prof_ns_frames = 0;
+	unsigned frame_count, width, height, fps, src_rate;
+	unsigned lookahead;
+	int have_audio_src = 0;
+	PcmFifo pcm_fifo;
+	int last_seg = -1;
 
-	memset(&dec, 0, sizeof(dec));
 	memset(&cb, 0, sizeof(cb));
 	memset(&w, 0, sizeof(w));
 	memset(&sel_prof, 0, sizeof(sel_prof));
+	memset(&asrc, 0, sizeof(asrc));
+	memset(&pcm_fifo, 0, sizeof(pcm_fifo));
+	memset(&dummy_seg, 0, sizeof(dummy_seg));
+
+	g_stvq_encode_error[0] = '\0';
 
 	if (!opts || !opts->vqa_path) {
-		fprintf(stderr, "error: encode requires a VQA path\n");
+		stvq_encode_set_error("encode requires a VQA path");
 		return -1;
 	}
 
@@ -256,38 +399,57 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	}
 
 	fprintf(stderr, "decoding %s...\n", opts->vqa_path);
-	if (vqa_decode_file(opts->vqa_path, &dec) != 0) {
-		fprintf(stderr, "error: VQA decode failed\n");
+	if (vqa_stream_open(opts->vqa_path, &st) != 0) {
+		stvq_encode_set_error("VQA decode failed (open)");
 		return -1;
 	}
 
-	tiles_x = stvq_tiles_x(dec.width);
-	tiles_y = stvq_tiles_y(dec.height);
+	frame_count = vqa_stream_frame_count(st);
+	width = vqa_stream_width(st);
+	height = vqa_stream_height(st);
+	fps = vqa_stream_header(st)->fps ? vqa_stream_header(st)->fps : 15;
+	src_rate = st_host_normalize_rate(vqa_stream_sample_rate(st));
+	lookahead = opts->cb_lookahead;
+	win_cap = lookahead + 1u;
+	if (win_cap < 2u)
+		win_cap = 2u;
+
+	tiles_x = stvq_tiles_x(width);
+	tiles_y = stvq_tiles_y(height);
 	tiles_n = tiles_x * tiles_y;
 	if (tiles_y > 32u) {
-		fprintf(stderr, "error: tiles_y=%u exceeds STVD mask width (32)\n", tiles_y);
+		stvq_encode_set_error("tiles_y=%u exceeds STVD mask width (32)", tiles_y);
+		goto done;
+	}
+	if (frame_count > 0xffffu) {
+		stvq_encode_set_error("frame count %u exceeds STVQ u16 frames field", frame_count);
 		goto done;
 	}
 
-	fprintf(stderr, "frames=%u size=%ux%u tiles=%ux%u segments=%u cb=%u R=%u shortlist=%u*%u random=%u%% "
+	fprintf(stderr, "frames=%u size=%ux%u tiles=%ux%u cb=%u R=%u shortlist=%u*%u random=%u%% "
 	                "lookahead=%u cand=f_end gamma=%.3g dct-alpha=%.3g dct-coeffs=%u+%u+%u (feat=%u)\n",
-	    dec.frame_count, dec.width, dec.height, tiles_x, tiles_y, dec.segment_count, opts->cb_size,
-	    opts->cb_per_frame, 2u, opts->cb_per_frame, opts->cb_random_pct, opts->cb_lookahead,
-	    stvq_metric_gamma(), stvq_metric_dct_alpha(), stvq_metric_dct_coeffs(),
-	    stvq_metric_dct_chroma_coeffs(), stvq_metric_dct_chroma_coeffs(), stvq_metric_feat_len());
-
+	    frame_count, width, height, tiles_x, tiles_y, opts->cb_size, opts->cb_per_frame, 2u,
+	    opts->cb_per_frame, opts->cb_random_pct, opts->cb_lookahead, stvq_metric_gamma(),
+	    stvq_metric_dct_alpha(), stvq_metric_dct_coeffs(), stvq_metric_dct_chroma_coeffs(),
+	    stvq_metric_dct_chroma_coeffs(), stvq_metric_feat_len());
 
 	if (opts->dry_run) {
-		for (s = 0; s < dec.segment_count; s++) {
-			char pal[768], hist[768], w16[768];
+		VqaDecodedFrame fr;
+		unsigned nseg = 0;
+		const VqaPalSegment *segs;
+		while (vqa_stream_next(st, &fr) == 1)
+			vqa_decoded_frame_clear(&fr);
+		segs = vqa_stream_segments(st, &nseg);
+		for (s = 0; s < nseg; s++) {
+			char pal[768], hist[768], w16p[768];
 			if (opts->have_w16_crc && opts->w16_dir) {
-				stvq_crc_w16_path(opts->w16_dir, opts->w16_crc, (int)s, w16, sizeof(w16));
-				fprintf(stderr, "  seg %u frames %d..%d → %s\n", s, dec.segments[s].start_frame,
-				    dec.segments[s].end_frame, w16);
+				stvq_crc_w16_path(opts->w16_dir, opts->w16_crc, (int)s, w16p, sizeof(w16p));
+				fprintf(stderr, "  seg %u frames %d..%d → %s\n", s, segs[s].start_frame,
+				    segs[s].end_frame, w16p);
 			} else {
-				stvq_sidecar_paths(opts->vqa_path, (int)s, pal, hist, w16, sizeof(pal));
-				fprintf(stderr, "  seg %u frames %d..%d → %s / %s / %s\n", s,
-				    dec.segments[s].start_frame, dec.segments[s].end_frame, pal, hist, w16);
+				stvq_sidecar_paths(opts->vqa_path, (int)s, pal, hist, w16p, sizeof(pal));
+				fprintf(stderr, "  seg %u frames %d..%d → %s / %s / %s\n", s, segs[s].start_frame,
+				    segs[s].end_frame, pal, hist, w16p);
 			}
 		}
 		outp = opts->out_path;
@@ -300,65 +462,27 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		goto done;
 	}
 
-	segpal = (StvqSegPalette *)calloc(dec.segment_count, sizeof(*segpal));
-	c2ps = (StvqC2P *)calloc(dec.segment_count, sizeof(*c2ps));
-	frame_tiles = (uint8_t **)calloc(dec.frame_count, sizeof(uint8_t *));
-	frame_src = (uint8_t **)calloc(dec.frame_count, sizeof(uint8_t *));
-	frame_seg = (int *)calloc(dec.frame_count, sizeof(int));
-	seg_pal768 = (const uint8_t **)calloc(dec.segment_count, sizeof(*seg_pal768));
-	seg_subset = (const uint8_t **)calloc(dec.segment_count, sizeof(*seg_subset));
-	if (!segpal || !c2ps || !frame_tiles || !frame_src || !frame_seg || !seg_pal768 || !seg_subset)
+	win = (EncSlot *)calloc(win_cap, sizeof(*win));
+	if (!win) {
+		stvq_encode_set_error("out of memory (frame window, %u slots)", win_cap);
 		goto done;
-
-	for (s = 0; s < dec.segment_count; s++) {
-		int load_rc;
-		if (opts->have_w16_crc && opts->w16_dir) {
-			load_rc = stvq_load_segment_w16_crc(
-			    opts->w16_dir, opts->w16_crc, (int)s, &dec.segments[s], &segpal[s]);
-		} else {
-			load_rc = stvq_load_segment_w16(opts->vqa_path, (int)s, &dec.segments[s], &segpal[s]);
-		}
-		if (load_rc != 0)
-			goto done;
-		stvq_c2p_init(&c2ps[s], &segpal[s].w16);
-		seg_pal768[s] = dec.segments[s].pal;
-		seg_subset[s] = segpal[s].w16.subset;
-	}
-	for (f = 0; f < dec.frame_count; f++)
-		frame_seg[f] = dec.frames[f].segment;
-
-	fprintf(stderr, "rasterizing tiles...\n");
-	{
-		uint64_t t0 = enc_ns_now();
-		if (opts->progress)
-			opts->progress(opts->progress_ctx, "prep", 0, dec.frame_count);
-		for (f = 0; f < dec.frame_count; f++) {
-			int seg = dec.frames[f].segment;
-			frame_tiles[f] = (uint8_t *)malloc((size_t)tiles_n * 32u);
-			frame_src[f] = (uint8_t *)malloc((size_t)tiles_n * 64u);
-			if (!frame_tiles[f] || !frame_src[f])
-				goto done;
-			if (stvq_frame_to_tiles(&c2ps[seg], dec.frames[f].pixels, dec.width, dec.height, tiles_x,
-			        tiles_y, frame_tiles[f], frame_src[f]) != 0)
-				goto done;
-			if (opts->progress)
-				opts->progress(opts->progress_ctx, "prep", f + 1u, dec.frame_count);
-		}
-		prof_ns_raster = enc_ns_now() - t0;
 	}
 
 	fprintf(stderr, "allocating codebook (%u)...\n", opts->cb_size);
-	stvq_metric_set_palette_vga6(dec.segments[0].pal, segpal[0].w16.subset);
-	if (stvq_codebook_alloc(&cb, opts->cb_size) != 0)
+	if (stvq_codebook_alloc(&cb, opts->cb_size) != 0) {
+		stvq_encode_set_error("out of memory (codebook, %u entries)", opts->cb_size);
 		goto done;
+	}
 
 	recon[0] = (uint8_t *)calloc(tiles_n, 32u);
 	recon[1] = (uint8_t *)calloc(tiles_n, 32u);
 	recon_work = (uint8_t *)calloc(tiles_n, 32u);
 	cb_nearest = (unsigned *)malloc((size_t)tiles_n * sizeof(unsigned));
 	cb_dist = (unsigned *)malloc((size_t)tiles_n * sizeof(unsigned));
-	if (!recon[0] || !recon[1] || !recon_work || !cb_nearest || !cb_dist)
+	if (!recon[0] || !recon[1] || !recon_work || !cb_nearest || !cb_dist) {
+		stvq_encode_set_error("out of memory (recon/nearest, %u tiles)", tiles_n);
 		goto done;
+	}
 
 	outp = opts->out_path;
 	if (!outp) {
@@ -373,13 +497,13 @@ int stvq_encode(const StvqEncodeOpts *opts)
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.version = STVQ_VERSION;
-	hdr.flags = (dec.hdr.flags & 1u) ? 1u : 0u;
-	hdr.frames = (uint16_t)dec.frame_count;
-	hdr.width = (uint16_t)dec.width;
-	hdr.height = (uint16_t)dec.height;
+	hdr.flags = (vqa_stream_header(st)->flags & 1u) ? 1u : 0u;
+	hdr.frames = (uint16_t)frame_count;
+	hdr.width = (uint16_t)width;
+	hdr.height = (uint16_t)height;
 	hdr.block_w = 8;
 	hdr.block_h = 8;
-	hdr.fps = dec.hdr.fps ? dec.hdr.fps : 15;
+	hdr.fps = (uint8_t)fps;
 	hdr.cb_entries = (uint16_t)opts->cb_size;
 	hdr.sample_rate = (uint16_t)STVQ_SAMPLE_RATE;
 	hdr.channels = 1;
@@ -391,12 +515,11 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			goto done;
 	}
 
-	if (write_stpl_chunk(&w, segpal[0].stpl) != 0)
-		goto done;
-
 	if (opts->progress)
-		opts->progress(opts->progress_ctx, "encode", 0, dec.frame_count);
-	for (f = 0; f < dec.frame_count; f++) {
+		opts->progress(opts->progress_ctx, "encode", 0, frame_count);
+
+	for (f = 0; f < frame_count; f++) {
+		unsigned need = f + lookahead;
 		long fr_pos;
 		StvqReplace *reps = NULL;
 		unsigned nrep = 0;
@@ -406,19 +529,137 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		int force_full = (f < 2);
 		const uint8_t *recon_n2 = (f >= 2) ? recon[1] : NULL;
 		const uint8_t *recon_n1 = (f >= 1) ? recon[0] : NULL;
-		int seg = dec.frames[f].segment;
+		int seg;
 		int emit_stpl = 0;
 		unsigned max_rep;
 		uint64_t frame_t0 = enc_ns_now(), t0, t1;
+		const uint8_t **win_tiles = NULL;
+		const uint8_t **win_src = NULL;
+		int *win_seg = NULL;
+		unsigned wi;
+		unsigned nseg = 0;
+		const VqaPalSegment *segs;
 
-		/* New W16/palette → rebuild CB features; prior tiles become prime eviction. */
-		stvq_metric_set_palette_vga6(dec.segments[seg].pal, segpal[seg].w16.subset);
+		if (need >= frame_count)
+			need = frame_count - 1u;
+		/* Keep at least one extra decoded frame so sinc has FIR lookahead. */
+		if (need < f + 1u && f + 1u < frame_count)
+			need = f + 1u;
+		if (need >= frame_count)
+			need = frame_count - 1u;
+		while (f + win_n <= need) {
+			EncSlot *sl = &win[win_n];
+			int nrc;
+			enc_slot_clear(sl);
+			nrc = vqa_stream_next(st, &sl->fr);
+			if (nrc != 1) {
+				stvq_encode_set_error("VQA decode stopped at frame %u/%u (rc=%d)", f, frame_count, nrc);
+				goto done;
+			}
+			sl->tiles = (uint8_t *)malloc((size_t)tiles_n * 32u);
+			sl->src64 = (uint8_t *)malloc((size_t)tiles_n * 64u);
+			if (!sl->tiles || !sl->src64) {
+				stvq_encode_set_error("out of memory (frame tiles) at %u/%u", f, frame_count);
+				goto done;
+			}
+			if (pcm_fifo_append(&pcm_fifo, sl->fr.pcm16, sl->fr.pcm16_count) != 0) {
+				stvq_encode_set_error("out of memory (PCM FIFO) at frame %u/%u", f, frame_count);
+				goto done;
+			}
+			free(sl->fr.pcm16);
+			sl->fr.pcm16 = NULL;
+			sl->fr.pcm16_count = 0;
+			win_n++;
+		}
+
+		segs = vqa_stream_segments(st, &nseg);
+		if (nseg == 0) {
+			nseg = 1;
+			segs = &dummy_seg;
+			dummy_seg.start_frame = 0;
+			dummy_seg.end_frame = (int)frame_count - 1;
+		}
+		while (seg_ready < nseg) {
+			unsigned ns;
+			StvqSegPalette *npal;
+			StvqC2P *nc2p;
+			uint8_t **npc;
+			const uint8_t **n768, **nsub;
+			ns = nseg;
+			npal = (StvqSegPalette *)realloc(segpal, ns * sizeof(*npal));
+			nc2p = (StvqC2P *)realloc(c2ps, ns * sizeof(*nc2p));
+			npc = (uint8_t **)realloc(pal_copy, ns * sizeof(*npc));
+			n768 = (const uint8_t **)realloc((void *)seg_pal768, ns * sizeof(*n768));
+			nsub = (const uint8_t **)realloc((void *)seg_subset, ns * sizeof(*nsub));
+			if (!npal || !nc2p || !npc || !n768 || !nsub) {
+				stvq_encode_set_error("out of memory (palette segments, nseg=%u)", ns);
+				goto done;
+			}
+			segpal = npal;
+			c2ps = nc2p;
+			pal_copy = npc;
+			seg_pal768 = n768;
+			seg_subset = nsub;
+			seg_cap = ns;
+			for (; seg_ready < nseg; seg_ready++) {
+				int load_rc;
+				pal_copy[seg_ready] = (uint8_t *)malloc(VQA_PALETTE_BYTES);
+				if (!pal_copy[seg_ready])
+					goto done;
+				memcpy(pal_copy[seg_ready], segs[seg_ready].pal, VQA_PALETTE_BYTES);
+				if (opts->have_w16_crc && opts->w16_dir) {
+					load_rc = stvq_load_segment_w16_crc(
+					    opts->w16_dir, opts->w16_crc, (int)seg_ready, &segs[seg_ready],
+					    &segpal[seg_ready]);
+				} else {
+					load_rc = stvq_load_segment_w16(
+					    opts->vqa_path, (int)seg_ready, &segs[seg_ready], &segpal[seg_ready]);
+				}
+				if (load_rc != 0) {
+					char w16p[768];
+					if (opts->have_w16_crc && opts->w16_dir)
+						stvq_crc_w16_path(opts->w16_dir, opts->w16_crc, (int)seg_ready, w16p,
+						    sizeof(w16p));
+					else
+						snprintf(w16p, sizeof(w16p), "segment %u sidecar", seg_ready);
+					stvq_encode_set_error("missing or bad W16 %s (palette segment %u/%u)", w16p,
+					    seg_ready, nseg);
+					goto done;
+				}
+				stvq_c2p_init(&c2ps[seg_ready], &segpal[seg_ready].w16);
+				seg_pal768[seg_ready] = pal_copy[seg_ready];
+				seg_subset[seg_ready] = segpal[seg_ready].w16.subset;
+			}
+		}
+
+		seg = win[0].fr.segment;
+		{
+			uint64_t rt0 = enc_ns_now();
+			if (stvq_frame_to_tiles(&c2ps[seg], win[0].fr.pixels, width, height, tiles_x, tiles_y,
+			        win[0].tiles, win[0].src64) != 0)
+				goto done;
+			for (wi = 1; wi < win_n; wi++) {
+				int sgi = win[wi].fr.segment;
+				if (stvq_frame_to_tiles(&c2ps[sgi], win[wi].fr.pixels, width, height, tiles_x,
+				        tiles_y, win[wi].tiles, win[wi].src64) != 0)
+					goto done;
+			}
+			prof_ns_raster += enc_ns_now() - rt0;
+		}
+
+		if (f == 0) {
+			stvq_metric_set_palette_vga6(seg_pal768[seg], seg_subset[seg]);
+			if (write_stpl_chunk(&w, segpal[seg].stpl) != 0)
+				goto done;
+			last_seg = seg;
+		}
+
+		stvq_metric_set_palette_vga6(seg_pal768[seg], seg_subset[seg]);
 		stvq_codebook_recompute_feats(&cb);
 
-		if (f > 0 && dec.frames[f].segment != dec.frames[f - 1].segment) {
+		if (f > 0 && seg != last_seg) {
 			emit_stpl = 1;
 			stvq_codebook_on_palette_change(&cb);
-			/* Pre-cut recon uses the old STPL; do not skip or stay-as-is. */
 			force_full = 1;
 			recon_n2 = NULL;
 			recon_n1 = NULL;
@@ -436,16 +677,34 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		if (max_rep > cb.entries)
 			max_rep = cb.entries;
 
+		win_tiles = (const uint8_t **)malloc(win_n * sizeof(*win_tiles));
+		win_src = (const uint8_t **)malloc(win_n * sizeof(*win_src));
+		win_seg = (int *)malloc(win_n * sizeof(*win_seg));
+		if (!win_tiles || !win_src || !win_seg)
+			goto done;
+		for (wi = 0; wi < win_n; wi++) {
+			win_tiles[wi] = win[wi].tiles;
+			win_src[wi] = win[wi].src64;
+			win_seg[wi] = win[wi].fr.segment;
+		}
+
+		{
+			unsigned sel_n = lookahead + 1u;
+			if (sel_n > win_n)
+				sel_n = win_n;
+
 		if (max_rep) {
 			reps = (StvqReplace *)malloc(max_rep * sizeof(*reps));
 			if (!reps)
 				goto done;
-			nrep = stvq_codebook_select_replaces(&cb, (const uint8_t *const *)frame_tiles,
-			    (const uint8_t *const *)frame_src, dec.frame_count, f, tiles_n, max_rep,
-			    opts->cb_random_pct, opts->cb_lookahead, recon_n2, recon_n1, frame_seg, seg_pal768,
+			nrep = stvq_codebook_select_replaces(&cb, win_tiles, win_src, sel_n, 0, tiles_n, max_rep,
+			    opts->cb_random_pct, sel_n ? sel_n - 1u : 0u, recon_n2, recon_n1, win_seg, seg_pal768,
 			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist);
 			if (write_stcr_chunk(&w, reps, nrep) != 0) {
 				free(reps);
+				free((void *)win_tiles);
+				free((void *)win_src);
+				free(win_seg);
 				goto done;
 			}
 			free(reps);
@@ -453,22 +712,46 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		} else {
 			unsigned ti;
 			for (ti = 0; ti < tiles_n; ti++)
-				cb_nearest[ti] = stvq_codebook_nearest(&cb, frame_src[f] + ti * 64u, &cb_dist[ti]);
+				cb_nearest[ti] = stvq_codebook_nearest(&cb, win[0].src64 + ti * 64u, &cb_dist[ti]);
 		}
+		}
+		free((void *)win_tiles);
+		free((void *)win_src);
+		free(win_seg);
+		win_tiles = NULL;
+		win_src = NULL;
+		win_seg = NULL;
 
 		t0 = enc_ns_now();
-		if (write_stvd_chunk(&w, &cb, frame_src[f], cb_nearest, cb_dist, recon_n2, recon_n1, recon_work,
+		if (write_stvd_chunk(&w, &cb, win[0].src64, cb_nearest, cb_dist, recon_n2, recon_n1, recon_work,
 		        tiles_x, tiles_y, force_full, &stvd_bytes) != 0)
 			goto done;
 		t1 = enc_ns_now();
 		prof_ns_stvd += t1 - t0;
 
-		/* Ping-pong: recon[1] ← old recon[0] (becomes N−2 next); recon[0] ← new */
 		memcpy(recon[1], recon[0], (size_t)tiles_n * 32u);
 		memcpy(recon[0], recon_work, (size_t)tiles_n * 32u);
 
-		resample_frame_audio(dec.frames[f].pcm16, dec.frames[f].pcm16_count, dec.sample_rate, hdr.fps, f,
-		    &snd, &snd_n);
+		{
+			unsigned dest_n = fps_tick_samples(fps, f);
+			if (dest_n) {
+				snd = (unsigned char *)malloc(dest_n);
+				if (!snd) {
+					stvq_encode_set_error("out of memory (SND0 %u bytes) at frame %u/%u", dest_n, f,
+					    frame_count);
+					goto done;
+				}
+				if (pull_fps_snd(&asrc, &have_audio_src, src_rate, &pcm_fifo, (signed char *)snd,
+				        dest_n) != 0) {
+					free(snd);
+					stvq_encode_set_error("audio pull failed at frame %u/%u (dest_n=%u)", f, frame_count,
+					    dest_n);
+					goto done;
+				}
+				snd_n = dest_n;
+			}
+		}
+
 		if (snd_n) {
 			if (stvq_write_chunk_raw(&w, STVQ_CHUNK_SND0, snd, snd_n) != 0) {
 				free(snd);
@@ -489,11 +772,18 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		}
 
 		prof_ns_frames += enc_ns_now() - frame_t0;
+		last_seg = seg;
+		enc_slot_clear(&win[0]);
+		if (win_n > 1)
+			memmove(&win[0], &win[1], (win_n - 1u) * sizeof(win[0]));
+		if (win_n)
+			win_n--;
+		memset(&win[win_n], 0, sizeof(win[0]));
 
 		if (opts->progress)
-			opts->progress(opts->progress_ctx, "encode", f + 1u, dec.frame_count);
+			opts->progress(opts->progress_ctx, "encode", f + 1u, frame_count);
 		else if ((f % 50u) == 0u)
-			fprintf(stderr, "  frame %u/%u\n", f, dec.frame_count);
+			fprintf(stderr, "  frame %u/%u\n", f, frame_count);
 	}
 
 	if (stvq_write_chunk_raw(&w, STVQ_CHUNK_STEN, NULL, 0) != 0)
@@ -501,10 +791,9 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	if (stvq_write_form_end(&w) != 0)
 		goto done;
 
-	/* patch max_frame_bytes in STHD */
 	{
 		unsigned char be[2];
-		long sthd_data = 12 + 8; /* FORM hdr + STHD hdr */
+		long sthd_data = 12 + 8;
 		stvq_write_be16(be, (uint16_t)(max_frame > 0xffffu ? 0xffffu : max_frame));
 		if (fseek(w.fp, sthd_data + 20, SEEK_SET) == 0)
 			fwrite(be, 1, 2, w.fp);
@@ -518,7 +807,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		uint64_t stcr = sel_prof.ns_refresh + sel_prof.ns_residual + sel_prof.ns_utility + sel_prof.ns_random;
 		uint64_t accounted = stcr + prof_ns_stvd;
 		uint64_t misc = (prof_ns_frames > accounted) ? (prof_ns_frames - accounted) : 0;
-		double nf = dec.frame_count ? (double)dec.frame_count : 1.0;
+		double nf = frame_count ? (double)frame_count : 1.0;
 		double frame_ms = (prof_ns_frames / nf) / 1e6;
 		fprintf(stderr, "profile (avg per frame, writing loop only):\n");
 		fprintf(stderr, "  total writing/frame  %6.2f ms\n", frame_ms);
@@ -549,33 +838,38 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		fprintf(stderr, "profile (one-time setup):\n");
 		fprintf(stderr, "  rasterize            %6.2f s\n", prof_ns_raster / 1e9);
 		(void)prof_ns_frame_misc;
+		(void)seg_cap;
 	}
 	rc = 0;
+	g_stvq_encode_error[0] = '\0';
 
 done:
+	if (rc != 0 && !g_stvq_encode_error[0])
+		stvq_encode_set_error("encode aborted (out of memory or I/O) at frame %u/%u", f, frame_count);
 	if (w.fp)
 		stvq_writer_close(&w);
 	stvq_codebook_free(&cb);
-	if (frame_tiles) {
-		for (f = 0; f < dec.frame_count; f++)
-			free(frame_tiles[f]);
-		free(frame_tiles);
-	}
-	if (frame_src) {
-		for (f = 0; f < dec.frame_count; f++)
-			free(frame_src[f]);
-		free(frame_src);
+	st_host_src_close(&asrc);
+	pcm_fifo_free(&pcm_fifo);
+	if (win) {
+		for (f = 0; f < win_cap; f++)
+			enc_slot_clear(&win[f]);
+		free(win);
 	}
 	free(recon[0]);
 	free(recon[1]);
 	free(recon_work);
 	free(cb_nearest);
 	free(cb_dist);
-	free(frame_seg);
+	if (pal_copy) {
+		for (s = 0; s < seg_ready; s++)
+			free(pal_copy[s]);
+		free(pal_copy);
+	}
 	free((void *)seg_pal768);
 	free((void *)seg_subset);
 	free(c2ps);
 	free(segpal);
-	vqa_decode_free(&dec);
+	vqa_stream_close(st);
 	return rc;
 }

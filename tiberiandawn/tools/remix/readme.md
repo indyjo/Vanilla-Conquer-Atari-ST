@@ -3,8 +3,8 @@
 Repack C&C MIX archives for the Atari ST port.
 
 For each embedded file the tool autodetects the asset type, converts audio to
-11025 Hz 8-bit mono PCM `.AUD` where needed (IMA99, Westwood compression type 1,
-PCM stereo/16-bit/other rates), optionally converts terrain iconsets in theater
+12517 Hz 8-bit mono PCM `.AUD` where needed (IMA99, Westwood compression type 1,
+PCM stereo/16-bit/other rates, including former 11025 Hz remix output), optionally converts terrain iconsets in theater
 MIX files to **ST16** planar format (requires matching `*.W16` C2P weights),
 optionally convert KeyFrame SHPs to **SHPX** (`--shpx`),
 optionally convert VQA movies to **STVQ** (`--convert-vqa`; needs
@@ -71,8 +71,9 @@ For movies:
 
 W16 sidecars are looked up as `{w16-dir}/video/{crc:08x}.{seg}.w16` where `crc`
 is the MIX entry CRC (lowercase hex). Missing sidecars or encode failure: that
-entry is **omitted** from the output MIX (warning on stderr). Already-converted
-`FORM STVQ` payloads are copied unchanged.
+entry is **omitted** from the output MIX. The warning on stderr includes the
+reason (`missing video/….w16`, encoder OOM, decode stop, bad W16, …).
+Already-converted `FORM STVQ` payloads are copied unchanged.
 
 **Directory** (non-recursive; `.mix` / `.MIX`):
 
@@ -114,3 +115,5 @@ entry is **omitted** from the output MIX (warning on stderr). Already-converted
 `cb_size=2048`, `cb_random_pct=25` stay fixed. Lookahead is extra frames after the current (`0` = current only).
 
 See [spec.md](spec.md) for ST16 scope, detection types (`icn` / `st16` / `vqa` / `stv`), and failure policy.
+
+Audio resampling uses vendored [libsamplerate 0.2.2](../third_party/libsamplerate/) (BSD-2-Clause). See that directory’s `COPYING` and `README.md`. Host-only; not linked into `cnc.tos`.

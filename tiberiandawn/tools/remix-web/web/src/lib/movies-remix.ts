@@ -193,7 +193,7 @@ export async function remixMoviesMix(
           omit: 1,
         });
         onLog?.(
-          `  ${w.crc.toString(16).padStart(8, '0').toUpperCase()} ${w.payload.length} vqa → omit`,
+          `  ${w.crc.toString(16).padStart(8, '0').toUpperCase()} ${w.payload.length} vqa → omit (${enc?.omitReason || 'unknown'})`,
         );
       }
     } else if (w.kind === 'stv') {

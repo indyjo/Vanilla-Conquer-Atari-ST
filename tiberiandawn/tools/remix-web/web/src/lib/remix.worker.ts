@@ -64,6 +64,7 @@ export type WorkerResponse =
       id: number;
       type: 'encode_omit';
       crc: number;
+      reason: string;
     }
   | { id: number; type: 'error'; message: string }
   | ({ type: 'progress'; jobId: number } & RemixEncodeProgress);
@@ -106,7 +107,12 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
         };
         self.postMessage(response, { transfer: [stv] });
       } else if (result.status === 'omit') {
-        const response: WorkerResponse = { id: msg.id, type: 'encode_omit', crc: msg.crc };
+        const response: WorkerResponse = {
+          id: msg.id,
+          type: 'encode_omit',
+          crc: msg.crc,
+          reason: result.reason,
+        };
         self.postMessage(response);
       } else {
         throw new Error(result.message);

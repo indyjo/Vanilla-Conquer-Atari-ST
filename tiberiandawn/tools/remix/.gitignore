@@ -1,4 +1,5 @@
 remix
 remix_shpx_test
 remix_st16_test
+remix_audx_test
 *.o

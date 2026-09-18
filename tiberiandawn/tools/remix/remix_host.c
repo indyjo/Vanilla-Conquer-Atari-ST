@@ -105,7 +105,7 @@ static void usage(const char *prog)
 	    "\n"
 	    "Repack C&C MIX archive(s):\n"
 	    "  - autodetect file types\n"
-	    "  - convert audio to 11025 Hz 8-bit mono PCM .AUD\n"
+	    "  - convert audio to 12517 Hz 8-bit mono PCM .AUD\n"
 	    "  - convert theater terrain iconsets to ST16 (needs *.W16 in cwd)\n"
 	    "  - convert KeyFrame SHPs to SHPX + poolnnnn.bin sidecar (--shpx)\n"
 	    "  - convert audio to AUDX + pool sidecar (--audx; SOUNDS/SPEECH/SCORES)\n"

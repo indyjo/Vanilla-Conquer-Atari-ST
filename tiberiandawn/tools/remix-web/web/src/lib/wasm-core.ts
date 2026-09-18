@@ -79,6 +79,7 @@ export interface RemixModule {
     statsPtr: number,
   ) => number;
   _remix_wasm_encode_vqa?: (crc: number) => number;
+  _remix_wasm_last_error?: () => number;
   _remix_wasm_set_st16_enabled?: (enabled: number) => void;
   _remix_wasm_set_shpx_enabled?: (enabled: number) => void;
   _remix_wasm_set_audx_enabled?: (enabled: number) => void;
@@ -95,6 +96,7 @@ export interface RemixModule {
   _malloc: (size: number) => number;
   _free: (ptr: number) => void;
   HEAPU8: Uint8Array;
+  ccall?: (ident: string, returnType: string | null, argTypes: string[], args: unknown[]) => unknown;
   /** Set by JS; called from WASM during VQA→STVQ encode. */
   onRemixProgress?: (phase: string, crc: number, done: number, total: number) => void;
   FS?: {
@@ -531,8 +533,20 @@ function installVideoSidecars(mod: RemixModule, files: [string, Uint8Array][]): 
 
 export type EncodeVqaResult =
   | { status: 'ok'; stv: Uint8Array }
-  | { status: 'omit' }
+  | { status: 'omit'; reason: string }
   | { status: 'error'; message: string };
+
+function wasmLastError(mod: RemixModule): string {
+  if (typeof mod.ccall !== 'function') {
+    return '';
+  }
+  try {
+    const s = mod.ccall('remix_wasm_last_error', 'string', [], []);
+    return typeof s === 'string' ? s : '';
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Encode a single VQA→STVQ using MEMFS /in.vqa → /out.stv.
@@ -577,10 +591,11 @@ export async function encodeVqaBytes(
       }
       return { status: 'ok', stv };
     }
+    const reason = wasmLastError(mod) || (rc < 0 ? 'STVQ encode omitted' : `remix_wasm_encode_vqa failed (rc=${rc})`);
     if (rc < 0) {
-      return { status: 'omit' };
+      return { status: 'omit', reason };
     }
-    return { status: 'error', message: `remix_wasm_encode_vqa failed (rc=${rc})` };
+    return { status: 'error', message: reason };
   } finally {
     activeProgressHandler = null;
     try {

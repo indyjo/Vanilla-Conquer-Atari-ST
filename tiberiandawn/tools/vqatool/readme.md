@@ -18,6 +18,8 @@ make -C ../w16fix      # needed for fix-w16
 
 Sample VQAs (NOD/GDI) live under `samples/` (gitignored). See `samples/readme.md`.
 
+Encode/resample uses vendored [libsamplerate 0.2.2](../third_party/libsamplerate/) (BSD-2-Clause). See `COPYING` there. Host-only; not linked into `cnc.tos`.
+
 ## VQA inspect
 
 ```sh

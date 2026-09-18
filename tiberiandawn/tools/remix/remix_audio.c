@@ -3,6 +3,7 @@
 #include "remix.h"
 #include "remix_detect.h"
 #include "remix_unzap.h"
+#include "st_host_resample.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -18,16 +19,18 @@ enum { REMIX_OUT_BUF = 4096 };
 
 struct RemixOutCtx {
 	FILE *f;
-	struct {
-		unsigned factor;
-		unsigned phase;
-		int count;
-		int sum;
-	} rs;
 	uint32_t payload_expected;
 	uint32_t payload_written;
 	unsigned char buf[REMIX_OUT_BUF];
 	unsigned buf_len;
+};
+
+struct SrcPipe {
+	StHostSrc *src;
+	struct RemixOutCtx *out;
+	uint32_t left;
+	int16_t acc[512];
+	unsigned acc_n;
 };
 
 static int remix_out_flush(struct RemixOutCtx *o)
@@ -101,126 +104,23 @@ int remix_aud_is_target(const unsigned char *hdr, size_t hdr_len)
 
 int remix_aud_needs_convert(const unsigned char *hdr, size_t hdr_len, uint32_t file_size)
 {
-	unsigned short rate;
 	char type[20];
 
-	(void)file_size;
 	if (hdr_len < (size_t)REMIX_AUD_HDR_LEN)
 		return 0;
 	if (!remix_looks_like_aud(hdr, hdr_len, file_size, type, sizeof(type)))
 		return 0;
 	if (remix_aud_is_target(hdr, hdr_len))
 		return 0;
-	if (hdr[11] == REMIX_AUD_COMP_PCM && (hdr[10] & (REMIX_AUD_FLAG_STEREO | REMIX_AUD_FLAG_16BIT)) == 0) {
-		rate = read_le16(hdr);
-		if (rate > 0 && rate < (unsigned short)REMIX_TARGET_RATE)
-			return 0;
-	}
 	return 1;
 }
 
-static int remix_resample_factor(unsigned rate, unsigned *factor_out)
-{
-	rate = remix_aud_normalize_rate((unsigned short)rate);
-	if (rate < (unsigned)REMIX_TARGET_RATE)
-		return 0;
-	if (rate == (unsigned)REMIX_TARGET_RATE) {
-		*factor_out = 1;
-		return 1;
-	}
-	if (rate % (unsigned)REMIX_TARGET_RATE != 0)
-		return -1;
-	*factor_out = rate / (unsigned)REMIX_TARGET_RATE;
-	return 1;
-}
-
-static uint32_t remix_resampled_payload_bytes(uint32_t samples, unsigned factor)
-{
-	if (factor <= 1)
-		return samples;
-	return samples / factor;
-}
-
-static int remix_out_write_u8(struct RemixOutCtx *o, unsigned char u8)
-{
-	unsigned char byte;
-
-	if (o->rs.factor <= 1)
-		return remix_out_push_u8(o, u8);
-
-	{
-		int s = (int)u8 - 128;
-		o->rs.sum += s;
-		++o->rs.count;
-		++o->rs.phase;
-		if (o->rs.phase < o->rs.factor)
-			return 1;
-		byte = (unsigned char)((o->rs.sum / (int)o->rs.factor) + 128);
-		o->rs.phase = 0;
-		o->rs.count = 0;
-		o->rs.sum = 0;
-		return remix_out_push_u8(o, byte);
-	}
-}
-
-static int remix_out_write_s8(struct RemixOutCtx *o, signed char s8)
-{
-	return remix_out_write_u8(o, (unsigned char)((int)s8 + 128));
-}
-
-static int remix_out_write_s8_block(struct RemixOutCtx *o, const signed char *src, unsigned n)
-{
-	unsigned i = 0;
-
-	if (o->rs.factor <= 1) {
-		while (i < n) {
-			unsigned space = REMIX_OUT_BUF - o->buf_len;
-			unsigned chunk = n - i;
-
-			if (chunk > space)
-				chunk = space;
-			for (; chunk > 0; --chunk)
-				o->buf[o->buf_len++] = (unsigned char)((int)src[i++] + 128);
-			if (o->buf_len >= REMIX_OUT_BUF && !remix_out_flush(o))
-				return 0;
-		}
-		return 1;
-	}
-
-	if (o->rs.factor == 2) {
-		while (i < n && o->rs.phase > 0) {
-			if (!remix_out_write_s8(o, src[i++]))
-				return 0;
-		}
-		while (i + 1 < n) {
-			int avg = ((int)src[i] + (int)src[i + 1]) / 2;
-
-			if (!remix_out_push_u8(o, (unsigned char)(avg + 128)))
-				return 0;
-			i += 2;
-		}
-		if (i < n) {
-			if (!remix_out_write_s8(o, src[i]))
-				return 0;
-		}
-		return 1;
-	}
-
-	for (; i < n; ++i) {
-		if (!remix_out_write_s8(o, src[i]))
-			return 0;
-	}
-	return 1;
-}
-
-static int remix_out_begin(
-    struct RemixOutCtx *o, FILE *outf, unsigned resample_factor, uint32_t payload_bytes)
+static int remix_out_begin(struct RemixOutCtx *o, FILE *outf, uint32_t payload_bytes)
 {
 	unsigned char hdr[REMIX_AUD_HDR_LEN];
 
 	memset(o, 0, sizeof(*o));
 	o->f = outf;
-	o->rs.factor = resample_factor;
 	o->payload_expected = payload_bytes;
 	write_le16(hdr, REMIX_TARGET_RATE);
 	write_le32(hdr + 2, payload_bytes);
@@ -237,14 +137,103 @@ static int remix_out_finish(struct RemixOutCtx *o)
 	return o->payload_written == o->payload_expected;
 }
 
-struct UnzapOutCtx {
-	struct RemixOutCtx *out;
-};
+static int pipe_pull_out(struct SrcPipe *p)
+{
+	unsigned char ubuf[ST_HOST_SRC_RING];
+	unsigned got, i;
+
+	if (p->left == 0)
+		return 1;
+	got = st_host_src_pull_u8(p->src, ubuf, p->left < ST_HOST_SRC_RING ? (unsigned)p->left : ST_HOST_SRC_RING);
+	if (!got)
+		return 0;
+	for (i = 0; i < got; i++) {
+		if (!remix_out_push_u8(p->out, ubuf[i]))
+			return -1;
+	}
+	p->left -= got;
+	return 1;
+}
+
+static int pipe_push_s16(struct SrcPipe *p, const int16_t *pcm, unsigned n)
+{
+	unsigned off = 0;
+
+	while (off < n) {
+		unsigned sp = st_host_src_in_space(p->src);
+		unsigned chunk;
+		int pr;
+
+		if (sp == 0) {
+			pr = pipe_pull_out(p);
+			if (pr <= 0)
+				return 0;
+			continue;
+		}
+		chunk = n - off;
+		if (chunk > sp)
+			chunk = sp;
+		if (!st_host_src_push_s16(p->src, pcm + off, chunk))
+			return 0;
+		off += chunk;
+	}
+	return 1;
+}
+
+static int pipe_push_s8_as_s16(struct SrcPipe *p, signed char s8)
+{
+	int16_t v = (int16_t)((int)s8 << 8);
+
+	p->acc[p->acc_n++] = v;
+	if (p->acc_n == 512u)
+		return pipe_push_s16(p, p->acc, 512u) ? (p->acc_n = 0, 1) : 0;
+	return 1;
+}
+
+static int pipe_flush_acc(struct SrcPipe *p)
+{
+	if (!p->acc_n)
+		return 1;
+	if (!pipe_push_s16(p, p->acc, p->acc_n))
+		return 0;
+	p->acc_n = 0;
+	return 1;
+}
+
+static int pipe_finish(struct SrcPipe *p)
+{
+	int pr;
+
+	if (!pipe_flush_acc(p))
+		return 0;
+	if (st_host_src_finish(p->src) != 1)
+		return 0;
+	while (p->left) {
+		pr = pipe_pull_out(p);
+		if (pr < 0)
+			return 0;
+		if (pr == 0) {
+			while (p->left) {
+				if (!remix_out_push_u8(p->out, 128))
+					return 0;
+				p->left -= 1;
+			}
+			break;
+		}
+	}
+	{
+		unsigned char dump[256];
+		while (st_host_src_pull_u8(p->src, dump, 256u))
+			;
+	}
+	return 1;
+}
 
 static int unzap_write_fn(void *ctx, unsigned char sample)
 {
-	struct UnzapOutCtx *u = (struct UnzapOutCtx *)ctx;
-	return remix_out_write_u8(u->out, sample);
+	struct SrcPipe *p = (struct SrcPipe *)ctx;
+	signed char s8 = (signed char)((int)sample - 128);
+	return pipe_push_s8_as_s16(p, s8);
 }
 
 static int convert_westwood(
@@ -252,41 +241,50 @@ static int convert_westwood(
     RemixProgressFn progress, void *progress_ctx, uint32_t *out_bytes)
 {
 	struct RemixOutCtx octx;
-	struct UnzapOutCtx uz;
-	unsigned long comp;
-	unsigned long uncomp;
-	unsigned resample_factor;
+	StHostSrc src;
+	struct SrcPipe pipe;
+	unsigned long comp, uncomp, even_in;
+	unsigned in_rate;
+	uint32_t payload;
 	unsigned char *comp_buf = NULL;
 	int ok = 0;
 
 	comp = read_le32(hdr + 2);
 	uncomp = read_le32(hdr + 6);
-	{
-		int rf = remix_resample_factor(read_le16(hdr), &resample_factor);
-		if (rf < 0)
-			return 0;
-		if (rf == 0)
-			resample_factor = 1;
-	}
+	in_rate = st_host_normalize_rate(read_le16(hdr));
+	even_in = uncomp & ~1UL;
+	payload = st_host_predicted_dest((uint32_t)even_in, in_rate);
+	if (!payload || !in_rate)
+		return 0;
 
 	comp_buf = (unsigned char *)malloc((size_t)comp);
 	if (!comp_buf)
 		return 0;
 	if (remix_file_read_fn(read, comp_buf, (size_t)comp) != (size_t)comp)
 		goto done;
-
-	if (!remix_out_begin(&octx, out, resample_factor, remix_resampled_payload_bytes((uint32_t)uncomp, resample_factor)))
+	memset(&src, 0, sizeof(src));
+	if (!st_host_src_open(&src, in_rate))
 		goto done;
-	uz.out = &octx;
-	if (!remix_unzap_stream(comp_buf, (size_t)comp, (size_t)uncomp, unzap_write_fn, &uz))
+	if (!remix_out_begin(&octx, out, payload)) {
+		st_host_src_close(&src);
 		goto done;
+	}
+	memset(&pipe, 0, sizeof(pipe));
+	pipe.src = &src;
+	pipe.out = &octx;
+	pipe.left = payload;
+	if (!remix_unzap_stream(comp_buf, (size_t)comp, (size_t)uncomp, unzap_write_fn, &pipe))
+		goto close;
+	if (!pipe_finish(&pipe))
+		goto close;
 	if (!remix_out_finish(&octx))
-		goto done;
+		goto close;
 	if (progress)
 		progress(progress_ctx, "CONVERT", 1, 1);
 	*out_bytes = REMIX_AUD_HDR_LEN + octx.payload_written;
 	ok = 1;
-
+close:
+	st_host_src_close(&src);
 done:
 	free(comp_buf);
 	return ok;
@@ -298,68 +296,71 @@ static int convert_ima(
 {
 	RemixImaCtx *ima = NULL;
 	struct RemixOutCtx octx;
-	unsigned resample_factor;
-	unsigned long total;
-	unsigned long emitted;
-	signed char *scratch = NULL;
+	StHostSrc src;
+	struct SrcPipe pipe;
+	unsigned long total, emitted, comp_len;
+	unsigned in_rate;
+	uint32_t payload;
+	int16_t *s16 = NULL;
 	unsigned scratch_cap = 0;
 	int ok = 0;
-	unsigned long comp_len;
-	uint32_t payload_bytes;
 
 	comp_len = read_le32(hdr + 2);
-	{
-		int rf = remix_resample_factor(read_le16(hdr), &resample_factor);
-		if (rf < 0)
-			return 0;
-		if (rf == 0)
-			resample_factor = 1;
-	}
-
+	in_rate = st_host_normalize_rate(read_le16(hdr));
 	ima = remix_ima_stream_create(hdr, file_size, comp_len, remix_file_read_fn, read);
 	if (!ima)
 		return 0;
 	total = remix_ima_stream_total_samples(ima) & ~1UL;
-	if (total == 0)
+	payload = st_host_predicted_dest((uint32_t)total, in_rate);
+	if (total == 0 || !payload || !in_rate)
 		goto close_ima;
 
-	payload_bytes = remix_resampled_payload_bytes((uint32_t)total, resample_factor);
-	if (!remix_out_begin(&octx, out, resample_factor, payload_bytes))
+	memset(&src, 0, sizeof(src));
+	if (!st_host_src_open(&src, in_rate))
 		goto close_ima;
+	if (!remix_out_begin(&octx, out, payload)) {
+		st_host_src_close(&src);
+		goto close_ima;
+	}
+	memset(&pipe, 0, sizeof(pipe));
+	pipe.src = &src;
+	pipe.out = &octx;
+	pipe.left = payload;
 
 	emitted = 0;
 	while (emitted < total) {
-		unsigned pending;
-		unsigned got;
+		unsigned pending, got;
 
 		pending = remix_ima_stream_pending_frame_samples(ima);
 		if (pending == 0)
-			goto close_ima;
+			goto close_src;
 		if (pending > scratch_cap) {
-			signed char *nbuf = (signed char *)realloc(scratch, (size_t)pending);
-
-			if (!nbuf)
-				goto close_ima;
-			scratch = nbuf;
+			int16_t *n16 = (int16_t *)realloc(s16, (size_t)pending * sizeof(int16_t));
+			if (!n16)
+				goto close_src;
+			s16 = n16;
 			scratch_cap = pending;
 		}
-		got = remix_ima_stream_pull_s8(ima, scratch, pending);
+		got = remix_ima_stream_pull_s16(ima, s16, pending);
 		if (got == 0 || got != pending)
-			goto close_ima;
-		if (!remix_out_write_s8_block(&octx, scratch, got))
-			goto close_ima;
+			goto close_src;
+		if (emitted + got > total)
+			got = (unsigned)(total - emitted);
+		if (!pipe_push_s16(&pipe, s16, got))
+			goto close_src;
 		emitted += got;
 		if (progress)
 			progress(progress_ctx, "CONVERT", (unsigned)emitted, (unsigned)total);
 	}
 
-	if (!remix_out_finish(&octx))
-		goto close_ima;
+	if (!pipe_finish(&pipe) || !remix_out_finish(&octx))
+		goto close_src;
 	*out_bytes = REMIX_AUD_HDR_LEN + octx.payload_written;
 	ok = 1;
-
+close_src:
+	st_host_src_close(&src);
 close_ima:
-	free(scratch);
+	free(s16);
 	remix_ima_stream_destroy(ima);
 	return ok;
 }
@@ -369,26 +370,20 @@ static int convert_pcm(
     RemixProgressFn progress, void *progress_ctx, uint32_t *out_bytes)
 {
 	struct RemixOutCtx octx;
-	unsigned resample_factor;
-	unsigned long uncomp;
+	StHostSrc src;
+	struct SrcPipe pipe;
+	unsigned in_rate;
+	unsigned long uncomp, frames, even_in, frame_done = 0;
 	unsigned stride;
-	unsigned long frames;
-	unsigned long frame_done = 0;
+	uint32_t payload;
 	unsigned char ibuf[4096];
-	int stereo;
-	int sixteen;
+	int16_t s16[1024];
+	int stereo, sixteen;
 	int ok = 0;
 
 	if (hdr[11] != REMIX_AUD_COMP_PCM)
 		return 0;
-	{
-		int rf = remix_resample_factor(read_le16(hdr), &resample_factor);
-		if (rf < 0)
-			return 0;
-		if (rf == 0)
-			resample_factor = 1;
-	}
-
+	in_rate = st_host_normalize_rate(read_le16(hdr));
 	stereo = (hdr[10] & REMIX_AUD_FLAG_STEREO) != 0;
 	sixteen = (hdr[10] & REMIX_AUD_FLAG_16BIT) != 0;
 	uncomp = read_le32(hdr + 6);
@@ -397,21 +392,31 @@ static int convert_pcm(
 		stride = 2u;
 	if (stereo)
 		stride *= 2u;
-	if (stride == 0 || uncomp < stride)
+	if (stride == 0 || uncomp < stride || !in_rate)
 		return 0;
 	frames = uncomp / stride;
-
-	if (!remix_out_begin(
-	        &octx, out, resample_factor, remix_resampled_payload_bytes((uint32_t)frames, resample_factor)))
+	even_in = frames & ~1UL;
+	payload = st_host_predicted_dest((uint32_t)even_in, in_rate);
+	if (!payload)
 		return 0;
 
-	while (frame_done < frames) {
-		size_t chunk_frames;
-		size_t chunk_bytes;
-		size_t got;
-		size_t i;
+	memset(&src, 0, sizeof(src));
+	if (!st_host_src_open(&src, in_rate))
+		return 0;
+	if (!remix_out_begin(&octx, out, payload)) {
+		st_host_src_close(&src);
+		return 0;
+	}
+	memset(&pipe, 0, sizeof(pipe));
+	pipe.src = &src;
+	pipe.out = &octx;
+	pipe.left = payload;
 
-		chunk_frames = frames - frame_done;
+	while (frame_done < even_in) {
+		size_t chunk_frames, chunk_bytes, got, i;
+		unsigned n16 = 0;
+
+		chunk_frames = even_in - frame_done;
 		if (chunk_frames > sizeof(ibuf) / stride)
 			chunk_frames = sizeof(ibuf) / stride;
 		chunk_bytes = chunk_frames * stride;
@@ -419,6 +424,8 @@ static int convert_pcm(
 		if (got < stride)
 			goto done_pcm;
 		chunk_frames = got / stride;
+		if (frame_done + chunk_frames > even_in)
+			chunk_frames = (size_t)(even_in - frame_done);
 
 		for (i = 0; i < chunk_frames; ++i) {
 			unsigned char const *p = ibuf + i * stride;
@@ -427,29 +434,38 @@ static int convert_pcm(
 			if (sixteen && stereo) {
 				int lv = (int)(int16_t)(uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 				int rv = (int)(int16_t)(uint16_t)((uint16_t)p[2] | ((uint16_t)p[3] << 8));
-				sample = ((lv + rv) / 2) >> 8;
+				sample = (lv + rv) / 2;
 			} else if (sixteen) {
-				int v = (int)(int16_t)(uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
-				sample = v >> 8;
+				sample = (int)(int16_t)(uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 			} else if (stereo) {
-				sample = (((int)p[0] - 128) + ((int)p[1] - 128)) / 2;
+				sample = ((((int)p[0] - 128) + ((int)p[1] - 128)) / 2) << 8;
 			} else {
-				sample = (int)p[0] - 128;
+				sample = ((int)p[0] - 128) << 8;
 			}
-			if (!remix_out_write_s8(&octx, (signed char)sample))
-				goto done_pcm;
+			if (sample > 32767)
+				sample = 32767;
+			if (sample < -32768)
+				sample = -32768;
+			s16[n16++] = (int16_t)sample;
+			if (n16 == 1024u) {
+				if (!pipe_push_s16(&pipe, s16, n16))
+					goto done_pcm;
+				n16 = 0;
+			}
 		}
+		if (n16 && !pipe_push_s16(&pipe, s16, n16))
+			goto done_pcm;
 		frame_done += (unsigned long)chunk_frames;
 		if (progress)
-			progress(progress_ctx, "CONVERT", (unsigned)frame_done, (unsigned)frames);
+			progress(progress_ctx, "CONVERT", (unsigned)frame_done, (unsigned)even_in);
 	}
 
-	if (!remix_out_finish(&octx))
+	if (!pipe_finish(&pipe) || !remix_out_finish(&octx))
 		goto done_pcm;
 	*out_bytes = REMIX_AUD_HDR_LEN + octx.payload_written;
 	ok = 1;
-
 done_pcm:
+	st_host_src_close(&src);
 	return ok;
 }
 

@@ -15,7 +15,7 @@ typedef size_t (*RemixPayloadReadFn)(void *ctx, unsigned char *dst, size_t max_l
 typedef void (*RemixProgressFn)(void *ctx, const char *verb, unsigned done, unsigned total);
 
 /*
- * Convert an embedded .AUD payload to 11025 Hz 8-bit mono PCM.
+ * Convert an embedded .AUD payload to 12517 Hz 8-bit mono PCM.
  * Returns 1 on success, 0 on failure (caller may fall back to raw copy).
  */
 int remix_audio_stream_convert(

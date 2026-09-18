@@ -42,6 +42,9 @@ typedef struct StvqEncodeOpts {
 
 int stvq_encode(const StvqEncodeOpts *opts);
 
+/** Last `stvq_encode` failure, or empty string after success. */
+const char *stvq_encode_error(void);
+
 #ifdef __cplusplus
 }
 #endif

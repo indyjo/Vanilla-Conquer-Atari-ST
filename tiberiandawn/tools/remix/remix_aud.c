@@ -67,11 +67,6 @@ static int clamp_step(int x)
 	return x;
 }
 
-static signed char pred_to_s8(int pred)
-{
-	return (signed char)(pred >> 8);
-}
-
 static short const kImaStepTable[89] = {
 	7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
 	50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
@@ -108,19 +103,19 @@ static void ws_adpcm_init_tables(void)
 	g_delta_ready = 1;
 }
 
-static void apply_nibble_mono8(unsigned nib, int *pred, int *si, signed char **d)
+static void apply_nibble_s16(unsigned nib, int *pred, int *si, int16_t **d)
 {
 	unsigned const n = nib & 15u;
 
 	*pred += g_delta_table[((unsigned)*si << 4) + n];
 	*pred = clamp16(*pred);
 	*si = clamp_step(*si + (int)kImaIndexTable[n]);
-	*(*d)++ = pred_to_s8(*pred);
+	*(*d)++ = (int16_t)*pred;
 }
 
-static unsigned ws_adpcm_decode_mono8(
+static unsigned ws_adpcm_decode_mono16(
     struct WsAdpcmState *st, const unsigned char *src, unsigned src_bytes,
-    signed char *dst, unsigned dst_samples, unsigned *out_src_bytes_used)
+    int16_t *dst, unsigned dst_samples, unsigned *out_src_bytes_used)
 {
 	unsigned nbytes;
 	unsigned p;
@@ -143,14 +138,14 @@ static unsigned ws_adpcm_decode_mono8(
 	{
 		int pred = st->predictor;
 		int si = clamp_step((int)st->step_index);
-		signed char *d = dst;
+		int16_t *d = dst;
 		const unsigned char *s = src;
 
 		p = nbytes;
 		while (p--) {
 			unsigned char const b = *s++;
-			apply_nibble_mono8((unsigned)(b & 15u), &pred, &si, &d);
-			apply_nibble_mono8(((unsigned)b >> 4) & 15u, &pred, &si, &d);
+			apply_nibble_s16((unsigned)(b & 15u), &pred, &si, &d);
+			apply_nibble_s16(((unsigned)b >> 4) & 15u, &pred, &si, &d);
 		}
 		st->predictor = pred;
 		st->step_index = (short)si;
@@ -281,7 +276,7 @@ static int ima_ensure_frame(struct Ima99Core *ima)
 	return ima_advance_frame(ima);
 }
 
-static unsigned ima_pull_mono(struct Ima99Core *ima, signed char *dst, unsigned max_out)
+static unsigned ima_pull_mono(struct Ima99Core *ima, int16_t *dst, unsigned max_out)
 {
 	unsigned written = 0;
 
@@ -307,7 +302,7 @@ static unsigned ima_pull_mono(struct Ima99Core *ima, signed char *dst, unsigned 
 		comp_left = ima->frame_comp_len - ima->frame_comp_off;
 		csrc = ima->comp_buf + ima->comp_pos + ima->frame_comp_off;
 		src_used = 0;
-		produced = ws_adpcm_decode_mono8(&ima->ws_l, csrc, comp_left, dst + written, n, &src_used);
+		produced = ws_adpcm_decode_mono16(&ima->ws_l, csrc, comp_left, dst + written, n, &src_used);
 		ima->frame_comp_off += src_used;
 		ima->frame_samples_emitted += produced;
 		written += produced;
@@ -317,10 +312,10 @@ static unsigned ima_pull_mono(struct Ima99Core *ima, signed char *dst, unsigned 
 	return written;
 }
 
-static unsigned ima_pull_stereo(struct Ima99Core *ima, signed char *dst, unsigned max_out)
+static unsigned ima_pull_stereo(struct Ima99Core *ima, int16_t *dst, unsigned max_out)
 {
 	unsigned written = 0;
-	signed char lr[REMIX_AUDIO_PULL_BLOCK * 2];
+	int16_t lr[REMIX_AUDIO_PULL_BLOCK * 2];
 
 	while (written < max_out) {
 		unsigned need;
@@ -352,13 +347,13 @@ static unsigned ima_pull_stereo(struct Ima99Core *ima, signed char *dst, unsigne
 		if (comp_left == 0)
 			break;
 		csrc = ima->comp_buf + ima->comp_pos + ima->frame_comp_off;
-		produced_l = ws_adpcm_decode_mono8(&ima->ws_l, csrc, comp_left, lr, n, &src_used_l);
-		produced_r = ws_adpcm_decode_mono8(
+		produced_l = ws_adpcm_decode_mono16(&ima->ws_l, csrc, comp_left, lr, n, &src_used_l);
+		produced_r = ws_adpcm_decode_mono16(
 		    &ima->ws_r, csrc + half, comp_left, lr + n, n, &src_used_r);
 		if (src_used_l != src_used_r || produced_l != produced_r || produced_l == 0)
 			break;
 		for (i = 0; i < produced_l; ++i)
-			dst[written + i] = (signed char)(((int)lr[i] + (int)lr[n + i]) / 2);
+			dst[written + i] = (int16_t)(((int)lr[i] + (int)lr[n + i]) / 2);
 		ima->frame_comp_off += src_used_l;
 		ima->frame_samples_emitted += produced_l;
 		written += produced_l;
@@ -413,7 +408,7 @@ static int ima99_bind_stream(
 	return 1;
 }
 
-static unsigned ima99_stream_pull(struct Ima99Stream *s, signed char *dst, unsigned max_out)
+static unsigned ima99_stream_pull_s16(struct Ima99Stream *s, int16_t *dst, unsigned max_out)
 {
 	if (s->ima.channels == 2)
 		return ima_pull_stereo(&s->ima, dst, max_out);
@@ -484,11 +479,33 @@ unsigned remix_ima_stream_pending_frame_samples(RemixImaCtx *ctx)
 	return ima->frame_samples_total - ima->frame_samples_emitted;
 }
 
+unsigned remix_ima_stream_pull_s16(RemixImaCtx *ctx, int16_t *dst, unsigned max_out)
+{
+	if (!ctx || !dst)
+		return 0;
+	return ima99_stream_pull_s16(&ctx->stream, dst, max_out);
+}
+
 unsigned remix_ima_stream_pull_s8(RemixImaCtx *ctx, signed char *dst, unsigned max_out)
 {
-	if (!ctx)
+	unsigned got = 0;
+	int16_t tmp[REMIX_AUDIO_PULL_BLOCK];
+
+	if (!ctx || !dst)
 		return 0;
-	return ima99_stream_pull(&ctx->stream, dst, max_out);
+	while (got < max_out) {
+		unsigned n = max_out - got;
+		unsigned k, j;
+		if (n > REMIX_AUDIO_PULL_BLOCK)
+			n = REMIX_AUDIO_PULL_BLOCK;
+		k = ima99_stream_pull_s16(&ctx->stream, tmp, n);
+		if (!k)
+			break;
+		for (j = 0; j < k; ++j)
+			dst[got + j] = (signed char)(tmp[j] >> 8);
+		got += k;
+	}
+	return got;
 }
 
 void remix_ima_stream_destroy(RemixImaCtx *ctx)

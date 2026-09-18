@@ -51,17 +51,8 @@ unsigned short remix_aud_normalize_rate(unsigned short rate)
 
 static int aud_rate_resampleable(unsigned short rate)
 {
-	unsigned factor;
-
 	rate = remix_aud_normalize_rate(rate);
-	if (rate < (unsigned short)REMIX_TARGET_RATE)
-		return 0;
-	if (rate == (unsigned short)REMIX_TARGET_RATE)
-		return 1;
-	if (rate % (unsigned short)REMIX_TARGET_RATE != 0)
-		return 0;
-	factor = rate / (unsigned short)REMIX_TARGET_RATE;
-	return factor > 0;
+	return rate > 0;
 }
 
 static int aud_ima99_first_frame_ok(const unsigned char *data, size_t probe_len, uint32_t payload_len)

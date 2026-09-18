@@ -13,6 +13,9 @@
 extern "C" {
 #endif
 
+/** Last omit/failure reason from remix_vqa_convert_* (empty after success). */
+const char *remix_vqa_last_error(void);
+
 /** 1 if probe looks like FORM STVQ (already converted). */
 int remix_vqa_is_stvq(const unsigned char *data, size_t len);
 

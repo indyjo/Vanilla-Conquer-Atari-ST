@@ -15,7 +15,7 @@ For build and usage, see `readme.md`.
 
 - Plain MIX files: 6-byte header + `count × 12`-byte index + data section.
 - Per-payload type sniffing (AUD, PCX, SHP, ICN, ST16, …).
-- Audio conversion to **11025 Hz, 8-bit mono, PCM** (compression type 0).
+- Audio conversion to **12517 Hz, 8-bit mono, PCM** (compression type 0; STE DMA).
 - **ST16 iconset conversion** in theater MIX files (optional, default on).
 - **VQA → STVQ** conversion (`--convert-vqa`; CRC-named `video/` W16 sidecars).
 - Even-byte payload alignment from the start of the MIX data section.
@@ -25,7 +25,6 @@ For build and usage, see `readme.md`.
 
 - Encrypted MIX headers, checksum trailers, or RA-style extended headers.
 - Compression types other than AUD **0**, **1**, and **99**.
-- Non-integer resampling (e.g. 44100 → 11025).
 - In-place rewrite without a temporary file.
 - On-ST MiNT `remix.tos` (removed; use host remix or remix-web).
 
@@ -168,7 +167,7 @@ Audio entries are labelled:
 
 Examples: `aud99 22050/16/M`, `aud_pcm 11025/8/M`.
 
-After successful conversion: `aud_pcm 11025/8/M`.
+After successful conversion: `aud_pcm 12517/8/M`.
 
 ---
 
@@ -178,24 +177,21 @@ After successful conversion: `aud_pcm 11025/8/M`.
 
 | Field | Value |
 |-------|--------|
-| Rate | 11025 Hz |
+| Rate | 12517 Hz |
 | Bits | 8 |
 | Channels | mono |
 | Compression | 0 (PCM) |
 | Flags | 0 |
 | `comp_size` / `uncomp` | equal (raw PCM byte count) |
 
-Matches `audio_ste.cpp` STE DMA expectations. **No DUP2X flag** — sample rate is
-real 11025 Hz, not 11025 doubled in hardware.
+Matches STE DMA at 12517 Hz. **No DUP2X flag.** Previously remixed **11025 Hz**
+PCM is converted (upsampled).
 
 ### When to convert (`remix_aud_needs_convert`)
 
 Convert if payload passes `remix_looks_like_aud` and is **not** already target PCM.
 
-**Skip conversion** (copy as-is) when:
-
-- Already `aud_pcm 11025/8/M` (type 0, rate 11025, 8-bit mono).
-- PCM with rate **below** 11025 (up-conversion not supported).
+**Skip conversion** (copy as-is) when already `aud_pcm 12517/8/M` (type 0, rate 12517, 8-bit mono).
 
 ### Sample-rate normalization
 
@@ -204,14 +200,14 @@ Before resampling, rates in **(20000, 24000)** are treated as **22050 Hz**
 
 ### Resampling
 
-Only **integer decimation** to 11025 Hz:
+Host **libsamplerate** 0.2.2 (`SRC_SINC_BEST_QUALITY`, streaming `src_process`) to
+12517 Hz. Sources live under [`../third_party/libsamplerate/`](../third_party/libsamplerate/)
+(BSD-2-Clause; see `COPYING`). Decode to int16, resample, then unsigned 8-bit with
+TPDF dither. Source sample count is taken even (`in_n & ~1`); dest length is
+predicted from the ratio and floored even. AUD header is still written first with
+that predicted size.
 
-- `factor = normalized_rate / 11025` must be exact.
-- Output samples = `input_samples / factor`.
-- Factor 2 fast path: average adjacent signed samples.
-- Other factors: accumulate `factor` samples, emit mean.
-
-Rates that cannot be reduced to 11025 with an integer factor → conversion fails.
+Rates that cannot be normalized to a positive Hz value fail conversion.
 
 ### Codecs
 
@@ -219,16 +215,16 @@ Rates that cannot be reduced to 11025 with an integer factor → conversion fail
 |-------------|---------|--------|
 | 99 IMA99 | `remix_aud.c` | Frame-based; matches `ste_stream_ima99.cpp` |
 | 1 Westwood | `remix_unzap.c` | Sliding-window delta; whole compressed block in memory |
-| 0 PCM | inline | Stereo → mono average; 16-bit → `>> 8`; then resample |
+| 0 PCM | inline | Stereo → mono average in s16; 8-bit expanded to s16; then resample |
 
 ### IMA99 details
 
 - Framed payload: 8-byte frame header + compressed bytes per frame.
 - Frame magic: `0x0000DEAF`.
 - 16-bit flag in AUD header means **16-bit source domain** in `uncomp`; decode
-  still emits **8-bit mono** (`predictor >> 8`), same as the game/ST stream code.
+  keeps the 16-bit IMA predictor for resampling (quantize happens after SRC).
 - Conversion pulls **one frame at a time** (`remix_ima_stream_pending_frame_samples`),
-  decodes, writes via buffered block output.
+  decodes to int16, resamples, writes via buffered block output.
 - Total output samples from AUD `uncomp` and flags; trailing odd sample dropped
   (`total & ~1`).
 
@@ -286,7 +282,8 @@ Hints: `decode` (decoder/size mismatch), `rate` (not resampleable), `size`
 |--------|------|
 | `remix_mix.c` | MIX read/write, entry loop, alignment, stats |
 | `remix_detect.c` | Type sniffing, AUD heuristics, fail hints |
-| `remix_audio.c` | Convert orchestration, resample, output buffer |
+| `remix_audio.c` | Convert orchestration, streaming SRC, output buffer |
+| `st_host_resample.c` | libsamplerate wrapper (12517 Hz, BEST_QUALITY) |
 | `remix_aud.c` | IMA99 streaming decode |
 | `remix_unzap.c` | Westwood type-1 decompress |
 | `remix_print.c` | Host table + ST 40-column UI |
@@ -302,7 +299,7 @@ Shared headers: `remix.h`, `remix_aud.h`, `remix_detect.h`, `remix_audio.h`,
 
 | Symbol | Value | Meaning |
 |--------|-------|---------|
-| `REMIX_TARGET_RATE` | 11025 | Output sample rate |
+| `REMIX_TARGET_RATE` | 12517 | Output sample rate (STE DMA) |
 | `REMIX_PROBE_LEN` | 512 | Type sniff bytes |
 | `REMIX_COPY_CHUNK` | 16384 | Stream copy buffer |
 | `REMIX_OUT_BUF` | 4096 | PCM write buffer |
@@ -317,11 +314,10 @@ Shared headers: `remix.h`, `remix_aud.h`, `remix_detect.h`, `remix_audio.h`,
 - Corrupt IMA99 frame chains (valid frame 0, broken frame 1+) cannot be
   converted; ST falls back to copy.
 - MIX archives with duplicate CRCs or overlapping offsets are not validated.
-- `aud.mix` and other pre-remixed archives with target PCM are copied unchanged.
+- `aud.mix` and other archives already at 12517 Hz 8-bit mono PCM are copied unchanged.
+  Older remix output at 11025 Hz is converted.
 - Detection can still mis-label edge cases; strict `comp_size == payload` and
   IMA `DEAF` check greatly reduce false AUD positives.
-- PCM path still writes sample-at-a-time through the resampler helper (not
-  frame-blocked like IMA).
 
 ---
 

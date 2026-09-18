@@ -30,7 +30,7 @@ export type VqaEncodeJob = {
 
 export type VqaEncodeOutcome =
   | { status: 'ok'; crc: number; stv: Uint8Array }
-  | { status: 'omit'; crc: number };
+  | { status: 'omit'; crc: number; reason: string };
 
 type PendingEncode = {
   resolve: (r: VqaEncodeOutcome) => void;
@@ -122,7 +122,7 @@ export class VqaEncodePool {
     if (msg.type === 'error') {
       slot.reject(new Error(msg.message));
     } else if (msg.type === 'encode_omit') {
-      slot.resolve({ status: 'omit', crc: msg.crc });
+      slot.resolve({ status: 'omit', crc: msg.crc, reason: msg.reason || 'STVQ encode omitted' });
     } else {
       slot.resolve({ status: 'ok', crc: msg.crc, stv: new Uint8Array(msg.stv) });
     }
@@ -198,6 +198,7 @@ export type WindowedEncodeResult = {
   crc: number;
   /** null = omit from MIX. */
   stv: Uint8Array | null;
+  omitReason?: string;
 };
 
 /**
@@ -243,7 +244,11 @@ export async function encodeVqaWindowed(
 
       const sidecars = opts.videoW16ForCrc(item.crc);
       if (sidecars.length === 0) {
-        results[index] = { crc: item.crc, stv: null };
+        results[index] = {
+          crc: item.crc,
+          stv: null,
+          omitReason: `missing video/${item.crc.toString(16).padStart(8, '0')}.*.w16`,
+        };
         opts.onJobComplete?.(item.crc, item.vqa.length);
         continue;
       }
@@ -265,7 +270,7 @@ export async function encodeVqaWindowed(
           results[index] =
             outcome.status === 'ok'
               ? { crc: outcome.crc, stv: outcome.stv }
-              : { crc: outcome.crc, stv: null };
+              : { crc: outcome.crc, stv: null, omitReason: outcome.reason };
           opts.onJobComplete?.(item.crc, item.vqa.length);
           opts.onProgress?.({ phase: 'done', crc: item.crc, done: 0, total: 0 });
           inflight.delete(index);

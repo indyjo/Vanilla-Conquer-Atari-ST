@@ -119,5 +119,11 @@
         <DeployStep {zipBlob} files={outputFiles} {fileNames} {processLog} {release} onRestart={restart} />
       {/if}
     </main>
+    <footer class="mt-8 border-t border-cnc-bronze pt-4 text-xs text-[#808080]">
+      Audio resampling:
+      <a class="underline decoration-cnc-bronze/60 hover:text-[#d0d0d0]" href="./licenses/libsamplerate.COPYING"
+        >libsamplerate (BSD-2-Clause)</a
+      >
+    </footer>
   </div>
 </div>

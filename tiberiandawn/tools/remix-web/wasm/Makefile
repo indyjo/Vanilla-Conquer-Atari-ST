@@ -7,10 +7,12 @@ PALETTE_OPT = ../../palette-opt
 TDROOT = ../../..
 COMMON = $(TDROOT)/../common
 ATARILIB = $(TDROOT)/atarilib
+HOST_AUDIO = ../../host_audio
+LSRC = ../../third_party/libsamplerate
 OUT_DIR = ../web/public
 
 EMCC ?= emcc
-EMCFLAGS = -O2 -Wall -Wextra -std=gnu99 -D_POSIX_C_SOURCE=200809L -I$(REMIX_DIR) -I$(TDROOT) -I$(COMMON) -I$(ATARILIB) -I$(VQATOOL) -I$(PALETTE_OPT)
+EMCFLAGS = -O2 -Wall -Wextra -std=gnu99 -D_POSIX_C_SOURCE=200809L -DHAVE_CONFIG_H -I$(REMIX_DIR) -I$(TDROOT) -I$(COMMON) -I$(ATARILIB) -I$(VQATOOL) -I$(PALETTE_OPT) -I$(HOST_AUDIO) -I$(LSRC) -I$(LSRC)/include -I$(LSRC)/src
 EMCXXFLAGS = -O2 -Wall -Wextra -std=c++17 -I$(REMIX_DIR) -I$(ATARILIB) -I$(TDROOT) -I$(COMMON) -I$(VQATOOL) -DREMIX_BUILD
 
 COMMON_SRCS = \
@@ -22,7 +24,12 @@ COMMON_SRCS = \
 	$(REMIX_DIR)/remix_aud.c \
 	$(REMIX_DIR)/remix_audx.c \
 	$(REMIX_DIR)/remix_unzap.c \
-	$(REMIX_DIR)/remix_vqa.c
+	$(REMIX_DIR)/remix_vqa.c \
+	$(HOST_AUDIO)/st_host_resample.c \
+	$(LSRC)/src/samplerate.c \
+	$(LSRC)/src/src_sinc.c \
+	$(LSRC)/src/src_linear.c \
+	$(LSRC)/src/src_zoh.c
 
 STVQ_SRCS = \
 	$(VQATOOL)/vqa_format.c \
@@ -43,14 +50,15 @@ STVQ_CXX_OBJS = lcw_common.o vqa_lcw_bridge.o unvqbuff.o vqa_unvq_bridge.o
 
 GLUE = remix_wasm.c
 
-EXPORTS = _remix_wasm_process_mix,_remix_wasm_merge_and_process_mix,_remix_wasm_encode_vqa,_remix_wasm_free,_remix_wasm_cleanup_workfiles,_remix_wasm_last_entry_count,_remix_wasm_last_entries,_remix_wasm_set_st16_enabled,_remix_wasm_set_shpx_enabled,_remix_wasm_set_audx_enabled,_remix_wasm_set_vqa_enabled,_remix_wasm_set_video_quality,_remix_wasm_set_video_effort,_remix_wasm_set_mix_basename,_remix_wasm_install_w16,_remix_wasm_memfs_input,_malloc,_free
+EXPORTS = _remix_wasm_process_mix,_remix_wasm_merge_and_process_mix,_remix_wasm_encode_vqa,_remix_wasm_last_error,_remix_wasm_free,_remix_wasm_cleanup_workfiles,_remix_wasm_last_entry_count,_remix_wasm_last_entries,_remix_wasm_set_st16_enabled,_remix_wasm_set_shpx_enabled,_remix_wasm_set_audx_enabled,_remix_wasm_set_vqa_enabled,_remix_wasm_set_video_quality,_remix_wasm_set_video_effort,_remix_wasm_set_mix_basename,_remix_wasm_install_w16,_remix_wasm_memfs_input,_malloc,_free
 
 .PHONY: all clean
 
 all: $(OUT_DIR)/remix.js $(OUT_DIR)/remix.wasm
 
 $(OUT_DIR)/remix.js $(OUT_DIR)/remix.wasm: $(COMMON_SRCS) $(STVQ_SRCS) $(ST16_OBJS) $(SHPX_OBJS) $(STVQ_CXX_OBJS) $(GLUE)
-	@mkdir -p $(OUT_DIR)
+	@mkdir -p $(OUT_DIR)/licenses
+	@cp $(LSRC)/COPYING $(OUT_DIR)/licenses/libsamplerate.COPYING
 	$(EMCC) $(EMCFLAGS) $(COMMON_SRCS) $(STVQ_SRCS) $(GLUE) $(ST16_OBJS) $(SHPX_OBJS) $(STVQ_CXX_OBJS) -o $(OUT_DIR)/remix.js \
 		-lm \
 		-s MODULARIZE=1 \
@@ -59,7 +67,7 @@ $(OUT_DIR)/remix.js $(OUT_DIR)/remix.wasm: $(COMMON_SRCS) $(STVQ_SRCS) $(ST16_OB
 		-s INITIAL_MEMORY=268435456 \
 		-s STACK_SIZE=8388608 \
 		-s EXPORTED_FUNCTIONS='[$(EXPORTS)]' \
-		-s EXPORTED_RUNTIME_METHODS='[ccall,cwrap,HEAPU8,FS]' \
+		-s EXPORTED_RUNTIME_METHODS='[ccall,cwrap,HEAPU8,FS,UTF8ToString]' \
 		-s ENVIRONMENT=web,worker \
 		-s FILESYSTEM=1
 

@@ -8,7 +8,7 @@
 #include "remix_aud.h"
 
 enum {
-	REMIX_TARGET_RATE = 11025,
+	REMIX_TARGET_RATE = 12517,
 	REMIX_PROBE_LEN = 512,
 	REMIX_COPY_CHUNK = 16384,
 	REMIX_COL_CRC = 8,

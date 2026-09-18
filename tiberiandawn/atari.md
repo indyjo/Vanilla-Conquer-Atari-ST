@@ -527,7 +527,7 @@ Implementation: `atarilib/audx/`.
 
 ## Preparing MIX files (Remix Web)
 
-Use **[Remix Web](tools/remix-web/)** — a browser wizard that extracts MIX archives from your own GDI and NOD install discs, merges `GENERAL.MIX`, and repacks with [REMIX](tools/remix/) (11025 Hz audio, even byte offsets).
+Use **[Remix Web](tools/remix-web/)** — a browser wizard that extracts MIX archives from your own GDI and NOD install discs, merges `GENERAL.MIX`, and repacks with [REMIX](tools/remix/) (12517 Hz STE DMA audio, even byte offsets).
 
 ```bash
 make remix-web          # from tiberiandawn/

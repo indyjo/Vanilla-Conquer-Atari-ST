@@ -37,7 +37,7 @@ Tracked follow-ups for the Atari ST/MiNT port.
 ## Content / Media Platform Gaps
 
 - [ ] **Remove `STE_AUD_FLAG_DUP2X` from runtime audio** (`tiberiandawn/atarilib/ste_aud_constants.h`, `ste_stream_pcm.cpp`, `audio_ste.cpp`, `Sample_Make_PCM`).
-  - DUP2X was a producer-side playback hint (duplicate samples when DMA runs at ~25 kHz). Remix tooling will emit plain 11025 Hz 8-bit mono PCM with `rate=11025` and no DUP2X; sample-rate policy should be negotiated between asset prep and the STE driver, not via a flag in the `.AUD` header.
+  - DUP2X was a producer-side playback hint (duplicate samples when DMA runs at ~25 kHz). Remix tooling emits 12517 Hz 8-bit mono PCM with `rate=12517` and no DUP2X.
   - After remix lands: drop DUP2X handling in the pull path; play assets at the rate in the header.
 
 - [ ] Port `Get_CD_Index` for Atari ST/MiNT (covert-CD detection).
@@ -50,7 +50,7 @@ Existing pipeline (see also `tiberiandawn/atari.md`):
 
 | Tool | Role |
 |------|------|
-| [`remix`](tiberiandawn/tools/remix/readme.md) / [remix-web](tiberiandawn/tools/remix-web/) | Repack `.MIX` (even offsets, all audio → 11025 Hz 8-bit mono PCM) |
+| [`remix`](tiberiandawn/tools/remix/readme.md) / [remix-web](tiberiandawn/tools/remix-web/) | Repack `.MIX` (even offsets, all audio → 12517 Hz 8-bit mono PCM) |
 | [`paltool`](tiberiandawn/tools/paltool/paltool.c) | Extract 768-byte `.PAL` from BMP / CPS / WSA |
 | [`palette-opt`](tiberiandawn/tools/palette-opt/readme.md) | Build single `C2P_WeightSet` (`.W16`) from one `.PAL` |
 | `gen_cps_w16.py`, `histtool`, `w16fix` | Batch / histogram / fixups for asset prep |

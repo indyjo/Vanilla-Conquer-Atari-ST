@@ -3,9 +3,11 @@
 CC ?= cc
 CXX ?= c++
 COMMON = ../../../common
+HOST_AUDIO = ../host_audio
+LSRC = ../third_party/libsamplerate
 CFLAGS ?= -O2 -Wall -Wextra -std=c99
 CXXFLAGS ?= -O2 -Wall -Wextra -std=c++17
-CPPFLAGS = -I$(COMMON) -I. -I../palette-opt
+CPPFLAGS = -I$(COMMON) -I. -I../palette-opt -I$(HOST_AUDIO) -I$(LSRC) -I$(LSRC)/include -I$(LSRC)/src -DHAVE_CONFIG_H
 DEPFLAGS = -MMD -MP
 LDFLAGS ?=
 
@@ -27,7 +29,12 @@ C_SRCS = \
 	stvq_preview.c \
 	stvq_init_w16.c \
 	stvq_refine_w16.c \
-	stvq_fix_w16.c
+	stvq_fix_w16.c \
+	$(HOST_AUDIO)/st_host_resample.c \
+	$(LSRC)/src/samplerate.c \
+	$(LSRC)/src/src_sinc.c \
+	$(LSRC)/src/src_linear.c \
+	$(LSRC)/src/src_zoh.c
 
 OBJS = $(C_SRCS:.c=.o) palette_color.o lcw.o vqa_lcw_bridge.o unvqbuff.o vqa_unvq_bridge.o
 DEPS = $(OBJS:.o=.d)

@@ -42,7 +42,7 @@ int main(void)
 	int fail = 0;
 
 	memset(aud, 0, sizeof(aud));
-	write_le16(aud, 11025);
+	write_le16(aud, 12517);
 	write_le32(aud + 2, 16);
 	write_le32(aud + 6, 16);
 	aud[10] = 0;
@@ -57,7 +57,7 @@ int main(void)
 	} else if (read_be32(meta) != REMIX_AUDX_MAGIC_BE) {
 		fprintf(stderr, "FAIL magic\n");
 		fail = 1;
-	} else if (read_be16(meta + 4) != 11025) {
+	} else if (read_be16(meta + 4) != 12517) {
 		fprintf(stderr, "FAIL rate\n");
 		fail = 1;
 	} else if (read_be32(meta + 8) != 16 || read_be32(meta + 12) != 16) {

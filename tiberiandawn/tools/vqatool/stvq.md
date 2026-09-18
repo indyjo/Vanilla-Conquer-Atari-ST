@@ -131,10 +131,22 @@ Frames 0–1 are full draws (encoder). Later full draws are encoder policy.
 ## `SND0`
 
 Raw signed 8-bit mono PCM. `size` is the sample count and **must be even**
-(word-aligned payload; encoder rounds odd frame lengths up by one sample).
-Length may still vary per frame. Even `SND0` also keeps subsequent IFF chunks word-aligned.
+(word-aligned payload). Dest length is the **picture tick** at 12517 Hz, not the
+muxed VQA `SND2` size:
 
-**Audio is the reference clock.** Video may jitter vs 50 Hz VBL; short lead/lag vs audio is normal. Do not require a fixed sample count per frame.
+`t(i) = (i·12517 + fps/2) / fps`, `delta = t(i+1)−t(i)`, then odd `delta` is
+rounded **up** to even (`(delta + 1) & ~1`). At 15 fps that is **834 or 836**
+(~7/15 ticks are 836). Do not duplicate the last PCM byte to pad.
+
+VQA audio (including the ~0.5 s preroll on the first `SND2`) is queued in a
+**source int16 FIFO** in file order. Each `STFR` pops `dest_n` dest samples
+through libsamplerate. SRC is not stuffed with a whole muxed chunk; preroll
+stays in the FIFO and is heard across pictures 0–7. Frames with no `SND2` still
+pop from the FIFO (silence-fill if it runs dry). After `N` picture ticks (`N` =
+VQHD frame count), leftover FIFO and SRC delay-line samples are discarded — same
+as DOS `StopAudio` when the last frame has been shown.
+
+**Audio is the reference clock.** Video may jitter vs 50 Hz VBL; short lead/lag vs audio is normal. Per-frame `SND0` length is the fps tick (834/836 at 15 fps), so A/V tracks DOS rather than the VQA mux timeline.
 
 ## `STEN`
 

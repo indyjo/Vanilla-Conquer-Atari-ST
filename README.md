@@ -38,7 +38,7 @@ Output: `bin/AtariST/cnc.tos` (link-time optimization is on by default). Host te
 
 | Tool | Description |
 |------|-------------|
-| [remix](tiberiandawn/tools/remix/readme.md) / [remix-web](tiberiandawn/tools/remix-web/) | Repack `.MIX` (even offsets, audio → 11025 Hz PCM / AUDX, optional ST16/SHPX/STVQ) |
+| [remix](tiberiandawn/tools/remix/readme.md) / [remix-web](tiberiandawn/tools/remix-web/) | Repack `.MIX` (even offsets, audio → 12517 Hz PCM / AUDX, optional ST16/SHPX/STVQ) |
 | [vqatool](tiberiandawn/tools/vqatool/readme.md) | Inspect Westwood VQA; encode FORM `STVQ` (`.stv`) for Atari |
 | [stvqview](tiberiandawn/tools/stvqview/readme.md) | On-target `.stv` player (`stvqview.ttp`) for encode checks |
 | [paltool](tiberiandawn/tools/paltool/paltool.c) | Extract 768-byte `.PAL` from BMP / CPS / WSA |

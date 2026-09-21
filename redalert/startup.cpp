@@ -91,15 +91,15 @@ extern void DLL_Shutdown(void);
 /* Set global variables that require RESFACTOR value.  */
 void Set_Resfactor_Globals(int resfactor)
 {
-    int windowlist[9][9] = {/* xbyte, ypixel, bytewid, pixelht, cursor color, bkgd color,	cursor x, cursor y */
+    short windowlist[9][8] = {/* xbyte, ypixel, bytewid, pixelht, cursor color, bkgd color,	cursor x, cursor y */
 
                             /* do not change the first 2 entries!! they are necc. to the system */
 
-                            {0, 0, 40 * 8 * resfactor, 200 * resfactor, WHITE, BLACK, 0, 0}, /* screen window */
+                            {0, 0, (short)(40 * 8 * resfactor), (short)(200 * resfactor), WHITE, BLACK, 0, 0}, /* screen window */
                             {1 * 8, 75, 38 * 8, 100, WHITE, BLACK, 0, 0},                    /* DOS Error window */
 
                             // Tactical map.
-                            {0, 0, 40 * 8 * resfactor, 200 * resfactor, WHITE, LTGREY, 0, 0},
+                            {0, 0, (short)(40 * 8 * resfactor), (short)(200 * resfactor), WHITE, LTGREY, 0, 0},
 
                             // Initial menu window.
                             {12 * 8, 199 - 42, 16 * 8, 42, LTGREY, DKGREY, 0, 0},

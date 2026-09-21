@@ -1063,7 +1063,7 @@ int* RandSeedPtr;
 */
 int CustomSeed = 0;
 
-int WindowList[][9] = {
+short WindowList[][8] = {
     /* xpixel, ypixel, width_px, pixelht, cursor color, bkgd color,	cursor x, cursor y */
 
     /* do not change the first 2 entries!! they are necc. to the system */

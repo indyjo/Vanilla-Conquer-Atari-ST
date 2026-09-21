@@ -619,7 +619,7 @@ int Seed = 0;
 */
 int CustomSeed = 0;
 
-int WindowList[9][9];
+short WindowList[9][8];
 
 /* X,Y,Item Width,Items High,Selected,Norm Color,Sel Color,zero 	*/
 int MenuList[][8] = {

@@ -9,7 +9,7 @@
 // Globals needed to compile GraphicBufferClass.
 bool GameInFocus;
 int ScreenWidth;
-int WindowList[9][9];
+short WindowList[9][8];
 char* _ShapeBuffer = 0;
 WWKeyboardClass* Keyboard;
 

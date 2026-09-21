@@ -69,7 +69,7 @@ typedef enum {
 	WINDOWPADDING=0x1000
 } WindowIndexType;
 
-extern int WindowList[][8];
+extern short WindowList[][8];
 extern int WindowColumns;
 extern int WindowLines;
 extern int WindowWidth;

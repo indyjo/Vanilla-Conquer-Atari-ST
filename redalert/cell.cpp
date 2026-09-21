@@ -895,14 +895,14 @@ InfantryClass* CellClass::Cell_Infantry(void) const
 #ifdef SORTDRAW
 static bool _Calc_Partial_Window(int cellx, int celly, int& drawx, int& drawy)
 {
-    int& px = WindowList[WINDOW_PARTIAL][WINDOWX];
-    int& py = WindowList[WINDOW_PARTIAL][WINDOWY];
-    int& pw = WindowList[WINDOW_PARTIAL][WINDOWWIDTH];
-    int& ph = WindowList[WINDOW_PARTIAL][WINDOWHEIGHT];
-    int& tx = WindowList[WINDOW_TACTICAL][WINDOWX];
-    int& ty = WindowList[WINDOW_TACTICAL][WINDOWY];
-    int& tw = WindowList[WINDOW_TACTICAL][WINDOWWIDTH];
-    int& th = WindowList[WINDOW_TACTICAL][WINDOWHEIGHT];
+    short& px = WindowList[WINDOW_PARTIAL][WINDOWX];
+    short& py = WindowList[WINDOW_PARTIAL][WINDOWY];
+    short& pw = WindowList[WINDOW_PARTIAL][WINDOWWIDTH];
+    short& ph = WindowList[WINDOW_PARTIAL][WINDOWHEIGHT];
+    short& tx = WindowList[WINDOW_TACTICAL][WINDOWX];
+    short& ty = WindowList[WINDOW_TACTICAL][WINDOWY];
+    short& tw = WindowList[WINDOW_TACTICAL][WINDOWWIDTH];
+    short& th = WindowList[WINDOW_TACTICAL][WINDOWHEIGHT];
 
     px = cellx + tx;
     py = celly + ty;

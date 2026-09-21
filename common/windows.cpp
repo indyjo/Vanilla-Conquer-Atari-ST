@@ -247,7 +247,7 @@ void Set_More_Off(void)
 int Change_Window(int windnum)
 {
     int oldwindow;
-    int* data;
+    short* data;
 
     oldwindow = Window;
     Window = windnum;

@@ -75,6 +75,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 #include "function.h"
 #include "rect_cover.h"
+#include "redraw_bin.h"
 #include <string.h>
 #ifdef ATARI_ST
 #include "atarilib/st16_preshift.h"
@@ -3199,22 +3200,37 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	}
 #endif
 
-	/* Sort rects by lepton X; bin Layer[] objects whose AABB hits a rect. */
+	/*
+	**	Bin Layer[] objects into redraw rects. Union lepton reject skips units that
+	**	miss every dirty box (common: one moving unit vs a full ground layer).
+	**	nrect==1 is that union; nrect>1 uses view-cell bitmasks (AABB overlap iff
+	**	X cells and Y cells both hit the rect) so we do not sort or walk rects
+	**	that cannot overlap.
+	*/
 	ObjectClass* olists[REDRAW_RECT_MAX][REDRAW_RECT_OBJ_CAP];
 	int nobj[REDRAW_RECT_MAX];
-	int rorder[REDRAW_RECT_MAX];
+	unsigned long rcol[REDRAW_RECT_MAX];
+	unsigned long rrow[REDRAW_RECT_MAX];
+	int ulx0 = rects[0].lx0;
+	int uly0 = rects[0].ly0;
+	int ulx1 = rects[0].lx1;
+	int uly1 = rects[0].ly1;
 	for (int i = 0; i < nrect; i++) {
 		nobj[i] = 0;
-		rorder[i] = i;
-	}
-	for (int i = 1; i < nrect; i++) {
-		int const ri = rorder[i];
-		int j = i;
-		while (j > 0 && rects[rorder[j - 1]].lx0 > rects[ri].lx0) {
-			rorder[j] = rorder[j - 1];
-			j--;
+		rcol[i] = Redraw_Cell_Bitspan(rects[i].c0, rects[i].c1);
+		rrow[i] = Redraw_Cell_Bitspan(rects[i].r0, rects[i].r1);
+		if (rects[i].lx0 < ulx0) {
+			ulx0 = rects[i].lx0;
 		}
-		rorder[j] = ri;
+		if (rects[i].ly0 < uly0) {
+			uly0 = rects[i].ly0;
+		}
+		if (rects[i].lx1 > ulx1) {
+			ulx1 = rects[i].lx1;
+		}
+		if (rects[i].ly1 > uly1) {
+			uly1 = rects[i].ly1;
+		}
 	}
 
 	for (LayerType layer = LAYER_GROUND; layer < LAYER_COUNT; layer++) {
@@ -3228,20 +3244,28 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 			}
 			int ox0, oy0, ox1, oy1;
 			obj->Get_AABB(ox0, oy0, ox1, oy1);
-			for (int oi = 0; oi < nrect; oi++) {
-				int const ri = rorder[oi];
-				Redraw_Rect const& rc = rects[ri];
-				if (ox0 >= rc.lx1) {
-					continue;
+			if (ox0 >= ulx1 || oy0 >= uly1 || ox1 < ulx0 || oy1 < uly0) {
+				continue;
+			}
+			if (nrect == 1) {
+				if (nobj[0] < REDRAW_RECT_OBJ_CAP) {
+					olists[0][nobj[0]++] = obj;
 				}
-				if (oy0 >= rc.ly1) {
+				continue;
+			}
+			unsigned long ocols;
+			unsigned long orows;
+			if (!Redraw_Clamp_Abs_Span(Redraw_Lepton_To_Cell(ox0), Redraw_Lepton_To_Cell(ox1),
+					origin_cx, cols, &ocols)) {
+				continue;
+			}
+			if (!Redraw_Clamp_Abs_Span(Redraw_Lepton_To_Cell(oy0), Redraw_Lepton_To_Cell(oy1),
+					origin_cy, rows, &orows)) {
+				continue;
+			}
+			for (int ri = 0; ri < nrect; ri++) {
+				if ((ocols & rcol[ri]) == 0 || (orows & rrow[ri]) == 0) {
 					continue;
-				}
-				if (oy1 < rc.ly0) {
-					continue;
-				}
-				if (ox1 < rc.lx0) {
-					break;
 				}
 				if (nobj[ri] >= REDRAW_RECT_OBJ_CAP) {
 					continue;

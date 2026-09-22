@@ -362,6 +362,7 @@ SourceType Source_From_Name(char const *name);
 char const *Name_From_Source(SourceType source);
 FacingType KN_To_Facing(int input);
 void const *Get_Radar_Icon(void const *shapefile, int shapenum, int frames, int zoomfactor);
+void CC_Draw_Shape(void const * shapefile, int shapenum, int x, int y, ShapeFlags_Type flags, void const * fadingdata=0, void const * ghostdata=0);
 void CC_Draw_Shape(void const * shapefile, int shapenum, int x, int y, WindowNumberType window, ShapeFlags_Type flags, void const * fadingdata=0, void const * ghostdata=0);
 void Go_Editor(bool flag);
 long MixFileHandler(VQAHandle *vqa, long action, void *buffer, long nbytes);

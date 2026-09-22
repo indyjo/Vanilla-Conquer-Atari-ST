@@ -2797,7 +2797,15 @@ void DisplayClass::Draw_It(bool forced)
             PendingObjectPtr->Coord = PendingObjectPtr->Class_Of().Coord_Fixup(Cell_Coord(ZoneCell + ZoneOffset));
             int px, py;
             if (Coord_To_Pixel(PendingObjectPtr->Render_Coord(), px, py)) {
-                PendingObjectPtr->Draw_It(px, py, WINDOW_TACTICAL);
+                GraphicViewPortClass* oldpage = LogicPage;
+                GraphicViewPortClass tac(LogicPage->Get_Graphic_Buffer(),
+                                         WindowList[WINDOW_TACTICAL][WINDOWX] + LogicPage->Get_XPos(),
+                                         WindowList[WINDOW_TACTICAL][WINDOWY] + LogicPage->Get_YPos(),
+                                         WindowList[WINDOW_TACTICAL][WINDOWWIDTH],
+                                         WindowList[WINDOW_TACTICAL][WINDOWHEIGHT]);
+                Set_Logic_Page(tac);
+                PendingObjectPtr->Draw_It(px, py);
+                Set_Logic_Page(oldpage);
             }
         }
 #endif
@@ -3254,8 +3262,6 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	/* Per rect: restamp tiles, draw binned objects (window = this rect), then shroud. */
 	int const sx = WindowList[WINDOW_TACTICAL][WINDOWX];
 	int const sy = WindowList[WINDOW_TACTICAL][WINDOWY];
-	int const sw = WindowList[WINDOW_TACTICAL][WINDOWWIDTH];
-	int const sh = WindowList[WINDOW_TACTICAL][WINDOWHEIGHT];
 
 	for (int ri = 0; ri < nrect; ri++) {
 #ifdef ATARI_ST
@@ -3287,11 +3293,14 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 			}
 		}
 
-		/* Clip WINDOW_TACTICAL to this rect and draw its object list. */
-		WindowList[WINDOW_TACTICAL][WINDOWX] = sx + rc.vx0;
-		WindowList[WINDOW_TACTICAL][WINDOWY] = sy + rc.vy0;
-		WindowList[WINDOW_TACTICAL][WINDOWWIDTH] = rc.vx1 - rc.vx0;
-		WindowList[WINDOW_TACTICAL][WINDOWHEIGHT] = rc.vy1 - rc.vy0;
+		/* Clip object draws to this rect. Terrain and shroud stay on the full page. */
+		GraphicViewPortClass* oldpage = LogicPage;
+		GraphicViewPortClass clip(LogicPage->Get_Graphic_Buffer(),
+		                          sx + rc.vx0 + LogicPage->Get_XPos(),
+		                          sy + rc.vy0 + LogicPage->Get_YPos(),
+		                          rc.vx1 - rc.vx0,
+		                          rc.vy1 - rc.vy0);
+		Set_Logic_Page(clip);
 		for (int ui = 0; ui < nobj[ri]; ui++) {
 			ObjectClass* obj = olists[ri][ui];
 			if (obj == NULL || !obj->IsDown || obj->IsInLimbo) {
@@ -3303,13 +3312,10 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 			}
 			px -= rc.vx0;
 			py -= rc.vy0;
-			obj->Draw_It(px, py, WINDOW_TACTICAL);
+			obj->Draw_It(px, py);
 			obj->IsToDisplay = false;
 		}
-		WindowList[WINDOW_TACTICAL][WINDOWX] = sx;
-		WindowList[WINDOW_TACTICAL][WINDOWY] = sy;
-		WindowList[WINDOW_TACTICAL][WINDOWWIDTH] = sw;
-		WindowList[WINDOW_TACTICAL][WINDOWHEIGHT] = sh;
+		Set_Logic_Page(oldpage);
 
 		/* Shroud over the same cells (edge icons or full black). */
 		CELL cell = XY_Cell(origin_cx + rc.c0, origin_cy + rc.r0);

@@ -344,18 +344,13 @@ public:
     */
     virtual void const* Remap_Table(void);
     VisualType Visual_Character(bool raw = false);
-    void Techno_Draw_Object(void const* shapefile, int shapenum, int x, int y, WindowNumberType window);
+    void Techno_Draw_Object(void const* shapefile, int shapenum, int x, int y);
 
     // Added. ST - 6/20/2019 1:34PM
-    void Techno_Draw_Object_Virtual(void const* shapefile,
-                                    int shapenum,
-                                    int x,
-                                    int y,
-                                    WindowNumberType window,
-                                    const char* shape_name);
+    void Techno_Draw_Object_Virtual(void const* shapefile, int shapenum, int x, int y, const char* shape_name);
 
-    virtual void Draw_It(int x, int y, WindowNumberType window);
-    virtual void Draw_Pips(int x, int y, WindowNumberType window);
+    virtual void Draw_It(int x, int y);
+    virtual void Draw_Pips(int x, int y);
     virtual void Hidden(void);
     virtual bool Mark(MarkType mark);
     virtual int Exit_Object(TechnoClass*);

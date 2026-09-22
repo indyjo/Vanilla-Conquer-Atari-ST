@@ -1006,15 +1006,9 @@ void TechnoClass::Per_Cell_Process(bool)
  *   12/13/1994 JLB : Clips health bar against map edge.                                       *
  *   01/23/1995 JLB : Dynamic selected object rectangle.                                       *
  *=============================================================================================*/
-void TechnoClass::Draw_It(int x, int y, WindowNumberType window)
+void TechnoClass::Draw_It(int x, int y)
 {
     Clear_Redraw_Flag();
-
-#ifdef REMASTER_BUILD
-    WindowNumberType line_frame_cmp = WINDOW_VIRTUAL;
-#else
-    WindowNumberType line_frame_cmp = WINDOW_TACTICAL;
-#endif
 
     const bool show_health_bar = (Strength > 0) && !Is_Cloaked(PlayerPtr)
                                  && (Is_Selected_By_Player()
@@ -1038,24 +1032,14 @@ void TechnoClass::Draw_It(int x, int y, WindowNumberType window)
     ** Draw lines
     */
     if (LineFrame < LineMaxFrames) {
-        // Only draw the last line for virtual window
-        int start_line = (window == WINDOW_VIRTUAL) ? max(0, LineCount - 1) : 0;
-        for (int i = start_line; i < LineCount; i++) {
-            CC_Draw_Line(
-                Lines[i][0], Lines[i][1], Lines[i][2], Lines[i][3], (unsigned char)Lines[i][4], LineFrame, window);
+        for (int i = 0; i < LineCount; i++) {
+            LogicPage->Draw_Line(
+                Lines[i][0], Lines[i][1], Lines[i][2], Lines[i][3], (unsigned char)Lines[i][4]);
         }
-        if (window == line_frame_cmp) {
-            LineFrame++;
-        }
+        LineFrame++;
     }
 
     if (Is_Selected_By_Player() || show_health_bar) {
-        GraphicViewPortClass draw_window(LogicPage->Get_Graphic_Buffer(),
-                                         WindowList[window][WINDOWX] + LogicPage->Get_XPos(),
-                                         WindowList[window][WINDOWY] + LogicPage->Get_YPos(),
-                                         WindowList[window][WINDOWWIDTH],
-                                         WindowList[window][WINDOWHEIGHT]);
-
         /*
         **	The infantry select box should be a bit higher than normal.
         */
@@ -1096,12 +1080,12 @@ void TechnoClass::Draw_It(int x, int y, WindowNumberType window)
             **	sprite plus four edge strokes; two Fill_Rects are H-spans only.
             */
 #ifdef ATARI_ST
-            draw_window.Fill_Rect(xx, yy, xx + width - 1, yy + 3, BLACK);
-            draw_window.Fill_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
+            LogicPage->Fill_Rect(xx, yy, xx + width - 1, yy + 3, BLACK);
+            LogicPage->Fill_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
 #else
-            draw_window.Remap(xx + 1, yy + 1, width - 1, 3 - 1, Map.FadingShade);
-            draw_window.Draw_Rect(xx, yy, xx + width - 1, yy + 3, BLACK);
-            draw_window.Draw_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
+            LogicPage->Remap(xx + 1, yy + 1, width - 1, 3 - 1, Map.FadingShade);
+            LogicPage->Draw_Rect(xx, yy, xx + width - 1, yy + 3, BLACK);
+            LogicPage->Draw_Rect(xx + 1, yy + 1, xx + pwidth, yy + (3 - 1), color);
 #endif
         }
 
@@ -1110,28 +1094,28 @@ void TechnoClass::Draw_It(int x, int y, WindowNumberType window)
         */
         if (Is_Selected_By_Player()) {
             // Upper left corner.
-            draw_window.Draw_Line(x - lx, fudge + y - ly, x - lx + dx, fudge + y - ly, WHITE);
-            draw_window.Draw_Line(x - lx, fudge + y - ly, x - lx, fudge + y - ly + dy, WHITE);
+            LogicPage->Draw_Line(x - lx, fudge + y - ly, x - lx + dx, fudge + y - ly, WHITE);
+            LogicPage->Draw_Line(x - lx, fudge + y - ly, x - lx, fudge + y - ly + dy, WHITE);
 
             // Upper right corner.
-            draw_window.Draw_Line(x + lx, fudge + y - ly, x + lx - dx, fudge + y - ly, WHITE);
-            draw_window.Draw_Line(x + lx, fudge + y - ly, x + lx, fudge + y - ly + dy, WHITE);
+            LogicPage->Draw_Line(x + lx, fudge + y - ly, x + lx - dx, fudge + y - ly, WHITE);
+            LogicPage->Draw_Line(x + lx, fudge + y - ly, x + lx, fudge + y - ly + dy, WHITE);
 
             // Lower right corner.
-            draw_window.Draw_Line(x + lx, y + ly, x + lx - dx, y + ly, WHITE);
-            draw_window.Draw_Line(x + lx, y + ly, x + lx, y + ly - dy, WHITE);
+            LogicPage->Draw_Line(x + lx, y + ly, x + lx - dx, y + ly, WHITE);
+            LogicPage->Draw_Line(x + lx, y + ly, x + lx, y + ly - dy, WHITE);
 
             // Lower left corner.
-            draw_window.Draw_Line(x - lx, y + ly, x - lx + dx, y + ly, WHITE);
-            draw_window.Draw_Line(x - lx, y + ly, x - lx, y + ly - dy, WHITE);
+            LogicPage->Draw_Line(x - lx, y + ly, x - lx + dx, y + ly, WHITE);
+            LogicPage->Draw_Line(x - lx, y + ly, x - lx, y + ly - dy, WHITE);
         }
     }
 
     // MBL 04.21.2020
     bool selected = Is_Selected_By_Player() || Special.ResourceBarDisplayMode == SpecialClass::RB_ALWAYS;
     // if ((window == WINDOW_VIRTUAL) || (Is_Selected_By_Player() && House->Is_Ally(PlayerPtr)))
-    if ((window == WINDOW_VIRTUAL) || (selected && House->Is_Ally(PlayerPtr))) {
-        Draw_Pips((x - lx) + 5, y + ly - 3, window);
+    if (selected && House->Is_Ally(PlayerPtr)) {
+        Draw_Pips((x - lx) + 5, y + ly - 3);
     }
 }
 
@@ -3623,53 +3607,42 @@ VisualType TechnoClass::Visual_Character(bool raw)
  * HISTORY:                                                                                    *
  *   07/08/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
-void TechnoClass::Techno_Draw_Object(void const* shapefile, int shapenum, int x, int y, WindowNumberType window)
+void TechnoClass::Techno_Draw_Object(void const* shapefile, int shapenum, int x, int y)
 {
     if (shapefile) {
         VisualType visual = Visual_Character();
         void const* remap = Remap_Table();
 
-        // Server still needs to "render" hidden objects to the virtual window, so objects get created properly - SKY
-        if ((visual == VISUAL_HIDDEN) && (window == WINDOW_VIRTUAL)) {
-            visual = VISUAL_SHADOWY;
-        }
-
         if (visual != VISUAL_HIDDEN && visual != VISUAL_RIPPLE) {
             if (visual == VISUAL_SHADOWY) {
-                CC_Draw_Shape(this,
-                              shapefile,
+                CC_Draw_Shape(shapefile,
                               shapenum,
                               x,
                               y,
-                              window,
                               SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING | SHAPE_PREDATOR,
                               NULL,
                               Map.FadingShade);
             } else {
-                CC_Draw_Shape(this,
-                              shapefile,
+                CC_Draw_Shape(shapefile,
                               shapenum,
                               x,
                               y,
-                              window,
                               SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING | SHAPE_GHOST,
                               remap,
                               Map.UnitShadow);
             }
             if (visual == VISUAL_DARKEN) {
-                CC_Draw_Shape(this,
-                              shapefile,
+                CC_Draw_Shape(shapefile,
                               shapenum,
                               x,
                               y,
-                              window,
                               SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING,
                               remap,
                               Map.FadingShade);
             }
         }
         if (visual != VISUAL_NORMAL && visual != VISUAL_HIDDEN) {
-            CC_Draw_Shape(this, shapefile, shapenum, x, y, window, SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL);
+            CC_Draw_Shape(shapefile, shapenum, x, y, SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL);
         }
     }
 }
@@ -3698,68 +3671,10 @@ void TechnoClass::Techno_Draw_Object_Virtual(void const* shapefile,
                                              int shapenum,
                                              int x,
                                              int y,
-                                             WindowNumberType window,
                                              const char* shape_name)
 {
-    if (shape_name == NULL || *shape_name == 0) {
-        /*
-        ** If there's no override shape name, then call the regular draw
-        */
-        Techno_Draw_Object(shapefile, shapenum, x, y, window);
-        return;
-    }
-
-    if (shapefile) {
-        VisualType visual = Visual_Character();
-        void const* remap = Remap_Table();
-
-        // Server still needs to "render" hidden objects to the virtual window, so objects get created properly - SKY
-        if ((visual == VISUAL_HIDDEN) && (window == WINDOW_VIRTUAL)) {
-            visual = VISUAL_SHADOWY;
-        }
-
-        if (visual != VISUAL_HIDDEN && visual != VISUAL_RIPPLE) {
-            if (visual == VISUAL_SHADOWY) {
-                CC_Draw_Shape(this,
-                              shape_name,
-                              shapefile,
-                              shapenum,
-                              x,
-                              y,
-                              window,
-                              SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING | SHAPE_PREDATOR,
-                              NULL,
-                              Map.FadingShade);
-            } else {
-                CC_Draw_Shape(this,
-                              shape_name,
-                              shapefile,
-                              shapenum,
-                              x,
-                              y,
-                              window,
-                              SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING | SHAPE_GHOST,
-                              remap,
-                              Map.UnitShadow);
-            }
-            if (visual == VISUAL_DARKEN) {
-                CC_Draw_Shape(this,
-                              shape_name,
-                              shapefile,
-                              shapenum,
-                              x,
-                              y,
-                              window,
-                              SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING,
-                              remap,
-                              Map.FadingShade);
-            }
-        }
-        if (visual != VISUAL_NORMAL && visual != VISUAL_HIDDEN) {
-            CC_Draw_Shape(
-                this, shape_name, shapefile, shapenum, x, y, window, SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL);
-        }
-    }
+    (void)shape_name;
+    Techno_Draw_Object(shapefile, shapenum, x, y);
 }
 
 /***********************************************************************************************
@@ -4574,7 +4489,7 @@ void TechnoClass::Enter_Idle_Mode(bool)
  * HISTORY:                                                                                    *
  *   08/08/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
-void TechnoClass::Draw_Pips(int x, int y, WindowNumberType window)
+void TechnoClass::Draw_Pips(int x, int y)
 {
     /*
     **	Transporter type objects have a different graphic representation for the pips. The
@@ -4601,7 +4516,7 @@ void TechnoClass::Draw_Pips(int x, int y, WindowNumberType window)
                 }
                 object = object->Next;
             }
-            CC_Draw_Pip(this, Class_Of().PipShapes, pip, x + index * 3, y, window, SHAPE_CENTER | SHAPE_WIN_REL);
+            CC_Draw_Pip(this, Class_Of().PipShapes, pip, x + index * 3, y, SHAPE_CENTER | SHAPE_WIN_REL);
         }
 
     } else {
@@ -4617,7 +4532,6 @@ void TechnoClass::Draw_Pips(int x, int y, WindowNumberType window)
                         (index < pips) ? PIP_FULL : PIP_EMPTY,
                         x + index * 3,
                         y,
-                        window,
                         SHAPE_CENTER | SHAPE_WIN_REL);
         }
     }
@@ -4625,8 +4539,8 @@ void TechnoClass::Draw_Pips(int x, int y, WindowNumberType window)
     /*
     **	Display whether this unit is a leader unit or not.
     */
-    if (IsLeader && (window != WINDOW_VIRTUAL)) {
-        CC_Draw_Pip(this, Class_Of().PipShapes, PIP_PRIMARY, x - 2, y - 3, window, /*SHAPE_CENTER|*/ SHAPE_WIN_REL);
+    if (IsLeader) {
+        CC_Draw_Pip(this, Class_Of().PipShapes, PIP_PRIMARY, x - 2, y - 3, /*SHAPE_CENTER|*/ SHAPE_WIN_REL);
     }
 }
 

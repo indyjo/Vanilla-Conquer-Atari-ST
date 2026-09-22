@@ -502,7 +502,7 @@ void BulletClass::AI(void)
  *   06/27/1994 JLB : Takes a window clipping parameter.                                       *
  *   01/08/1995 JLB : Handles translucent colors if necessary.                                 *
  *=============================================================================================*/
-void BulletClass::Draw_It(int x, int y, WindowNumberType window)
+void BulletClass::Draw_It(int x, int y)
 {
     Validate();
     int facing = Facing_To_32(PrimaryFacing);
@@ -551,7 +551,6 @@ void BulletClass::Draw_It(int x, int y, WindowNumberType window)
                       shapenum,
                       x,
                       y,
-                      window,
                       SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING,
                       NULL,
                       Map.FadingShade);
@@ -565,7 +564,7 @@ void BulletClass::Draw_It(int x, int y, WindowNumberType window)
     if (Class->IsTranslucent) {
         flags = SHAPE_GHOST;
     }
-    CC_Draw_Shape(this, shapeptr, shapenum, x, y, window, flags | SHAPE_CENTER | SHAPE_WIN_REL, NULL, Map.UnitShadow);
+    CC_Draw_Shape(shapeptr, shapenum, x, y, flags | SHAPE_CENTER | SHAPE_WIN_REL, NULL, Map.UnitShadow);
 }
 
 /***********************************************************************************************

@@ -100,7 +100,7 @@ public:
         return *Class;
     };
     virtual bool Mark(MarkType);
-    virtual void Draw_It(int, int, WindowNumberType){};
+    virtual void Draw_It(int, int){};
 
     void Disown(CELL cell);
 

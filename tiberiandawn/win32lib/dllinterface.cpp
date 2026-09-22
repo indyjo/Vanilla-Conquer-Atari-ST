@@ -3380,7 +3380,7 @@ bool DLLExportClass::Get_Layer_State(uint64 player_id, unsigned char *buffer_in,
 					** Call to Draw_It can result in multiple callbacks to the draw intercept
 					*/
 					CurrentDrawCount = 0;
-					object->Draw_It(x, y, WINDOW_VIRTUAL);
+					object->Draw_It(x, y);
 
 					/*
 					** Shadows need to be rendered before the base object so they appear underneath,

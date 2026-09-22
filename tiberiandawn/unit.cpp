@@ -245,26 +245,26 @@ void UnitClass::Debug_Dump(MonoClass* mono) const
 {
     Validate();
     mono->Set_Cursor(0, 0);
-    mono->Print("ÚName:ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂMission:ÄÄÄÂTarCom:ÂNavCom:ÂRadio:ÂCoord:ÄÄÂHeadTo:ÄÂSt:Ä¿\n"
-                "³                   ³           ³       ³       ³      ³        ³        ³    ³\n"
-                "ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂNÂYÂHealth:ÄÂBody:ÂTurret:ÂSpeed:ÂPath:ÁÄÄÄÄÄÄÂCargo:ÄÄÄÄÁÄÄÄÄ´\n"
-                "³Active........³ ³ ³        ³     ³       ³      ³            ³               ³\n"
-                "³Limbo.........³ ³ ÃÄÄÄÄÄÄÄÄÁÄÄÄÄÄÁÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\n"
-                "³Owned.........³ ³ ³Last Message:                                             ³\n"
-                "³Discovered....³ ³ ÃTimer:ÂArm:ÂTrack:ÂTiberium:ÂFlash:ÂStage:ÂTeam:ÄÄÄÄÂArch:´\n"
-                "³Selected......³ ³ ³      ³    ³      ³         ³      ³      ³         ³     ³\n"
-                "³Teathered.....³ ³ ÃÄÄÄÄÄÄÁÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÁÄÄÄÄÄÄÄÄÄÁÄÄÄÄÄÙ\n"
-                "³Locked on Map.³ ³ ³                                                           \n"
-                "³Turret Locked.³ ³ ³                                                           \n"
-                "³Is A Loaner...³ ³ ³                                                           \n"
-                "³Deploying.....³ ³ ³                                                           \n"
-                "³Rotating......³ ³ ³                                                           \n"
-                "³Firing........³ ³ ³                                                           \n"
-                "³Driving.......³ ³ ³                                                           \n"
-                "³To Look.......³ ³ ³                                                           \n"
-                "³Recoiling.....³ ³ ³                                                           \n"
-                "³To Display....³ ³ ³                                                           \n"
-                "ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄÁÄÙ                                                           \n");
+    mono->Print("Name:Mission:TarCom:NavCom:Radio:Coord:HeadTo:St:?\n"
+                "                                                                      \n"
+                "NYHealth:Body:Turret:Speed:Path:Cargo:?\n"
+                "Active........                                                       \n"
+                "Limbo.........  ?\n"
+                "Owned.........  Last Message:                                             \n"
+                "Discovered....  Timer:Arm:Track:Tiberium:Flash:Stage:Team:Arch:\n"
+                "Selected......                                                     \n"
+                "Teathered.....  \n"
+                "Locked on Map.                                                             \n"
+                "Turret Locked.                                                             \n"
+                "Is A Loaner...                                                             \n"
+                "Deploying.....                                                             \n"
+                "Rotating......                                                             \n"
+                "Firing........                                                             \n"
+                "Driving.......                                                             \n"
+                "To Look.......                                                             \n"
+                "Recoiling.....                                                             \n"
+                "To Display....                                                             \n"
+                "                                                           \n");
     mono->Set_Cursor(1, 1);
     mono->Printf("%s:%s", House->Class->IniName, Class->IniName);
     CargoClass::Debug_Dump(mono);
@@ -2028,7 +2028,7 @@ void UnitClass::Per_Cell_Process(bool center)
  *   01/07/1995 JLB : Harvester animation support.                                             *
  *   07/08/1995 JLB : Uses general purpose draw routine.                                       *
  *=============================================================================================*/
-void UnitClass::Draw_It(int x, int y, WindowNumberType window)
+void UnitClass::Draw_It(int x, int y)
 {
     Validate();
     int shapenum;          // Working shape number.
@@ -2049,7 +2049,7 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
     **	If drawing of this unit is not explicitly prohibited, then proceed
     **	with the render process.
     */
-    const bool is_hidden = (Visual_Character() == VISUAL_HIDDEN) && (window != WINDOW_VIRTUAL);
+    const bool is_hidden = Visual_Character() == VISUAL_HIDDEN;
     if (!is_hidden) {
 
         /*
@@ -2092,17 +2092,11 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
             */
             if (*this == UNIT_GUNBOAT) {
 
-                if (window != WINDOW_VIRTUAL) {
-                    // Added this and wake name parameters. ST - 8/20/2019 10:54AM
-                    CC_Draw_Shape(this,
-                                  "WAKE",
-                                  UnitTypeClass::WakeShapes,
-                                  shapestart + (Fetch_Stage() % 6),
-                                  xx - 1,
-                                  yy + 3,
-                                  window,
-                                  SHAPE_CENTER | SHAPE_WIN_REL);
-                }
+                CC_Draw_Shape(UnitTypeClass::WakeShapes,
+                              shapestart + (Fetch_Stage() % 6),
+                              xx - 1,
+                              yy + 3,
+                              SHAPE_CENTER | SHAPE_WIN_REL);
 
                 if (Health_Ratio() < 0x0080)
                     shapenum += 32;
@@ -2175,29 +2169,14 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
         // if (*this == UNIT_HOVER) {
         //	Mono_Printf("Display hover %p %d.\n", shapefile, shapenum);
         //}
-        Techno_Draw_Object(shapefile, shapenum, x, y, window);
-
-        /*
-        **	Special wake drawing occurs here for virtual rendering
-        */
-        if (Class->IsChunkyShape && (*this == UNIT_GUNBOAT) && (window == WINDOW_VIRTUAL)) {
-            // Added this and wake name parameters. ST - 8/20/2019 10:54AM
-            CC_Draw_Shape(this,
-                          "WAKE",
-                          UnitTypeClass::WakeShapes,
-                          shapestart + (Fetch_Stage() % 6),
-                          xx - 1,
-                          yy + 3,
-                          window,
-                          SHAPE_CENTER | SHAPE_WIN_REL);
-        }
+        Techno_Draw_Object(shapefile, shapenum, x, y);
 
         /*
         **	If there is a rotating radar dish, draw it now.
         */
         if (Class->IsRadarEquipped) {
             shapenum = 32 + (Frame % 32);
-            Techno_Draw_Object(shapefile, shapenum, x, y - 5, window);
+            Techno_Draw_Object(shapefile, shapenum, x, y - 5);
         }
 
         /*
@@ -2246,7 +2225,7 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
             /*
             **	Actually perform the draw. Overlay an optional shimmer effect as necessary.
             */
-            Techno_Draw_Object(shapefile, shapenum, x1, y1, window);
+            Techno_Draw_Object(shapefile, shapenum, x1, y1);
         }
 
         /*
@@ -2266,7 +2245,7 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
                     Coord_Add(Coord_Add(Coord, 0xFF80FF80L), StoppingCoordAbs[counter++]);
                 int const x1 = x + Lepton_To_Pixel((int)Coord_X(cargo_coord)) - hx;
                 int const y1 = y + Lepton_To_Pixel((int)Coord_Y(cargo_coord)) - hy;
-                u->Draw_It(x1, y1, window);
+                u->Draw_It(x1, y1);
                 if (!u->Next)
                     break;
                 u = (TechnoClass*)u->Next;
@@ -2287,7 +2266,7 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
                 int const yyy = y
                     + ((int)Lepton_To_Pixel((int)Coord_Y(contact->Render_Coord()))
                        - (int)Lepton_To_Pixel((int)Coord_Y(Render_Coord())));
-                contact->Draw_It(xxx, yyy, window);
+                contact->Draw_It(xxx, yyy);
             }
         }
     }
@@ -2299,20 +2278,16 @@ void UnitClass::Draw_It(int x, int y, WindowNumberType window)
         shapefile = MFCD::Retrieve("FLAGFLY.SHP");
         int flag_x = x + (ICON_PIXEL_W / 2) - 2;
         int flag_y = y + (3 * ICON_PIXEL_H / 4) - Get_Build_Frame_Height(shapefile);
-        CC_Draw_Shape(this,
-                      "FLAGFLY",
-                      shapefile,
+        CC_Draw_Shape(shapefile,
                       Frame % 14,
                       flag_x,
                       flag_y,
-                      window,
                       SHAPE_CENTER | SHAPE_FADING | SHAPE_GHOST,
                       HouseClass::As_Pointer(Flagged)->Remap_Table(false, false),
-                      Map.UnitShadow,
-                      Flagged);
+                      Map.UnitShadow);
     }
 
-    TarComClass::Draw_It(x, y, window);
+    TarComClass::Draw_It(x, y);
 }
 
 /***********************************************************************************************

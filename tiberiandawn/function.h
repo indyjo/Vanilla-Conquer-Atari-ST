@@ -345,6 +345,13 @@ void CC_Draw_Shape(void const* shapefile,
                    int shapenum,
                    int x,
                    int y,
+                   ShapeFlags_Type flags,
+                   void const* fadingdata = 0,
+                   void const* ghostdata = 0);
+void CC_Draw_Shape(void const* shapefile,
+                   int shapenum,
+                   int x,
+                   int y,
                    WindowNumberType window,
                    ShapeFlags_Type flags,
                    void const* fadingdata = 0,
@@ -376,6 +383,14 @@ void CC_Draw_Shape(ObjectClass* object,
                    char override_owner = HOUSE_NONE);
 
 // Added for pip draw intercept - SKY
+void CC_Draw_Pip(ObjectClass* object,
+                 void const* shapefile,
+                 int shapenum,
+                 int x,
+                 int y,
+                 ShapeFlags_Type flags,
+                 void const* fadingdata = 0,
+                 void const* ghostdata = 0);
 void CC_Draw_Pip(ObjectClass* object,
                  void const* shapefile,
                  int shapenum,

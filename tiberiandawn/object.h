@@ -200,7 +200,7 @@ public:
     virtual short const* Overlap_List(void) const;
     virtual void Get_AABB(int& x0, int& y0, int& x1, int& y1) const;
     virtual unsigned Health_Ratio(void) const;
-    virtual void Draw_It(int x, int y, WindowNumberType) = 0;
+    virtual void Draw_It(int x, int y) = 0;
     virtual void Hidden(void);
     virtual void Look(bool = false);
     virtual bool Mark(MarkType);

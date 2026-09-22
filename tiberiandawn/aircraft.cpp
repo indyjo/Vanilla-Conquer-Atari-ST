@@ -327,7 +327,7 @@ bool AircraftClass::Unlimbo(COORDINATE coord, DirType dir)
  * HISTORY:                                                                                    *
  *   07/26/1994 JLB : Created.                                                                 *
  *=============================================================================================*/
-void AircraftClass::Draw_It(int x, int y, WindowNumberType window)
+void AircraftClass::Draw_It(int x, int y)
 {
     Validate();
     void const* shapefile; // Working shape file pointer.
@@ -378,48 +378,23 @@ void AircraftClass::Draw_It(int x, int y, WindowNumberType window)
         jitter = _jitter[Jitter % 16];
     }
 
-    // Virtual window needs to draw the body first so it's considered the primary object and the shadow is a sub-object
-    if (window == WINDOW_VIRTUAL) {
-        /*
-        **	Draw the root body of the unit.
-        */
-        Techno_Draw_Object(shapefile, shapenum, x, (y - Altitude) + jitter, window);
-
-        /*
-        **	Special manual shadow draw code.
-        */
-        if (Visual_Character() <= VISUAL_DARKEN) {
-            CC_Draw_Shape(this,
-                          shapefile,
-                          shapenum,
-                          x + 1,
-                          y + 2,
-                          window,
-                          SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING,
-                          Map.FadingShade,
-                          NULL);
-        }
-    } else {
-        /*
-        **	Special manual shadow draw code.
-        */
-        if (Visual_Character() <= VISUAL_DARKEN) {
-            CC_Draw_Shape(this,
-                          shapefile,
-                          shapenum,
-                          x + 1,
-                          y + 2,
-                          window,
-                          SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING,
-                          Map.FadingShade,
-                          NULL);
-        }
-
-        /*
-        **	Draw the root body of the unit.
-        */
-        Techno_Draw_Object(shapefile, shapenum, x, (y - Altitude) + jitter, window);
+    /*
+    **	Special manual shadow draw code.
+    */
+    if (Visual_Character() <= VISUAL_DARKEN) {
+        CC_Draw_Shape(shapefile,
+                      shapenum,
+                      x + 1,
+                      y + 2,
+                      SHAPE_PREDATOR | SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_FADING,
+                      Map.FadingShade,
+                      NULL);
     }
+
+    /*
+    **	Draw the root body of the unit.
+    */
+    Techno_Draw_Object(shapefile, shapenum, x, (y - Altitude) + jitter);
 
     /*
     **	Draw rotor effects. The rotor art can be either generic or custom. Custom rotor
@@ -453,12 +428,12 @@ void AircraftClass::Draw_It(int x, int y, WindowNumberType window)
             Move_Point(xx, yy, SecondaryFacing.Current(), _stretch[face]);
             // CC_Draw_Shape(Class->RRotorData, shapenum, xx, yy-2, window, flags, NULL, Map.UnitShadow);		// 6/18/2019
             // - ST
-            CC_Draw_Shape(this, "RROTOR", Class->RRotorData, shapenum, xx, yy - 2, window, flags, NULL, Map.UnitShadow);
+            CC_Draw_Shape(Class->RRotorData, shapenum, xx, yy - 2, flags, NULL, Map.UnitShadow);
 
             Move_Point(xx, yy, SecondaryFacing.Current() + DIR_S, _stretch[face] * 2);
             // CC_Draw_Shape(this, Class->LRotorData, shapenum, xx, yy-2, window, flags, NULL, Map.UnitShadow);			//
             // 6/18/2019 - ST
-            CC_Draw_Shape(this, "LROTOR", Class->LRotorData, shapenum, xx, yy - 2, window, flags, NULL, Map.UnitShadow);
+            CC_Draw_Shape(Class->LRotorData, shapenum, xx, yy - 2, flags, NULL, Map.UnitShadow);
 
         } else {
 
@@ -467,20 +442,11 @@ void AircraftClass::Draw_It(int x, int y, WindowNumberType window)
             */
             // CC_Draw_Shape(this, Class->RRotorData, shapenum, x, (y-Altitude)-2, window, flags, NULL, Map.UnitShadow);
             // // 6/18/2019 - ST
-            CC_Draw_Shape(this,
-                          "RROTOR",
-                          Class->RRotorData,
-                          shapenum,
-                          x,
-                          (y - Altitude) - 2,
-                          window,
-                          flags,
-                          NULL,
-                          Map.UnitShadow);
+            CC_Draw_Shape(Class->RRotorData, shapenum, x, (y - Altitude) - 2, flags, NULL, Map.UnitShadow);
         }
     }
 
-    FootClass::Draw_It(x, y - Altitude, window);
+    FootClass::Draw_It(x, y - Altitude);
 }
 
 /***********************************************************************************************

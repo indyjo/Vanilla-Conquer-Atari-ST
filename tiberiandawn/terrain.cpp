@@ -362,7 +362,7 @@ void TerrainClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
     y1 = y + 2 * CELL_LEPTON_H;
 }
 
-void TerrainClass::Draw_It(int x, int y, WindowNumberType window)
+void TerrainClass::Draw_It(int x, int y)
 {
     Validate();
     void const* shapedata;
@@ -388,15 +388,7 @@ void TerrainClass::Draw_It(int x, int y, WindowNumberType window)
             flags = flags | SHAPE_FADING;
 
         IsTheaterShape = true;
-        CC_Draw_Shape(this,
-                      shapedata,
-                      shapenum,
-                      x,
-                      y,
-                      window,
-                      flags | SHAPE_WIN_REL | SHAPE_GHOST,
-                      Map.FadingLight,
-                      Map.UnitShadow);
+        CC_Draw_Shape(shapedata, shapenum, x, y, flags | SHAPE_WIN_REL | SHAPE_GHOST, Map.FadingLight, Map.UnitShadow);
         IsTheaterShape = false;
     }
 }

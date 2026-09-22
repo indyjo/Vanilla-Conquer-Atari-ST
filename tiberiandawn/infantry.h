@@ -163,7 +163,7 @@ public:
     */
     virtual short const* Overlap_List(void) const;
     virtual void Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const;
-    virtual void Draw_It(int x, int y, WindowNumberType window);
+    virtual void Draw_It(int x, int y);
     virtual void Look(bool incremental = false);
 
     /*

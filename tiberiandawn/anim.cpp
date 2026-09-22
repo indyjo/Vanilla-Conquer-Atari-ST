@@ -200,32 +200,24 @@ COORDINATE AnimClass::Center_Coord(void) const
  *   05/19/1995 JLB : Added white translucent effect.                                          *
  *=============================================================================================*/
 //#pragma off (unreferenced)
-void AnimClass::Draw_It(int x, int y, WindowNumberType window)
+void AnimClass::Draw_It(int x, int y)
 {
     Validate();
 
-    bool render_legacy = !IsInvisible && (Class->VirtualAnim == ANIM_NONE || window != WINDOW_VIRTUAL);
-    bool render_virtual = VirtualAnim != NULL && window == WINDOW_VIRTUAL;
-    if (render_legacy) {
+    if (!IsInvisible) {
         void const* shapefile = Class->Get_Image_Data();
         if (shapefile) {
             void const* transtable = NULL;
             int shapenum = Class->Start + Fetch_Stage();
             void const* remap = NULL;
             ShapeFlags_Type flags = SHAPE_CENTER | SHAPE_WIN_REL;
-            int width = 0;
-            int height = 0;
 
             /*
             **	Some animations require special fixups.
             */
             switch (Class->Type) {
             case ANIM_ION_CANNON:
-                if (window != WINDOW_VIRTUAL) {
-                    y -= Get_Build_Frame_Height(shapefile) >> 1;
-                } else {
-                    flags = flags | SHAPE_BOTTOM;
-                }
+                y -= Get_Build_Frame_Height(shapefile) >> 1;
                 y += 12;
                 break;
 
@@ -244,8 +236,6 @@ void AnimClass::Draw_It(int x, int y, WindowNumberType window)
                 break;
 
             case ANIM_BEACON_VIRTUAL:
-                width = 29;
-                height = 39;
                 flags = flags | SHAPE_BOTTOM | SHAPE_COMPACT;
                 break;
             }
@@ -277,26 +267,10 @@ void AnimClass::Draw_It(int x, int y, WindowNumberType window)
             /*
             **	Draw the animation shape, but ignore legacy if beyond normal stage count.
             */
-            if ((window == WINDOW_VIRTUAL) || (Fetch_Stage() < Class->Stages)) {
-                CC_Draw_Shape(this,
-                              shapefile,
-                              shapenum,
-                              x,
-                              y,
-                              window,
-                              flags,
-                              remap,
-                              transtable,
-                              Class->VirtualScale,
-                              width,
-                              height);
+            if (Fetch_Stage() < Class->Stages) {
+                CC_Draw_Shape(shapefile, shapenum, x, y, flags, remap, transtable);
             }
         }
-    }
-    if (render_virtual) {
-        VirtualAnim->Make_Visible();
-        VirtualAnim->Draw_It(x, y, window);
-        VirtualAnim->Make_Invisible();
     }
 }
 

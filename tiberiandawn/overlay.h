@@ -100,7 +100,7 @@ public:
     {
         return *Class;
     };
-    virtual void Draw_It(int, int, WindowNumberType){};
+    virtual void Draw_It(int, int){};
 
     /*
     **	Dee-buggin' support.

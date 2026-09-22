@@ -2779,6 +2779,19 @@ void CC_Draw_Pip(ObjectClass* object,
                  int shapenum,
                  int x,
                  int y,
+                 ShapeFlags_Type flags,
+                 void const* fadingdata,
+                 void const* ghostdata)
+{
+    (void)object;
+    CC_Draw_Shape(shapefile, shapenum, x, y, flags, fadingdata, ghostdata);
+}
+
+void CC_Draw_Pip(ObjectClass* object,
+                 void const* shapefile,
+                 int shapenum,
+                 int x,
+                 int y,
                  WindowNumberType window,
                  ShapeFlags_Type flags,
                  void const* fadingdata,
@@ -2881,6 +2894,25 @@ void CC_Draw_Shape(void const* shapefile,
                    void const* fadingdata,
                    void const* ghostdata)
 {
+    GraphicViewPortClass* oldpage = LogicPage;
+    GraphicViewPortClass clip(LogicPage->Get_Graphic_Buffer(),
+                              WindowList[window][WINDOWX] + LogicPage->Get_XPos(),
+                              WindowList[window][WINDOWY] + LogicPage->Get_YPos(),
+                              WindowList[window][WINDOWWIDTH],
+                              WindowList[window][WINDOWHEIGHT]);
+    Set_Logic_Page(clip);
+    CC_Draw_Shape(shapefile, shapenum, x, y, flags, fadingdata, ghostdata);
+    Set_Logic_Page(oldpage);
+}
+
+void CC_Draw_Shape(void const* shapefile,
+                   int shapenum,
+                   int x,
+                   int y,
+                   ShapeFlags_Type flags,
+                   void const* fadingdata,
+                   void const* ghostdata)
+{
 #if true
     int predoffset;
 
@@ -2898,12 +2930,6 @@ void CC_Draw_Shape(void const* shapefile,
         int draw_height = Get_Build_Frame_Height(shapefile);
 
         if (draw_width > 0 && draw_height > 0) {
-            GraphicViewPortClass draw_window(LogicPage->Get_Graphic_Buffer(),
-                                             WindowList[window][WINDOWX] + LogicPage->Get_XPos(),
-                                             WindowList[window][WINDOWY] + LogicPage->Get_YPos(),
-                                             WindowList[window][WINDOWWIDTH],
-                                             WindowList[window][WINDOWHEIGHT]);
-
             if ((flags & (SHAPE_FADING | SHAPE_PREDATOR)) == (SHAPE_FADING | SHAPE_PREDATOR)) {
                 flags = flags & ~(SHAPE_FADING | SHAPE_PREDATOR);
                 flags = flags | SHAPE_GHOST;
@@ -2912,11 +2938,11 @@ void CC_Draw_Shape(void const* shapefile,
 
             predoffset = Frame;
 
-            if (x > WindowList[window][WINDOWWIDTH] >> 1) {
+            if (x > LogicPage->Get_Width() >> 1) {
                 predoffset = -predoffset;
             }
 
-            if (draw_window.Lock()) {
+            if (LogicPage->Lock()) {
                 CC_Draw_Shape_Lazy_Ctx lazy_ctx;
                 lazy_ctx.shapefile = shapefile;
                 lazy_ctx.shapenum = shapenum;
@@ -2950,9 +2976,9 @@ void CC_Draw_Shape(void const* shapefile,
 
                 int const bf_flags = (int)((unsigned)(int)flags | (unsigned)SHAPE_TRANS);
 
-                Buffer_Frame_To_Page_Ex(x, y, draw_width, draw_height, nullptr, draw_window, bf_flags, &bftp_ex);
+                Buffer_Frame_To_Page_Ex(x, y, draw_width, draw_height, nullptr, *LogicPage, bf_flags, &bftp_ex);
             }
-            draw_window.Unlock();
+            LogicPage->Unlock();
         }
 #else
     char* draw_pointer;
@@ -2972,12 +2998,6 @@ void CC_Draw_Shape(void const* shapefile,
             int draw_height = Get_Build_Frame_Height(shapefile);
             draw_pointer = (char*)shape_size;
 
-            GraphicViewPortClass draw_window(LogicPage->Get_Graphic_Buffer(),
-                                             WindowList[window][WINDOWX] + LogicPage->Get_XPos(),
-                                             WindowList[window][WINDOWY] + LogicPage->Get_YPos(),
-                                             WindowList[window][WINDOWWIDTH],
-                                             WindowList[window][WINDOWHEIGHT]);
-
             /*
             **	Special shadow drawing code (used for aircraft and bullets).
             */
@@ -2989,18 +3009,18 @@ void CC_Draw_Shape(void const* shapefile,
 
             predoffset = Frame;
 
-            if (x > WindowList[window][WINDOWWIDTH] >> 1) {
+            if (x > LogicPage->Get_Width() >> 1) {
                 predoffset = -predoffset;
             }
 
-            if (draw_window.Lock()) {
+            if (LogicPage->Lock()) {
                 if ((flags & (SHAPE_GHOST | SHAPE_FADING)) == (SHAPE_GHOST | SHAPE_FADING)) {
                     Buffer_Frame_To_Page(x,
                                          y,
                                          draw_width,
                                          draw_height,
                                          draw_pointer,
-                                         draw_window,
+                                         *LogicPage,
                                          flags | SHAPE_TRANS,
                                          ghostdata,
                                          fadingdata,
@@ -3013,7 +3033,7 @@ void CC_Draw_Shape(void const* shapefile,
                                              draw_width,
                                              draw_height,
                                              draw_pointer,
-                                             draw_window,
+                                             *LogicPage,
                                              flags | SHAPE_TRANS,
                                              fadingdata,
                                              1,
@@ -3025,7 +3045,7 @@ void CC_Draw_Shape(void const* shapefile,
                                                  draw_width,
                                                  draw_height,
                                                  draw_pointer,
-                                                 draw_window,
+                                                 *LogicPage,
                                                  flags | SHAPE_TRANS,
                                                  predoffset);
                         } else {
@@ -3034,7 +3054,7 @@ void CC_Draw_Shape(void const* shapefile,
                                                  draw_width,
                                                  draw_height,
                                                  draw_pointer,
-                                                 draw_window,
+                                                 *LogicPage,
                                                  flags | SHAPE_TRANS,
                                                  ghostdata,
                                                  predoffset);
@@ -3042,7 +3062,7 @@ void CC_Draw_Shape(void const* shapefile,
                     }
                 }
             }
-            draw_window.Unlock();
+            LogicPage->Unlock();
             //		} else {
             //			Mono_Printf( "Overrun ShapeBuffer!!!!!!!!!\n" );
         }

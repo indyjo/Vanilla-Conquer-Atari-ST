@@ -572,7 +572,7 @@ ResultType InfantryClass::Take_Damage(int& damage, int distance, WarheadType war
  *   06/27/1994 JLB : Takes a window parameter.                                                *
  *   08/15/1994 JLB : Converted to infantry support.                                           *
  *=============================================================================================*/
-void InfantryClass::Draw_It(int x, int y, WindowNumberType window)
+void InfantryClass::Draw_It(int x, int y)
 {
     Validate();
     void const* shapefile; // Working shape file pointer.
@@ -633,18 +633,6 @@ void InfantryClass::Draw_It(int x, int y, WindowNumberType window)
     *infantry
     ** goes into the stand pose for a single frame when pausing in the assigned cell destination. ST - 9/4/2019 1:39PM
     */
-    if (doit == DO_STAND_READY) {
-        if (window == WINDOW_VIRTUAL) {
-            if (StopDriverFrame != -1) {
-                if (Frame - StopDriverFrame <= 2) {
-                    if (Path[0] != FACING_NONE) {
-                        doit = DO_WALK;
-                    }
-                }
-            }
-        }
-    }
-
     shapenum = Class->DoControls[doit].Count;
     shapenum = Fetch_Stage() % MAX(shapenum, 1);
     if (Class->DoControls[doit].Jump) {
@@ -661,11 +649,9 @@ void InfantryClass::Draw_It(int x, int y, WindowNumberType window)
     /*
     **	Actually draw the root body of the unit.
     */
-    Techno_Draw_Object(shapefile, shapenum, x, y, window);
-    //	CC_Draw_Shape(shapefile, shapenum, x, y, window, SHAPE_FADING|SHAPE_CENTER|SHAPE_WIN_REL|SHAPE_GHOST,
-    //House->Remap_Table(IsBlushing, true), Map.UnitShadow);
+    Techno_Draw_Object(shapefile, shapenum, x, y);
 
-    FootClass::Draw_It(x, y, window);
+    FootClass::Draw_It(x, y);
 }
 
 /***********************************************************************************************

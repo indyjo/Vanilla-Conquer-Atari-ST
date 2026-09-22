@@ -118,7 +118,7 @@ public:
         return *Class;
     };
     virtual void Detach(TARGET target, bool all);
-    virtual void Draw_It(int x, int y, WindowNumberType window);
+    virtual void Draw_It(int x, int y);
     virtual bool Mark(MarkType mark = MARK_CHANGE);
     virtual void AI(void);
     virtual short const* Occupy_List(bool placement = false) const;

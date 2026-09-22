@@ -548,7 +548,7 @@ void BuildingClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
     y1 = y + 3 * CELL_LEPTON_H;
 }
 
-void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
+void BuildingClass::Draw_It(int x, int y)
 {
     Validate();
     void const* shapefile; // Pointer to loaded shape file.
@@ -705,7 +705,7 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
     **	Actually draw the building shape.
     */
     IsTheaterShape = Class->IsTheater;
-    Techno_Draw_Object(shapefile, shapenum, x, y, window);
+    Techno_Draw_Object(shapefile, shapenum, x, y);
     IsTheaterShape = false;
 
     /*
@@ -729,7 +729,7 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
             int yyy = y
                       + ((int)Lepton_To_Pixel((int)Coord_Y(contact->Render_Coord()))
                          - (int)Lepton_To_Pixel((int)Coord_Y(Render_Coord())));
-            contact->Draw_It(xxx, yyy, window);
+            contact->Draw_It(xxx, yyy);
         }
 
         /*
@@ -740,19 +740,18 @@ void BuildingClass::Draw_It(int x, int y, WindowNumberType window)
             if (Health_Ratio() < 0x0080)
                 shapenum += 10;
             // Added override shape file name. ST - 6/20/2019 1:35PM
-            // Techno_Draw_Object(WarFactoryOverlay, shapenum, x, y, window);
-            Techno_Draw_Object_Virtual(WarFactoryOverlay, shapenum, x, y, window, "WEAP2");
+            Techno_Draw_Object_Virtual(WarFactoryOverlay, shapenum, x, y, "WEAP2");
         }
 
         /*
         **	Draw any repair feedback graphic required.
         */
         if (IsRepairing && IsWrenchVisible) {
-            CC_Draw_Shape(ObjectTypeClass::SelectShapes, SELECT_WRENCH, x, y, window, SHAPE_CENTER | SHAPE_WIN_REL);
+            CC_Draw_Shape(ObjectTypeClass::SelectShapes, SELECT_WRENCH, x, y, SHAPE_CENTER | SHAPE_WIN_REL);
         }
     }
 
-    TechnoClass::Draw_It(x, y, window);
+    TechnoClass::Draw_It(x, y);
 }
 
 /***********************************************************************************************

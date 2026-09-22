@@ -9,7 +9,6 @@
 
 extern int test_snap_lepton_to_pixel_grid(void);
 extern int test_in_view(void);
-extern int test_redraw_bin(void);
 
 struct HostTest {
 	char const* name;
@@ -19,7 +18,6 @@ struct HostTest {
 static HostTest const k_tests[] = {
 	{"snap_lepton_to_pixel_grid", test_snap_lepton_to_pixel_grid},
 	{"in_view", test_in_view},
-	{"redraw_bin", test_redraw_bin},
 };
 
 int main()

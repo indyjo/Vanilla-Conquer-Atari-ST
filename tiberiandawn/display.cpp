@@ -3211,9 +3211,25 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	ObjectClass* olists[REDRAW_RECT_MAX][REDRAW_RECT_OBJ_CAP];
 	int nobj[REDRAW_RECT_MAX];
 	int rorder[REDRAW_RECT_MAX];
+	int ulx0 = rects[0].lx0;
+	int uly0 = rects[0].ly0;
+	int ulx1 = rects[0].lx1;
+	int uly1 = rects[0].ly1;
 	for (int i = 0; i < nrect; i++) {
 		nobj[i] = 0;
 		rorder[i] = i;
+		if (rects[i].lx0 < ulx0) {
+			ulx0 = rects[i].lx0;
+		}
+		if (rects[i].ly0 < uly0) {
+			uly0 = rects[i].ly0;
+		}
+		if (rects[i].lx1 > ulx1) {
+			ulx1 = rects[i].lx1;
+		}
+		if (rects[i].ly1 > uly1) {
+			uly1 = rects[i].ly1;
+		}
 	}
 	for (int i = 1; i < nrect; i++) {
 		int const ri = rorder[i];
@@ -3236,6 +3252,9 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 			}
 			int ox0, oy0, ox1, oy1;
 			obj->Get_AABB(ox0, oy0, ox1, oy1);
+			if (ox0 >= ulx1 || oy0 >= uly1 || ox1 < ulx0 || oy1 < uly0) {
+				continue;
+			}
 			for (int oi = 0; oi < nrect; oi++) {
 				int const ri = rorder[oi];
 				Redraw_Rect const& rc = rects[ri];

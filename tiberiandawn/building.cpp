@@ -538,7 +538,7 @@ void BuildingClass::Debug_Dump(MonoClass* mono) const
  *   06/27/1994 JLB : Takes a clipping window parameter.                                       *
  *   07/06/1995 JLB : Handles damaged silos correctly.                                         *
  *=============================================================================================*/
-void BuildingClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
+void BuildingClass::Get_AABB(short& x0, short& y0, short& x1, short& y1) const
 {
     int const x = Coord_X(Coord);
     int const y = Coord_Y(Coord);

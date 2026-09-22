@@ -2989,7 +2989,7 @@ short const* UnitClass::Overlap_List(void) const
     return (Coord_Spillage_List(Coord, size) + 1);
 }
 
-void UnitClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
+void UnitClass::Get_AABB(short& x0, short& y0, short& x1, short& y1) const
 {
     int const x = Coord_X(Coord);
     int const y = Coord_Y(Coord);

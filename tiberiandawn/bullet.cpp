@@ -248,7 +248,7 @@ short const* BulletClass::Occupy_List(bool placement) const
     return (Coord_Spillage_List(Coord, 10));
 }
 
-void BulletClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
+void BulletClass::Get_AABB(short& x0, short& y0, short& x1, short& y1) const
 {
     int const x = Coord_X(Coord);
     int const y = Coord_Y(Coord);

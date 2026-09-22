@@ -1610,7 +1610,7 @@ short const* ObjectClass::Overlap_List(void) const
 {
     return (Class_Of().Overlap_List());
 };
-void ObjectClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
+void ObjectClass::Get_AABB(short& x0, short& y0, short& x1, short& y1) const
 {
     int const x = Coord_X(Coord);
     int const y = Coord_Y(Coord);

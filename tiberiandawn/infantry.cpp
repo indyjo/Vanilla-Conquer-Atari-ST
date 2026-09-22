@@ -1824,7 +1824,7 @@ short const* InfantryClass::Overlap_List(void) const
     return (Coord_Spillage_List(Coord, size));
 }
 
-void InfantryClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
+void InfantryClass::Get_AABB(short& x0, short& y0, short& x1, short& y1) const
 {
     int const pad = Pixel_To_Lepton((Doing >= DO_PUNCH_DEATH) ? 36 : 24);
     int const x = Coord_X(Coord);

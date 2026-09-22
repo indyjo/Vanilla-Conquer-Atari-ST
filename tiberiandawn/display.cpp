@@ -2833,7 +2833,7 @@ typedef int Rect_Cover_Idx;
 struct Redraw_Rect {
 	int c0, r0, c1, r1;
 	int vx0, vy0, vx1, vy1;
-	int lx0, ly0, lx1, ly1;
+	short lx0, ly0, lx1, ly1;
 };
 
 static bool Redraw_Rect_Fill_Clip(Redraw_Rect& rc, int origin_px, int origin_py)
@@ -3211,10 +3211,10 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	ObjectClass* olists[REDRAW_RECT_MAX][REDRAW_RECT_OBJ_CAP];
 	int nobj[REDRAW_RECT_MAX];
 	int rorder[REDRAW_RECT_MAX];
-	int ulx0 = rects[0].lx0;
-	int uly0 = rects[0].ly0;
-	int ulx1 = rects[0].lx1;
-	int uly1 = rects[0].ly1;
+	short ulx0 = rects[0].lx0;
+	short uly0 = rects[0].ly0;
+	short ulx1 = rects[0].lx1;
+	short uly1 = rects[0].ly1;
 	for (int i = 0; i < nrect; i++) {
 		nobj[i] = 0;
 		rorder[i] = i;
@@ -3250,7 +3250,7 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 			if (obj == NULL || !obj->IsActive || !obj->IsDown || obj->IsInLimbo) {
 				continue;
 			}
-			int ox0, oy0, ox1, oy1;
+			short ox0, oy0, ox1, oy1;
 			obj->Get_AABB(ox0, oy0, ox1, oy1);
 			if (ox0 >= ulx1 || oy0 >= uly1 || ox1 < ulx0 || oy1 < uly0) {
 				continue;

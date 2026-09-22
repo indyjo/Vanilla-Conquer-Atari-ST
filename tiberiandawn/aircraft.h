@@ -145,7 +145,7 @@ public:
     */
     virtual int Exit_Object(TechnoClass*);
     virtual short const* Overlap_List(void) const;
-    virtual void Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const;
+    virtual void Get_AABB(short& dx0, short& dy0, short& dx1, short& dy1) const;
     virtual void Draw_It(int x, int y);
     virtual void Set_Speed(int speed);
 

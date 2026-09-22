@@ -452,7 +452,7 @@ short const* AnimClass::Overlap_List(void) const
     return (Coord_Spillage_List(Center_Coord(), Class->Size));
 }
 
-void AnimClass::Get_AABB(int& x0, int& y0, int& x1, int& y1) const
+void AnimClass::Get_AABB(short& x0, short& y0, short& x1, short& y1) const
 {
     int pad = 2 * CELL_LEPTON_W;
     if (Class->Type == ANIM_ION_CANNON) {

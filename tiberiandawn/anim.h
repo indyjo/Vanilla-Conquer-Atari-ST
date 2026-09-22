@@ -125,7 +125,7 @@ public:
     };
         virtual short const* Occupy_List(bool placement = false) const;
     virtual short const* Overlap_List(void) const;
-    virtual void Get_AABB(int& dx0, int& dy0, int& dx1, int& dy1) const;
+    virtual void Get_AABB(short& dx0, short& dy0, short& dx1, short& dy1) const;
     virtual void Draw_It(int x, int y);
     virtual void AI(void);
     virtual TARGET As_Target(void) const;

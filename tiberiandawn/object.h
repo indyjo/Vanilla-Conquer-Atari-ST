@@ -198,7 +198,7 @@ public:
     virtual int Exit_Object(TechnoClass*);
     virtual short const* Occupy_List(bool placement = false) const;
     virtual short const* Overlap_List(void) const;
-    virtual void Get_AABB(int& x0, int& y0, int& x1, int& y1) const;
+    virtual void Get_AABB(short& x0, short& y0, short& x1, short& y1) const;
     virtual unsigned Health_Ratio(void) const;
     virtual void Draw_It(int x, int y) = 0;
     virtual void Hidden(void);

@@ -3252,7 +3252,7 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 			}
 			short ox0, oy0, ox1, oy1;
 			obj->Get_AABB(ox0, oy0, ox1, oy1);
-			if (ox0 >= ulx1 || oy0 >= uly1 || ox1 < ulx0 || oy1 < uly0) {
+			if (ox0 >= ulx1 || ox1 < ulx0 || oy0 >= uly1 || oy1 < uly0) {
 				continue;
 			}
 			for (int oi = 0; oi < nrect; oi++) {

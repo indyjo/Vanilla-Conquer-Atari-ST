@@ -728,19 +728,8 @@ void AircraftClass::AI(void)
             do_physics = false;
         }
     }
-    /*
-    **	Mark(MARK_CHANGE) can run once per frame (IsToDisplay). Physics then
-    **	moves Coord, so the only overlap list that would be flagged is the new
-    **	cell. Flag the pre-move footprint first so the old tiles (and units
-    **	under them) restamp.
-    */
-    if (do_physics) {
-        CELL const oldcell = Coord_Cell(Coord);
-        short const* const oldoverlap = Overlap_List();
-        if (Physics(Coord, PrimaryFacing) != IMPACT_NONE) {
-            Map.Refresh_Cells(oldcell, oldoverlap);
-            Mark(MARK_CHANGE);
-        }
+    if (do_physics && Physics(Coord, PrimaryFacing) != IMPACT_NONE) {
+        Mark(MARK_CHANGE);
     }
 
     /*
@@ -928,57 +917,42 @@ void AircraftClass::AI(void)
  * HISTORY:                                                                                    *
  *   07/26/1994 JLB : Created.                                                                 *
  *=============================================================================================*/
-/*
-**	Flying shapes are drawn at (x, y - Altitude) with SHAPE_CENTER, plus a
-**	ground shadow. A fixed 3x5 about Coord_Cell misses sub-cell spill and the
-**	true visual cell. Coord_Spillage_List(Coord, 25) is also too small: size 25
-**	takes the >24 path and only uses a 12px radius.
-**	48px about Coord covers the shadow; the same about the altitude coord
-**	covers the fuselage (A-10 / Chinook rotors).
-*/
-enum
-{
-    AIRCRAFT_FLY_SPILL_PX = ICON_PIXEL_W * 2
-};
-
-static int Aircraft_Append_Spill(short* list, int index, int cap, COORDINATE coord, CELL origin)
-{
-    short const* ptr = Coord_Spillage_List(coord, AIRCRAFT_FLY_SPILL_PX);
-    CELL const here = Coord_Cell(coord);
-    int const delta = here - origin;
-    while (*ptr != REFRESH_EOL && index < cap) {
-        list[index++] = (short)(*ptr++ + delta);
-    }
-    return index;
-}
-
 short const* AircraftClass::Overlap_List(void) const
 {
     Validate();
-    if (!Altitude) {
-        return (Class->Overlap_List());
-    }
+    static short const _list[] = {-(MAP_CELL_W - 1),
+                                  -MAP_CELL_W,
+                                  -(MAP_CELL_W + 1),
+                                  -1,
+                                  0,
+                                  1,
+                                  (MAP_CELL_W - 1),
+                                  MAP_CELL_W,
+                                  (MAP_CELL_W + 1),
+                                  -((MAP_CELL_W * 2) - 1),
+                                  -(MAP_CELL_W * 2),
+                                  -((MAP_CELL_W * 2) + 1),
+                                  -((MAP_CELL_W * 3) - 1),
+                                  -(MAP_CELL_W * 3),
+                                  -((MAP_CELL_W * 3) + 1),
+                                  REFRESH_EOL};
 
-    static short _list[24];
-    CELL const origin = Coord_Cell(Coord);
-    int index = Aircraft_Append_Spill(_list, 0, 22, Coord, origin);
-    COORDINATE const visual = Coord_Add(Coord, XYP_Coord(0, -Altitude));
-    index = Aircraft_Append_Spill(_list, index, 22, visual, origin);
-    _list[index] = REFRESH_EOL;
-    return (_list);
+    if (Altitude) {
+        return (_list);
+        // return Coord_Spillage_List(Coord, 25);
+    }
+    return (Class->Overlap_List());
 }
 
 void AircraftClass::Get_AABB(short& x0, short& y0, short& x1, short& y1) const
 {
     int const x = Coord_X(Coord);
     int const y = Coord_Y(Coord);
-    int const pad = Pixel_To_Lepton(AIRCRAFT_FLY_SPILL_PX);
     if (Altitude) {
-        int const alt = Pixel_To_Lepton(Altitude);
-        x0 = x - pad;
-        x1 = x + pad;
-        y0 = y - pad - alt;
-        y1 = y + pad;
+        x0 = x - CELL_LEPTON_W;
+        x1 = x + CELL_LEPTON_W;
+        y0 = y - 3 * CELL_LEPTON_H;
+        y1 = y + CELL_LEPTON_H;
         return;
     }
     x0 = x - 2 * CELL_LEPTON_W;

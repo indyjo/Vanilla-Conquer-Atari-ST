@@ -312,12 +312,18 @@ bool FootClass::Mark(MarkType mark)
         case MARK_UP:
             if (What_Am_I() != RTTI_AIRCRAFT || !((AircraftClass*)this)->Class->IsFixedWing) {
                 Map.Pick_Up(cell, this);
+            } else {
+                Map.Refresh_Cells(cell, Overlap_List());
+                Map.Refresh_Cells(cell, Occupy_List());
             }
             break;
 
         case MARK_DOWN:
             if (What_Am_I() != RTTI_AIRCRAFT || !((AircraftClass*)this)->Class->IsFixedWing) {
                 Map.Place_Down(cell, this);
+            } else {
+                Map.Refresh_Cells(cell, Overlap_List());
+                Map.Refresh_Cells(cell, Occupy_List());
             }
             break;
 

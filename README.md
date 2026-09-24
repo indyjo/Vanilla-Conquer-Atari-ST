@@ -46,6 +46,7 @@ Output: `bin/AtariST/cnc.tos` (link-time optimization is on by default). Host te
 | [histtool](tiberiandawn/tools/histtool/readme.md) | Frame histograms for `palette-opt --hist` |
 | [w16fix](tiberiandawn/tools/w16fix/) | Reorder `.W16` hardware pen subset (identity + greedy remap) |
 | [w16sort](tiberiandawn/tools/w16sort/) | Reorder `.W16` pens by YUV Hamiltonian path (needs `.PAL`) |
+| [w16tool](tiberiandawn/tools/w16tool/) | Inspect `.W16`, Bayer-dither an 8-bit BMP, draw a palette matrix, or write a 16-pen `.hex` palette |
 | [wsa_palette_report.py](tiberiandawn/tools/wsa_palette_report.py) | Dump WSA header/palette info; compare against a reference `.PAL` |
 | [list_mix](tiberiandawn/list_mix/readme.md) | List MIX contents (CRC, names) |
 | [ym_lut](tiberiandawn/tools/ym_lut/README.md) | Generate YM-2149 digi LUTs (`audio_timer_dac_ym.S`) |

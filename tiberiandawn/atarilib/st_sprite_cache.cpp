@@ -89,16 +89,6 @@ enum {
 enum { SPRITE_CACHE_ROW_BUF_MAX = 320 };
 
 /*
- * One-shot decode gate for miss-time lazy frame build.
- */
-struct SpriteCacheLazyGate {
-	unsigned long (*fill)(void *ctx, IDecodeContext *decode_ctx);
-	void *ctx;
-	ClipBounds clip_bounds;
-	unsigned char decoded; /* 1 after first successful fill */
-};
-
-/*
  * UnitShadow ghost rows (see DISPLAY.CPP Conquer_Build_Translucent_Table) fade LTGREEN→BLACK against
  * a logical backdrop palette index; without reading the framebuffer, use BLACK (EGA logical 12).
  */
@@ -1006,27 +996,24 @@ static int sprite_cache_fill_slot_pixels(
 }
 
 /* Probes tiers, fills on miss, and blits cropped intersection. */
-static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
-	int dst_row_bytes,
-	int dst_width_pixels,
-	int dst_height_pixels,
-	int ax0,
-	int ay0,
-	int clip_w,
-	int clip_h,
-	int src_stride,
-	int full_w,
-	int full_h,
-	int trans,
-	const uint8_t *ghost_tab,
-	const uint8_t *fade_tab,
-	const uint8_t *raster_base,
-	int clip_ox,
-	int clip_oy,
-	void const *identity_root,
-	int identity_frame,
-	SpriteCacheLazyGate *lazy_gate)
+static long sprite_cache_cached_tile_dispatch(SpriteCacheBlit const *req)
 {
+	uint8_t *const dst_root_fb = req->dst;
+	const int dst_row_bytes = req->dst_bpl;
+	const int dst_width_pixels = req->dst_w;
+	const int dst_height_pixels = req->dst_h;
+	const int ax0 = req->dx;
+	const int ay0 = req->dy;
+	const int clip_w = req->blit_w;
+	const int clip_h = req->blit_h;
+	const int trans = req->trans;
+	const uint8_t *const ghost_tab = req->ghost;
+	const uint8_t *const fade_tab = req->fade;
+	const int clip_ox = req->ox;
+	const int clip_oy = req->oy;
+	void const *const identity_root = req->identity;
+	const int identity_frame = req->frame;
+
 	uint8_t mode_pack = 0;
 	if (ghost_tab)
 		mode_pack = 2;
@@ -1056,7 +1043,7 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 	ClipBounds opaque_clip;
 	ClipBounds const *clip = nullptr;
 	if (trans == 0) {
-		opaque_clip.set(0, 0, full_w, full_h);
+		opaque_clip.set(0, 0, req->full_w, req->full_h);
 		clip = &opaque_clip;
 	}
 	const bool have_clip = clip != nullptr && clip->valid;
@@ -1099,6 +1086,12 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 	}
 
 	if (!cache_hit) {
+		const int src_stride = req->stride;
+		const int full_w = req->full_w;
+		const int full_h = req->full_h;
+		const uint8_t *const raster_base = req->raster;
+		SpriteCacheLazyGate *const lazy_gate = req->gate;
+
 		if (lazy_gate != nullptr && lazy_gate->fill != nullptr && lazy_gate->decoded == 0) {
 			lazy_gate->clip_bounds.reset();
 			IDecodeContext decode_iface = IDecodeContext::bind(&lazy_gate->clip_bounds);
@@ -1254,143 +1247,25 @@ static long sprite_cache_cached_tile_dispatch(uint8_t *dst_root_fb,
 	return (long)((size_t)draw_w * (size_t)draw_h);
 }
 
-/*
- * Take one rectangle of chunky (8-bit indexed) pixels and try to show it on the ST low-res planar
- * framebuffer using the BFTP path: “find or build a small hardware-friendly planar scratch, then
- * let the blitter copy it to the screen.” This function is the front door for that work for a
- * single rectangle (no tiling of oversized draws here).
- *
- * What it actually does:
- *   1) Look up by logical sprite identity (+ render variant tokens) in one identity-hashed shard.
- *      Opaque full-frame probes one tier; transparent draws try all tiers.
- *   2) On miss, decode once (optional lazy hook), use lazy clip or scan crop, pick tier,
- *      fill that shard's LRU slot, store meta.
- *   3) Blit only the intersection of current clip rectangle and cached crop rectangle.
- *
- * Return: pixels composited (>= 0), or -1 on hard failure.
- *
- * Parameters:
- *   full_w/full_h — Decoded chunky frame extents at raster_base (stride src_stride ≥ full_w).
- *   Visible region: raster_ox, raster_oy, blit_w, blit_h — clip affects blit intersection only.
- */
-static long sprite_cache_planar_composite_impl(uint8_t *dst_root_fb,
-	int dst_row_bytes,
-	int dst_width_pixels,
-	int dst_height_pixels,
-	int ax0,
-	int ay0,
-	int blit_w,
-	int blit_h,
-	int src_stride,
-	int full_w,
-	int full_h,
-	int trans,
-	const uint8_t *ghost_tab,
-	const uint8_t *fade_tab,
-	const uint8_t *raster_base,
-	int raster_ox,
-	int raster_oy,
-	void const *identity_root,
-	int identity_frame,
-	SpriteCacheLazyGate *lazy_gate)
-{
-	return sprite_cache_cached_tile_dispatch(dst_root_fb,
-	    dst_row_bytes,
-	    dst_width_pixels,
-	    dst_height_pixels,
-	    ax0,
-	    ay0,
-	    blit_w,
-	    blit_h,
-	    src_stride,
-	    full_w,
-	    full_h,
-	    trans,
-	    ghost_tab,
-	    fade_tab,
-	    raster_base,
-	    raster_ox,
-	    raster_oy,
-	    identity_root,
-	    identity_frame,
-	    lazy_gate);
-}
-
-long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root_fb,
-	int dst_row_bytes,
-	int dst_width_pixels,
-	int dst_height_pixels,
-	int ax0,
-	int ay0,
-	const uint8_t *src,
-	int blit_w,
-	int blit_h,
-	int src_stride,
-	int trans,
-	const uint8_t *ghost_tab,
-	const uint8_t *fade_tab,
-	const uint8_t *raster_base,
-	int raster_ox,
-	int raster_oy,
-	int full_w,
-	int full_h,
-	void const *identity_root,
-	int identity_frame,
-	unsigned long (*lazy_decode_miss)(void *user_ctx, IDecodeContext *decode_ctx),
-	void *lazy_decode_ctx)
+long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(SpriteCacheBlit const *req)
 {
 	sprite_cache_maybe_init();
-	if (!dst_root_fb || dst_row_bytes <= 0 || dst_width_pixels <= 0 || dst_height_pixels <= 0
-		|| blit_w <= 0 || blit_h <= 0 || src_stride <= 0 || !raster_base) {
+	if (!req || !req->dst || req->dst_bpl <= 0 || req->dst_w <= 0 || req->dst_h <= 0
+		|| req->blit_w <= 0 || req->blit_h <= 0 || req->stride <= 0 || !req->raster) {
 		return -1;
 	}
-	if (full_w <= 0 || full_h <= 0 || full_w > src_stride) {
+	if (req->full_w <= 0 || req->full_h <= 0 || req->full_w > req->stride) {
 		return -1;
 	}
-	if (raster_ox < 0 || raster_oy < 0) {
+	if (req->ox < 0 || req->oy < 0) {
 		return -1;
 	}
-	if (raster_ox + blit_w > full_w || raster_oy + blit_h > full_h) {
+	if (req->ox + req->blit_w > req->full_w || req->oy + req->blit_h > req->full_h) {
 		return -1;
 	}
 	if (!g_sprite_cache_slab) {
 		return -1;
 	}
-	{
-		const uint8_t *const expect =
-		    raster_base + (size_t)raster_oy * (size_t)src_stride + (size_t)raster_ox;
-		if (src != expect) {
-			return -1;
-		}
-	}
 
-	SpriteCacheLazyGate gate_stack;
-	SpriteCacheLazyGate *gate_ptr = NULL;
-	if (lazy_decode_miss != nullptr) {
-		gate_stack.fill = lazy_decode_miss;
-		gate_stack.ctx = lazy_decode_ctx;
-		gate_stack.decoded = 0;
-		gate_ptr = &gate_stack;
-	}
-
-	return sprite_cache_planar_composite_impl(dst_root_fb,
-	    dst_row_bytes,
-	    dst_width_pixels,
-	    dst_height_pixels,
-	    ax0,
-	    ay0,
-	    blit_w,
-	    blit_h,
-	    src_stride,
-	    full_w,
-	    full_h,
-	    trans,
-	    ghost_tab,
-	    fade_tab,
-	    raster_base,
-	    raster_ox,
-	    raster_oy,
-	    identity_root,
-	    identity_frame,
-	    gate_ptr);
+	return sprite_cache_cached_tile_dispatch(req);
 }

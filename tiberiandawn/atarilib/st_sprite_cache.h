@@ -42,38 +42,53 @@ void ST_Sprite_Cache_Stats_Debug_Service(void);
 } /* extern "C" */
 
 /*
- * Rasterize decoded shape bytes into a ranked-ring pool planar scratch + composite with blitter.
+ * One-shot decode gate for a cache miss. fill runs at most once per call and must return
+ * the same pointer as SpriteCacheBlit::raster. It may set_clip_bounds() to skip a raster scan.
+ */
+struct SpriteCacheLazyGate {
+	unsigned long (*fill)(void *ctx, IDecodeContext *decode_ctx);
+	void *ctx;
+	ClipBounds clip_bounds;
+	unsigned char decoded; /* 1 after first successful fill */
+};
+
+/*
+ * One sprite composite. The visible chunky byte at (ox, oy) is raster + oy * stride + ox;
+ * callers do not pass that pointer separately.
+ * gate is null when there is no miss callback. Opaque draws (trans == 0) probe one tier;
+ * transparent draws walk tiers.
+ */
+struct SpriteCacheBlit {
+	uint8_t *dst;
+	int dst_bpl;
+	int dst_w;
+	int dst_h;
+	int dx;
+	int dy;
+	int blit_w;
+	int blit_h;
+	const uint8_t *raster;
+	int stride;
+	int full_w;
+	int full_h;
+	int ox;
+	int oy;
+	int trans;
+	const uint8_t *ghost;
+	const uint8_t *fade;
+	const void *identity;
+	int frame;
+	SpriteCacheLazyGate *gate;
+};
+
+/*
+ * Rasterize decoded shape bytes into a ranked-ring pool planar scratch and composite with the blitter.
  * Ghost approximates translucent drawing via checkerboard mask dither (fully cacheable).
- *
- * lazy_decode_miss: optional; runs at most once per call on cache miss — return must equal raster_base.
- *   The callback may call set_clip_bounds() on the supplied IDecodeContext to skip a raster scan.
- * Opaque draws (trans == 0) probe only the tier that fits the full frame; transparent draws walk tiers.
  *
  * Return value: pixels composited (>= 0), including 0 when the viewport clip does not intersect the
  * cached crop. Returns -1 on hard failure (tier/blit/decode).
  */
-long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(uint8_t *dst_root,
-	int dst_row_bytes,
-	int dst_width_pixels,
-	int dst_height_pixels,
-	int ax0,
-	int ay0,
-	const uint8_t *src,
-	int blit_w,
-	int blit_h,
-	int src_stride,
-	int trans,
-	const uint8_t *ghost_table,
-	const uint8_t *fade_table,
-	const uint8_t *raster_base,
-	int raster_ox,
-	int raster_oy,
-	int full_w,
-	int full_h,
-	void const *identity_root,
-	int identity_frame,
-	unsigned long (*lazy_decode_miss)(void *user_ctx, IDecodeContext *decode_ctx),
-	void *lazy_decode_ctx);
+long ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(SpriteCacheBlit const *req);
 
 #endif /* __cplusplus */
 

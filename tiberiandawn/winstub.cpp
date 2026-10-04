@@ -547,31 +547,35 @@ long Buffer_Frame_To_Page_Ex(int x,
         const int ax0 = view.Get_XPos() + dst_x;
         const int ay0 = view.Get_YPos() + dst_y;
         (void)predator;
-        Bftp_Lazy_Frame_FillFn lazy_miss_fn = planar_decode_on_miss ? ex->lazy_frame_fill : nullptr;
-        void* lazy_miss_ctx = planar_decode_on_miss ? ex->lazy_frame_ctx : nullptr;
+        SpriteCacheLazyGate gate = {
+            .fill = planar_decode_on_miss ? ex->lazy_frame_fill : nullptr,
+            .ctx = planar_decode_on_miss ? ex->lazy_frame_ctx : nullptr,
+            .decoded = 0,
+        };
         const int dst_planar_bpl = (gb->Get_Pitch() > 0) ? gb->Get_Pitch() : ST_Planar_Row_Bytes(gb->Get_Width());
-        const long drew = ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(root,
-                                                              dst_planar_bpl,
-                                                              gb->Get_Width(),
-                                                              gb->Get_Height(),
-                                                              ax0,
-                                                              ay0,
-                                                              src_raster,
-                                                              blit_w,
-                                                              blit_h,
-                                                              w,
-                                                              trans,
-                                                              ghost_table,
-                                                              fade_table,
-                                                              (const uint8_t*)raster_base,
-                                                              src_x,
-                                                              src_y,
-                                                              w,
-                                                              h,
-                                                              ex->identity_root,
-                                                              ex->identity_frame,
-                                                              lazy_miss_fn,
-                                                              lazy_miss_ctx);
+        const SpriteCacheBlit blit = {
+            .dst = root,
+            .dst_bpl = dst_planar_bpl,
+            .dst_w = gb->Get_Width(),
+            .dst_h = gb->Get_Height(),
+            .dx = ax0,
+            .dy = ay0,
+            .blit_w = blit_w,
+            .blit_h = blit_h,
+            .raster = (const uint8_t*)raster_base,
+            .stride = w,
+            .full_w = w,
+            .full_h = h,
+            .ox = src_x,
+            .oy = src_y,
+            .trans = trans,
+            .ghost = ghost_table,
+            .fade = fade_table,
+            .identity = ex->identity_root,
+            .frame = ex->identity_frame,
+            .gate = planar_decode_on_miss ? &gate : nullptr,
+        };
+        const long drew = ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(&blit);
         if (drew >= 0) {
             return drew;
         }

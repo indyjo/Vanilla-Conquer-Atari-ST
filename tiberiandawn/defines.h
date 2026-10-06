@@ -237,7 +237,7 @@ typedef enum DiffType : unsigned char
 **	changed, be sure to update the makefile and rebuild all of the shape
 **	data files.
 */
-#define SHAPE_BUFFER_SIZE 131072L
+#define SHAPE_BUFFER_SIZE 32768L
 
 // Use this to allow keep track of versions as they affect saved games.
 #define VERSION_NUMBER 1

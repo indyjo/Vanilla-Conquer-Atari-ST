@@ -30,9 +30,20 @@ wasm:
 
 web:
 	@set -e; \
-	SAVED_PATH="$$PATH"; \
-	if [ -f "$(EMSDK_ENV)" ]; then . "$(EMSDK_ENV)"; fi; \
-	cd $(WEB_DIR) && PATH="$$SAVED_PATH" npm ci && PATH="$$SAVED_PATH" npm run build; \
+	filtered=; \
+	oldifs="$$IFS"; IFS=:; \
+	for p in $$PATH; do \
+		case "$$p" in \
+			*emsdk*) ;; \
+			*) filtered="$${filtered:+$$filtered:}$$p" ;; \
+		esac; \
+	done; \
+	IFS="$$oldifs"; \
+	export PATH="$$filtered"; \
+	cd $(WEB_DIR); \
+	node -e 'const major=+process.versions.node.split(".")[0]; if(!(major>=18)){console.error("remix-web needs Node.js >= 18 (found "+process.version+")."); process.exit(1)}'; \
+	npm ci --include=dev; \
+	node ./node_modules/vite/bin/vite.js build; \
 	echo "remix-web built: $(WEB_DIR)/dist/"
 
 itch: build

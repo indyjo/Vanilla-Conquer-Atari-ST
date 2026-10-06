@@ -24,7 +24,7 @@ make remix-web
 
 Both compile REMIX to WebAssembly and build the static site into `web/dist/`.
 
-**Note:** the build saves your `PATH` before activating Emscripten so npm uses your system Node (18+), not emsdk’s bundled Node 14.
+**Note:** the site build drops any `emsdk` entries from `PATH` so npm and Vite use your system Node (18+), not emsdk’s bundled Node 14. Vite is started as `node node_modules/vite/bin/vite.js` because npm 11.16 can omit `node_modules/.bin` links for packages whose install scripts are not in `allowScripts`.
 
 Other targets (run from `tools/remix-web/`):
 

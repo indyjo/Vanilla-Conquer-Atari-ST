@@ -495,6 +495,22 @@ static int process_entry(
 		return 1;
 	}
 
+	if (cfg && remix_vqa_should_omit_entry(cfg->mix_basename, e->crc)) {
+		e->omit = 1;
+		e->new_size = 0;
+		snprintf(e->type_in, sizeof(e->type_in), "vqa");
+		snprintf(e->type_out, sizeof(e->type_out), "omit");
+		if (stats) {
+			++stats->vqa_files;
+			++stats->vqa_omitted;
+		}
+		if (cfg->ui == REMIX_UI_HOST)
+			remix_print_host_entry(e);
+		if (cfg->entry_report)
+			cfg->entry_report(e, cfg->entry_report_ctx);
+		return 1;
+	}
+
 	in_pos = (long)mix->data_start + (long)e->old_offset;
 	if (fseek(in, in_pos, SEEK_SET) != 0)
 		return 0;

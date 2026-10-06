@@ -25,6 +25,7 @@ COMMON_SRCS = \
 	$(REMIX_DIR)/remix_audx.c \
 	$(REMIX_DIR)/remix_unzap.c \
 	$(REMIX_DIR)/remix_vqa.c \
+	$(REMIX_DIR)/remix_vqa_omit.c \
 	$(HOST_AUDIO)/st_host_resample.c \
 	$(LSRC)/src/samplerate.c \
 	$(LSRC)/src/src_sinc.c \

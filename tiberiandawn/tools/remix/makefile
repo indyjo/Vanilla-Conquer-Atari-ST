@@ -11,7 +11,7 @@ HOST_CXX ?= c++
 HOST_CFLAGS ?= -O2 -Wall -Wextra -std=c99 -I. -I$(TDROOT) -I$(COMMON) -I$(ATARILIB) -I$(VQATOOL) -I$(PALETTE_OPT) -I../host_audio -I../third_party/libsamplerate -I../third_party/libsamplerate/include -I../third_party/libsamplerate/src -DHAVE_CONFIG_H
 HOST_CXXFLAGS ?= -O2 -Wall -Wextra -std=c++17 -I. -I$(ATARILIB) -I$(TDROOT) -I$(COMMON) -I$(VQATOOL) -DREMIX_BUILD
 
-COMMON_SRCS = remix_mix.c remix_merge.c remix_detect.c remix_print.c remix_audio.c remix_aud.c remix_audx.c remix_unzap.c remix_vqa.c \
+COMMON_SRCS = remix_mix.c remix_merge.c remix_detect.c remix_print.c remix_audio.c remix_aud.c remix_audx.c remix_unzap.c remix_vqa.c remix_vqa_omit.c \
 	../host_audio/st_host_resample.c \
 	../third_party/libsamplerate/src/samplerate.c \
 	../third_party/libsamplerate/src/src_sinc.c \
@@ -41,11 +41,11 @@ STVQ_C_OBJS = vqa_format.o vqa_io.o vqa_decode.o stvq_format.o stvq_write.o stvq
 	stvq_c2p.o stvq_metric.o stvq_codebook.o stvq_encode.o
 STVQ_CXX_OBJS = palette_color.o lcw_common.o vqa_lcw_bridge.o unvqbuff.o vqa_unvq_bridge.o
 
-.PHONY: all clean host test test-st16 test-shpx test-audx
+.PHONY: all clean host test test-st16 test-shpx test-audx test-vqa-omit
 
 all: host
 
-test: test-st16 test-shpx test-audx
+test: test-st16 test-shpx test-audx test-vqa-omit
 
 test-st16: remix_st16_test
 	./remix_st16_test
@@ -55,6 +55,9 @@ test-shpx: remix_shpx_test
 
 test-audx: remix_audx_test
 	./remix_audx_test
+
+test-vqa-omit: remix_vqa_omit_test
+	./remix_vqa_omit_test
 
 host: remix
 
@@ -70,6 +73,12 @@ remix_shpx_test: remix_shpx_test.o $(SHPX_OBJS)
 
 remix_audx_test: remix_audx_test.o remix_audx.o
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ remix_audx_test.o remix_audx.o
+
+remix_vqa_omit_test: remix_vqa_omit_test.o remix_vqa_omit.o
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ remix_vqa_omit_test.o remix_vqa_omit.o
+
+remix_vqa_omit_test.o: remix_vqa_omit_test.c remix_vqa.h
+	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ remix_vqa_omit_test.c
 
 remix_audx_test.o: remix_audx_test.c remix_audx.h
 	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ remix_audx_test.c
@@ -152,5 +161,5 @@ c2p.o: $(ATARILIB)/c2p.cpp
 	$(HOST_CXX) $(HOST_CXXFLAGS) -c -o $@ $<
 
 clean:
-	rm -f remix remix_st16_test remix_shpx_test remix_audx_test remix_host.o remix_st16_test.o remix_shpx_test.o \
-		remix_audx_test.o $(COMMON_OBJS) $(ST16_OBJS) $(SHPX_OBJS) $(STVQ_C_OBJS) $(STVQ_CXX_OBJS)
+	rm -f remix remix_st16_test remix_shpx_test remix_audx_test remix_vqa_omit_test remix_host.o remix_st16_test.o remix_shpx_test.o \
+		remix_audx_test.o remix_vqa_omit_test.o $(COMMON_OBJS) $(ST16_OBJS) $(SHPX_OBJS) $(STVQ_C_OBJS) $(STVQ_CXX_OBJS)

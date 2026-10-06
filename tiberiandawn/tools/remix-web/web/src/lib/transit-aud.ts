@@ -1,7 +1,7 @@
 /**
  * Move classic AUD payloads from TRANSIT.MIX into SOUNDS.MIX before AUDX rempack.
  *
- * TRANSIT cannot be MFCD::Cache()'d (CHOOSE.WSA / VQA / RECORD.BIN). AUDX metas
+ * TRANSIT cannot be MFCD::Cache()'d (CHOOSE.WSA / RECORD.BIN). AUDX metas
  * belong in the already-cached SOUNDS.MIX; sample bytes go to pool0005.bin.
  */
 

@@ -92,7 +92,7 @@ When **Convert shapes to SHPX** is enabled (default for target **0.2.x** / **0.3
 
 For target **0.3.x**, enabling **Audio** converts SOUNDS/SPEECH (and **Include music** → SCORES) from AUD→PCM→AUDX. Sample payloads go into `pool0005.bin` … `pool0007.bin`; the MIX keeps small AUDX metadata. `AUD.MIX` is never included. On 0.3.x the UI shows Audio / Include music / Video only (ST16 and SHPX are always applied).
 
-Classic AUD entries in `TRANSIT.MIX` (side-select, map theme, Kane ending clips, etc.) are moved into `SOUNDS.MIX` before AUDX rempack so their metas live in the MIX that is `Cache()`’d at runtime. `TRANSIT.MIX` itself cannot be cached (large WSA/VQA/RECORD payloads); after the move it keeps only those non-audio files.
+Classic AUD entries in `TRANSIT.MIX` (side-select, map theme, Kane ending clips, etc.) are moved into `SOUNDS.MIX` before AUDX rempack so their metas live in the MIX that is `Cache()`’d at runtime. `TRANSIT.MIX` itself cannot be cached (large WSA/RECORD payloads); after the move it keeps only those non-audio files. `NOD1PRE.VQA` is dropped from `TRANSIT.MIX`: the same name is converted to STVQ in `MOVIES.MIX`, and Transit is searched first.
 
 ### Movie sequences (0.3.x)
 

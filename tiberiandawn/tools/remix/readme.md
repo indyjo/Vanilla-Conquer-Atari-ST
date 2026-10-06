@@ -75,6 +75,8 @@ entry is **omitted** from the output MIX. The warning on stderr includes the
 reason (`missing video/….w16`, encoder OOM, decode stop, bad W16, …).
 Already-converted `FORM STVQ` payloads are copied unchanged.
 
+`NOD1PRE.VQA` (the briefing after choosing Nod) is also stored in `TRANSIT.MIX`. Repacking `TRANSIT.MIX` drops that entry. The game registers `TRANSIT.MIX` before `MOVIES.MIX` and stops at the first match, so the original VQA would hide the STVQ written into `MOVIES.MIX` under the same name.
+
 **Directory** (non-recursive; `.mix` / `.MIX`):
 
 ```bash

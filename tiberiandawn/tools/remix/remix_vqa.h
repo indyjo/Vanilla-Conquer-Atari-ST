@@ -20,6 +20,13 @@ const char *remix_vqa_last_error(void);
 int remix_vqa_is_stvq(const unsigned char *data, size_t len);
 
 /**
+ * 1 if this MIX entry must be dropped.
+ * NOD1PRE.VQA (0x21DD332F) also lives in TRANSIT.MIX, which is registered
+ * before MOVIES.MIX, so the original VQA shadows the STVQ under the same name.
+ */
+int remix_vqa_should_omit_entry(const char *mix_basename, uint32_t crc);
+
+/**
  * Convert a VQA MIX payload to STVQ and write it to out.
  * Returns 1 on success, -1 to omit (missing W16 / encode fail), 0 on I/O error.
  */

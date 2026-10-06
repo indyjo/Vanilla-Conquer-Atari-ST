@@ -64,9 +64,19 @@ unsigned int Find_File_Data_Posix::GetTime() const
     }
     struct stat buf = {0};
     if (stat(FullName, &buf) != 0) {
-        return false;
+        return 0;
     }
-    return buf.st_mtime;
+#ifdef LIBCMINI
+    /*
+     * libcmini writes a GEMDOS _DOSTIME into st_mtime (time word, then date word).
+     * On m68k that long is (time << 16) | date, so swap the halves and the date sorts first.
+     * https://github.com/freemint/libcmini/blob/master/sources/stat.c
+     */
+    unsigned int raw = (unsigned int)buf.st_mtime;
+    return (raw << 16) | (raw >> 16);
+#else
+    return (unsigned int)buf.st_mtime;
+#endif
 }
 
 bool Find_File_Data_Posix::FindNextWithFilter()

@@ -3,7 +3,7 @@
 CC ?= cc
 CFLAGS ?= -O2 -Wall -Wextra -std=c99
 
-histtool: histtool.o hist.o bmp.o wsa.o chart.o
+histtool: histtool.o hist.o bmp.o wsa.o cps.o chart.o
 	$(CC) $(LDFLAGS) -o $@ $^
 
 clean:

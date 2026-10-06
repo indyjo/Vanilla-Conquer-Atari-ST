@@ -36,6 +36,34 @@
 #include "textblit.h"
 #include "common/settings.h"
 
+/*
+** Covert-ops still between the campaign ending and the teaser movies.
+** Missing on the ST asset set; scaling a failed load paints garbage.
+*/
+static void Show_Attract2_Still(void)
+{
+    if (!CCFileClass("ATTRACT2.CPS").Is_Available()) {
+        return;
+    }
+
+    Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
+#ifdef ATARI_ST
+    Load_Title_Screen("ATTRACT2.CPS", &HidPage, Palette);
+    Blit_Hid_Page_To_Seen_Buff();
+#else
+    Load_Uncompress(CCFileClass("ATTRACT2.CPS"), SysMemPage, SysMemPage, Palette);
+    SysMemPage.Scale(SeenBuff, 0, 0, 0, 0, 320, 199, 640, 398);
+    Fade_Palette_To(Palette, FADE_PALETTE_MEDIUM, Call_Back);
+#endif
+    Keyboard->Clear();
+    CountDownTimerClass count;
+    count.Set(TIMER_SECOND * 3);
+    while (count.Time()) {
+        Call_Back();
+    }
+    Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
+}
+
 void GDI_Ending(void)
 {
     if (Is_Demo()) {
@@ -64,34 +92,12 @@ void GDI_Ending(void)
         Play_Movie("GDIEND1");
     }
 
-    CountDownTimerClass count;
     if (CCFileClass("TRAILER.VQA").Is_Available()) {
-        Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-        Load_Uncompress(CCFileClass("ATTRACT2.CPS"), SysMemPage, SysMemPage, Palette);
-        SysMemPage.Scale(SeenBuff, 0, 0, 0, 0, 320, 199, 640, 398);
-        Fade_Palette_To(Palette, FADE_PALETTE_MEDIUM, Call_Back);
-        Keyboard->Clear();
-        count.Set(TIMER_SECOND * 3);
-        while (count.Time()) {
-            Call_Back();
-        }
-        Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-
+        Show_Attract2_Still();
         Play_Movie("TRAILER"); // Red Alert teaser.
     }
 
-    Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-    Load_Uncompress(CCFileClass("ATTRACT2.CPS"), SysMemPage, SysMemPage, Palette);
-    SysMemPage.Scale(SeenBuff, 0, 0, 0, 0, 320, 199, 640, 398);
-    Fade_Palette_To(Palette, FADE_PALETTE_MEDIUM, Call_Back);
-    Keyboard->Clear();
-    //	CountDownTimerClass count;
-    count.Set(TIMER_SECOND * 3);
-    while (count.Time()) {
-        Call_Back();
-    }
-    Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-
+    Show_Attract2_Still();
     Play_Movie("CC2TEASE");
 }
 
@@ -122,17 +128,31 @@ void Nod_Ending(void)
 
     oldfont = Set_Font(ScoreFontPtr);
 
+#ifdef ATARI_ST
+    /*
+    ** Same alias as the score screen. Two fresh 320x200 buffers are ~128 KiB
+    ** and, with the theater MIX still cached, leave no contiguous block for
+    ** the STVQ codebook (NODFINAL / NODENDn fail open with "oom codebook").
+    */
+    PseudoSeenBuff = HidPage.Get_Graphic_Buffer();
+    TextPrintBuffer = HidPage.Get_Graphic_Buffer();
+#else
     PseudoSeenBuff = new GraphicBufferClass(320, 200, (void*)NULL);
     TextPrintBuffer = new GraphicBufferClass(SeenBuff.Get_Width(), SeenBuff.Get_Height(), (void*)NULL);
+#endif
     TextPrintBuffer->Clear();
     BlitList.Clear();
     SeenBuff.Clear();
     HidPage.Clear();
     PseudoSeenBuff->Clear();
 
+#ifdef ATARI_ST
+    void* localpal = NULL;
+#else
     void* localpal = Load_Alloc_Data(CCFileClass("SATSEL.PAL"));
     Load_Uncompress(CCFileClass("SATSEL.CPS"), SysMemPage, SysMemPage);
     SysMemPage.Blit(*PseudoSeenBuff);
+#endif
     void* kanefinl = Load_Sample("KANEFINL.AUD");
     void* loopie6m = Load_Sample("LOOPIE6M.AUD");
 
@@ -140,14 +160,20 @@ void Nod_Ending(void)
 
     Hide_Mouse();
     Wait_Vert_Blank();
+#ifdef ATARI_ST
+    /* CPS → planar. Chunk-to-chunk Blit onto HidPage is not a picture. */
+    Load_Title_Screen("SATSEL.CPS", &HidPage, Palette);
+    Blit_Hid_Page_To_Seen_Buff();
+#else
     Set_Palette(localpal);
-    Show_Mouse();
 
     InterpolationPaletteChanged = true;
     InterpolationPalette = (unsigned char*)localpal;
     Increase_Palette_Luminance(InterpolationPalette, 30, 30, 30, 63);
     Read_Interpolation_Palette("SATSELIN.PAL");
     Interpolate_2X_Scale(PseudoSeenBuff, &SeenBuff, "SATSELIN.PAL", Settings.Video.InterpolationMode);
+#endif
+    Show_Mouse();
 
     Keyboard->Clear();
     Play_Sample(kanefinl, 255, 128);
@@ -192,7 +218,10 @@ void Nod_Ending(void)
     if (mouseshown)
         Hide_Mouse();
 
+#ifndef ATARI_ST
     delete PseudoSeenBuff;
+#endif
+    PseudoSeenBuff = NULL;
 
     /* get rid of all the animating objects */
     for (int i = 0; i < MAXSCOREOBJS; i++)
@@ -201,8 +230,8 @@ void Nod_Ending(void)
             ScoreObjs[i] = 0;
         }
     // erase the "choose a target" text
-    SeenBuff.Fill_Rect(0, 180 * 2, 319 * 2, 199 * 2, 0);
-    TextPrintBuffer->Fill_Rect(0, 180 * 2, 319 * 2, 199 * 2, 0);
+    SeenBuff.Fill_Rect(0, 180 * factor, 319 * factor, 199 * factor, 0);
+    TextPrintBuffer->Fill_Rect(0, 180 * factor, 319 * factor, 199 * factor, 0);
 
     Hide_Mouse();
     Keyboard->Clear();
@@ -216,38 +245,21 @@ void Nod_Ending(void)
     PreserveVQAScreen = 1;
     Play_Movie(fname);
 
-    CountDownTimerClass count;
     if (CCFileClass("TRAILER.VQA").Is_Available()) {
-        Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-        Load_Uncompress(CCFileClass("ATTRACT2.CPS"), SysMemPage, SysMemPage, Palette);
-        SysMemPage.Scale(SeenBuff, 0, 0, 0, 0, 320, 199, 640, 398);
-        Fade_Palette_To(Palette, FADE_PALETTE_MEDIUM, Call_Back);
-        Keyboard->Clear();
-        count.Set(TIMER_SECOND * 3);
-        while (count.Time()) {
-            Call_Back();
-        }
-        Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-
+        Show_Attract2_Still();
         Play_Movie("TRAILER"); // Red Alert teaser.
     }
 
-    Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-    Load_Uncompress(CCFileClass("ATTRACT2.CPS"), SysMemPage, SysMemPage, Palette);
-    SysMemPage.Scale(SeenBuff, 0, 0, 0, 0, 320, 199, 640, 398);
-    Fade_Palette_To(Palette, FADE_PALETTE_MEDIUM, Call_Back);
-    Keyboard->Clear();
-    //	CountDownTimerClass count;
-    count.Set(TIMER_SECOND * 3);
-    while (count.Time()) {
-        Call_Back();
-    }
-    Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, Call_Back);
-
+    Show_Attract2_Still();
     Play_Movie("CC2TEASE");
 
-    delete[] static_cast<char*>(localpal);
+    if (localpal) {
+        delete[] static_cast<char*>(localpal);
+    }
+#ifndef ATARI_ST
     delete TextPrintBuffer;
+#endif
+    TextPrintBuffer = NULL;
     BlitList.Clear();
 }
 #endif

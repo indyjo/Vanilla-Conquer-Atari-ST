@@ -113,7 +113,7 @@ int hist_peak_index(const HistCounts *h, long long *out_peak)
 	return best;
 }
 
-int hist_save_file(const char *path, const HistCounts *h, int dense, int n_bmp, int n_wsa, int n_hist,
+int hist_save_file(const char *path, const HistCounts *h, int dense, int n_bmp, int n_wsa, int n_cps, int n_hist,
 	long long total_pixels, const char *filter_line)
 {
 	FILE *f;
@@ -126,7 +126,8 @@ int hist_save_file(const char *path, const HistCounts *h, int dense, int n_bmp, 
 		return -1;
 	}
 
-	fprintf(f, "# histtool: %d bmp, %d wsa, %d hist, %lld pixels\n", n_bmp, n_wsa, n_hist, total_pixels);
+	fprintf(f, "# histtool: %d bmp, %d wsa, %d cps, %d hist, %lld pixels\n", n_bmp, n_wsa, n_cps, n_hist,
+		total_pixels);
 	if (filter_line && filter_line[0])
 		fprintf(f, "# filters: %s\n", filter_line);
 

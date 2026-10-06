@@ -1,5 +1,5 @@
 /*
- * w16tool.c - Inspect C2P .W16 bundles, dither an 8-bit BMP onto the 16 pens,
+ * w16tool.c - Inspect C2P .W16 bundles, dither an 8-bit BMP or CPS onto the 16 pens,
  * and draw a 16x16 palette matrix with subset swatches framed.
  *
  * .W16 layout: magic "W16\0", 16 subset indices, then weights[256][16].
@@ -314,6 +314,270 @@ static int bmp_decode_rle8(FILE *f, const char *path, Bmp8 *bmp)
 	return 1;
 }
 
+static int path_has_ext(const char *path, const char *ext)
+{
+	size_t plen = strlen(path);
+	size_t elen = strlen(ext);
+	size_t i;
+
+	if (plen < elen)
+		return 0;
+	for (i = 0; i < elen; i++) {
+		char a = path[plen - elen + i];
+		char b = ext[i];
+		if (a >= 'A' && a <= 'Z')
+			a = (char)(a - 'A' + 'a');
+		if (b >= 'A' && b <= 'Z')
+			b = (char)(b - 'A' + 'a');
+		if (a != b)
+			return 0;
+	}
+	return 1;
+}
+
+/* Westwood LCW (Format 80); same decoder as histtool. */
+static unsigned long lcw_uncompress(const unsigned char *source, unsigned char *dest, unsigned long length)
+{
+	const unsigned char *src = source;
+	unsigned char *dst = dest;
+	unsigned char *dst0 = dst;
+	unsigned char *dst_end = dst + length;
+	int relative_mode = 0;
+
+	if (!source || !dest || length == 0)
+		return 0;
+
+	if (*src == 0) {
+		relative_mode = 1;
+		src++;
+	}
+
+	while (dst < dst_end) {
+		unsigned char code = *src++;
+
+		if ((code & 0x80) == 0) {
+			unsigned long count = (unsigned long)((code & 0x70) >> 4) + 3UL;
+			unsigned long pos = ((unsigned long)(code & 0x0F) << 8) | (unsigned long)(*src++);
+			unsigned char *from = dst - (long)pos;
+			unsigned long k;
+
+			if (from < dst0)
+				break;
+			if (dst + count > dst_end)
+				count = (unsigned long)(dst_end - dst);
+			for (k = 0; k < count; k++)
+				*dst++ = from[k];
+			continue;
+		}
+
+		if ((code & 0x40) == 0) {
+			unsigned long count = (unsigned long)(code & 0x3F);
+			if (count == 0)
+				break;
+			if (dst + count > dst_end)
+				count = (unsigned long)(dst_end - dst);
+			memcpy(dst, src, count);
+			dst += count;
+			src += count;
+			continue;
+		}
+
+		if (code == 0xFE) {
+			unsigned long count = (unsigned long)read_le16(src);
+			unsigned char value;
+			src += 2;
+			value = *src++;
+			if (dst + count > dst_end)
+				count = (unsigned long)(dst_end - dst);
+			memset(dst, value, count);
+			dst += count;
+			continue;
+		}
+
+		if (code == 0xFF) {
+			unsigned long count = (unsigned long)read_le16(src);
+			unsigned short posw;
+			unsigned char *from;
+			unsigned long k;
+
+			src += 2;
+			posw = read_le16(src);
+			src += 2;
+			from = relative_mode ? (dst - (long)posw) : (dst0 + (long)posw);
+			if (from < dst0)
+				break;
+			if (dst + count > dst_end)
+				count = (unsigned long)(dst_end - dst);
+			for (k = 0; k < count; k++)
+				*dst++ = from[k];
+			continue;
+		}
+
+		{
+			unsigned long count = (unsigned long)(code & 0x3F) + 3UL;
+			unsigned short posw = read_le16(src);
+			unsigned char *from;
+			unsigned long k;
+
+			src += 2;
+			from = relative_mode ? (dst - (long)posw) : (dst0 + (long)posw);
+			if (from < dst0)
+				break;
+			if (dst + count > dst_end)
+				count = (unsigned long)(dst_end - dst);
+			for (k = 0; k < count; k++)
+				*dst++ = from[k];
+		}
+	}
+
+	return (unsigned long)(dst - dst0);
+}
+
+#define CPS_METHOD_NONE 0
+#define CPS_METHOD_LCW 4
+#define CPS_MAX_PIXELS (1024UL * 1024UL)
+#define CPS_SCREEN_W 320L
+
+/* File: uint16 size, 8-byte CompHeader (method, pad, uint32 uncomp, uint16 skip),
+ * then `skip` bytes (768-byte VGA palette when present), then the picture. */
+static int cps_decode(const char *path, unsigned char **pixels_out, unsigned long *npx_out,
+	unsigned char pal[PAL_BYTES], int *has_pal)
+{
+	FILE *f;
+	long file_size;
+	unsigned char *raw = NULL;
+	unsigned char *pixels = NULL;
+	unsigned char method;
+	unsigned long uncomp;
+	unsigned short skip;
+	unsigned long data_off;
+	unsigned long got;
+	int ok = 0;
+
+	*pixels_out = NULL;
+	*npx_out = 0;
+	*has_pal = 0;
+
+	f = fopen(path, "rb");
+	if (!f) {
+		fprintf(stderr, "error: cannot open %s\n", path);
+		return 0;
+	}
+	if (fseek(f, 0, SEEK_END) != 0 || (file_size = ftell(f)) < 10) {
+		fprintf(stderr, "error: %s: file too short for CPS\n", path);
+		fclose(f);
+		return 0;
+	}
+	if (fseek(f, 0, SEEK_SET) != 0) {
+		fprintf(stderr, "error: %s: seek failed\n", path);
+		fclose(f);
+		return 0;
+	}
+	raw = (unsigned char *)malloc((size_t)file_size);
+	if (!raw || fread(raw, 1, (size_t)file_size, f) != (size_t)file_size) {
+		fprintf(stderr, "error: %s: short read\n", path);
+		free(raw);
+		fclose(f);
+		return 0;
+	}
+	fclose(f);
+
+	method = raw[2];
+	uncomp = read_le32(raw + 4);
+	skip = read_le16(raw + 8);
+	data_off = 10UL + (unsigned long)skip;
+
+	if (uncomp == 0 || uncomp > CPS_MAX_PIXELS) {
+		fprintf(stderr, "error: %s: bad CPS uncompressed size %lu\n", path, uncomp);
+		goto done;
+	}
+	if (data_off >= (unsigned long)file_size) {
+		fprintf(stderr, "error: %s: CPS picture starts past end of file (skip=%u)\n", path, skip);
+		goto done;
+	}
+	if (skip == PAL_BYTES)
+		memcpy(pal, raw + 10, PAL_BYTES);
+	else if (skip != 0) {
+		fprintf(stderr, "error: %s: CPS skip is %u bytes (expected 0 or %d)\n", path, skip, PAL_BYTES);
+		goto done;
+	}
+
+	pixels = (unsigned char *)malloc(uncomp);
+	if (!pixels) {
+		fprintf(stderr, "error: %s: out of memory (%lu pixels)\n", path, uncomp);
+		goto done;
+	}
+	if (method == CPS_METHOD_NONE) {
+		if (data_off + uncomp > (unsigned long)file_size) {
+			fprintf(stderr, "error: %s: uncompressed CPS extends past end of file\n", path);
+			goto done;
+		}
+		memcpy(pixels, raw + data_off, uncomp);
+		got = uncomp;
+	} else if (method == CPS_METHOD_LCW) {
+		got = lcw_uncompress(raw + data_off, pixels, uncomp);
+		if (got != uncomp) {
+			fprintf(stderr, "error: %s: LCW decode wrote %lu bytes, expected %lu\n", path, got, uncomp);
+			goto done;
+		}
+	} else {
+		fprintf(stderr, "error: %s: unsupported CPS compression method %u\n", path, method);
+		goto done;
+	}
+
+	*pixels_out = pixels;
+	pixels = NULL;
+	*npx_out = uncomp;
+	*has_pal = (skip == PAL_BYTES);
+	ok = 1;
+
+done:
+	free(pixels);
+	free(raw);
+	return ok;
+}
+
+static unsigned char vga6_byte_to_8(unsigned char c)
+{
+	c = (unsigned char)(c & 63u);
+	return (unsigned char)((c << 2) | (c >> 4));
+}
+
+static int load_cps8(const char *path, Bmp8 *bmp)
+{
+	unsigned char pal[PAL_BYTES];
+	unsigned char *pixels = NULL;
+	unsigned long npx = 0;
+	int has_pal = 0;
+	int i;
+
+	memset(bmp, 0, sizeof(*bmp));
+	if (!cps_decode(path, &pixels, &npx, pal, &has_pal))
+		return 0;
+
+	if ((npx % (unsigned long)CPS_SCREEN_W) == 0) {
+		bmp->width = CPS_SCREEN_W;
+		bmp->height = (long)(npx / (unsigned long)CPS_SCREEN_W);
+	} else {
+		bmp->width = (long)npx;
+		bmp->height = 1;
+		fprintf(stderr, "warning: %s: %lu pixels is not a multiple of %ld; using one row\n", path, npx,
+			CPS_SCREEN_W);
+	}
+	bmp->pixels = pixels;
+	if (!has_pal) {
+		fprintf(stderr, "warning: %s: no embedded palette\n", path);
+		return 1;
+	}
+	for (i = 0; i < 256; i++) {
+		bmp->palette[i][0] = vga6_byte_to_8(pal[i * 3 + 2]);
+		bmp->palette[i][1] = vga6_byte_to_8(pal[i * 3 + 1]);
+		bmp->palette[i][2] = vga6_byte_to_8(pal[i * 3 + 0]);
+		bmp->palette[i][3] = 0;
+	}
+	return 1;
+}
+
 static int load_bmp8(const char *path, Bmp8 *bmp)
 {
 	unsigned char file_hdr[14];
@@ -549,13 +813,17 @@ static int cmd_apply(int argc, char **argv)
 		}
 	}
 	if (!w16_path || !in_path || !out_path) {
-		fprintf(stderr, "usage: w16tool apply FILE.w16 IN.bmp -o OUT.bmp\n");
+		fprintf(stderr, "usage: w16tool apply FILE.w16 IN.bmp|IN.cps -o OUT.bmp\n");
 		return 1;
 	}
 	if (!load_w16(w16_path, &w16))
 		return 1;
-	if (!load_bmp8(in_path, &src))
+	if (path_has_ext(in_path, ".cps")) {
+		if (!load_cps8(in_path, &src))
+			return 1;
+	} else if (!load_bmp8(in_path, &src)) {
 		return 1;
+	}
 
 	npx = (size_t)src.width * (size_t)src.height;
 	out_px = (unsigned char *)malloc(npx);
@@ -643,6 +911,21 @@ static int load_pal(const char *path, unsigned char pal[PAL_BYTES])
 {
 	FILE *f;
 	long pal_size;
+
+	if (path_has_ext(path, ".cps")) {
+		unsigned char *pixels = NULL;
+		unsigned long npx = 0;
+		int has_pal = 0;
+
+		if (!cps_decode(path, &pixels, &npx, pal, &has_pal))
+			return 0;
+		free(pixels);
+		if (!has_pal) {
+			fprintf(stderr, "error: %s: CPS has no embedded 768-byte palette\n", path);
+			return 0;
+		}
+		return 1;
+	}
 
 	f = fopen(path, "rb");
 	if (!f) {
@@ -732,7 +1015,7 @@ static int cmd_matrix(int argc, char **argv)
 		}
 	}
 	if (!w16_path || !pal_path || !out_path) {
-		fprintf(stderr, "usage: w16tool matrix FILE.w16 IN.pal -o OUT.bmp\n");
+		fprintf(stderr, "usage: w16tool matrix FILE.w16 IN.pal|IN.cps -o OUT.bmp\n");
 		return 1;
 	}
 	if (!load_w16(w16_path, &w16))
@@ -836,7 +1119,7 @@ static int cmd_hex(int argc, char **argv)
 		}
 	}
 	if (!w16_path || !pal_path || !out_path) {
-		fprintf(stderr, "usage: w16tool hex FILE.w16 IN.pal -o OUT.hex [--colors-only]\n");
+		fprintf(stderr, "usage: w16tool hex FILE.w16 IN.pal|IN.cps -o OUT.hex [--colors-only]\n");
 		return 1;
 	}
 	if (!load_w16(w16_path, &w16))
@@ -893,11 +1176,11 @@ static void usage(const char *argv0)
 		"usage: %s <command> ...\n"
 		"\n"
 		"  info FILE.w16                  print subset and weight summary\n"
-		"  apply FILE.w16 IN.bmp -o OUT.bmp\n"
+		"  apply FILE.w16 IN.bmp|IN.cps -o OUT.bmp\n"
 		"                                 Bayer-dither to the 16 subset pens\n"
-		"  matrix FILE.w16 IN.pal -o OUT.bmp\n"
+		"  matrix FILE.w16 IN.pal|IN.cps -o OUT.bmp\n"
 		"                                 16x16 palette matrix; bottom half dithered\n"
-		"  hex FILE.w16 IN.pal -o OUT.hex\n"
+		"  hex FILE.w16 IN.pal|IN.cps -o OUT.hex\n"
 		"                                 16-pen Lospec .hex palette\n"
 		"    --colors-only              RRGGBB lines only, no index lists\n",
 		argv0);

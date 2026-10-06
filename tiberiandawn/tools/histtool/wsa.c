@@ -24,7 +24,7 @@ static unsigned short read_lcw_u16(const unsigned char *p)
 }
 
 /* Westwood LCW ("Format 80") decompression; matches ATARILIB/iff.cpp. */
-static unsigned long lcw_uncompress(const unsigned char *source, unsigned char *dest, unsigned long length)
+unsigned long lcw_uncompress(const unsigned char *source, unsigned char *dest, unsigned long length)
 {
 	const unsigned char *src = source;
 	unsigned char *dst = dest;

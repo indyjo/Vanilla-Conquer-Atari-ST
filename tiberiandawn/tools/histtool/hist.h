@@ -14,7 +14,7 @@ void hist_add(HistCounts *dst, const HistCounts *src);
 int hist_load_file(const char *path, HistCounts *out);
 
 /* Write histogram; dense=0 omits zero bins. filter_line may be NULL. */
-int hist_save_file(const char *path, const HistCounts *h, int dense, int n_bmp, int n_wsa, int n_hist,
+int hist_save_file(const char *path, const HistCounts *h, int dense, int n_bmp, int n_wsa, int n_cps, int n_hist,
 	long long total_pixels, const char *filter_line);
 
 void hist_filter_add(HistCounts *h, long long n);

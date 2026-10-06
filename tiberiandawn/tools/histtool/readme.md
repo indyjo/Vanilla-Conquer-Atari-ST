@@ -22,6 +22,7 @@ make
 |-----------|---------|
 | `.bmp` | 8-bit indexed BMP (BI_RGB or BI_RLE8) |
 | `.wsa` | C&C WSA animation (all frames decoded and counted) |
+| `.cps` | C&C CPS still (raw or LCW; embedded palette is skipped) |
 | `.hist`, `.txt` | Sparse histogram: `index count` per line |
 
 **Options:** `-o FILE`, `--dense`, `--add=N`, `--mul=N`, `--div=N`,
@@ -35,6 +36,7 @@ to `>= 0` after each step.
 ```bash
 ./histtool -o ui.hist assets/ui/*.bmp
 ./histtool -o map.hist EUROPE.WSA AFRICA.WSA
+./histtool -o satsel.hist SATSEL.CPS
 ./histtool -o merged.hist stats_a.hist stats_b.hist frame.bmp
 ./histtool screen.bmp --add=1 --div=2 -o screen_trim.hist
 ./histtool counts.hist --mul=3 --no-chart -o counts_x3.hist

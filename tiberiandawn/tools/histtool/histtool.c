@@ -1,5 +1,6 @@
 #include "bmp.h"
 #include "chart.h"
+#include "cps.h"
 #include "hist.h"
 #include "wsa.h"
 
@@ -47,6 +48,7 @@ static void usage(const char *prog)
 		"Inputs (positional, at least one):\n"
 		"  *.bmp           8-bit indexed-color BMP; pixel indices accumulated\n"
 		"  *.wsa           C&C WSA animation; all decoded frames accumulated\n"
+		"  *.cps           C&C CPS still (uncompressed or LCW); pixels accumulated\n"
 		"  *.hist, *.txt   Sparse histogram: lines \"index count\" (# comments OK)\n"
 		"  All inputs are summed into one histogram.\n"
 		"\n"
@@ -66,15 +68,17 @@ static void usage(const char *prog)
 		"\n"
 		"BMP: Windows BMP v3, 8 bpp, BI_RGB or BI_RLE8.\n"
 		"WSA: frame 0 LCW base image; later frames LCW + viewport XOR deltas.\n"
+		"CPS: 2-byte file size, 8-byte header, optional skip palette, then raw or LCW pixels.\n"
 		"Output is compatible with palette-opt --hist FILE.\n"
 		"\n"
 		"Examples:\n"
 		"  %s -o ui.hist assets/ui/*.bmp\n"
 		"  %s -o map.hist EUROPE.WSA AFRICA.WSA\n"
+		"  %s -o satsel.hist SATSEL.CPS\n"
 		"  %s -o merged.hist stats_a.hist stats_b.hist frame.bmp\n"
 		"  %s screen.bmp hud.bmp --add=1 --div=2 -o screen_trim.hist\n"
 		"  %s counts.hist --mul=3 --no-chart -o counts_x3.hist\n",
-		prog, prog, prog, prog, prog, prog);
+		prog, prog, prog, prog, prog, prog, prog);
 }
 
 static int path_has_ext(const char *path, const char *ext)
@@ -261,6 +265,8 @@ static int input_kind(const char *path)
 		return 1;
 	if (path_has_ext(path, ".wsa"))
 		return 2;
+	if (path_has_ext(path, ".cps"))
+		return 4;
 	if (path_has_ext(path, ".hist") || path_has_ext(path, ".txt"))
 		return 3;
 	return 0;
@@ -289,6 +295,7 @@ int main(int argc, char **argv)
 	HistCounts total;
 	int n_bmp = 0;
 	int n_wsa = 0;
+	int n_cps = 0;
 	int n_hist = 0;
 	int argi;
 	int i;
@@ -352,6 +359,13 @@ int main(int argc, char **argv)
 			n_wsa++;
 			if (!quiet)
 				fprintf(stderr, "histtool: %s  %lld pixels\n", path, px);
+		} else if (kind == 4) {
+			px = cps_hist_accumulate(path, &total);
+			if (px < 0)
+				return 1;
+			n_cps++;
+			if (!quiet)
+				fprintf(stderr, "histtool: %s  %lld pixels\n", path, px);
 		} else if (kind == 3) {
 			if (hist_load_file(path, &total) != 0)
 				return 1;
@@ -359,14 +373,14 @@ int main(int argc, char **argv)
 			if (!quiet)
 				fprintf(stderr, "histtool: %s  loaded\n", path);
 		} else {
-			fprintf(stderr, "error: unknown type: %s (expected .bmp, .wsa, .hist, or .txt)\n", path);
+			fprintf(stderr, "error: unknown type: %s (expected .bmp, .wsa, .cps, .hist, or .txt)\n", path);
 			return 1;
 		}
 	}
 
 	if (!quiet)
-		fprintf(stderr, "histtool: total %lld pixels from %d bmp + %d wsa + %d hist\n",
-			hist_total(&total), n_bmp, n_wsa, n_hist);
+		fprintf(stderr, "histtool: total %lld pixels from %d bmp + %d wsa + %d cps + %d hist\n",
+			hist_total(&total), n_bmp, n_wsa, n_cps, n_hist);
 
 	if (n_filters > 0 && !quiet)
 		fprintf(stderr, "histtool: filters: %s\n", filter_line);
@@ -374,7 +388,7 @@ int main(int argc, char **argv)
 	apply_filters(&total);
 
 	if (out_path) {
-		if (hist_save_file(out_path, &total, dense, n_bmp, n_wsa, n_hist, hist_total(&total),
+		if (hist_save_file(out_path, &total, dense, n_bmp, n_wsa, n_cps, n_hist, hist_total(&total),
 				filter_line[0] ? filter_line : NULL) != 0)
 			rc = 1;
 	} else if (!quiet) {

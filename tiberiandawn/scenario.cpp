@@ -297,10 +297,16 @@ bool Read_Scenario(char* root)
         WWMessageBox().Process(TXT_UNABLE_READ_SCENARIO);
         Hide_Mouse();
 #endif
+#ifdef ATARI_ST
+        ST_Log_Free_Memory("Read_Scenario failed");
+#endif
         return (false);
     }
     ScenarioInit--;
     CCDebugString("C&C95 - Leaving Read_Scenario.\n");
+#ifdef ATARI_ST
+    ST_Log_Free_Memory("Read_Scenario end");
+#endif
     return (true);
 }
 

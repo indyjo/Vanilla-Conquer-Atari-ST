@@ -15,6 +15,27 @@ cnc.ttp -XYQ         # mostly disable audio (-XQ)
 
 Intro / briefing cutscenes are not part of the timed run. Abort them with **ESC**, or delete `MOVIES.MIX` so they never start.
 
+### Automatic run
+
+`tiberiandawn/tools/hatari/bench.py` autostarts playback on a private copy of the game disk and prints the timing block. `MOVIES.MIX` is left out of that copy so briefings do not wait on ESC, and `PlayIntro` is forced off. Hatari is stopped when the `fps:` line is printed.
+
+```text
+python3 tiberiandawn/tools/hatari/bench.py \
+  --candidate path/to/cnc.ttp \
+  --record record2.bin
+```
+
+Add `--baseline` and a `cnc.sym` from `dump_symbols.sh` for each binary to run a second instance and compare the ST-low screen RAM at every `Main_Loop` entry of the timed run. Hatari screenshots are not used because they show what the beam has scanned so far, which can be a frame behind or torn.
+
+```text
+python3 tiberiandawn/tools/hatari/bench.py \
+  --baseline path/to/cnc.ttp --baseline-sym path/to/cnc.sym \
+  --candidate path/to/cnc.ttp --candidate-sym path/to/cnc.sym \
+  --record record2.bin
+```
+
+`--max-diff-pixels` (default 64) is the largest number of changed pixels allowed on any frame. `0` requires an exact match outside the frame meter. Pixels in that meter (x 80..159, y 0..7 on the 320-wide screen) are ignored, because the readout changes whenever the binary gets faster. `python3 tiberiandawn/tools/hatari/bench.py --self-test` checks the compare logic without Hatari.
+
 ### Autotune (0.3.3+)
 
 From **0.3.3**, a boot CPU probe turns on idle-animation throttles and AI freeze during map gestures on ≤16 MHz-class machines (8 MHz ST/STe and 16 MHz Mega STe). That cuts fidget redraws, so the published ST/STe fps numbers **include** autotune. Construction buildup/sell frames stay on unless you set `SkipBuildingConstructionAnims=1`. Falcon/TT are above the probe threshold and are unaffected.

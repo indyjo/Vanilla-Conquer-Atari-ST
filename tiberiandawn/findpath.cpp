@@ -1294,6 +1294,37 @@ PathType* FootClass::Find_Path(CELL dest, FacingType* final_moves, int maxlen, M
     maxlen--;
 
     /*
+    **	Prevent ill-fated path queries to other continents from slowing the game down.
+    **	Most searches stay on one continent, so the continent IDs are equal.
+    **	Only a mismatch looks at the id range and whether this unit is land-bound.
+    **	Land units cannot cross water, rock, or walls onto another continent, so
+    **	we can bail out early.
+    **  "Continents" are the regions of the map that are connected to each other.
+    */
+    unsigned char const source_id = Map[source].Continent;
+    unsigned char const dest_id = Map[dest].Continent;
+    if (source_id != dest_id) {
+        if ((unsigned char)(source_id - 1) < 127 && (unsigned char)(dest_id - 1) < 127) {
+            bool land_bound = (What_Am_I() == RTTI_INFANTRY);
+            if (What_Am_I() == RTTI_UNIT) {
+                switch (((UnitClass*)this)->Class->Speed) {
+                case SPEED_FOOT:
+                case SPEED_TRACK:
+                case SPEED_WHEEL:
+                case SPEED_HARVESTER:
+                    land_bound = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (land_bound) {
+                return (&path);
+            }
+        }
+    }
+
+    /*
     **	As long as there is room to put commands in the movement command list,
     ** then put commands in it.  We build the path using the following
     ** methodology.

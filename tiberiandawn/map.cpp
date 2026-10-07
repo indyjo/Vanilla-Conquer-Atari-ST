@@ -1021,6 +1021,96 @@ void MapClass::Logic(void)
  * HISTORY:                                                                                    *
  *   03/15/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
+/***********************************************************************************************
+ * MapClass::Build_Continents -- Label connected land regions inside the playable map.        *
+ *                                                                                             *
+ *    Each passable cell inside the playable rectangle receives a continent id. Water, rock,  *
+ *    walls, and every cell outside that rectangle stay 0. Ids run from 1 through 127. If     *
+ *    more than 127 regions exist, the rest share 127.                                        *
+ *                                                                                             *
+ * INPUT:   none                                                                               *
+ *                                                                                             *
+ * OUTPUT:  none                                                                               *
+ *                                                                                             *
+ * WARNINGS:   none                                                                            *
+ *=============================================================================================*/
+void MapClass::Build_Continents(void)
+{
+	CELL cell;
+
+	for (cell = 0; cell < MAP_CELL_TOTAL; cell++) {
+		(*this)[cell].Continent = 0;
+	}
+
+	CELL* queue = new CELL[MAP_CELL_TOTAL];
+	if (!queue) {
+		return;
+	}
+
+	unsigned char next_id = 1;
+	int const x0 = MapCellX;
+	int const y0 = MapCellY;
+	int const x1 = MapCellX + MapCellWidth;
+	int const y1 = MapCellY + MapCellHeight;
+
+	for (int y = y0; y < y1; y++) {
+		for (int x = x0; x < x1; x++) {
+			CELL const start = XY_Cell(x, y);
+			CellClass& start_cell = (*this)[start];
+			if (start_cell.Continent != 0) {
+				continue;
+			}
+			if (!Ground[start_cell.Land_Type()].Cost[SPEED_TRACK]) {
+				continue;
+			}
+
+			unsigned char const id = next_id;
+			if (next_id < 127) {
+				next_id++;
+			}
+
+			int head = 0;
+			int tail = 0;
+			queue[tail++] = start;
+			start_cell.Continent = id;
+
+			while (head < tail) {
+				CELL const cur = queue[head++];
+				int const cx = Cell_X(cur);
+				int const cy = Cell_Y(cur);
+
+				for (int face = FACING_N; face < FACING_COUNT; face++) {
+					CELL const next = ::Adjacent_Cell(cur, (FacingType)face);
+					if ((unsigned)next >= (unsigned)MAP_CELL_TOTAL) {
+						continue;
+					}
+					int const nx = Cell_X(next);
+					int const ny = Cell_Y(next);
+					if (nx < x0 || nx >= x1 || ny < y0 || ny >= y1) {
+						continue;
+					}
+					if ((nx - cx) > 1 || (cx - nx) > 1 || (ny - cy) > 1 || (cy - ny) > 1) {
+						continue;
+					}
+
+					CellClass& next_cell = (*this)[next];
+					if (next_cell.Continent != 0) {
+						continue;
+					}
+					if (!Ground[next_cell.Land_Type()].Cost[SPEED_TRACK]) {
+						continue;
+					}
+					next_cell.Continent = id;
+					queue[tail++] = next;
+				}
+			}
+		}
+	}
+
+	delete[] queue;
+}
+
+
 int MapClass::Cell_Region(CELL cell)
 {
 	return((Cell_X(cell) / REGION_WIDTH) + 1) +	(((Cell_Y(cell) / REGION_HEIGHT) + 1) * MAP_REGION_WIDTH);

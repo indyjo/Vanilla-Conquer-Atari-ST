@@ -886,4 +886,6 @@ void Fixup_Scenario(void)
         ((BuildingTypeClass&)BuildingTypeClass::As_Reference(STRUCT_WEAP)).MaxStrength = 400;
         ((UnitTypeClass&)UnitTypeClass::As_Reference(UNIT_APC)).Pre &= ~STRUCTF_REPAIR;
     }
+
+    Map.Build_Continents();
 }

@@ -85,6 +85,7 @@ public:
     bool Read_Binary_File(char const* fname, uint32_t* crc);
 
     int Overpass(void);
+    void Build_Continents(void);
 
     virtual void Logic(void);
     virtual void Set_Map_Dimensions(int x, int y, int w, int h);

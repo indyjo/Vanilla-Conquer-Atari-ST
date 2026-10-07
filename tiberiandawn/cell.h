@@ -322,10 +322,18 @@ private:
      */
     AnimClass* CTFFlag;
 
+public:
+    /*
+    **	Land-unit continent inside the playable map. Values 1..127 enumerate
+    **	connected passable regions. 0 and 128..255 are reserved.
+    */
+    unsigned char Continent;
+
+private:
     /*
     **	Pad to 32 bytes on m68k (2-byte alignment). Save/load writes sizeof(*this).
     */
-    unsigned char Reserved[2];
+    unsigned char Reserved;
 };
 
 #endif

@@ -424,6 +424,7 @@ bool CellClass::Is_Generally_Clear(bool ignore_cloaked) const
 void CellClass::Recalc_Attributes(void)
 {
 	Validate();
+	bool const was_passable = ::Ground[Land_Type()].Cost[SPEED_TRACK] != 0;
 	if (Overlay != OVERLAY_NONE &&
 		((int)Overlay < (int)OVERLAY_FIRST || (int)Overlay >= (int)OVERLAY_COUNT)) {
 		char dbg[128];
@@ -446,7 +447,7 @@ void CellClass::Recalc_Attributes(void)
 	*/
 	if (Overlay != OVERLAY_NONE) {
 		Land = OverlayTypeClass::As_Reference(Overlay).Land;
-		if (Land != LAND_CLEAR) return;
+		if (Land != LAND_CLEAR) goto done;
 	}
 
 	/*
@@ -470,7 +471,7 @@ void CellClass::Recalc_Attributes(void)
 			while (*ptr != -1) {
 				if (icon == *ptr++) {
 					Land = ttype->AltLand;
-					return;
+					goto done;
 				}
 			}
 		}
@@ -479,13 +480,22 @@ void CellClass::Recalc_Attributes(void)
 		**	No exception found, so just return the default ground type for this template.
 		*/
 		Land = ttype->Land;
-		return;
+		goto done;
 	}
 
 	/*
 	**	No template is the same as clear terrain.
 	*/
 	Land = TemplateTypeClass::As_Reference(TEMPLATE_CLEAR1).Land;
+
+done:
+	/*
+	**	A wall removed or a bridge blown changes which land regions connect.
+	**	Skip this during scenario load; Fixup_Scenario labels the whole map once.
+	*/
+	if (!ScenarioInit && was_passable != (::Ground[Land_Type()].Cost[SPEED_TRACK] != 0)) {
+		Map.Build_Continents();
+	}
 }
 
 
@@ -2547,7 +2557,11 @@ bool CellClass::Is_Visible(HouseClass *player) const
 
 void CellClass::Override_Land_Type(LandType type)
 {
+	bool const was_passable = ::Ground[Land_Type()].Cost[SPEED_TRACK] != 0;
 	OverrideLand = type;
+	if (!ScenarioInit && was_passable != (::Ground[Land_Type()].Cost[SPEED_TRACK] != 0)) {
+		Map.Build_Continents();
+	}
 }
 
 #ifdef USE_RA_AI

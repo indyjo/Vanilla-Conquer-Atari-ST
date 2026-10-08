@@ -98,7 +98,7 @@ enum { SPRITE_CACHE_GHOST_SYNTH_BACKDROP_IX = 12 };
 struct SpriteCacheKey {
 	uint32_t shape_id; /* (uint32_t)(uintptr_t) blob root — not hashed */
 	uint16_t frame;
-	uint8_t mode_pack; /* 0 plain, 1 fade, 2 ghost */
+	uint8_t mode_pack; /* 0 plain, 1 fade, 2 ghost, 3 predator (mask only) */
 	uint8_t trans_flag; /* 0/1 */
 	uint32_t fade_id; /* 0 none; else (uint32_t)(uintptr_t) fade table */
 	uint32_t ghost_id; /* 0 none; else (uint32_t)(uintptr_t) ghost table */
@@ -269,8 +269,8 @@ static void sprite_cache_layout_for_crop(int crop_w, int crop_h, int *out_planar
 		*out_mask_bytes = (size_t)mask_rowb * (size_t)planar_h;
 }
 
-/* Pick smallest tier whose per-slot byte cap fits the crop's packed planar+mask size. */
-static int sprite_cache_pick_tier_index_for_crop(int crop_w, int crop_h)
+/* Pick smallest tier whose per-slot byte cap fits the crop's packed planar+mask (or mask-only) size. */
+static int sprite_cache_pick_tier_index_for_crop(int crop_w, int crop_h, bool mask_only)
 {
 	if (crop_w < 0 || crop_h < 0)
 		return -1;
@@ -293,7 +293,7 @@ static int sprite_cache_pick_tier_index_for_crop(int crop_w, int crop_h)
 	size_t need_p = 0;
 	size_t need_m = 0;
 	sprite_cache_layout_for_crop(crop_w, crop_h, nullptr, nullptr, nullptr, nullptr, &need_p, &need_m);
-	const size_t need = need_p + need_m;
+	const size_t need = mask_only ? need_m : need_p + need_m;
 
 	int best_i = -1;
 	int best_sz = 0;
@@ -984,6 +984,130 @@ static int sprite_cache_fill_slot_pixels(
 	return 2;
 }
 
+/* Predator slot: [header | 1bpp mask] with mask_off = 0 and no planar pixels. Returns 2, or 0 on failure. */
+static int sprite_cache_fill_slot_mask(SpriteCacheTier *tr,
+	SpriteSlotHeader *slot,
+	const uint8_t *src,
+	int stride,
+	int crop_x,
+	int crop_y,
+	int crop_w,
+	int crop_h)
+{
+	slot->mask_off = 0;
+	if (crop_w <= 0 || crop_h <= 0)
+		return 2;
+	if (crop_w > SPRITE_CACHE_ROW_BUF_MAX)
+		return 0;
+
+	int mask_rowb = 0;
+	size_t need_m = 0;
+	sprite_cache_layout_for_crop(crop_w, crop_h, nullptr, nullptr, nullptr, &mask_rowb, nullptr, &need_m);
+	if (need_m > (size_t)tr->payload_sz)
+		return 0;
+
+	uint8_t *const maskbm = sprite_slot_planar(slot);
+	uint8_t row_buf[SPRITE_CACHE_ROW_BUF_MAX];
+	for (int sy = 0; sy < crop_h; ++sy) {
+		const uint8_t *srow = src + (size_t)(crop_y + sy) * (size_t)stride + (size_t)crop_x;
+		sprite_cache_remap_row(srow, crop_w, 0u, 1, nullptr, nullptr, row_buf, maskbm + (size_t)sy * (size_t)mask_rowb);
+	}
+	return 2;
+}
+
+/* DOS PredPosTable (KEYFBUFF.ASM): backdrop sample distance in pixels. */
+static const uint8_t g_sprite_cache_pred_offsets[8] = { 1, 3, 2, 5, 2, 3, 4, 1 };
+
+/* Silhouette bits (1 = shape pixel) for 16 sprite-local columns starting at c; outside the crop is 0. */
+static inline uint16_t sprite_cache_mask_draw_bits16(const uint16_t *mrow, int words, int c)
+{
+	const int wi = (c >= 0) ? (c >> 4) : -((15 - c) >> 4);
+	const unsigned s = (unsigned)(c - wi * 16);
+	const uint16_t hi = (wi >= 0 && wi < words) ? mrow[wi] : 0xFFFFu;
+	if (s == 0)
+		return (uint16_t)~hi;
+	const uint16_t lo = (wi + 1 >= 0 && wi + 1 < words) ? mrow[wi + 1] : 0xFFFFu;
+	return (uint16_t)~(uint16_t)((((uint32_t)hi << 16) | lo) >> (16u - s));
+}
+
+/*
+ * SHAPE_PREDATOR on interleaved ST low-res: inside the silhouette, each 16-px group of every plane is
+ * replaced by the backdrop k px to the right (left when phase < 0), k from the DOS offset table indexed
+ * by phase, row and group. Groups are walked away from the sample side so reads see unmodified pixels.
+ */
+static void sprite_cache_predator_apply(uint8_t *dst_root_fb,
+	int dst_row_bytes,
+	int dst_x,
+	int dst_y,
+	int draw_w,
+	int draw_h,
+	const uint8_t *maskbm,
+	int mask_rowb,
+	int src_x,
+	int src_y,
+	int phase,
+	int lim_x0,
+	int lim_x1)
+{
+	if (draw_w <= 0 || draw_h <= 0 || mask_rowb <= 0 || dst_x < 0 || lim_x1 <= lim_x0)
+		return;
+
+	const bool leftward = phase < 0;
+	const unsigned ph = leftward ? (unsigned)-phase : (unsigned)phase;
+	const int words = mask_rowb >> 1;
+	const int x1 = dst_x + draw_w;
+	const int g0 = dst_x >> 4;
+	const int g1 = (x1 - 1) >> 4;
+	const uint16_t lm = (uint16_t)(0xFFFFu >> (dst_x & 15));
+	const uint16_t rm = (uint16_t)(0xFFFFu << (15 - ((x1 - 1) & 15)));
+	const int lim_g0 = (lim_x0 > 0 ? lim_x0 : 0) >> 4;
+	const int lim_g1 = (lim_x1 - 1) >> 4;
+	const int cbase = src_x - dst_x;
+
+	for (int r = 0; r < draw_h; ++r) {
+		const uint16_t *mrow = (const uint16_t *)(const void *)(maskbm + (size_t)(src_y + r) * (size_t)mask_rowb);
+		uint16_t *drow = (uint16_t *)(void *)(dst_root_fb + (size_t)(dst_y + r) * (size_t)dst_row_bytes);
+
+		if (!leftward) {
+			for (int g = g0; g <= g1; ++g) {
+				uint16_t m = sprite_cache_mask_draw_bits16(mrow, words, (g << 4) + cbase);
+				if (g == g0)
+					m &= lm;
+				if (g == g1)
+					m &= rm;
+				if (m == 0)
+					continue;
+				const unsigned k = g_sprite_cache_pred_offsets[(ph + (unsigned)r + (unsigned)g) & 7u];
+				uint16_t *cur = drow + ((size_t)g << 2);
+				const uint16_t *nxt = (g < lim_g1) ? cur + 4 : cur;
+				for (int p = 0; p < 4; ++p) {
+					const uint16_t c = cur[p];
+					const uint16_t sh = (uint16_t)((((uint32_t)c << 16) | nxt[p]) >> (16u - k));
+					cur[p] = (uint16_t)((c & (uint16_t)~m) | (sh & m));
+				}
+			}
+		} else {
+			for (int g = g1; g >= g0; --g) {
+				uint16_t m = sprite_cache_mask_draw_bits16(mrow, words, (g << 4) + cbase);
+				if (g == g0)
+					m &= lm;
+				if (g == g1)
+					m &= rm;
+				if (m == 0)
+					continue;
+				const unsigned k = g_sprite_cache_pred_offsets[(ph + (unsigned)r + (unsigned)g) & 7u];
+				uint16_t *cur = drow + ((size_t)g << 2);
+				const uint16_t *prv = (g > lim_g0) ? cur - 4 : cur;
+				for (int p = 0; p < 4; ++p) {
+					const uint16_t c = cur[p];
+					const uint16_t sh = (uint16_t)((((uint32_t)prv[p] << 16) | c) >> k);
+					cur[p] = (uint16_t)((c & (uint16_t)~m) | (sh & m));
+				}
+			}
+		}
+	}
+}
+
 /* Probes tiers, fills on miss, and blits cropped intersection. */
 static long sprite_cache_cached_tile_dispatch(SpriteCacheBlit const *req)
 {
@@ -1002,9 +1126,12 @@ static long sprite_cache_cached_tile_dispatch(SpriteCacheBlit const *req)
 	const int clip_oy = req->oy;
 	void const *const identity_root = req->identity;
 	const int identity_frame = req->frame;
+	const bool predator = req->predator != 0;
 
 	uint8_t mode_pack = 0;
-	if (ghost_tab)
+	if (predator)
+		mode_pack = 3;
+	else if (ghost_tab)
 		mode_pack = 2;
 	else if (fade_tab)
 		mode_pack = 1;
@@ -1038,7 +1165,7 @@ static long sprite_cache_cached_tile_dispatch(SpriteCacheBlit const *req)
 	const bool have_clip = clip != nullptr && clip->valid;
 	int known_tier = -1;
 	if (have_clip) {
-		known_tier = sprite_cache_pick_tier_index_for_crop(clip->w, clip->h);
+		known_tier = sprite_cache_pick_tier_index_for_crop(clip->w, clip->h, predator);
 		if (known_tier < 0)
 			return -1;
 
@@ -1113,7 +1240,8 @@ static long sprite_cache_cached_tile_dispatch(SpriteCacheBlit const *req)
 			    raster_base, full_w, full_h, src_stride, trans, &crop_x, &crop_y, &crop_w, &crop_h);
 		}
 
-		const int tier_ix = (known_tier >= 0) ? known_tier : sprite_cache_pick_tier_index_for_crop(crop_w, crop_h);
+		const int tier_ix =
+		    (known_tier >= 0) ? known_tier : sprite_cache_pick_tier_index_for_crop(crop_w, crop_h, predator);
 		if (tier_ix < 0)
 			return -1;
 
@@ -1137,7 +1265,9 @@ static long sprite_cache_cached_tile_dispatch(SpriteCacheBlit const *req)
 
 		slot->key = want;
 
-		const int fill_route = sprite_cache_fill_slot_pixels(
+		const int fill_route = predator
+		    ? sprite_cache_fill_slot_mask(tr, slot, raster_base, src_stride, crop_x, crop_y, crop_w, crop_h)
+		    : sprite_cache_fill_slot_pixels(
 			    tr,
 			    slot,
 			    dst_root_fb,
@@ -1210,6 +1340,23 @@ static long sprite_cache_cached_tile_dispatch(SpriteCacheBlit const *req)
 	int mask_rowb = 0;
 	sprite_cache_layout_for_crop(
 	    (int)slot->crop_w, (int)slot->crop_h, &scratch_w, &scratch_h, &planar_rowb, &mask_rowb, nullptr, nullptr);
+
+	if (predator) {
+		sprite_cache_predator_apply(dst_root_fb,
+		    dst_row_bytes,
+		    dst_x,
+		    dst_y,
+		    draw_w,
+		    draw_h,
+		    maskbm,
+		    mask_rowb,
+		    src_x,
+		    src_y,
+		    req->pred_phase,
+		    req->pred_x0,
+		    req->pred_x1);
+		return (long)((size_t)draw_w * (size_t)draw_h);
+	}
 
 	const BOOL use_merge = (trans != 0 || ghost_tab != nullptr) ? TRUE : FALSE;
 

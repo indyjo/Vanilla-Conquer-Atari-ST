@@ -494,6 +494,44 @@ static void ST_Composite_Chunky(const uint8_t* src,
     }
 }
 
+/*
+** SHAPE_PREDATOR on a chunky viewport, matching the planar sprite-cache kernel: every opaque source
+** pixel takes the backdrop k px right (left when phase < 0), k from the DOS offset table indexed by
+** phase, row and 16-px group. view_w bounds the read so the shift never samples outside the window.
+*/
+static void ST_Predator_Chunky(const uint8_t* src,
+                               int src_stride,
+                               uint8_t* view_base,
+                               int dst_stride,
+                               int dst_x,
+                               int dst_y,
+                               int width,
+                               int height,
+                               int view_w,
+                               int phase)
+{
+    static const uint8_t offsets[8] = {1, 3, 2, 5, 2, 3, 4, 1};
+    const bool leftward = phase < 0;
+    const unsigned ph = leftward ? (unsigned)-phase : (unsigned)phase;
+
+    for (int row = 0; row < height; ++row) {
+        const uint8_t* s = src + static_cast<size_t>(row) * static_cast<size_t>(src_stride);
+        uint8_t* d = view_base + static_cast<size_t>(dst_y + row) * static_cast<size_t>(dst_stride);
+        for (int i = 0; i < width; ++i) {
+            const int col = leftward ? (width - 1 - i) : i;
+            if (s[col] == 0) {
+                continue;
+            }
+            const int x = dst_x + col;
+            const int k = offsets[(ph + (unsigned)row + ((unsigned)x >> 4)) & 7u];
+            const int sx = leftward ? x - k : x + k;
+            if (sx >= 0 && sx < view_w) {
+                d[x] = d[sx];
+            }
+        }
+    }
+}
+
 extern "C" void Bftp_ExArgs_init_zero(Bftp_ExArgs* ex)
 {
     if (!ex) {
@@ -525,11 +563,10 @@ long Buffer_Frame_To_Page_Ex(int x,
     const uint8_t* ghost_table = (const uint8_t*)ex->ghost_table;
     const uint8_t* fade_table = (const uint8_t*)ex->fade_table;
     (void)ex->fading_num;
-    (void)ex->predoffset;
 
     const int trans = (flags & 0x40) ? 1 : 0;
     const int centered = (flags & 0x20) ? 1 : 0;
-    const int predator = (flags & 0x0200) ? 1 : 0;
+    const int predator = ((flags & 0x0200) && ghost_table == nullptr && fade_table == nullptr) ? 1 : 0;
 
     if (w <= 0 || h <= 0) {
         return 0;
@@ -597,7 +634,6 @@ long Buffer_Frame_To_Page_Ex(int x,
         uint8_t* root = (uint8_t*)gb->Get_Buffer();
         const int ax0 = view.Get_XPos() + dst_x;
         const int ay0 = view.Get_YPos() + dst_y;
-        (void)predator;
         SpriteCacheLazyGate gate = {
             .fill = planar_decode_on_miss ? ex->lazy_frame_fill : nullptr,
             .ctx = planar_decode_on_miss ? ex->lazy_frame_ctx : nullptr,
@@ -625,10 +661,14 @@ long Buffer_Frame_To_Page_Ex(int x,
             .identity = ex->identity_root,
             .frame = ex->identity_frame,
             .gate = planar_decode_on_miss ? &gate : nullptr,
+            .predator = predator,
+            .pred_phase = ex->predoffset,
+            .pred_x0 = view.Get_XPos(),
+            .pred_x1 = view.Get_XPos() + vpw,
         };
         const long drew = ST_SPRITE_CACHE_Buffer_Frame_Planar_Composite(&blit);
-        if (drew >= 0) {
-            return drew;
+        if (drew >= 0 || predator) {
+            return drew >= 0 ? drew : 0;
         }
         /*
          * Sprite cache tiers top out at 96×96; larger keyframe canvases (e.g. OPTIONS.SHP
@@ -654,6 +694,12 @@ long Buffer_Frame_To_Page_Ex(int x,
 
     uint8_t* dst_base = (uint8_t*)view.Get_Offset();
     const int dst_stride = view.Get_Pitch() + view.Get_XAdd();
+    if (predator) {
+        if (dst_base != nullptr && dst_stride > 0) {
+            ST_Predator_Chunky(src_raster, w, dst_base, dst_stride, dst_x, dst_y, blit_w, blit_h, vpw, ex->predoffset);
+        }
+        return static_cast<long>(blit_w * blit_h);
+    }
     if (dst_base != nullptr && dst_stride > 0) {
         if (!trans && ghost_table == nullptr && fade_table == nullptr) {
             for (int row = 0; row < blit_h; ++row) {

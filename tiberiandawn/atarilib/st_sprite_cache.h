@@ -57,6 +57,11 @@ struct SpriteCacheLazyGate {
  * callers do not pass that pointer separately.
  * gate is null when there is no miss callback. Opaque draws (trans == 0) probe one tier;
  * transparent draws walk tiers.
+ *
+ * predator != 0 draws no sprite pixels: inside the shape's silhouette the destination is replaced
+ * by itself shifted 1..5 px horizontally (SHAPE_PREDATOR cloak shimmer). Only a 1bpp mask is cached.
+ * pred_phase is the game frame (negative samples leftward); [pred_x0, pred_x1) is the absolute
+ * x span the shift may read from. ghost and fade must be null.
  */
 struct SpriteCacheBlit {
 	uint8_t *dst;
@@ -79,6 +84,10 @@ struct SpriteCacheBlit {
 	const void *identity;
 	int frame;
 	SpriteCacheLazyGate *gate;
+	int predator;
+	int pred_phase;
+	int pred_x0;
+	int pred_x1;
 };
 
 /*

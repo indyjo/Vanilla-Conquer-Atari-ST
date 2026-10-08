@@ -1617,12 +1617,18 @@ static void Sync_Delay(void)
 
         if (SpecialDialog == SDLG_NONE) {
             WWMouse->Erase_Mouse(&HidPage, true);
-            KeyNumType input = KN_NONE;
-            int x, y;
-            WWMouse->Erase_Mouse(&HidPage, false);
-            Map.Input(input, x, y);
-            if (input) {
-                Keyboard_Process(input);
+            /*
+            **	Playback skips map input in Main_Loop too. Hover changes the
+            **	cursor shape, and how often this loop runs depends on speed.
+            */
+            if (!PlaybackGame) {
+                KeyNumType input = KN_NONE;
+                int x, y;
+                WWMouse->Erase_Mouse(&HidPage, false);
+                Map.Input(input, x, y);
+                if (input) {
+                    Keyboard_Process(input);
+                }
             }
             Map.Render();
         }

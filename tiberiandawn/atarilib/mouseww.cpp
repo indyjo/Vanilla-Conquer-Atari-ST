@@ -33,12 +33,55 @@ void* _Mouse = NULL;
 int DLLForceMouseX = -1;
 int DLLForceMouseY = -1;
 
+/* Cursor save-under rows are 8..32 bytes. A generic memmove pays more in
+ * dispatch than in the copy itself. */
+static void ST_Copy_Span(const uint8_t *src, uint8_t *dst, int row_bytes)
+{
+	if (row_bytes == 8 || row_bytes == 16 || row_bytes == 24 || row_bytes == 32) {
+		if ((((uintptr_t)src | (uintptr_t)dst) & 3u) == 0u) {
+			const uint32_t *s = (const uint32_t *)src;
+			uint32_t *d = (uint32_t *)dst;
+			switch (row_bytes) {
+			case 8:
+				d[0] = s[0];
+				d[1] = s[1];
+				return;
+			case 16:
+				d[0] = s[0];
+				d[1] = s[1];
+				d[2] = s[2];
+				d[3] = s[3];
+				return;
+			case 24:
+				d[0] = s[0];
+				d[1] = s[1];
+				d[2] = s[2];
+				d[3] = s[3];
+				d[4] = s[4];
+				d[5] = s[5];
+				return;
+			default:
+				d[0] = s[0];
+				d[1] = s[1];
+				d[2] = s[2];
+				d[3] = s[3];
+				d[4] = s[4];
+				d[5] = s[5];
+				d[6] = s[6];
+				d[7] = s[7];
+				return;
+			}
+		}
+	}
+	memcpy(dst, src, (size_t)row_bytes);
+}
+
 static void ST_Copy_Bytes_2D(const uint8_t *src, uint8_t *dst, int row_bytes, int lines, int src_stride, int dst_stride)
 {
 	if (!src || !dst || row_bytes <= 0 || lines <= 0)
 		return;
 	for (int y = 0; y < lines; y++) {
-		memcpy(dst, src, (size_t)row_bytes);
+		ST_Copy_Span(src, dst, row_bytes);
 		src += src_stride;
 		dst += dst_stride;
 	}

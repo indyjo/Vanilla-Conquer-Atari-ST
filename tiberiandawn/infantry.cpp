@@ -633,8 +633,24 @@ void InfantryClass::Draw_It(int x, int y)
     *infantry
     ** goes into the stand pose for a single frame when pausing in the assigned cell destination. ST - 9/4/2019 1:39PM
     */
-    shapenum = Class->DoControls[doit].Count;
-    shapenum = Fetch_Stage() % MAX(shapenum, 1);
+    /*
+    **	DoControls[].Count is 1 for the standing pose (and 0 is treated as 1).
+    **	A general modulo is a libgcc call on the 68000. Powers of two are a mask.
+    **	Stage itself is left alone: infantry AI treats it as a one-shot counter.
+    */
+    {
+        unsigned const frame_count = Class->DoControls[doit].Count;
+        unsigned const stage = (unsigned)Fetch_Stage();
+        if (frame_count <= 1u) {
+            shapenum = 0;
+        } else if ((frame_count & (frame_count - 1u)) == 0u) {
+            shapenum = (int)(stage & (frame_count - 1u));
+        } else if (stage < frame_count) {
+            shapenum = (int)stage;
+        } else {
+            shapenum = (int)(stage % frame_count);
+        }
+    }
     if (Class->DoControls[doit].Jump) {
         shapenum += facenum * Class->DoControls[doit].Jump;
     }

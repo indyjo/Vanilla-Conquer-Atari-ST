@@ -3132,11 +3132,12 @@ static void Queue_Playback(void)
     mx = Get_Mouse_X();
     my = Get_Mouse_Y();
 
-    //------------------------------------------------------------------------
-    //	Compute the Game's CRC
-    //------------------------------------------------------------------------
-    Compute_Game_CRC();
-    CRC[Frame & 0x001f] = GameCRC;
+    /*
+    **	Playback used to hash every infantry, unit, building, and map object
+    **	into CRC[] each frame. The only reader of that value is the network
+    **	framesync check, which is not compiled in here, so the walk does not
+    **	affect the recording or the picture.
+    */
 
 #if 0 // This stuff applies to network games, lets keep it out for now for simplicity.
     //------------------------------------------------------------------------

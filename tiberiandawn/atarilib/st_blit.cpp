@@ -33,6 +33,27 @@ static const unsigned char k_skew_fxsr_nfsr[8] = {
 	0x00u
 };
 
+/* Screen and icon strides are constants. A runtime multiply is __mulsi3. */
+static inline size_t ST_Row_Offset(unsigned y, int row_bytes)
+{
+	switch (row_bytes) {
+	case 160:
+		return ((size_t)y << 7) + ((size_t)y << 5);
+	case 320:
+		return ((size_t)y << 8) + ((size_t)y << 6);
+	case 80:
+		return ((size_t)y << 6) + ((size_t)y << 4);
+	case 40:
+		return ((size_t)y << 5) + ((size_t)y << 3);
+	case 16:
+		return (size_t)y << 4;
+	case 8:
+		return (size_t)y << 3;
+	default:
+		return (size_t)y * (size_t)row_bytes;
+	}
+}
+
 static bool ST_Blit_Can_Use_Hardware(void)
 {
 	/* Same policy as g_blit_backend; kept for the HW two-pass merge path. */
@@ -136,10 +157,10 @@ static bool ST_Blit_Prepare_Impl(
 	regs->skew = skew_out;
 
 	const uint8_t *src_plane0 = src_base
-		+ (reverse_y ? (size_t)(pixel_height - 1) * (size_t)src_row_bytes : 0u)
+		+ (reverse_y ? ST_Row_Offset((unsigned)(pixel_height - 1), src_row_bytes) : 0u)
 		+ (reverse_x ? (size_t)(src_words - 1) * (size_t)src_word_bytes : 0u);
 	uint8_t *dst_plane0 = dst_base
-		+ (reverse_y ? (size_t)(pixel_height - 1) * (size_t)dst_row_bytes : 0u)
+		+ (reverse_y ? ST_Row_Offset((unsigned)(pixel_height - 1), dst_row_bytes) : 0u)
 		+ (reverse_x ? (size_t)(dst_words - 1) * (size_t)dst_word_bytes : 0u);
 	regs->src_addr = (void *)src_plane0;
 	regs->dst_addr = dst_plane0;
@@ -417,9 +438,9 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 
 	const bool same_surface = (src_root == dst_root);
 	const bool hog = ST_Blit_Should_Use_Hog(pixel_width, pixel_height);
-	const uint8_t *src = src_root + (size_t)sy_abs * (size_t)src_row_bytes
+	const uint8_t *src = src_root + ST_Row_Offset((unsigned)sy_abs, src_row_bytes)
 		+ (size_t)(sx_abs >> 4) * 8;
-	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
+	uint8_t *dst = dst_root + ST_Row_Offset((unsigned)dy_abs, dst_row_bytes)
 		+ (size_t)(dx_abs >> 4) * 8;
 	ST_Blit_Job job;
 
@@ -553,9 +574,9 @@ BOOL ST_Blit_Planar_Aligned_Rect_Copy(
 	}
 
 	const size_t row_bytes = (size_t)x_words * 2u;
-	const uint8_t *src = src_root + (size_t)y * (size_t)src_row_bytes
+	const uint8_t *src = src_root + ST_Row_Offset((unsigned)y, src_row_bytes)
 		+ (size_t)(x >> 4) * 8u;
-	uint8_t *dst = dst_root + (size_t)y * (size_t)dst_row_bytes
+	uint8_t *dst = dst_root + ST_Row_Offset((unsigned)y, dst_row_bytes)
 		+ (size_t)(x >> 4) * 8u;
 
 	ST_FRAME_BAR_BLIT_BEGIN();
@@ -685,9 +706,9 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 	const bool hog = ST_Blit_Should_Use_Hog(pixel_width, pixel_height);
 	const short src_word_left = (short)(sx_abs & ~15);
 	const short dst_word_left = (short)(dx_abs & ~15);
-	const uint8_t *src = mask_root + (size_t)sy_abs * (size_t)mask_row_bytes
+	const uint8_t *src = mask_root + ST_Row_Offset((unsigned)sy_abs, mask_row_bytes)
 		+ (size_t)((src_word_left >> 4) * 2);
-	uint8_t *dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
+	uint8_t *dst = dst_root + ST_Row_Offset((unsigned)dy_abs, dst_row_bytes)
 		+ (size_t)((dst_word_left >> 4) * 8);
 	ST_Blit_Job job;
 
@@ -752,11 +773,11 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 		return FALSE;
 	}
 
-	const uint8_t *const mask_src = mask_root + (size_t)sy_abs * (size_t)mask_row_bytes
+	const uint8_t *const mask_src = mask_root + ST_Row_Offset((unsigned)sy_abs, mask_row_bytes)
 		+ (size_t)((sx_abs >> 4) * 2);
-	const uint8_t *const planar_src = planar_root + (size_t)sy_abs * (size_t)planar_row_bytes
+	const uint8_t *const planar_src = planar_root + ST_Row_Offset((unsigned)sy_abs, planar_row_bytes)
 		+ (size_t)(sx_abs >> 4) * 8;
-	uint8_t *const dst = dst_root + (size_t)dy_abs * (size_t)dst_row_bytes
+	uint8_t *const dst = dst_root + ST_Row_Offset((unsigned)dy_abs, dst_row_bytes)
 		+ (size_t)(dx_abs >> 4) * 8;
 
 	const bool two_pass = ST_Blit_Can_Use_Hardware();

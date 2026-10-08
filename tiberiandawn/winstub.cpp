@@ -443,6 +443,57 @@ bool Any_Locked()
 /*
 ** Atari ST: KEYFBUFF.ASM is not linked for m68k; provide Buffer_Frame_To_Page here.
 */
+/*
+** Ghost/fade/transparent shape rows. Kept out of Buffer_Frame_To_Page_Ex so the
+** 68000 has enough registers for the per-pixel walk (that function is large
+** enough that the inner loop otherwise spills a pointer every pixel).
+*/
+static void ST_Composite_Chunky(const uint8_t* src,
+                                 int src_stride,
+                                 uint8_t* dst,
+                                 int dst_stride,
+                                 int width,
+                                 int height,
+                                 int trans,
+                                 const uint8_t* ghost,
+                                 const uint8_t* fade) __attribute__((noinline));
+
+static void ST_Composite_Chunky(const uint8_t* src,
+                                 int src_stride,
+                                 uint8_t* dst,
+                                 int dst_stride,
+                                 int width,
+                                 int height,
+                                 int trans,
+                                 const uint8_t* ghost,
+                                 const uint8_t* fade)
+{
+    for (int row = 0; row < height; ++row) {
+        const uint8_t* s = src;
+        uint8_t* d = dst;
+        for (int col = 0; col < width; ++col, ++s, ++d) {
+            const uint8_t s_raw = *s;
+            if (trans && s_raw == 0) {
+                continue;
+            }
+            uint8_t out;
+            if (ghost) {
+                const uint8_t it = ghost[s_raw];
+                if (it != 0xFFu) {
+                    out = ghost[256u + ((unsigned)it << 8) + (unsigned)*d];
+                } else {
+                    out = fade ? fade[s_raw] : s_raw;
+                }
+            } else {
+                out = fade ? fade[s_raw] : s_raw;
+            }
+            *d = out;
+        }
+        src += src_stride;
+        dst += dst_stride;
+    }
+}
+
 extern "C" void Bftp_ExArgs_init_zero(Bftp_ExArgs* ex)
 {
     if (!ex) {
@@ -614,30 +665,16 @@ long Buffer_Frame_To_Page_Ex(int x,
             return static_cast<long>(blit_w * blit_h);
         }
 
-        for (int row = 0; row < blit_h; ++row) {
-            const uint8_t* srow = src_raster + static_cast<size_t>(row) * static_cast<size_t>(w);
-            uint8_t* drow = dst_base + static_cast<size_t>(dst_y + row) * static_cast<size_t>(dst_stride)
-                            + static_cast<size_t>(dst_x);
-            for (int col = 0; col < blit_w; ++col) {
-                const uint8_t s_raw = srow[col];
-                if (trans && s_raw == 0) {
-                    continue;
-                }
-                uint8_t out;
-                if (ghost_table) {
-                    const uint8_t it = ghost_table[s_raw];
-                    if (it != 0xFFu) {
-                        const uint8_t d = drow[col];
-                        out = ghost_table[256 + (static_cast<size_t>(it) << 8) + static_cast<size_t>(d)];
-                    } else {
-                        out = fade_table ? fade_table[s_raw] : s_raw;
-                    }
-                } else {
-                    out = fade_table ? fade_table[s_raw] : s_raw;
-                }
-                drow[col] = out;
-            }
-        }
+        ST_Composite_Chunky(src_raster,
+                            w,
+                            dst_base + static_cast<size_t>(dst_y) * static_cast<size_t>(dst_stride)
+                                + static_cast<size_t>(dst_x),
+                            dst_stride,
+                            blit_w,
+                            blit_h,
+                            trans,
+                            ghost_table,
+                            fade_table);
         return static_cast<long>(blit_w * blit_h);
     }
 

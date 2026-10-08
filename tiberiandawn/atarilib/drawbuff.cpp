@@ -1519,10 +1519,11 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	// Calculate row stride (pitch + xadd)
 	int row_stride = Get_Row_Stride(vp);
 	
-	// Fill each row
+	/* One stride multiply, then walk. The old per-row multiply was __mulsi3. */
+	unsigned char *row_ptr = viewport_base + sx + sy * row_stride;
 	for (int row = 0; row < rect_height; row++) {
-		unsigned char *row_ptr = viewport_base + sx + (sy + row) * row_stride;
 		memset(row_ptr, color, rect_width);
+		row_ptr += row_stride;
 	}
 }
 

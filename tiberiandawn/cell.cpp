@@ -1724,6 +1724,28 @@ void CellClass::Adjust_Threat(HousesType house, int threat_value, CELL cell)
 }
 
 
+/*
+**	Adjust_Threat(house, -threat_value, cell) then Adjust_Threat(house, threat_value, cell).
+*/
+void CellClass::Adjust_Threat_Round_Trip(HousesType house, int threat_value, CELL cell)
+{
+	Validate();
+	int region = Map.Cell_Region(cell);
+
+	for (HousesType lp = HOUSE_FIRST; lp < HOUSE_MULTI1; lp++) {
+		if (lp == house) continue;
+
+		HouseClass *house_ptr = HouseClass::As_Pointer(lp);
+		if (house_ptr && (!house_ptr->IsHuman || !house_ptr->Is_Ally(house))) {
+			house_ptr->Adjust_Threat_Round_Trip(region, threat_value);
+		}
+	}
+	if (Debug_Threat) {
+		Map.Flag_To_Redraw(true);
+	}
+}
+
+
 /***********************************************************************************************
  * CellClass::Tiberium_Adjust -- Adjust the look of the Tiberium for smoothing purposes.       *
  *                                                                                             *

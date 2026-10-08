@@ -126,6 +126,22 @@ static inline void C2P_Movep_Store(uint8_t *dst_plane_bytes, uint32_t plane_byte
 #endif
 }
 
+static inline uint32_t C2P_Movep_Load(const uint8_t *src_plane_bytes)
+{
+#if defined(__m68k__)
+	uint32_t plane_bytes;
+	__asm__ volatile(
+		"movep.l 0(%1),%0"
+		: "=d"(plane_bytes)
+		: "a"(src_plane_bytes)
+		: "memory");
+	return plane_bytes;
+#else
+	return ((uint32_t)src_plane_bytes[0] << 24) | ((uint32_t)src_plane_bytes[2] << 16)
+	       | ((uint32_t)src_plane_bytes[4] << 8) | (uint32_t)src_plane_bytes[6];
+#endif
+}
+
 /*
  * STDOOM c2p_1x_lorez — hand-tuned m68k inner loop; host fallback ORs the same fragments.
  */
@@ -460,22 +476,27 @@ extern "C" void C2P_Render_Logical_Row_To_Planar(
 	const int row_unaligned = ((dst_x0 & 7) != 0);
 
 	int x = 0;
+	/* x steps by 8, so pixel k of every octet uses dither column (abs_x0 + k) & 3. */
+	const uint8_t *const m0 = C2P_MapDither[yb | ((abs_x0 + 0) & 3)];
+	const uint8_t *const m1 = C2P_MapDither[yb | ((abs_x0 + 1) & 3)];
+	const uint8_t *const m2 = C2P_MapDither[yb | ((abs_x0 + 2) & 3)];
+	const uint8_t *const m3 = C2P_MapDither[yb | ((abs_x0 + 3) & 3)];
 	/* Fast path: 8 pixels via PairLUT + movep when dst_x0 is 8-pixel aligned. */
 	for (; !row_unaligned && x + 8 <= logical_w; x += 8) {
-		const int apx = abs_x0 + x;
 		const int lx = dst_x0 + x;
 		const int group = lx >> 4;
 		const int half = (lx >> 3) & 1;
 		uint8_t *dst = planar_row + group * 8 + half;
+		const uint8_t *const s = logical_row + x;
 
-		const uint8_t c0 = C2P_MapDither[yb | ((apx + 0) & 3)][logical_row[x + 0]];
-		const uint8_t c1 = C2P_MapDither[yb | ((apx + 1) & 3)][logical_row[x + 1]];
-		const uint8_t c2 = C2P_MapDither[yb | ((apx + 2) & 3)][logical_row[x + 2]];
-		const uint8_t c3 = C2P_MapDither[yb | ((apx + 3) & 3)][logical_row[x + 3]];
-		const uint8_t c4 = C2P_MapDither[yb | ((apx + 4) & 3)][logical_row[x + 4]];
-		const uint8_t c5 = C2P_MapDither[yb | ((apx + 5) & 3)][logical_row[x + 5]];
-		const uint8_t c6 = C2P_MapDither[yb | ((apx + 6) & 3)][logical_row[x + 6]];
-		const uint8_t c7 = C2P_MapDither[yb | ((apx + 7) & 3)][logical_row[x + 7]];
+		const uint8_t c0 = m0[s[0]];
+		const uint8_t c1 = m1[s[1]];
+		const uint8_t c2 = m2[s[2]];
+		const uint8_t c3 = m3[s[3]];
+		const uint8_t c4 = m0[s[4]];
+		const uint8_t c5 = m1[s[5]];
+		const uint8_t c6 = m2[s[6]];
+		const uint8_t c7 = m3[s[7]];
 
 		const uint32_t v =
 			C2P_PairLUT[0][(uint8_t)((c0 << 4) | c1)] |
@@ -485,7 +506,30 @@ extern "C" void C2P_Render_Logical_Row_To_Planar(
 
 		C2P_Movep_Store(dst, v);
 	}
-	/* Slow tail: crop widths not divisible by 8, or unaligned dst_x0. */
+	/* Aligned tail of 1..7 pixels: one masked movep read-modify-write. */
+	if (!row_unaligned && x < logical_w && dst_x0 >= 0) {
+		const int lx = dst_x0 + x;
+		int n = logical_w - x;
+		if (n > planar_width_pixels - lx) {
+			n = planar_width_pixels - lx;
+		}
+		if (n > 0) {
+			uint8_t c[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+			for (int k = 0; k < n; k++) {
+				c[k] = C2P_MapDither[yb | ((abs_x0 + x + k) & 3)][logical_row[x + k]];
+			}
+			const uint32_t v =
+				C2P_PairLUT[0][(uint8_t)((c[0] << 4) | c[1])] |
+				C2P_PairLUT[1][(uint8_t)((c[2] << 4) | c[3])] |
+				C2P_PairLUT[2][(uint8_t)((c[4] << 4) | c[5])] |
+				C2P_PairLUT[3][(uint8_t)((c[6] << 4) | c[7])];
+			const uint32_t keep = (uint32_t)(0xFFu >> n) * 0x01010101u;
+			uint8_t *dst = planar_row + (lx >> 4) * 8 + ((lx >> 3) & 1);
+			C2P_Movep_Store(dst, (C2P_Movep_Load(dst) & keep) | (v & ~keep));
+		}
+		x = logical_w;
+	}
+	/* Slow tail: unaligned dst_x0. */
 	for (; x < logical_w; x++) {
 		const int apx = abs_x0 + x;
 		const int lx = dst_x0 + x;

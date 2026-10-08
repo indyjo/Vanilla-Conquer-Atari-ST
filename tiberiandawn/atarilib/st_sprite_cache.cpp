@@ -233,21 +233,6 @@ static inline unsigned sprite_cache_shard_index(uint32_t shape_id, uint16_t fram
 }
 
 /*
- * Flush up to 16 MSB-first mask bits into one 16-pixel mask word (2 bytes).
- * Unused low bits are filled with 1 (preserve backdrop). Matches blitter mask layout:
- * one bit per pixel, MSB = leftmost pixel in the 16-column group.
- */
-static inline void sprite_cache_mask_flush_run(uint8_t *mask_row, int word_ix, int cols, uint16_t accum)
-{
-	if (cols <= 0)
-		return;
-	const uint16_t word = (cols >= 16)
-	    ? accum
-	    : (uint16_t)(((uint16_t)accum << (16 - cols)) | (uint16_t)(0xFFFFu >> cols));
-	*(uint16_t *)(mask_row + word_ix * 2) = word;
-}
-
-/*
  * ST interleaved planar + 1bpp mask layout for a tight crop: width rounded up to 16 px, height = crop_h.
  * Row strides match the blitter / C2P helpers (8 bytes per 16 horizontal pixels in planar, 2 in mask).
  */
@@ -822,6 +807,70 @@ static BOOL sprite_cache_do_blitter(
 		       : FALSE;
 }
 
+/*
+ * One crop row of the remap path: palette index per column into out[], and (when
+ * trans or ghost) the 1bpp mask row in blitter layout: MSB = leftmost pixel of each
+ * 16-column word, 1 = preserve backdrop, unused low bits 1. parity is (col ^ row) & 1
+ * of the first column. Not inlined: inside the composite dispatch the 68000 runs
+ * out of registers and reloads every loop variable from the stack per pixel.
+ */
+static void sprite_cache_remap_row(const uint8_t *s, int n, unsigned parity, int trans,
+	const uint8_t *ghost_cls, const uint8_t *fade, uint8_t *out, uint8_t *mask_row) __attribute__((noinline));
+
+static void sprite_cache_remap_row(const uint8_t *s, int n, unsigned parity, int trans,
+	const uint8_t *ghost_cls, const uint8_t *fade, uint8_t *out, uint8_t *mask_row)
+{
+	if (!ghost_cls && !trans) {
+		for (int i = 0; i < n; ++i)
+			out[i] = fade[s[i]];
+		return;
+	}
+
+	const uint8_t *const ghost_bd = ghost_cls ? ghost_cls + 256 + SPRITE_CACHE_GHOST_SYNTH_BACKDROP_IX : nullptr;
+	uint16_t *mask = (uint16_t *)mask_row;
+	uint16_t acc = 0;
+	int run = 0;
+
+	for (int i = 0; i < n; ++i, parity ^= 1u) {
+		const uint8_t raw = s[i];
+		uint8_t pal8 = 0;
+		unsigned preserve = 1u;
+
+		if (!trans || raw != 0) {
+			if (ghost_cls) {
+				const uint8_t cls = ghost_cls[raw];
+				if (cls != 0xFFu) {
+					/*
+					 * Sprite-local checkerboard mask dither (~50%); must not use screen coords
+					 * so cached fills are valid at any placement.
+					 */
+					if (!parity) {
+						pal8 = ghost_bd[(unsigned)cls << 8];
+						preserve = 0u;
+					}
+				} else {
+					pal8 = fade ? fade[raw] : raw;
+					preserve = 0u;
+				}
+			} else {
+				pal8 = fade ? fade[raw] : raw;
+				preserve = 0u;
+			}
+		}
+
+		out[i] = pal8;
+		acc = (uint16_t)((acc << 1) | preserve);
+		if (++run == 16) {
+			*mask++ = acc;
+			acc = 0;
+			run = 0;
+		}
+	}
+
+	if (run > 0)
+		*mask = (uint16_t)((uint16_t)(acc << (16 - run)) | (uint16_t)(0xFFFFu >> run));
+}
+
 /* Fills one cache slot from cropped source pixels and optional remaps.
  * Packs [header | planar | mask] tightly: mask begins at planar + need_p.
  * Returns 1 = fast path (bulk C2P), 2 = slow path (row remap + bulk line C2P), 0 = failure. */
@@ -907,76 +956,16 @@ static int sprite_cache_fill_slot_pixels(
 	 * Mask bits are shift-accumulated 16 at a time instead of patching one byte per pixel.
 	 * Backdrop columns use pal8=0 before C2P so planar stays color-0 for mask+OR blits.
 	 */
-	const BOOL masked_merge = (ghost_tab != nullptr) || (trans != 0);
-	const uint8_t *const ghost_cls = ghost_tab;
-	const uint8_t *const ghost_blend = ghost_cls ? ghost_cls + 256 : nullptr;
 	uint8_t row_buf[SPRITE_CACHE_ROW_BUF_MAX];
 
 	ST_FRAME_BAR_C2P_BEGIN();
 	for (int row = crop_y; row < crop_y + crop_h; ++row) {
 		const uint8_t *srow = src + (size_t)row * (size_t)stride;
 		const int sy = row - crop_y;
-		uint8_t *mask_row = maskbm + (size_t)sy * (size_t)mask_rowb;
-		/* 16-bit left-shift accum for one mask word (16 pixels). */
-		uint16_t mask_acc = 0;
-		int mask_run = 0;
-		int mask_word_ix = 0;
 
 		/* Pass 1: remap source indices into row_buf; build mask in the same scan. */
-		for (int sx = 0; sx < crop_w; ++sx) {
-			const int col = crop_x + sx;
-			const uint8_t raw = srow[col];
-			bool preserve = true;
-			uint8_t pal8 = 0;
-
-			if (trans && raw == 0) {
-				/* Leave pal8=0; mask preserves backdrop. */
-			} else {
-				pal8 = raw;
-				if (ghost_cls && ghost_blend) {
-					const uint8_t cls = ghost_cls[raw];
-					if (cls != 0xFFu) {
-						/*
-						 * Sprite-local checkerboard mask dither (~50%); must not use screen coords
-						 * so cached fills are valid at any placement.
-						 */
-						if (((col ^ row) & 1) != 0) {
-							/* Checkerboard skip: preserve backdrop (pal8 cleared below). */
-						} else {
-							pal8 = ghost_blend[(size_t)cls * 256u + SPRITE_CACHE_GHOST_SYNTH_BACKDROP_IX];
-							preserve = false;
-						}
-					} else {
-						pal8 = fade_tab ? fade_tab[raw] : raw;
-						preserve = false;
-					}
-				} else if (fade_tab) {
-					pal8 = fade_tab[raw];
-					preserve = false;
-				} else {
-					preserve = false;
-				}
-			}
-
-			if (preserve)
-				pal8 = 0;
-			row_buf[sx] = pal8;
-
-			if (masked_merge) {
-				/* 1 = preserve (skip blit), 0 = draw this column. Shift every column. */
-				mask_acc = (uint16_t)((mask_acc << 1) | (preserve ? 1u : 0u));
-				mask_run++;
-				if (mask_run == 16) {
-					sprite_cache_mask_flush_run(mask_row, mask_word_ix, 16, mask_acc);
-					mask_acc = 0;
-					mask_run = 0;
-					mask_word_ix++;
-				}
-			}
-		}
-
-		if (masked_merge && mask_run > 0)
-			sprite_cache_mask_flush_run(mask_row, mask_word_ix, mask_run, mask_acc);
+		sprite_cache_remap_row(srow + crop_x, crop_w, (unsigned)(crop_x ^ row) & 1u, trans, ghost_tab,
+		    fade_tab, row_buf, maskbm + (size_t)sy * (size_t)mask_rowb);
 
 		/* Pass 2: 8bpp row → interleaved planar (Bayer uses sprite-local sx,sy). */
 		C2P_Render_Logical_Row_To_Planar(

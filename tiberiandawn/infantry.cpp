@@ -1458,8 +1458,14 @@ void InfantryClass::AI(void)
             **	the infantry to the destination location and mark this path step
             **	as complete.
             */
+            bool const arrived = Distance(Head_To_Coord()) < 0x0010;
+            if (!arrived && !IsTethered && Walk_Within_Cell()) {
+                IsNewNavCom = false;
+                return;
+            }
+
             Mark(MARK_UP);
-            if (Distance(Head_To_Coord()) < 0x0010) {
+            if (arrived) {
 
                 memmove(&Path[0], &Path[1], sizeof(Path) - sizeof(Path[0]));
                 Path[(sizeof(Path) / sizeof(Path[0])) - 1] = FACING_NONE;
@@ -1479,37 +1485,86 @@ void InfantryClass::AI(void)
                     Path[0] = FACING_NONE;
                 }
             } else {
-                int movespeed = Speed;
-
-                /*
-                **	When prone, the infantry moves at half speed or double
-                **	speed. This depends on whether the infantry actually has
-                **	prone animation stages. Civilians don't, and so they
-                **	run instead.
-                */
-                if (IsProne) {
-                    if (Class->IsFraidyCat && !Class->IsCrawling) {
-                        movespeed = Speed * 2;
-                    } else {
-                        movespeed = Speed / 2;
-                    }
-                }
-
                 if (IsTethered) {
                     Transmit_Message(RADIO_REDRAW);
                 }
-
-                /*
-                **	Advance the infantry as far as it should go.
-                */
-                MPHType maxspeed =
-                    MPHType(min((unsigned)(House->GroundspeedBias * (int)Class->MaxSpeed), MPH_LIGHT_SPEED));
-                Coord = Coord_Move(Coord, Direction(Head_To_Coord()), Fixed_To_Cardinal(maxspeed, movespeed));
+                Coord = Walk_Coord();
             }
             Mark(MARK_DOWN);
         }
         IsNewNavCom = false;
     }
+}
+
+/*
+**	Where one walking step from Coord toward Head_To_Coord() ends.
+*/
+COORDINATE InfantryClass::Walk_Coord(void)
+{
+    int movespeed = Speed;
+
+    /*
+    **	When prone, the infantry moves at half speed or double
+    **	speed. This depends on whether the infantry actually has
+    **	prone animation stages. Civilians don't, and so they
+    **	run instead.
+    */
+    if (IsProne) {
+        if (Class->IsFraidyCat && !Class->IsCrawling) {
+            movespeed = Speed * 2;
+        } else {
+            movespeed = Speed / 2;
+        }
+    }
+
+    MPHType maxspeed = MPHType(min((unsigned)(House->GroundspeedBias * (int)Class->MaxSpeed), MPH_LIGHT_SPEED));
+    return (Coord_Move(Coord, Direction(Head_To_Coord()), Fixed_To_Cardinal(maxspeed, movespeed)));
+}
+
+/*
+**	Mark(MARK_UP), one walking step, Mark(MARK_DOWN) for a step that stays in
+**	the same cell, with the same map, threat, radar and redraw state as the
+**	full lift and place. Returns false (doing nothing) if the step changes cell.
+*/
+bool InfantryClass::Walk_Within_Cell(void)
+{
+    if (!IsActive || IsInLimbo || !IsDown) {
+        return (false);
+    }
+
+    CELL const cell = Coord_Cell(Coord);
+    COORDINATE const next = Walk_Coord();
+    if (Coord_Cell(next) != cell) {
+        return (false);
+    }
+
+    if (GameToPlay == GAME_NORMAL) {
+        Map[cell].Adjust_Threat_Round_Trip(Owner(), Risk(), cell);
+    }
+    Map.Overlap_Down(cell, this);
+
+    short const* const occupy = Occupy_List();
+    for (short const* list = occupy; *list != REFRESH_EOL; list++) {
+        CELL const newcell = cell + *list;
+        if ((unsigned)newcell < MAP_CELL_TOTAL) {
+            Map[newcell].Occupy_Up(this);
+        }
+    }
+
+    Coord = next;
+    IsToDisplay = true;
+    Map.Flag_To_Redraw(false);
+
+    for (short const* list = occupy; *list != REFRESH_EOL; list++) {
+        CELL const newcell = cell + *list;
+        if ((unsigned)newcell < MAP_CELL_TOTAL) {
+            Map[newcell].Occupy_Down(this);
+            Map[newcell].Recalc_Attributes();
+            Map.Flag_Cell(newcell);
+        }
+    }
+    Map.Overlap_Down(cell, this);
+    return (true);
 }
 
 #ifdef NEVER

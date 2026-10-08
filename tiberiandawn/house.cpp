@@ -2390,6 +2390,25 @@ void HouseClass::Adjust_Threat(int region, int threat)
     pending.active = true;
 }
 
+/*
+**	Same queue state as Adjust_Threat(region, -threat) followed by
+**	Adjust_Threat(region, threat), without the second call.
+*/
+void HouseClass::Adjust_Threat_Round_Trip(int region, int threat)
+{
+    Validate();
+
+    HouseThreatPending& pending = g_threat_pending[Class->House];
+
+    if (pending.active) {
+        if (pending.region == region && pending.threat == threat) {
+            return;
+        }
+        Apply_Threat_Immediate(this, pending.region, pending.threat);
+        pending.active = false;
+    }
+}
+
 /***********************************************************************************************
  * HouseClass::Begin_Production -- Starts production of the specified object type.             *
  *                                                                                             *

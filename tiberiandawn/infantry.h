@@ -259,6 +259,9 @@ public:
     static int const HumanShape[32];
 
 private:
+    COORDINATE Walk_Coord(void);
+    bool Walk_Within_Cell(void);
+
     static DoStruct const MasterDoControls[DO_COUNT];
 
     /*

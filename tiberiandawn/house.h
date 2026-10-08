@@ -534,6 +534,7 @@ public:
     };
     TeamTypeClass const* Suggested_New_Team(bool alertcheck = false);
     void Adjust_Threat(int region, int threat);
+    void Adjust_Threat_Round_Trip(int region, int threat);
     void Flush_Threat_Pending(void);
     static void Flush_All_Threat_Pending(void);
     static void Clear_Threat_Pending(void);

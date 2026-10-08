@@ -278,6 +278,7 @@ public:
     int Reduce_Wall(int damage);
     void Incoming(COORDINATE threat = 0, bool forced = false, bool nokidding = false);
     void Adjust_Threat(HousesType house, int threat_value, CELL cell);
+    void Adjust_Threat_Round_Trip(HousesType house, int threat_value, CELL cell);
 
     int operator!=(CellClass const&) const
     {

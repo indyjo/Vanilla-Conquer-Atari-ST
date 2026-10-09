@@ -41,6 +41,7 @@
 #include "st_sprite_cache.h"
 #include "memflag.h"
 #include "c2p.h"
+#include <string.h>
 #endif
 
 #ifndef DEMO
@@ -212,6 +213,81 @@ struct nodstats {
  * HISTORY:                                                                                    *
  *   04/17/1995 BWG : Created.                                                                 *
  *=============================================================================================*/
+#ifdef ATARI_ST
+/*
+** 4x4 click map, 4 bits per cell: 0 = miss, 1..n = CountryColor slot.
+** 80*50 cells pack into 2000 bytes. A cell takes the choice color with the
+** most source pixels, so a target dot survives the downsample.
+*/
+static void ST_Pack_Click_Choices(GraphicBufferClass &page, int const *colors, int ncolors, unsigned char *nibbles)
+{
+	const unsigned char *src = (const unsigned char *)page.Get_Buffer();
+	const int cells_w = 320 / 4;
+	const int cells_h = 200 / 4;
+	const int nbytes = (cells_w * cells_h + 1) / 2;
+
+	memset(nibbles, 0, (size_t)nbytes);
+	if (!src || ncolors <= 0) {
+		return;
+	}
+
+	const int pitch = page.Get_Width() + page.Get_Pitch() + page.Get_XAdd();
+	for (int cy = 0; cy < cells_h; ++cy) {
+		for (int cx = 0; cx < cells_w; ++cx) {
+			int best_i = -1;
+			int best_n = 0;
+			for (int i = 0; i < ncolors; ++i) {
+				const int want = colors[i];
+				int n = 0;
+				if (!want) {
+					continue;
+				}
+				for (int dy = 0; dy < 4; ++dy) {
+					const unsigned char *row = src + ((cy * 4 + dy) * pitch) + (cx * 4);
+					for (int dx = 0; dx < 4; ++dx) {
+						if (row[dx] == (unsigned char)want) {
+							++n;
+						}
+					}
+				}
+				if (n > best_n) {
+					best_n = n;
+					best_i = i;
+				}
+			}
+			if (best_i < 0) {
+				continue;
+			}
+			const int cell = cy * cells_w + cx;
+			const unsigned char code = (unsigned char)(best_i + 1);
+			if (cell & 1) {
+				nibbles[cell >> 1] = (unsigned char)((nibbles[cell >> 1] & 0xF0) | code);
+			} else {
+				nibbles[cell >> 1] = (unsigned char)((nibbles[cell >> 1] & 0x0F) | (code << 4));
+			}
+		}
+	}
+}
+
+static int ST_Click_Choice_At(const unsigned char *nibbles, int x, int y, int const *colors, int ncolors)
+{
+	const int cells_w = 320 / 4;
+
+	if (x < 0) x = 0;
+	if (y < 0) y = 0;
+	if (x > 319) x = 319;
+	if (y > 199) y = 199;
+
+	const int cell = (y / 4) * cells_w + (x / 4);
+	const unsigned char byte = nibbles[cell >> 1];
+	const int code = (cell & 1) ? (byte & 0x0F) : (byte >> 4);
+	if (code <= 0 || code > ncolors) {
+		return 0;
+	}
+	return colors[code - 1];
+}
+#endif
+
 void Map_Selection(void)
 {
 	void *anim, *progress, *oldfont, *greyearth, *greyearth2;
@@ -550,6 +626,19 @@ void Map_Selection(void)
 	} else {
 		progress = Open_Animation(lastscenario ? "S_AFRICA.WSA" : "AFRICA.WSA", NULL, 0, mapsel_wsa_flags, progresspalette);
 	}
+	// ST: pack CLICK_* now, before the zoom WSA claims SysMemPage. 2000 bytes on the stack.
+	unsigned char st_click_bits[(80 * 50 + 1) / 2];
+	if (lastscenario) {
+		CCFileClass click_file(house == HOUSE_GOOD ? "CLICK_EB.CPS" : "CLICK_SA.CPS");
+		if (Load_Uncompress(click_file, SysMemPage, SysMemPage, NULL)) {
+			ST_Pack_Click_Choices(SysMemPage,
+				CountryArray[scenario].CountryColor[ScenDir],
+				CountryArray[scenario].Choices[ScenDir],
+				st_click_bits);
+		} else {
+			memset(st_click_bits, 0, sizeof st_click_bits);
+		}
+	}
 #endif
 
 	SysMemPage.Clear();
@@ -824,6 +913,12 @@ void Map_Selection(void)
 	int done = 0;
 	int framecounter = 0;
 
+#ifdef ATARI_ST
+	if (lastscenario) {
+		// ST: hit map already packed; leave SysMemPage as the WSA XOR chain.
+		if (house != HOUSE_GOOD) attackxcoord = 200;
+	} else
+#endif
 	if (house == HOUSE_GOOD) {
 		CCFileClass click_file(lastscenario ? "CLICK_EB.CPS" : "CLICK_E.CPS");
 		Load_Uncompress(click_file, SysMemPage, SysMemPage, NULL);
@@ -850,7 +945,14 @@ void Map_Selection(void)
 			if ((Keyboard->Get() & 0x10FF) == KN_LMOUSE) {
 				for (selection = 0; selection < CountryArray[scenario].Choices[ScenDir]; selection++) {
 #ifdef ATARI_ST
-					color = SysMemPage.Get_Pixel(Get_Mouse_X(), Get_Mouse_Y());
+					if (lastscenario) {
+						// ST: 4x4 choice map, not the full CLICK_* image in SysMemPage.
+						color = ST_Click_Choice_At(st_click_bits, Get_Mouse_X(), Get_Mouse_Y(),
+							CountryArray[scenario].CountryColor[ScenDir],
+							CountryArray[scenario].Choices[ScenDir]);
+					} else {
+						color = SysMemPage.Get_Pixel(Get_Mouse_X(), Get_Mouse_Y());
+					}
 #else
 					color = SysMemPage.Get_Pixel(Get_Mouse_X()/2, Get_Mouse_Y()/2);
 #endif
@@ -960,6 +1062,7 @@ void Map_Selection(void)
 		Interpolate_2X_Scale(PseudoSeenBuff, &SeenBuff, NULL, Settings.Video.InterpolationMode);
 #endif
 #ifdef ATARI_ST
+		// ST: XOR the final frame into SysMemPage (still the animation, not CLICK_*).
 		Animate_Frame(progress, SysMemPage, Get_Animation_Frame_Count(progress)-1);
 		SysMemPage.Blit(*PseudoSeenBuff);
 #else

@@ -254,7 +254,13 @@ bool Init_Game(int, char*[])
         MapFontPtr = Font6Ptr; // Fixes ingame helpbox
         Green12FontPtr = Font3Ptr;
         Green12GradFontPtr = GradFont6Ptr;
-        ScoreFontPtr = GradFont6Ptr;
+        /*
+        **	SCOREFNT is 6px wide and stores ink in nibbles 0/2/4/6/8/14.
+        **	Side select, map select, and the score screen step characters by
+        **	6px and color those nibbles. GRAD6FNT is 8px with a shadow ring,
+        **	so the same tables draw an outline and the letters overlap.
+        */
+        ScoreFontPtr = Load_Alloc_Data(CCFileClass("SCOREFNT.FNT"));
     }
 
     CCDebugString("C&C95 - About to set palette\n");

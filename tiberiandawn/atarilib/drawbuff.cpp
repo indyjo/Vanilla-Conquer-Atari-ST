@@ -16,6 +16,7 @@
 #include "st16_iconset.h"
 #include "st16_convert.h"
 #include "memflag.h"
+#include "wsa.h"
 #include "tile.h"
 #include "endianness.h"
 #include <stdio.h>
@@ -69,6 +70,45 @@ static inline int Get_Row_Stride(GraphicViewPortClass *vp) {
 		return vp->Get_Width() + vp->Get_Pitch() + vp->Get_XAdd();
 	int s = vp->Get_Pitch() + vp->Get_XAdd();
 	return (s != 0) ? s : vp->Get_Width();
+}
+
+/* A chunky write outside the XOR tracker means the planar copy is stale. */
+static void Note_Linear_Write(GraphicViewPortClass *vp, int x, int y, int w, int h)
+{
+	unsigned char *base;
+	int stride;
+	const unsigned char *start;
+	const unsigned char *end;
+
+	if (!vp || VP_Is_Planar(vp) || w <= 0 || h <= 0 || x < 0 || y < 0) {
+		return;
+	}
+	base = (unsigned char *)vp->Get_Offset();
+	stride = Get_Row_Stride(vp);
+	if (!base || stride <= 0) {
+		return;
+	}
+	start = base + (size_t)y * (size_t)stride + (size_t)x;
+	end = base + (size_t)(y + h - 1) * (size_t)stride + (size_t)(x + w - 1);
+	if (end < start) {
+		return;
+	}
+	WSA_C2P_Invalidate_Bytes(start, (unsigned long)(end - start) + 1UL);
+}
+
+/* A planar write on top of the last C2P must be restored on the next blit. */
+static void Note_Planar_Write(GraphicViewPortClass *vp, int x, int y, int w, int h)
+{
+	GraphicBufferClass *gb;
+
+	if (!vp || !VP_Is_Planar(vp) || w <= 0 || h <= 0) {
+		return;
+	}
+	gb = vp->Get_Graphic_Buffer();
+	if (!gb) {
+		return;
+	}
+	WSA_C2P_Touch_Planar(gb->Get_Buffer(), vp->Get_XPos() + x, vp->Get_YPos() + y, w, h);
 }
 
 // Color translation table for font rendering
@@ -165,10 +205,13 @@ extern "C" void Buffer_Put_Pixel(void *thisptr, int x, int y, unsigned char colo
 		uint8_t *root = (uint8_t *)gbp->Get_Buffer();
 		const int ax = vp->Get_XPos() + x;
 		const int ay = vp->Get_YPos() + y;
+		WSA_C2P_Touch_Planar(root, ax, ay, 1, 1);
 		const unsigned char c4 = C2P_Map8ToPlanar4(ax, ay, (unsigned char)color);
 		ST_Planar_PutPixel(root, GB_ST_Planar_Row_Bytes(gbp), gbp->Get_Width(), gbp->Get_Height(), ax, ay, c4);
 		return;
 	}
+
+	Note_Linear_Write(vp, x, y, 1, 1);
 
 	// Get viewport base pointer (Get_Offset returns pointer value cast to long)
 	unsigned char *viewport_base = (unsigned char *)vp->Get_Offset();
@@ -285,6 +328,10 @@ extern "C" int Buffer_Get_Pixel(void *thisptr, int x, int y)
 extern "C" void Buffer_Clear(void *thisptr, unsigned char color)
 {
 	if (!thisptr) return;
+	{
+		GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
+		Note_Linear_Write(vp, 0, 0, vp->Get_Width(), vp->Get_Height());
+	}
 	
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
 	
@@ -296,6 +343,7 @@ extern "C" void Buffer_Clear(void *thisptr, unsigned char color)
 	if (VP_Is_Planar(vp)) {
 		GraphicBufferClass *gb = vp->Get_Graphic_Buffer();
 		uint8_t *root = (uint8_t *)gb->Get_Buffer();
+		Note_Planar_Write(vp, 0, 0, width, height);
 		unsigned char c4 = (unsigned char)(color & 15);
 		int const rb = GB_ST_Planar_Row_Bytes(gb);
 		int const pwb = gb->Get_Width();
@@ -466,6 +514,7 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 	const int dst_planar = VP_Is_Planar(dest_vp) ? 1 : 0;
 
 	if (!src_planar && !dst_planar) {
+		Note_Linear_Write(dest_vp, dx_pixel, dy_pixel, pixel_width, pixel_height);
 		unsigned char *src_ptr = src_base + x_pixel + y_pixel * src_stride;
 		unsigned char *dest_ptr = dest_base + dx_pixel + dy_pixel * dest_stride;
 		if (trans) {
@@ -520,6 +569,21 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 			const uint8_t *logical = (const uint8_t *)src_base
 				+ (size_t)y_pixel * (size_t)src_stride
 				+ (size_t)x_pixel;
+			if (WSA_C2P_Try_Dirty(
+					logical,
+					pixel_width,
+					pixel_height,
+					src_stride,
+					dst_root,
+					dest_stride,
+					dst_w,
+					dst_h,
+					dst_x0,
+					dst_y0,
+					dst_x0,
+					dst_y0)) {
+				return TRUE;
+			}
 			C2P_Render_Logical_To_Planar_Rect(
 				logical,
 				pixel_width,
@@ -529,6 +593,16 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 				dest_stride,
 				dst_w,
 				dst_h,
+				dst_x0,
+				dst_y0,
+				dst_x0,
+				dst_y0);
+			WSA_C2P_Note_Full(
+				logical,
+				pixel_width,
+				pixel_height,
+				src_stride,
+				dst_root,
 				dst_x0,
 				dst_y0,
 				dst_x0,
@@ -560,6 +634,7 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 				dy_abs,
 				pixel_width,
 				pixel_height)) {
+			Note_Planar_Write(dest_vp, dx_pixel, dy_pixel, pixel_width, pixel_height);
 			return TRUE;
 		}
 	}
@@ -579,6 +654,7 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 			&& dest_vp->Get_XPos() == 0 && dest_vp->Get_YPos() == 0
 			&& src_root && dst_root
 			&& src_bytes == (long)dst_bpl * (long)dest_gb->Get_Height()) {
+			Note_Planar_Write(dest_vp, 0, 0, dest_gb->Get_Width(), dest_gb->Get_Height());
 			ST_Blit_Linear_Copy(dst_root, src_root, (unsigned long)src_bytes);
 			return TRUE;
 		}
@@ -607,8 +683,13 @@ extern "C" BOOL Linear_Blit_To_Linear(void *thisptr, void *dest, int x_pixel, in
 				dy_abs,
 				pixel_width,
 				pixel_height)) {
+			Note_Planar_Write(dest_vp, dx_pixel, dy_pixel, pixel_width, pixel_height);
 			return TRUE;
 		}
+	}
+
+	if (dst_planar) {
+		Note_Planar_Write(dest_vp, dx_pixel, dy_pixel, pixel_width, pixel_height);
 	}
 
 	for (int y = 0; y < pixel_height; y++) {
@@ -798,6 +879,7 @@ static void Font_Planar_Draw_Row(
 {
 	if (!planar_root || row_bytes <= 0 || width == 0)
 		return;
+	WSA_C2P_Touch_Planar(planar_root, abs_x0, abs_y, (int)width, 1);
 
 	uint8_t *row = planar_root + (size_t)abs_y * (size_t)row_bytes;
 
@@ -1152,6 +1234,20 @@ extern "C" VOID Buffer_Draw_Line(void *thisptr, int sx, int sy, int dx, int dy, 
 	int width = vp->Get_Width();
 	int height = vp->Get_Height();
 	if (width <= 0 || height <= 0) return;
+	{
+		int x0 = sx < dx ? sx : dx;
+		int y0 = sy < dy ? sy : dy;
+		int x1 = sx > dx ? sx : dx;
+		int y1 = sy > dy ? sy : dy;
+		if (x0 < 0) x0 = 0;
+		if (y0 < 0) y0 = 0;
+		if (x1 >= width) x1 = width - 1;
+		if (y1 >= height) y1 = height - 1;
+		if (x1 >= x0 && y1 >= y0) {
+			Note_Linear_Write(vp, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+			Note_Planar_Write(vp, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+		}
+	}
 
 	// Reject lines that are completely outside the viewport
 	if (sx < 0 && dx < 0 || sy < 0 && dy < 0 || sx >= width && dx >= width || sy >= height && dy >= height) return;
@@ -1436,6 +1532,8 @@ extern "C" VOID Buffer_Fill_Rect(void *thisptr, int sx, int sy, int dx, int dy, 
 	// Check if rectangle is valid
 	if (sx > dx || sy > dy) return;
 	if (sx >= width || sy >= height || dx < 0 || dy < 0) return;
+	Note_Linear_Write(vp, sx, sy, dx - sx + 1, dy - sy + 1);
+	Note_Planar_Write(vp, sx, sy, dx - sx + 1, dy - sy + 1);
 	
 	if (VP_Is_Planar(vp)) {
 		/* Full 8-bit palette index — Buffer_Put_Pixel runs C2P_Map8ToPlanar4 (do not mask to 4). */
@@ -1537,6 +1635,8 @@ extern "C" VOID Buffer_Remap(void *thisptr, int sx, int sy, int width, int heigh
 	}
 
 	GraphicViewPortClass *vp = (GraphicViewPortClass *)thisptr;
+	Note_Linear_Write(vp, sx, sy, width, height);
+	Note_Planar_Write(vp, sx, sy, width, height);
 	const unsigned char *map = (const unsigned char *)remap;
 
 	const int vpw = vp->Get_Width();
@@ -1770,9 +1870,11 @@ extern "C" void Buffer_Draw_Stamp(void const *thisptr, void const *icondata, int
 	}
 
 	if (remap || !VP_Is_Planar(vp)) {
+		Note_Linear_Write(vp, 0, 0, vp->Get_Width(), vp->Get_Height());
 		Buffer_Draw_Stamp_8bpp(vp, icondata, icon, x_pixel, y_pixel, remap);
 		return;
 	}
+	WSA_C2P_Invalidate_Planar(vp->Get_Graphic_Buffer()->Get_Buffer());
 
 	IControl_Type *ic = (IControl_Type *)icondata;
 	const uint8_t *base = (const uint8_t *)icondata;

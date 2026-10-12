@@ -20,6 +20,7 @@ int st_tests_register_mixes_once(void)
 	static MFCD *s_speech = NULL;
 	static MFCD *s_sounds = NULL;
 	static MFCD *s_scores = NULL;
+	static MFCD *s_atarist = NULL;
 
 	if (s_initialized) {
 		return 0;
@@ -72,6 +73,15 @@ int st_tests_register_mixes_once(void)
 	}
 	if (CCFileClass("SCORES.MIX").Is_Available()) {
 		s_scores = new (std::nothrow) MFCD("SCORES.MIX");
+	}
+	/*
+	** C2P *.W16 sidecars. Register only — the game does not cache this archive.
+	*/
+	if (CCFileClass("ATARIST.MIX").Is_Available()) {
+		s_atarist = new (std::nothrow) MFCD("ATARIST.MIX");
+		if (!s_atarist) {
+			printf("StMixReg: WARN cannot register ATARIST.MIX\n");
+		}
 	}
 
 	return rc;

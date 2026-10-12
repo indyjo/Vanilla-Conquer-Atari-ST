@@ -63,6 +63,41 @@ unsigned int Apply_XOR_Delta(char *target, char *delta, unsigned int frame_bytes
 /* Apply XOR delta to a page or viewport */
 void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, int width, int nextrow, int copy);
 
+/*
+ * Chunky pages written by Apply_XOR_Delta_To_Page_Or_Viewport can be blitted
+ * to a planar page by touching only the changed 8-pixel groups. A write to
+ * the chunky bytes, or a blit that does not cover the animation, drops the
+ * record and the next covering blit converts the whole rectangle.
+ */
+void WSA_C2P_Invalidate_Bytes(void const *start, unsigned long nbytes);
+/* Planar pixels no longer match the last C2P. Mark them so the next blit restores them. */
+void WSA_C2P_Touch_Planar(void const *planar, int x, int y, int w, int h);
+/* Drop sync for this planar buffer. The next covering blit converts the whole rectangle. */
+void WSA_C2P_Invalidate_Planar(void const *planar);
+int WSA_C2P_Try_Dirty(
+	unsigned char const *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	unsigned char *planar,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0,
+	int abs_x0,
+	int abs_y0);
+void WSA_C2P_Note_Full(
+	unsigned char const *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	unsigned char *planar,
+	int dst_x0,
+	int dst_y0,
+	int abs_x0,
+	int abs_y0);
+
 #ifdef __cplusplus
 }
 #endif

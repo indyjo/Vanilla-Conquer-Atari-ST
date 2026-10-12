@@ -22,6 +22,7 @@
 
 #ifdef ATARI_ST
 #include "c2p.h"
+#include "st_frame_meter.h"
 #endif
 
 
@@ -43,6 +44,9 @@
 // Used to call Apply_XOR_Delta_To_Page_Or_Viewport().
 #define DO_XOR                 0x0
 #define DO_COPY                0x01
+
+/* Height of the animation rectangle for the next Apply_XOR_Delta_To_Page_Or_Viewport. */
+static int s_wsa_track_height;
 
 typedef struct {
 	unsigned short current_frame;
@@ -447,6 +451,7 @@ BOOL Animate_Frame(void *handle, GraphicViewPortClass& view, int frame_number, i
 					(unsigned long)sys_header->pixel_width;
 				WSA_Debug_Set_Direct_Bounds(frame_buffer, direct_span);
 #endif
+				s_wsa_track_height = (int)sys_header->pixel_height;
 				Apply_XOR_Delta_To_Page_Or_Viewport(frame_buffer,
 				                                    sys_header->delta_buffer,
 				                                    sys_header->pixel_width,
@@ -691,40 +696,428 @@ extern "C" unsigned int Apply_XOR_Delta(char *target, char *delta)
 	return bytes_processed;
 }
 
+/*
+ * Dirty 8-pixel groups for the chunky page last written by the page XOR.
+ * One animation rectangle at a time. Overflow or an outside write forces
+ * the next covering planar blit to convert the whole rectangle.
+ */
+/* One bit-group (8 pixels) per byte. Covers a 320x200 animation rectangle. */
+static int const WSA_C2P_MAX_W = 320;
+static int const WSA_C2P_MAX_H = 200;
+static int const WSA_C2P_GROUPS = WSA_C2P_MAX_W / 8;
+
+static struct WsaC2PTrack {
+	const unsigned char *anchor;
+	const unsigned char *logical;
+	unsigned char *planar;
+	int stride;
+	int width;
+	int height;
+	int origin_x;
+	int origin_y;
+	int logical_w;
+	int logical_h;
+	int dst_x0;
+	int dst_y0;
+	int abs_x0;
+	int abs_y0;
+	int synced;
+	int sparse;
+	unsigned char group[WSA_C2P_MAX_H][WSA_C2P_GROUPS];
+} s_wsa_c2p;
+
+static void wsa_c2p_reset_spans(void)
+{
+	memset(s_wsa_c2p.group, 0, sizeof(s_wsa_c2p.group));
+	s_wsa_c2p.sparse = 1;
+	s_wsa_c2p.synced = 0;
+}
+
+static void wsa_c2p_track_dest(const unsigned char *dest, int width, int stride, int height)
+{
+	if (!dest || width <= 0 || height <= 0 || stride < width
+		|| width > WSA_C2P_MAX_W || height > WSA_C2P_MAX_H) {
+		s_wsa_c2p.sparse = 0;
+		s_wsa_c2p.synced = 0;
+		memset(s_wsa_c2p.group, 0, sizeof(s_wsa_c2p.group));
+		return;
+	}
+	if (dest != s_wsa_c2p.anchor || width != s_wsa_c2p.width || stride != s_wsa_c2p.stride
+		|| height != s_wsa_c2p.height) {
+		s_wsa_c2p.anchor = dest;
+		s_wsa_c2p.stride = stride;
+		s_wsa_c2p.width = width;
+		s_wsa_c2p.height = height;
+		s_wsa_c2p.logical = NULL;
+		s_wsa_c2p.planar = NULL;
+		wsa_c2p_reset_spans();
+	}
+}
+
+static void wsa_c2p_fail(void)
+{
+	s_wsa_c2p.sparse = 0;
+	s_wsa_c2p.synced = 0;
+	memset(s_wsa_c2p.group, 0, sizeof(s_wsa_c2p.group));
+}
+
+/* Mark the 8-pixel groups of one in-row run. Row and column come from the XOR walk. */
+static void wsa_c2p_add_at(int y, int x, int n)
+{
+	int g0;
+	int g1;
+	int g;
+
+	if (!s_wsa_c2p.sparse || n <= 0) {
+		return;
+	}
+	if (y < 0 || y >= s_wsa_c2p.height || x < 0 || x + n > s_wsa_c2p.width) {
+		wsa_c2p_fail();
+		return;
+	}
+	g0 = x >> 3;
+	g1 = (x + n - 1) >> 3;
+	for (g = g0; g <= g1; g++) {
+		s_wsa_c2p.group[y][g] = 1;
+	}
+}
+
+extern "C" void WSA_C2P_Invalidate_Planar(void const *planar)
+{
+	if (!planar || !s_wsa_c2p.synced || !s_wsa_c2p.planar) {
+		return;
+	}
+	if ((const unsigned char *)planar == s_wsa_c2p.planar) {
+		wsa_c2p_fail();
+	}
+}
+
+extern "C" void WSA_C2P_Touch_Planar(void const *planar, int x, int y, int w, int h)
+{
+	int bx0;
+	int by0;
+	int bx1;
+	int by1;
+	int ax0;
+	int ay0;
+	int ax1;
+	int ay1;
+	int rx0;
+	int ry0;
+	int rx1;
+	int ry1;
+	int row;
+
+	if (!planar || w <= 0 || h <= 0 || !s_wsa_c2p.synced || !s_wsa_c2p.sparse || !s_wsa_c2p.planar) {
+		return;
+	}
+	if ((const unsigned char *)planar != s_wsa_c2p.planar) {
+		return;
+	}
+
+	bx0 = s_wsa_c2p.dst_x0;
+	by0 = s_wsa_c2p.dst_y0;
+	bx1 = bx0 + s_wsa_c2p.logical_w;
+	by1 = by0 + s_wsa_c2p.logical_h;
+	ax0 = bx0 + s_wsa_c2p.origin_x;
+	ay0 = by0 + s_wsa_c2p.origin_y;
+	ax1 = ax0 + s_wsa_c2p.width;
+	ay1 = ay0 + s_wsa_c2p.height;
+
+	rx0 = x;
+	ry0 = y;
+	rx1 = x + w;
+	ry1 = y + h;
+	if (rx0 < bx0) {
+		rx0 = bx0;
+	}
+	if (ry0 < by0) {
+		ry0 = by0;
+	}
+	if (rx1 > bx1) {
+		rx1 = bx1;
+	}
+	if (ry1 > by1) {
+		ry1 = by1;
+	}
+	if (rx0 >= rx1 || ry0 >= ry1) {
+		return;
+	}
+	/* Outside the animation rectangle the group map cannot repair the blit. */
+	if (rx0 < ax0 || ry0 < ay0 || rx1 > ax1 || ry1 > ay1) {
+		wsa_c2p_fail();
+		return;
+	}
+
+	rx0 -= ax0;
+	rx1 -= ax0;
+	ry0 -= ay0;
+	ry1 -= ay0;
+	for (row = ry0; row < ry1; row++) {
+		wsa_c2p_add_at(row, rx0, rx1 - rx0);
+	}
+}
+
+extern "C" void WSA_C2P_Invalidate_Bytes(void const *start, unsigned long nbytes)
+{
+	const unsigned char *a;
+	const unsigned char *b;
+	const unsigned char *t0;
+	const unsigned char *t1;
+	unsigned long tracked;
+
+	if (!start || nbytes == 0 || !s_wsa_c2p.anchor || s_wsa_c2p.height <= 0 || s_wsa_c2p.stride <= 0) {
+		return;
+	}
+	a = (const unsigned char *)start;
+	b = a + nbytes;
+	t0 = s_wsa_c2p.anchor;
+	tracked = (unsigned long)(s_wsa_c2p.height - 1) * (unsigned long)s_wsa_c2p.stride
+		+ (unsigned long)s_wsa_c2p.width;
+	t1 = t0 + tracked;
+	if (a < t1 && t0 < b) {
+		wsa_c2p_fail();
+	}
+}
+
+static int wsa_c2p_anim_origin(const unsigned char *logical, int logical_stride, int *ax, int *ay)
+{
+	size_t off;
+
+	if (!s_wsa_c2p.anchor || !logical || logical > s_wsa_c2p.anchor || logical_stride != s_wsa_c2p.stride
+		|| logical_stride <= 0) {
+		return 0;
+	}
+	off = (size_t)(s_wsa_c2p.anchor - logical);
+	*ay = (int)(off / (size_t)logical_stride);
+	*ax = (int)(off % (size_t)logical_stride);
+	return 1;
+}
+
+static int wsa_c2p_covers(const unsigned char *logical, int logical_w, int logical_h, int logical_stride)
+{
+	int ax;
+	int ay;
+
+	if (!wsa_c2p_anim_origin(logical, logical_stride, &ax, &ay)) {
+		return 0;
+	}
+	if (ax + s_wsa_c2p.width > logical_w || ay + s_wsa_c2p.height > logical_h) {
+		return 0;
+	}
+	return 1;
+}
+
+static void wsa_c2p_emit(const unsigned char *logical, int logical_stride, unsigned char *planar,
+	int planar_row_bytes, int planar_w, int planar_h, int y, int x0, int x1)
+{
+	if (x1 <= x0 || y < 0 || y >= s_wsa_c2p.logical_h) {
+		return;
+	}
+	if (x0 < 0) {
+		x0 = 0;
+	}
+	if (x1 > s_wsa_c2p.logical_w) {
+		x1 = s_wsa_c2p.logical_w;
+	}
+	if (x1 <= x0) {
+		return;
+	}
+	const int span = x1 - x0;
+	const int dx = s_wsa_c2p.dst_x0 + x0;
+	const int ax = s_wsa_c2p.abs_x0 + x0;
+	const int dy = s_wsa_c2p.dst_y0 + y;
+	if (span >= 8 && (span & 7) == 0 && (dx & 7) == 0 && ax == dx) {
+		C2P_Render_Span8_STDOOM(
+			logical + (size_t)y * (size_t)logical_stride + (size_t)x0,
+			span,
+			planar + (size_t)dy * (size_t)planar_row_bytes,
+			dx,
+			s_wsa_c2p.abs_y0 + y);
+		return;
+	}
+	C2P_Render_Logical_Row_To_Planar(
+		logical + (size_t)y * (size_t)logical_stride + (size_t)x0,
+		x1 - x0,
+		planar + (size_t)(s_wsa_c2p.dst_y0 + y) * (size_t)planar_row_bytes,
+		planar_row_bytes,
+		planar_w,
+		planar_h,
+		s_wsa_c2p.dst_x0 + x0,
+		s_wsa_c2p.dst_y0 + y,
+		s_wsa_c2p.abs_x0 + x0,
+		s_wsa_c2p.abs_y0 + y);
+}
+
+extern "C" int WSA_C2P_Try_Dirty(
+	unsigned char const *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	unsigned char *planar,
+	int planar_row_bytes,
+	int planar_width_pixels,
+	int planar_height_pixels,
+	int dst_x0,
+	int dst_y0,
+	int abs_x0,
+	int abs_y0)
+{
+	int i;
+
+	if (!s_wsa_c2p.synced || !s_wsa_c2p.sparse || !s_wsa_c2p.anchor || !s_wsa_c2p.logical) {
+		return 0;
+	}
+	if (planar != s_wsa_c2p.planar || logical != s_wsa_c2p.logical) {
+		return 0;
+	}
+	if (logical_w != s_wsa_c2p.logical_w || logical_h != s_wsa_c2p.logical_h
+		|| logical_stride != s_wsa_c2p.stride) {
+		return 0;
+	}
+	if (dst_x0 != s_wsa_c2p.dst_x0 || dst_y0 != s_wsa_c2p.dst_y0
+		|| abs_x0 != s_wsa_c2p.abs_x0 || abs_y0 != s_wsa_c2p.abs_y0) {
+		return 0;
+	}
+	if (((dst_x0 + s_wsa_c2p.origin_x) & 7) != 0 || ((abs_x0 + s_wsa_c2p.origin_x) & 7) != 0) {
+		return 0;
+	}
+
+	ST_FRAME_BAR_C2P_BEGIN();
+	for (i = 0; i < s_wsa_c2p.height; i++) {
+		int x = 0;
+		const int y = i + s_wsa_c2p.origin_y;
+		while (x < s_wsa_c2p.width) {
+			const int g = x >> 3;
+			int x0;
+			int x1;
+			int g1;
+			if (!s_wsa_c2p.group[i][g]) {
+				x += 8;
+				continue;
+			}
+			x0 = (g << 3) + s_wsa_c2p.origin_x;
+			g1 = g;
+			while ((g1 + 1) < WSA_C2P_GROUPS && ((g1 + 1) << 3) < s_wsa_c2p.width
+				&& s_wsa_c2p.group[i][g1 + 1]) {
+				g1++;
+			}
+			x1 = ((g1 + 1) << 3) + s_wsa_c2p.origin_x;
+			wsa_c2p_emit(logical, logical_stride, planar, planar_row_bytes, planar_width_pixels,
+				planar_height_pixels, y, x0, x1);
+			x = (g1 + 1) << 3;
+		}
+	}
+	ST_FRAME_BAR_C2P_END();
+	memset(s_wsa_c2p.group, 0, sizeof(s_wsa_c2p.group));
+	return 1;
+}
+
+extern "C" void WSA_C2P_Note_Full(
+	unsigned char const *logical,
+	int logical_w,
+	int logical_h,
+	int logical_stride,
+	unsigned char *planar,
+	int dst_x0,
+	int dst_y0,
+	int abs_x0,
+	int abs_y0)
+{
+	int ax;
+	int ay;
+
+	if (!s_wsa_c2p.anchor || !planar) {
+		return;
+	}
+	if (!wsa_c2p_covers(logical, logical_w, logical_h, logical_stride)) {
+		return;
+	}
+	wsa_c2p_anim_origin(logical, logical_stride, &ax, &ay);
+	s_wsa_c2p.synced = 1;
+	s_wsa_c2p.sparse = 1;
+	memset(s_wsa_c2p.group, 0, sizeof(s_wsa_c2p.group));
+	s_wsa_c2p.logical = logical;
+	s_wsa_c2p.planar = planar;
+	s_wsa_c2p.logical_w = logical_w;
+	s_wsa_c2p.logical_h = logical_h;
+	s_wsa_c2p.origin_x = ax;
+	s_wsa_c2p.origin_y = ay;
+	s_wsa_c2p.dst_x0 = dst_x0;
+	s_wsa_c2p.dst_y0 = dst_y0;
+	s_wsa_c2p.abs_x0 = abs_x0;
+	s_wsa_c2p.abs_y0 = abs_y0;
+}
+
+static inline __attribute__((always_inline)) void wsa_xor_bytes(unsigned char *dst, const unsigned char *src, unsigned int n)
+{
+	while (n--) {
+		*dst++ ^= *src++;
+	}
+}
+
+static inline __attribute__((always_inline)) void wsa_xor_const(unsigned char *dst, unsigned char value, unsigned int n)
+{
+	while (n--) {
+		*dst++ ^= value;
+	}
+}
+
+static inline __attribute__((always_inline)) void wsa_write_run(unsigned char **dst, const unsigned char **src, int *col, int *row,
+	int width, int nextrow, int is_copy, int is_dump, unsigned char run_value, unsigned int count)
+{
+	while (count > 0) {
+		unsigned int room = (unsigned int)(width - *col);
+		unsigned int n = count < room ? count : room;
+
+		WSA_Debug_Check_Direct_Ptr(*dst, is_dump ? "DUMP" : "RUN");
+		if (n > 1) {
+			WSA_Debug_Check_Direct_Ptr(*dst + (n - 1), is_dump ? "DUMP" : "RUN");
+		}
+		wsa_c2p_add_at(*row, *col, (int)n);
+		if (is_dump) {
+			if (is_copy) {
+				memcpy(*dst, *src, n);
+			} else {
+				wsa_xor_bytes(*dst, *src, n);
+			}
+			*src += n;
+		} else if (is_copy) {
+			memset(*dst, run_value, n);
+		} else {
+			wsa_xor_const(*dst, run_value, n);
+		}
+		*dst += n;
+		*col += (int)n;
+		count -= n;
+		if (*col == width) {
+			*col = 0;
+			(*row)++;
+			*dst += nextrow - width;
+		}
+	}
+}
+
 extern "C" void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, int width, int nextrow, int copy)
 {
 	unsigned char *dst = (unsigned char *)target;
 	const unsigned char *src = (const unsigned char *)delta;
 	int col = 0;
+	int row = 0;
 	int is_copy = (copy != DO_XOR);
 
 	if (!dst || !src || width <= 0 || nextrow <= 0) {
 		return;
 	}
 
+	wsa_c2p_track_dest(dst, width, nextrow, s_wsa_track_height);
+
 	while (1) {
 		unsigned int code = *src++;
 
 		/* SHORTDUMP */
 		if (code > 0 && code < 128) {
-			unsigned int count = code;
-			while (count--) {
-				WSA_Debug_Check_Direct_Ptr(dst, "SHORTDUMP");
-				unsigned char v = *src++;
-				if (is_copy) {
-					*dst = v;
-				} else {
-					*dst ^= v;
-				}
-
-				dst++;
-				col++;
-				if (col == width) {
-					dst -= width;
-					col = 0;
-					dst += nextrow;
-				}
-			}
+			wsa_write_run(&dst, &src, &col, &row, width, nextrow, is_copy, 1, 0, code);
 			continue;
 		}
 
@@ -732,22 +1125,7 @@ extern "C" void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, i
 		if (code == 0) {
 			unsigned int count = *src++;
 			unsigned char v = *src++;
-			while (count--) {
-				WSA_Debug_Check_Direct_Ptr(dst, "SHORTRUN");
-				if (is_copy) {
-					*dst = v;
-				} else {
-					*dst ^= v;
-				}
-
-				dst++;
-				col++;
-				if (col == width) {
-					dst -= width;
-					col = 0;
-					dst += nextrow;
-				}
-			}
+			wsa_write_run(&dst, &src, &col, &row, width, nextrow, is_copy, 0, v, count);
 			continue;
 		}
 
@@ -758,6 +1136,7 @@ extern "C" void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, i
 			col += (int)skip;
 			while (col >= width) {
 				col -= width;
+				row++;
 				dst += nextrow;
 			}
 			dst += col;
@@ -779,6 +1158,7 @@ extern "C" void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, i
 				col += (int)skip;
 				while (col >= width) {
 					col -= width;
+					row++;
 					dst += nextrow;
 				}
 				dst += col;
@@ -788,45 +1168,11 @@ extern "C" void Apply_XOR_Delta_To_Page_Or_Viewport(void *target, void *delta, i
 			{
 				unsigned int X = word_code - 0x8000u;
 				if ((X & 0x4000u) == 0u) {
-					/* LONGDUMP */
-					unsigned int count = X;
-					while (count--) {
-						WSA_Debug_Check_Direct_Ptr(dst, "LONGDUMP");
-						unsigned char v = *src++;
-						if (is_copy) {
-							*dst = v;
-						} else {
-							*dst ^= v;
-						}
-
-						dst++;
-						col++;
-						if (col == width) {
-							dst -= width;
-							col = 0;
-							dst += nextrow;
-						}
-					}
+					wsa_write_run(&dst, &src, &col, &row, width, nextrow, is_copy, 1, 0, X);
 				} else {
-					/* LONGRUN */
 					unsigned int count = X - 0x4000u;
 					unsigned char v = *src++;
-					while (count--) {
-						WSA_Debug_Check_Direct_Ptr(dst, "LONGRUN");
-						if (is_copy) {
-							*dst = v;
-						} else {
-							*dst ^= v;
-						}
-
-						dst++;
-						col++;
-						if (col == width) {
-							dst -= width;
-							col = 0;
-							dst += nextrow;
-						}
-					}
+					wsa_write_run(&dst, &src, &col, &row, width, nextrow, is_copy, 0, v, count);
 				}
 			}
 		}
@@ -921,6 +1267,7 @@ PRIVATE BOOL Apply_Delta(SysAnimHeaderType *sys_header, int curr_frame, char *de
 			(unsigned long)sys_header->pixel_width;
 		WSA_Debug_Set_Direct_Bounds(dest_ptr, direct_span);
 #endif
+		s_wsa_track_height = (int)sys_header->pixel_height;
 		Apply_XOR_Delta_To_Page_Or_Viewport(dest_ptr, sys_header->delta_buffer, sys_header->pixel_width, dest_w, DO_XOR);
 #if defined(DEBUG)
 		WSA_Debug_Clear_Direct_Bounds();

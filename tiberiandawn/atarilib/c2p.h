@@ -127,6 +127,18 @@ void C2P_Render_Logical_To_Planar_Rect(
 ** planar_row points at the destination scanline; dst_y0 is its y index within the buffer.
 ** Used by sprite cache remap fills (row_buf → planar) and by the rect helper per row.
 */
+/*
+** Eight-pixel-aligned span via the STDOOM fragment table. pixels is a multiple of 8,
+** dst_x is a multiple of 8, and dither phase follows abs_y with dst_x == abs_x.
+** planar_row is the destination scanline.
+*/
+void C2P_Render_Span8_STDOOM(
+	const uint8_t *logical,
+	int pixels,
+	uint8_t *planar_row,
+	int dst_x,
+	int abs_y);
+
 void C2P_Render_Logical_Row_To_Planar(
 	const uint8_t *logical_row,
 	int logical_w,

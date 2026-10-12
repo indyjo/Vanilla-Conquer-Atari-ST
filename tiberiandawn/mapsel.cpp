@@ -320,7 +320,11 @@ void Map_Selection(void)
 											154};
 	static char const _greenpal[]={0,1,0x42,3,0x43,5,0x44,7,0x44,9,10,1,12,13,0x41,15};
 	//static char const _greenpal[]={0,0x41,0x42,0x43,0x44,0x44,0x44,0x44,0x44,0x44,0x44,0x44,0x44,0x44,0x44,0x44};
-	static char const _othergreenpal[]={0,0x21,0x22,0x23,0x24,0x25,0x26,0x26,0x26,0x26,0x26,0x26,0x26,0x26,0x26,0x26};
+	/*
+	** 0x26 is magenta in the GDI earth and grey WSA palettes. 0x25 is the
+	** last green in that ramp (dark green on EARTH_A as well).
+	*/
+	static char const _othergreenpal[]={0,0x21,0x22,0x23,0x24,0x25,0x25,0x25,0x25,0x25,0x25,0x25,0x25,0x25,0x25,0x25};
 	static char const _regpal[]={0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
 	GraphicBufferClass backpage(20*6,8);
 
@@ -502,9 +506,10 @@ void Map_Selection(void)
 	*/
 #ifdef ATARI_ST
 	/*
-	** Keep GREYERTH C2P weights + grey2 STE pens through EARTH_A / EARTH_E.
-	** Globe blits over leftover E-BWTOCL on SeenBuff; per-clip weight/palette
-	** switches would mis-map mixed pixels. Palettes are close enough.
+	** EARTH_A / EARTH_E bring their own .W16 and palette. The first blit is a
+	** full-page C2P after the clear, so it replaces E-BWTOCL rather than
+	** recoloring leftover pixels. GREYERTH weights left 0x26 (magenta in the
+	** grey2 palette) in the status font.
 	*/
 	if (house == HOUSE_GOOD) {
 		anim = Open_Animation("EARTH_E.WSA", NULL, 0, mapsel_wsa_flags, Palette);
@@ -514,6 +519,10 @@ void Map_Selection(void)
 #endif
 	SysMemPage.Clear();
 	Animate_Frame(anim,SysMemPage,1);
+#ifdef ATARI_ST
+	Install_Animation_C2P_WeightSet(anim);
+	Set_Palette(Palette);
+#endif
 	SysMemPage.Blit(*PseudoSeenBuff);
 #ifndef ATARI_ST
 	Interpolate_2X_Scale(PseudoSeenBuff, &SeenBuff ,NULL, Settings.Video.InterpolationMode);

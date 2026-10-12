@@ -11,6 +11,7 @@
 extern WWKeyboardClass* Keyboard;
 #include "gbuffer.h"
 #include "drawbuff.h"  // Buffer_To_Page, Buffer_From_Page
+#include "wsa.h"
 #include "c2p.h"       // ST_PLANAR_BYTES_PER_LINE
 #include "shape.h"     // Get_Shape_Width, Get_Shape_Height, Decode_Shape_To_Buffer
 #include "st_blit.h"
@@ -530,6 +531,7 @@ void WWMouseClass::Low_Hide_Mouse(void)
 			+ MouseBuffTop * scr_bpl
 			+ ((MouseBuffLeft >> 4) * 8);
 		const int row_bytes = MouseBuffWords * 8;
+		WSA_C2P_Touch_Planar(gb->Get_Buffer(), MouseBuffLeft, MouseBuffTop, MouseBuffWords * 16, MouseBuffH);
 		ST_Copy_Bytes_2D((const uint8_t *)MouseBuffer, dst, row_bytes, MouseBuffH, row_bytes, scr_bpl);
 	}
 	MouseBuffX = -1;
@@ -1045,6 +1047,7 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 		const int word_right = (clip_right + 15) & ~15;
 		const int words = (word_right - word_left) >> 4;
 		const int row_bytes = words * 8;
+		WSA_C2P_Touch_Planar(gb->Get_Buffer(), word_left, clip_top, words * 16, vis_h);
 		uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
 			+ clip_top * scr_bpl
 			+ ((word_left >> 4) * 8);
@@ -1089,6 +1092,7 @@ void WWMouseClass::Draw_Mouse(GraphicViewPortClass *scr)
 	const int shift = left - word_left;
 	const int words = (shift + CursorWidth + 15) >> 4;
 	const int row_bytes = words * 8;
+	WSA_C2P_Touch_Planar(gb->Get_Buffer(), word_left, top, words * 16, CursorHeight);
 	uint8_t *src_bg = (uint8_t *)gb->Get_Buffer()
 		+ top * scr_bpl
 		+ ((word_left >> 4) * 8);
@@ -1151,6 +1155,8 @@ void WWMouseClass::Erase_Mouse(GraphicViewPortClass *scr, int forced)
 					+ EraseBuffTop * scr_bpl
 					+ ((EraseBuffLeft >> 4) * 8);
 				const int row_bytes = EraseBuffWords * 8;
+				WSA_C2P_Touch_Planar(gb->Get_Buffer(), EraseBuffLeft, EraseBuffTop,
+					EraseBuffWords * 16, EraseBuffH);
 				ST_Copy_Bytes_2D((const uint8_t *)EraseBuffer, dst, row_bytes, EraseBuffH,
 					row_bytes, scr_bpl);
 			}

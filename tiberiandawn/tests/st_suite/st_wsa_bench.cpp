@@ -13,7 +13,6 @@
 
 #include <mint/osbind.h>
 
-#include <new>
 #include <stdio.h>
 #include <string.h>
 
@@ -45,18 +44,6 @@ static unsigned long st_wsa_hz200(void)
 	return *(volatile unsigned long *)0x4BAL;
 }
 
-static void st_wsa_register_weight_mix(void)
-{
-	static MFCD *atarist = NULL;
-	if (atarist) {
-		return;
-	}
-	if (!CCFileClass("ATARIST.MIX").Is_Available()) {
-		return;
-	}
-	atarist = new MFCD("ATARIST.MIX");
-}
-
 int st_run_wsa_bench(void)
 {
 	unsigned char pal[768];
@@ -67,7 +54,6 @@ int st_run_wsa_bench(void)
 
 	printf("\n-- WSA bench (%s, %d frames) --\n", ST_WSA_BENCH_NAME, ST_WSA_BENCH_FRAMES);
 	st_tests_register_mixes_once();
-	st_wsa_register_weight_mix();
 
 	if (!CCFileClass(ST_WSA_BENCH_NAME).Is_Available()) {
 		printf("wsa_bench: SKIP %s not in a registered mix\n", ST_WSA_BENCH_NAME);

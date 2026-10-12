@@ -209,7 +209,54 @@ static void C2P_1x_Lorez_STDOOM(uint8_t *out, const uint8_t *in, unsigned short 
 		: [table] "a"(table), [mask] "d"(mask)
 		: "d0", "d1", "d2", "memory");
 }
+static void C2P_STDOOM_Emit8(uint8_t *out, const uint8_t *in, uint32_t (*table)[8])
+{
+	uint32_t pdata = 0;
+	const uint32_t mask = 0x00ff00ffu << 5;
+	__asm__ volatile(
+		"movem.l    (%[in]), %%d0-%%d1              \n\t"
+		"move.l     %%d0,%%d2                       \n\t"
+		"lsl.l      #5,%%d2                         \n\t"
+		"and.l      %[mask],%%d2                    \n\t"
+		"move.l     12(%[table],%%d2.w), %[pdata]   \n\t"
+		"swap       %%d2                            \n\t"
+		"or.l       4(%[table],%%d2.w), %[pdata]    \n\t"
+		"lsr.l      #3,%%d0                         \n\t"
+		"and.l      %[mask],%%d0                    \n\t"
+		"or.l       8(%[table],%%d0.w), %[pdata]    \n\t"
+		"swap       %%d0                            \n\t"
+		"or.l       (%[table],%%d0.w), %[pdata]     \n\t"
+		"move.l     %%d1,%%d2                       \n\t"
+		"lsl.l      #5,%%d2                         \n\t"
+		"and.l      %[mask],%%d2                    \n\t"
+		"or.l       28(%[table],%%d2.w), %[pdata]   \n\t"
+		"swap       %%d2                            \n\t"
+		"or.l       20(%[table],%%d2.w), %[pdata]   \n\t"
+		"lsr.l      #3,%%d1                         \n\t"
+		"and.l      %[mask],%%d1                    \n\t"
+		"or.l       24(%[table],%%d1.w), %[pdata]   \n\t"
+		"swap       %%d1                            \n\t"
+		"or.l       16(%[table],%%d1.w), %[pdata]   \n\t"
+		"movep.l    %[pdata], 0(%[out])             \n\t"
+		: [pdata] "+d"(pdata)
+		: [out] "a"(out), [in] "a"(in), [table] "a"(table), [mask] "d"(mask)
+		: "d0", "d1", "d2", "memory");
+}
 #else
+static void C2P_STDOOM_Emit8(uint8_t *out, const uint8_t *in, uint32_t (*table)[8])
+{
+	uint32_t pdata = 0;
+	int k;
+
+	for (k = 0; k < 8; k++) {
+		pdata |= table[in[k]][k];
+	}
+	out[0] = (uint8_t)(pdata >> 24);
+	out[2] = (uint8_t)(pdata >> 16);
+	out[4] = (uint8_t)(pdata >> 8);
+	out[6] = (uint8_t)pdata;
+}
+
 static void C2P_1x_Lorez_STDOOM(uint8_t *out, const uint8_t *in, unsigned short pixels, uint32_t (*table)[8])
 {
 	for (unsigned x = 0; x + 8 <= (unsigned)pixels; x += 8) {
@@ -223,6 +270,45 @@ static void C2P_1x_Lorez_STDOOM(uint8_t *out, const uint8_t *in, unsigned short 
 	}
 }
 #endif /* __m68k__ */
+
+/*
+ * Dirty WSA spans are 8-pixel groups. The 16-pixel STDOOM loop covers the aligned
+ * body; a single even or odd group uses the same fragment sequence.
+ */
+extern "C" void C2P_Render_Span8_STDOOM(
+	const uint8_t *logical,
+	int pixels,
+	uint8_t *planar_row,
+	int dst_x,
+	int abs_y)
+{
+	uint32_t (*table)[8];
+	uint8_t *out;
+	const uint8_t *in;
+
+	if (!logical || !planar_row || pixels < 8 || (pixels & 7) != 0 || (dst_x & 7) != 0) {
+		return;
+	}
+	table = C2P_STDOOM_FragLUT[abs_y & 3];
+	out = planar_row + (dst_x >> 4) * 8 + ((dst_x >> 3) & 1);
+	in = logical;
+	if ((dst_x & 8) != 0) {
+		C2P_STDOOM_Emit8(out, in, table);
+		in += 8;
+		out += 7;
+		pixels -= 8;
+	}
+	if (pixels >= 16) {
+		const int block = pixels & ~15;
+		C2P_1x_Lorez_STDOOM(out, in, (unsigned short)block, table);
+		in += block;
+		out += block >> 1;
+		pixels -= block;
+	}
+	if (pixels >= 8) {
+		C2P_STDOOM_Emit8(out, in, table);
+	}
+}
 
 /* Map 8-bit logical color to ST index 0..15 using palette-opt weights + Bayer rank. */
 static uint8_t C2P_STIndex_FromOptWeights(int x_mod4, int y_mod4, const uint8_t *w_row)

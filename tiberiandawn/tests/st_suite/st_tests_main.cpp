@@ -11,6 +11,7 @@
 #include "st_font_browser.h"
 #include "st_mix_register.h"
 #include "st_planar_line_bench.h"
+#include "st_wsa_bench.h"
 #include "st_wsa_playback.h"
 #include "st_cps_browser.h"
 #include "st_terrain_tile_left_clip_autotest.h"
@@ -49,6 +50,7 @@ static void print_banner(void)
 	printf("8 Auto: same as 1\n");
 	printf("t Auto: terrain left-clip atlas\n");
 	printf("f Interactive: font browser (.FNT)\n");
+	printf("b Auto: WSA bench (EARTH_E)\n");
 	printf("w Interactive: WSA playback\n");
 	printf("c Interactive: CPS / W16 browser\n");
 	printf("l Auto: planar line benchmark\n");
@@ -205,6 +207,9 @@ static int st_dispatch_menu_choice(int ch)
 	case 'F':
 		st_run_interactive_font_browser();
 		break;
+	case 'b':
+	case 'B':
+		return st_run_wsa_bench();
 	case 'w':
 	case 'W':
 		st_run_interactive_wsa_playback();
@@ -243,7 +248,7 @@ int main(void)
 	if (auto_ch) {
 		printf("Auto-run: %c\n", auto_ch);
 		int const rc = st_dispatch_menu_choice(auto_ch);
-		if (auto_ch == '1' || auto_ch == '8' || auto_ch == 't' || auto_ch == 'l') {
+		if (auto_ch == '1' || auto_ch == '8' || auto_ch == 't' || auto_ch == 'l' || auto_ch == 'b') {
 			Pterm0();
 			return rc;
 		}

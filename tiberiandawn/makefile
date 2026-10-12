@@ -1093,7 +1093,7 @@ ST_TEST_EXE = $(OUTDIR)/tstcncd.tos
 else
 ST_TEST_EXE = $(OUTDIR)/tstcnc.tos
 endif
-ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_audx_autotest.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
+ST_TEST_OBJS = $(INTDIR)/st_tests_main.o $(INTDIR)/st_autotests.o $(INTDIR)/st_c2p_autotests.o $(INTDIR)/st_terrain_tile_left_clip_autotest.o $(INTDIR)/st16_convert_autotest.o $(INTDIR)/st_iconset_grid_interactive.o $(INTDIR)/st_interactive.o $(INTDIR)/st_blitter_rect_interactive.o $(INTDIR)/st_pcx_minimal.o $(INTDIR)/st_mix_minimal.o $(INTDIR)/st_text.o $(INTDIR)/st_title_production.o $(INTDIR)/st_game_link_stubs.o $(INTDIR)/st_build_frame_assets.o $(INTDIR)/st_font_browser.o $(INTDIR)/st_audio_asset_autotest.o $(INTDIR)/st_audio_mix_test.o $(INTDIR)/st_audx_autotest.o $(INTDIR)/st_mix_register.o $(INTDIR)/st_planar_line_bench.o $(INTDIR)/st_wsa_bench.o $(INTDIR)/st_wsa_playback.o $(INTDIR)/st_cps_browser.o
 ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTDIR)/st_temperat_palette_data.o $(INTDIR)/title_pcx_load_st_tests.o \
 	$(INTDIR)/gbuffer.o $(INTDIR)/drawbuff.o $(INTDIR)/iconset_ATARILIB.o $(INTDIR)/st16_iconset.o $(INTDIR)/st16_convert.o $(INTDIR)/st16_draw.o $(INTDIR)/st_screen.o $(INTDIR)/st_blit.o $(INTDIR)/st_blitter_hw.o $(INTDIR)/st_soft_blit.o $(INTDIR)/st_sprite_cache.o $(INTDIR)/page_region_cache.o $(INTDIR)/shpx.o \
 	$(INTDIR)/st_planar_draw.o $(INTDIR)/st_hw_probe.o \
@@ -1102,7 +1102,7 @@ ST_TEST_LINK_OBJS = $(INTDIR)/c2p.o $(INTDIR)/palette.o $(INTDIR)/const.o $(INTD
 	$(INTDIR)/cdfile.o $(INTDIR)/misc_ATARILIB.o $(INTDIR)/mouseww.o $(INTDIR)/getshape.o $(INTDIR)/iff.o \
 	$(INTDIR)/keyboard.o $(INTDIR)/wwkeyboard_st.o $(INTDIR)/ikbd.o $(INTDIR)/ikbd_mousevec.o $(INTDIR)/keyframe.o $(INTDIR)/wsa.o \
 	$(INTDIR)/audio_ATARILIB.o $(INTDIR)/audio_dma.o $(INTDIR)/st_digi_movie.o $(INTDIR)/ste_stream_pcm.o $(INTDIR)/ste_stream_ima99.o $(INTDIR)/ws_adpcm_68k.o \
-	$(INTDIR)/st_audio_cfg.o $(INTDIR)/audio_timer_dac.o $(INTDIR)/digi_ring.o $(INTDIR)/digi_audio.o \
+	$(INTDIR)/st_audio_cfg.o $(INTDIR)/audio_timer_dac.o $(INTDIR)/audio_timer_dac_ym.o $(INTDIR)/digi_ring.o $(INTDIR)/digi_audio.o \
 	$(INTDIR)/audx_pool_file.o $(INTDIR)/audx_page_cache.o $(INTDIR)/ste_stream_memory_source.o \
 	$(INTDIR)/ste_stream_page_ring_source.o \
 	$(INTDIR)/st_load_uncompress.o \
@@ -1197,6 +1197,10 @@ $(INTDIR)/st_mix_register.o: $(ST_SUITE_DIR)/st_mix_register.cpp | $(INTDIR)
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 
 $(INTDIR)/st_planar_line_bench.o: $(ST_SUITE_DIR)/st_planar_line_bench.cpp | $(INTDIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
+
+$(INTDIR)/st_wsa_bench.o: $(ST_SUITE_DIR)/st_wsa_bench.cpp | $(INTDIR)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) $(DEFINE_FLAGS) -o $@ -c $<
 

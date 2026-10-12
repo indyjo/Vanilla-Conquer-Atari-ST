@@ -299,15 +299,6 @@ void ST_Blit_Backend::Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool h
 	}
 }
 
-void ST_Blit_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
-    uint16_t lines, bool hog)
-{
-	/* Only here does the plan reach real registers.
-	 * Qualify Kick_Planes so a software override cannot re-enter Run_Planes. */
-	Program(plan);
-	ST_Blit_Backend::Kick_Planes(job, lines, hog);
-}
-
 void ST_Blit_Backend::Program(const ST_Blitter &plan)
 {
 	volatile ST_Blitter &r = regs_;
@@ -337,8 +328,8 @@ static void ST_Blit_Run_4_Planes(
 		return;
 	}
 
-	backend.Run_Planes(plan, job, (uint16_t)lines, hog);
-	backend.Await();
+	backend.Program(plan);
+	backend.Kick_Planes(job, (uint16_t)lines, hog);
 }
 
 static ST_Blitter g_stamp24_col_plan;
@@ -362,7 +353,6 @@ BOOL ST_Blit_Stamp24_Column_Begin(
 	static uint8_t dummy;
 	ST_Blit_Job job;
 	ST_Blit_Backend &backend = ST_Blit_Active_Backend();
-	backend.Await();
 	if (!ST_Blit_Prepare_88(
 			&g_stamp24_col_plan,
 			&job,
@@ -407,7 +397,6 @@ void ST_Blit_Stamp24_Column_End(void)
 	if (!g_stamp24_col_open) {
 		return;
 	}
-	ST_Blit_Active_Backend().Await();
 	g_stamp24_col_open = false;
 }
 
@@ -450,7 +439,6 @@ static BOOL ST_Blit_Planar_Rect_With_Op(
 
 	ST_Blitter plan{};
 	ST_Blitter &regs = plan;
-	backend.Await();
 
 	const bool prepared = same_surface
 		? ST_Blit_Prepare_88_Scroll(
@@ -533,14 +521,12 @@ BOOL ST_Blit_Linear_Copy(void *dst, const void *src, unsigned long nbytes)
 	while (nwords > 0) {
 		const uint16_t chunk = (nwords > 65535ul) ? 65535u : (uint16_t)nwords;
 		plan.x_count = chunk;
-		hw.Await();
 		hw.Program(plan);
 		hw.Execute(false, 1, (void *)s, d);
 		s += (size_t)chunk * 2u;
 		d += (size_t)chunk * 2u;
 		nwords -= chunk;
 	}
-	hw.Await();
 	return TRUE;
 }
 
@@ -609,10 +595,8 @@ BOOL ST_Blit_Planar_Aligned_Rect_Copy(
 	plan.op = 3;
 	plan.skew = 0;
 
-	hw.Await();
 	hw.Program(plan);
 	hw.Execute(hog, (uint16_t)pixel_height, (void *)src, dst);
-	hw.Await();
 
 	ST_FRAME_BAR_BLIT_END();
 	return TRUE;
@@ -717,7 +701,6 @@ BOOL ST_Blit_Mask_And_Planar_Rect(
 	ST_Blit_Backend &backend = ST_Blit_Active_Backend();
 	ST_Blitter plan{};
 	ST_Blitter &regs = plan;
-	backend.Await();
 
 	if (!ST_Blit_Prepare_28(
 			&regs,

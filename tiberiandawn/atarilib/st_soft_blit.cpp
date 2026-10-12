@@ -700,7 +700,7 @@ void ST_Soft_P4_Planar_Skew_Long(
  * Both strides are compile-time constants here: ST_Blit_Prepare_88 and
  * ST_Blit_Prepare_88_Scroll always pass 8, negated for reverse. That frees the
  * two registers that held them, turns the pointer bumps into addq/post-increment
- * and takes dst_x_inc off the stack. Run_Planes verifies the assumption and
+ * and takes dst_x_inc off the stack. Kick_Planes verifies the assumption and
  * falls back to the generic per-plane loop if it ever fails to hold.
  */
 template <uint8_t OP, bool REVERSE, bool SHIFT0>
@@ -1009,12 +1009,11 @@ void ST_Soft_P4_Broadcast(
 
 } // namespace
 
-void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
-    uint16_t lines, bool hog)
+void ST_Soft_Backend::Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
 {
 	(void)hog;
-	/* Read straight from the caller's plan: no copy, no volatile. */
-	const ST_Blitter &r = plan;
+	/* Registers were stored by Program(). */
+	const ST_Blitter &r = plan_;
 
 	const int16_t src_x_inc = r.src_x_inc;
 	const int16_t dst_x_inc = r.dst_x_inc;
@@ -1043,12 +1042,7 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 		? (src_x_inc == (reverse_x ? -8 : 8) && dst_x_inc == (reverse_x ? -8 : 8))
 		: (!reverse_x && src_x_inc == 2 && dst_x_inc == 8);
 	if (!strides_ok) {
-		/*
-		 * Per-plane Execute via the base Kick_Planes. Do not call
-		 * ST_Blit_Backend::Run_Planes: that Programs and then Kick_Planes(),
-		 * which is virtual and lands back here (unbounded recursion).
-		 */
-		Program(plan);
+		/* Per-plane Execute. The base call skips this override. */
 		ST_Blit_Backend::Kick_Planes(job, lines, hog);
 		return;
 	}
@@ -1118,11 +1112,6 @@ void ST_Soft_Backend::Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
 	}
 #undef ST_SOFT_P4_DISPATCH
 #undef ST_SOFT_P4_CALL
-}
-
-void ST_Soft_Backend::Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog)
-{
-	Run_Planes(plan_, job, lines, hog);
 }
 
 /*
@@ -1575,10 +1564,6 @@ void ST_Soft_Blit_Mask_Merge(
 		    dst_y_inc, x_count, y_count, endmask1, endmask2, endmask3,
 		    shift, fxsr, nfsr);
 	}
-}
-
-void ST_Soft_Backend::Await()
-{
 }
 
 void ST_Soft_Backend::Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr)

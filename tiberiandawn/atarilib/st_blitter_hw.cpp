@@ -3,7 +3,6 @@
  */
 
 #include "st_blit.h"
-#include "st_hw_probe.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -29,28 +28,14 @@ static_assert(offsetof(ST_Blitter, skew) == 29, "ST_Blitter skew offset");
 #define g_Blitter (*(volatile ST_Blitter *)0xFFFF8A20UL)
 
 /*
- * -1 = unset, 0 = ST/STe premature-restart wait, 1 = Falcon BUSY poll.
- * Cached so the hot path never calls Getcookie. Bodies stay in this function
- * (direct BSR from Await/Execute) — cheaper on 68000 than an indirect jsr.
+ * Shared mode only, called after BUSY has been set. Shared mode hands the bus
+ * back often enough for interrupts. Re-asserting BUSY makes the chip resume
+ * after ~7 cycles instead of a full 64-cycle slice. The bset that observes
+ * BUSY clear also sets it, so it starts one more blit; y_count is already 0.
+ * The following read wait lets that init finish and does not start another.
  */
-static signed char g_blitter_wait_falcon = -1;
-
-static void ST_Blitter_Wait_Idle(void)
+static void ST_Blitter_Finish_Shared(void)
 {
-	if (g_blitter_wait_falcon < 0) {
-		g_blitter_wait_falcon = ST_Hw_Is_Falcon_Class() ? 1 : 0;
-	}
-
-	if (g_blitter_wait_falcon) {
-		while ((g_Blitter.ctrl & 0x80u) != 0) {
-		}
-		return;
-	}
-
-	/*
-	 * Atari premature-restart wait for shared (non-HOG) blits: re-assert BUSY so
-	 * the chip resumes after ~7 bus cycles instead of a full 64-cycle CPU slice.
-	 */
 	volatile uint8_t *const ctrl = &g_Blitter.ctrl;
 #if defined(__m68k__)
 	__asm__ volatile(
@@ -70,6 +55,8 @@ static void ST_Blitter_Wait_Idle(void)
 		}
 	}
 #endif
+	while ((g_Blitter.ctrl & 0x80u) != 0) {
+	}
 }
 
 static ST_Blitter_Backend g_hw_backend;
@@ -83,16 +70,19 @@ ST_Blitter_Backend &ST_Blit_HW_Backend()
 	return g_hw_backend;
 }
 
-void ST_Blitter_Backend::Await()
-{
-	ST_Blitter_Wait_Idle();
-}
-
 void ST_Blitter_Backend::Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr)
 {
-	ST_Blitter_Wait_Idle();
+	if (lines == 0) {
+		return;
+	}
 	g_Blitter.src_addr = src_addr;
 	g_Blitter.dst_addr = dst_addr;
 	g_Blitter.y_count = lines;
-	g_Blitter.ctrl = hog ? ST_BLIT_CTRL_START_HOG : ST_BLIT_CTRL_START;
+	if (hog) {
+		/* HOG stalls the CPU until this plane finishes. The chip is idle on return. */
+		g_Blitter.ctrl = ST_BLIT_CTRL_START_HOG;
+		return;
+	}
+	g_Blitter.ctrl = ST_BLIT_CTRL_START;
+	ST_Blitter_Finish_Shared();
 }

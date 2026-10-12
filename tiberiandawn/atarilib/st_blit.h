@@ -50,9 +50,9 @@ enum {
 /*
  * Contiguous word copy (src_x_inc = dst_x_inc = 2), one pass — not four
  * bitplanes. Uses the hardware blitter when AllowHardwareBlitFills is set
- * (shared, non-HOG). Waits for completion via Await (ST/STE premature
- * restart; Falcon BUSY poll). Otherwise memcpy. Odd sizes or odd
- * addresses fall back to memcpy.
+ * (shared, non-HOG, so interrupts run during the copy). Execute returns
+ * when the chip is idle. Otherwise memcpy. Odd sizes or odd addresses
+ * fall back to memcpy.
  */
 BOOL ST_Blit_Linear_Copy(void *dst, const void *src, unsigned long nbytes);
 
@@ -142,8 +142,9 @@ BOOL ST_Blit_Mask_Merge_Planar_Rect(
 	int pixel_height);
 
 /*
- * Unclipped 24×24 copy (op=3, source x=0). Program once for a dest-X column,
- * then Kick only src/dst/y_count. End Awaits. Pair Begin/End; Kick only while open.
+ * Unclipped 24×24 copy (op=3, source x=0). Begin programs one plan for a
+ * dest-X column; each Kick supplies src/dst only. Pair Begin/End; Kick only
+ * while open.
  * write_through_last: force endmask3=0xFFFF (no dest read on the last word).
  * Caller must restamp the pixels that share that word (next column). Do not
  * set when x_count would be 1.
@@ -175,21 +176,20 @@ public:
 	 */
 	virtual void Program(const ST_Blitter &plan);
 
-	/** Wait until the backend is idle (after the last kick of a multi-pass blit). */
-	virtual void Await() = 0;
-	/** Wait until idle, program src/dst/y_count, then kick one plane pass. */
+	/*
+	 * Program src/dst/y_count, start one plane, and return when it is finished.
+	 * HOG stalls the CPU inside the control write. Shared mode then runs the
+	 * restart wait so interrupts can be served. The chip is idle on return,
+	 * so the next Execute does not wait first.
+	 */
 	virtual void Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr) = 0;
 
-	/**
-	 * Run every bitplane of one prepared job. The hardware genuinely works a
-	 * plane at a time, so the default is four Execute() passes; a software
-	 * backend can override this to walk all four in one pass, where the planes
-	 * of a 16-pixel column are 8 contiguous bytes.
+	/*
+	 * Blit every bitplane. Program() has already loaded the register image;
+	 * this call only supplies addresses and the line count. The hardware
+	 * default is four Execute() passes. A software backend can walk all four
+	 * planes in one pass, where a 16-pixel column is 8 contiguous bytes.
 	 */
-	virtual void Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
-	    uint16_t lines, bool hog);
-
-	/** Four planes with addresses only; chip/plan must already be Programmed. */
 	virtual void Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog);
 
 protected:
@@ -202,17 +202,13 @@ private:
 class ST_Blitter_Backend : public ST_Blit_Backend {
 public:
 	ST_Blitter_Backend();
-	void Await() override;
 	void Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr) override;
 };
 
 class ST_Soft_Backend : public ST_Blit_Backend {
 public:
 	ST_Soft_Backend();
-	void Await() override;
 	void Execute(bool hog, uint16_t lines, void *src_addr, void *dst_addr) override;
-	void Run_Planes(const ST_Blitter &plan, const ST_Blit_Job &job,
-	    uint16_t lines, bool hog) override;
 	void Kick_Planes(const ST_Blit_Job &job, uint16_t lines, bool hog) override;
 	/* Plain memory, no hardware behind it. */
 	void Program(const ST_Blitter &plan) override { plan_ = plan; }

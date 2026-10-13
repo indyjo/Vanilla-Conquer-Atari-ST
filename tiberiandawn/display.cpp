@@ -92,6 +92,7 @@
 #include "st16_iconset.h"
 #include "st_sprite_cache.h"
 #include "memflag.h"
+#include "debugstring.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -697,6 +698,98 @@ void DisplayClass::Init_IO(void)
     }
 }
 
+#ifdef ATARI_ST
+/*
+** One payload buffer for every theater MIX. Sized to the largest theater file
+** present, then reused when the scenario changes theater. Freeing a smaller mix
+** and allocating a slightly larger one fails once anything has been allocated
+** above the old payload.
+*/
+static char* g_theater_mix_arena = NULL;
+static int g_theater_mix_arena_size = 0;
+
+static int ST_Mix_Payload_Bytes(char const* filename)
+{
+    CCFileClass file(filename);
+    unsigned char hdr[10];
+    unsigned first;
+    unsigned second;
+    int got;
+
+    if (!file.Is_Available() || !file.Open(READ)) {
+        return 0;
+    }
+
+    got = (int)file.Read(hdr, 4);
+    if (got != 4) {
+        file.Close();
+        return 0;
+    }
+
+    first = (unsigned)hdr[0] | ((unsigned)hdr[1] << 8);
+    second = (unsigned)hdr[2] | ((unsigned)hdr[3] << 8);
+    if (first == 0) {
+        /* Extended header: flags already consumed. Next is count + size. */
+        got = (int)file.Read(hdr, 6);
+        file.Close();
+        if (got != 6) {
+            return 0;
+        }
+        return (int)((unsigned)hdr[2] | ((unsigned)hdr[3] << 8) | ((unsigned)hdr[4] << 16) | ((unsigned)hdr[5] << 24));
+    }
+
+    /* Plain header: count (uint16) then size (uint32). Two size bytes remain. */
+    got = (int)file.Read(hdr, 2);
+    file.Close();
+    if (got != 2) {
+        return 0;
+    }
+    return (int)(second | ((unsigned)hdr[0] << 16) | ((unsigned)hdr[1] << 24));
+}
+
+static bool ST_Theater_Mix_Arena_Ensure(void)
+{
+    int need;
+    int theater;
+
+    if (g_theater_mix_arena != NULL) {
+        return true;
+    }
+
+    need = 0;
+    for (theater = THEATER_FIRST; theater < THEATER_COUNT; ++theater) {
+        char name[16];
+        int payload;
+
+        sprintf(name, "%s.MIX", Theaters[theater].Root);
+        payload = ST_Mix_Payload_Bytes(name);
+        if (payload > need) {
+            need = payload;
+        }
+    }
+    if (need <= 0) {
+        return false;
+    }
+
+    g_theater_mix_arena = new char[need];
+    if (g_theater_mix_arena == NULL) {
+        return false;
+    }
+    g_theater_mix_arena_size = need;
+    DBG_INFO("MIX: theater arena %d bytes (~%d KiB)", need, (need + 1023) / 1024);
+    return true;
+}
+
+void ST_Theater_Mix_Arena_Release(void)
+{
+    if (g_theater_mix_arena != NULL) {
+        delete[] g_theater_mix_arena;
+        g_theater_mix_arena = NULL;
+        g_theater_mix_arena_size = 0;
+    }
+}
+#endif
+
 /***********************************************************************************************
  * DisplayClass::Init_Theater -- Performs theater-specific initialization (mixfiles, etc)      *
  *                                                                                             *
@@ -773,10 +866,26 @@ void DisplayClass::Init_Theater(TheaterType theater)
         ** No heap chunky scratch is held during gameplay.
         */
         ST16_Trans_Iconset_Restore_And_Convert((void *)TransIconset);
+        (void)ST_Theater_Mix_Arena_Ensure();
         ST_Log_Free_Memory("Before TheaterData->Cache");
 #endif
         TheaterData = new MFCD(fullname);
+#ifdef ATARI_ST
+        if (g_theater_mix_arena != NULL) {
+            Buffer theater_buf(g_theater_mix_arena, g_theater_mix_arena_size);
+            /*
+            ** Cache() leaves Data NULL when the arena is smaller than this mix,
+            ** so a normal allocating cache can still run.
+            */
+            if (!TheaterData->Cache(&theater_buf)) {
+                TheaterData->Cache();
+            }
+        } else {
+            TheaterData->Cache();
+        }
+#else
         TheaterData->Cache();
+#endif
 #ifdef ATARI_ST
         /* Pre-shift entries are keyed by iconset address; that memory is gone. */
         ST16_Preshift_Reset();

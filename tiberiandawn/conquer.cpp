@@ -409,6 +409,11 @@ void Main_Game(int argc, char* argv[])
             delete TheaterData;
             TheaterData = NULL;
         }
+        /*
+        ** The payload lives in a shared arena, not in the mix object.
+        ** Drop it here so the title / side-select WSAs can allocate.
+        */
+        ST_Theater_Mix_Arena_Release();
         LastTheater = THEATER_NONE;
         ST_Log_Free_Memory("After unload TheaterData (return to menu)");
 #endif

@@ -340,6 +340,8 @@ void const* Get_Radar_Icon(void const* shapefile, int shapenum, int frames, int 
 /* Bump arena for Get_Radar_Icon — reserve before theater MIX Cache so Cache stays last Alloc. */
 int ST_Radar_Icon_Arena_Ensure(void);
 void ST_Radar_Icon_Arena_Reset(void);
+/* Drop the shared theater-mix payload. Mix objects must already be deleted. */
+void ST_Theater_Mix_Arena_Release(void);
 #endif
 void CC_Draw_Shape(void const* shapefile,
                    int shapenum,

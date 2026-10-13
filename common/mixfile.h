@@ -664,7 +664,9 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(Buffer const* b
         */
         int actual = straw->Get(Data, DataSize);
         if (actual != DataSize) {
-            delete[] static_cast<char*>(Data);
+            if (IsAllocated) {
+                delete[] static_cast<char*>(Data);
+            }
             Data = NULL;
             file.Error(EIO);
             DBG_INFO("MIX: cache %s [FAIL] read", Filename ? Filename : "(null)");
@@ -685,7 +687,9 @@ template <class T, class TCRC> bool MixFileClass<T, TCRC>::Cache(Buffer const* b
             sha.Result(digest2);
             fstraw.Get(digest1, sizeof(digest1));
             if (memcmp(digest1, digest2, sizeof(digest1)) != 0) {
-                delete[] static_cast<char*>(Data);
+                if (IsAllocated) {
+                    delete[] static_cast<char*>(Data);
+                }
                 Data = NULL;
                 DBG_INFO("MIX: cache %s [FAIL] digest", Filename ? Filename : "(null)");
 #if defined(ATARI_ST)

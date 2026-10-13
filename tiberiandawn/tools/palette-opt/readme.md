@@ -65,6 +65,19 @@ Without **`-o`**, weight rows are printed to stdout in C form; stderr carries lo
 
 **Fixed pens:** `--fix PEN,IDX` pins pen `PEN` to palette index `IDX` (repeatable).
 
+**Exclusive ranges:** `--focus=SRC_LO-SRC_HI:PEN_LO-PEN_HI` (repeatable) restricts
+those VGA indices to those pens, and forbids every other index from using the
+pens. Overlapping pen ranges union their source indices. Pin the pens with
+`--fix` when a palette animation has to change those exact VGA slots (the
+hardware color of a pen is `palette[subset[pen]]`). `--forbid=LO-HI` keeps
+indices out of the subset without reserving a pen; they still dither onto the
+pens `--focus` leaves open.
+
+```bash
+./palette-opt -p EUROPE.PAL -o EUROPE.W16 --sa-iter=0 \
+  --focus=249-254:8-10 --fix=8,249 --fix=9,251 --fix=10,254
+```
+
 **Metric transform:** `--gamma F` sets the gamma exponent, `--y-scale F` scales Y in
 YUV space, `--bpc N` sets pen gun bits only (1..6; default 4; targets stay VGA6), and
 `--rgb` switches the optimizer to gamma-corrected RGB space instead of YUV.

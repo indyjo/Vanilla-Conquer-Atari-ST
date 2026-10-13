@@ -5,6 +5,7 @@
 #include "subset_spread.h"
 #include "json_export.h"
 #include "palette_color.h"
+#include "palette_focus.h"
 
 #include <float.h>
 #include <stdio.h>
@@ -31,6 +32,21 @@ static float min_dist_to_palette_list(const float *colors, int idx,
 			min_d = d;
 	}
 	return min_d;
+}
+
+/* Mark indices this pen is not allowed to hold, on top of indices already used. */
+static void mask_disallowed(int pen, const unsigned char *used, unsigned char *blocked)
+{
+	const PaletteFocus *focus = palette_focus_current();
+	int i;
+
+	memcpy(blocked, used, 256);
+	if (!focus)
+		return;
+	for (i = 0; i < 256; i++) {
+		if (!palette_focus_pen_may_hold(focus, pen, i))
+			blocked[i] = 1;
+	}
 }
 
 static int pick_farthest_from_centroid(const float *colors, const unsigned char *used)
@@ -125,14 +141,18 @@ int palette_subset_spread_colors_fix(const float *colors, int n, const PaletteSu
 
 	for (fi = 0; fi < free_count; fi++) {
 		int pick;
+		unsigned char blocked[256];
+		const int pen = free_pen[fi];
+
+		mask_disallowed(pen, used, blocked);
 		if (palette_count == 0) {
-			pick = pick_farthest_from_centroid(colors, used);
+			pick = pick_farthest_from_centroid(colors, blocked);
 		} else {
-			pick = pick_farthest_to_set(colors, used, palette_list, palette_count);
+			pick = pick_farthest_to_set(colors, blocked, palette_list, palette_count);
 		}
-		if (pick < 0)
+		if (pick < 0 || blocked[pick])
 			return 0;
-		out_subset[free_pen[fi]] = (unsigned char)pick;
+		out_subset[pen] = (unsigned char)pick;
 		used[pick] = 1;
 		palette_list[palette_count++] = (unsigned char)pick;
 	}
@@ -155,10 +175,16 @@ static int spread_pick_for_pen(const float *colors, const unsigned char *used,
 		return pick;
 	}
 
-	if (pen == 0) {
-		pick = pick_farthest_from_centroid(colors, used);
-	} else {
-		pick = pick_farthest_to_set(colors, used, out_subset, pen);
+	{
+		unsigned char blocked[256];
+		mask_disallowed(pen_slot, used, blocked);
+		if (pen == 0) {
+			pick = pick_farthest_from_centroid(colors, blocked);
+		} else {
+			pick = pick_farthest_to_set(colors, blocked, out_subset, pen);
+		}
+		if (pick >= 0 && blocked[pick])
+			return -1;
 	}
 	return pick;
 }

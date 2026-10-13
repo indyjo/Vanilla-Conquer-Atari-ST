@@ -12,6 +12,7 @@
 #include "weight_opt.h"
 
 #include "palette_color.h"
+#include "palette_focus.h"
 
 #include <math.h>
 #include <string.h>
@@ -97,6 +98,8 @@ typedef struct WeightSearchCtx {
 	float pen_colors[16][3];
 	float pen_d_sq[16];
 	unsigned char weights[PALETTE_OPT_WEIGHT_SLOTS];
+	int n_allowed;
+	int allowed[PALETTE_OPT_WEIGHT_SLOTS];
 	float best_cost;
 } WeightSearchCtx;
 
@@ -145,7 +148,7 @@ static void partition_positive(int k, int left, int gran, int *parts, int slot, 
 	}
 }
 
-/* Choose `num_pens` distinct slots among subset_n, then positive partitions of 16. */
+/* Choose `num_pens` distinct allowed slots, then positive partitions of 16. */
 static void choose_pens(WeightSearchCtx *ctx, int num_pens, int start, int slot,
 	int *pen_slots)
 {
@@ -158,8 +161,8 @@ static void choose_pens(WeightSearchCtx *ctx, int num_pens, int start, int slot,
 		return;
 	}
 
-	for (i = start; i <= ctx->subset_n - (num_pens - slot); i++) {
-		pen_slots[slot] = i;
+	for (i = start; i <= ctx->n_allowed - (num_pens - slot); i++) {
+		pen_slots[slot] = ctx->allowed[i];
 		choose_pens(ctx, num_pens, i + 1, slot + 1, pen_slots);
 	}
 }
@@ -168,11 +171,18 @@ static float weight_search_solve(WeightSearchCtx *ctx)
 {
 	int pen_slots[4];
 	int num_pens;
+	int max_pens;
 
 	ctx->best_cost = -1.0f;
 	memset(ctx->weights, 0, sizeof(ctx->weights));
+	if (ctx->n_allowed <= 0)
+		return -1.0f;
 
-	for (num_pens = 1; num_pens <= PALETTE_OPT_MAX_NONZERO_WEIGHTS; num_pens++)
+	max_pens = ctx->n_allowed;
+	if (max_pens > PALETTE_OPT_MAX_NONZERO_WEIGHTS)
+		max_pens = PALETTE_OPT_MAX_NONZERO_WEIGHTS;
+
+	for (num_pens = 1; num_pens <= max_pens; num_pens++)
 		choose_pens(ctx, num_pens, 0, 0, pen_slots);
 
 	return ctx->best_cost;
@@ -198,10 +208,13 @@ float palette_weight_opt_best(const float *target_colors, const float *pen_color
 	for (pen_idx = 0; pen_idx < subset_n; pen_idx++) {
 		const int pal = (int)subset[pen_idx];
 		const float *p = &pen_colors[3 * pal];
+		const PaletteFocus *focus = palette_focus_current();
 		ctx.pen_colors[pen_idx][0] = p[0];
 		ctx.pen_colors[pen_idx][1] = p[1];
 		ctx.pen_colors[pen_idx][2] = p[2];
 		ctx.pen_d_sq[pen_idx] = dist_sq[row + pal];
+		if (!focus || palette_focus_index_may_use_pen(focus, target_i, pen_idx))
+			ctx.allowed[ctx.n_allowed++] = pen_idx;
 	}
 
 	if (weight_search_solve(&ctx) < 0.0f)

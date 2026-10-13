@@ -15,8 +15,10 @@ ifeq ($(OPENMP),1)
   LDFLAGS += -fopenmp
 endif
 
-palette-opt: main.o palette_color.o subset_fix.o subset_spread.o subset_opt.o weight_opt.o ply_dump.o json_export.o
+palette-opt: main.o palette_color.o palette_focus.o subset_fix.o subset_spread.o subset_opt.o weight_opt.o ply_dump.o json_export.o
 	$(CC) $(LDFLAGS) -o $@ $+ -lm
+
+main.o palette_focus.o subset_spread.o subset_opt.o weight_opt.o json_export.o: palette_focus.h
 
 clean:
 	rm -f palette-opt *.o

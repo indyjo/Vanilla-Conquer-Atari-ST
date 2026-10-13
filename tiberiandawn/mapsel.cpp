@@ -662,20 +662,17 @@ void Map_Selection(void)
 	Increase_Palette_Luminance(InterpolationPalette , 30,30,30,63);
 	Read_Interpolation_Palette("MAP_PROG.PAL");
 
-#ifdef ATARI_ST
 	/*
-	** Snapshot the base map into HidPage (PseudoSeenBuff is SeenBuff). Skip on the
-	** last-scenario path — europe is unused there, and that path touches HidPage.
+	** Chunky snapshot of WSA frame 0. On ST, HidPage is planar: blitting the map
+	** there and back stores hardware pen numbers as VGA indices, and the
+	** post-click C2P dithers those pens a second time (a land pen comes back white).
+	** Skip the alloc on the last-scenario path — europe is unused there.
 	*/
 	GraphicBufferClass *europe = NULL;
 	if (!lastscenario) {
-		europe = HidPage.Get_Graphic_Buffer();
+		europe = new GraphicBufferClass(SysMemPage.Get_Width(),SysMemPage.Get_Height(),(GBC_Enum)0);
 		SysMemPage.Blit(*europe);
 	}
-#else
-	GraphicBufferClass *europe = new GraphicBufferClass(SysMemPage.Get_Width(),SysMemPage.Get_Height(),(GBC_Enum)0);
-	SysMemPage.Blit(*europe);
-#endif
 
 	/*
 	** Now show territories as they existed last scenario
@@ -716,12 +713,12 @@ void Map_Selection(void)
 	** Now dissolve in second advance of territories
 	*/
 #ifdef FRENCH
-	PseudoSeenBuff->Fill_Rect(xcoord,0,xcoord + 6*16 + 10,8,BLACK);
+	PseudoSeenBuff->Fill_Rect(xcoord,0,xcoord + 6*16 + 10,8,TBLACK);
 #ifndef ATARI_ST
 	TextPrintBuffer->Fill_Rect(xcoord*2,0,2*(xcoord + 6*16 + 10),2*8,BLACK);
 #endif
 #else
-	PseudoSeenBuff->Fill_Rect(xcoord,0,xcoord + 6*16,8,BLACK);
+	PseudoSeenBuff->Fill_Rect(xcoord,0,xcoord + 6*16,8,TBLACK);
 #ifndef ATARI_ST
 	TextPrintBuffer->Fill_Rect(2*xcoord,0,2*(xcoord + 6*16),2*8,BLACK);
 #endif
@@ -752,12 +749,12 @@ void Map_Selection(void)
 	if (!lastscenario) Call_Back_Delay(85);
 //	Set_Font(oldfont);
 #ifdef FRENCH
-	PseudoSeenBuff->Fill_Rect(xcoord,12,xcoord+6*16+10,20,BLACK);
+	PseudoSeenBuff->Fill_Rect(xcoord,12,xcoord+6*16+10,20,TBLACK);
 #ifndef ATARI_ST
 	TextPrintBuffer->Fill_Rect(2*xcoord,2*12,2*(xcoord+6*16+10),2*20,BLACK);
 #endif
 #else
-	PseudoSeenBuff->Fill_Rect(xcoord,12,xcoord+6*16,20,BLACK);
+	PseudoSeenBuff->Fill_Rect(xcoord,12,xcoord+6*16,20,TBLACK);
 #ifndef ATARI_ST
 	TextPrintBuffer->Fill_Rect(2*xcoord,2*12,2*(xcoord+6*16),2*20,BLACK);
 #endif
@@ -1002,8 +999,11 @@ void Map_Selection(void)
 		void const * countryshape = MFCD::Retrieve(house == HOUSE_GOOD ? "COUNTRYE.SHP" : "COUNTRYA.SHP");
 
 		Hide_Mouse();
-		// erase "Select country to attack"
-		PseudoSeenBuff->Fill_Rect(attackxcoord,160, attackxcoord+(17*6),178,BLACK);
+		/*
+		** Erase "Select country to attack". BLACK is font slot 12, which the
+		** map weight set dithers to a grey-green pen. TBLACK is VGA index 0.
+		*/
+		PseudoSeenBuff->Fill_Rect(attackxcoord,160, attackxcoord+(17*6),178,TBLACK);
 #ifndef ATARI_ST
 		TextPrintBuffer->Fill_Rect(2*attackxcoord,2*160, 2*(attackxcoord+(17*6)),2*178,BLACK);
 #if (GERMAN | FRENCH)
@@ -1042,7 +1042,12 @@ void Map_Selection(void)
 #ifndef ATARI_ST
 		Interpolate_2X_Scale(PseudoSeenBuff , &SeenBuff , "MAP_LOC2.PAL", Settings.Video.InterpolationMode);
 #endif
-		Fade_Palette_To(localpalette, FADE_PALETTE_MEDIUM, Call_Back);
+		/*
+		** DOS uses FADE_PALETTE_MEDIUM (1/4 s). On 16 STE colors that collapses
+		** to one or two steps and looks like a cut. This delay is long enough
+		** that the stepper moves one gun level per frame, a bit over a second.
+		*/
+		Fade_Palette_To(localpalette, TIMER_SECOND + TIMER_SECOND / 8, Call_Back);
 
 		countryshape = 0;
 
@@ -1056,15 +1061,14 @@ void Map_Selection(void)
 #ifndef ATARI_ST
 		Interpolate_2X_Scale(PseudoSeenBuff , &SeenBuff , "MAP_LOC3.PAL", Settings.Video.InterpolationMode);
 #endif
-		Set_Palette(localpalette);
 //		Load_Data(house == HOUSE_GOOD ? "DARK_B.PAL" : "DARK_SA.PAL", localpalette, 768);
 
 		Hide_Mouse();
 #if (GERMAN | FRENCH)
-		PseudoSeenBuff->Fill_Rect(attackxcoord, 160, 319, 178, BLACK);	// erase "Select country to attack"
+		PseudoSeenBuff->Fill_Rect(attackxcoord, 160, 319, 178, TBLACK);	// erase "Select country to attack"
 		TextPrintBuffer->Fill_Rect(2*attackxcoord, 2*160, 639, 2*178, BLACK);	// erase "Select country to attack"
 #else
-		PseudoSeenBuff->Fill_Rect(attackxcoord, 160, attackxcoord + (17*6), 199, BLACK);	// erase "Select country to attack"
+		PseudoSeenBuff->Fill_Rect(attackxcoord, 160, attackxcoord + (17*6), 199, TBLACK);	// erase "Select country to attack"
 		TextPrintBuffer->Fill_Rect(2*attackxcoord, 2*160, 2*(attackxcoord + (17*6)), 2*199, BLACK);	// erase "Select country to attack"
 #endif
 #ifndef ATARI_ST
@@ -1077,21 +1081,23 @@ void Map_Selection(void)
 #else
 		Animate_Frame(progress,*PseudoSeenBuff,Get_Animation_Frame_Count(progress)-1);
 #endif
-		Set_Palette(localpalette);
+		Fade_Palette_To(localpalette, TIMER_SECOND + TIMER_SECOND / 8, Call_Back);
 		Close_Animation(progress);
 		progress = NULL;
 #ifdef ATARI_ST
 		ST_SPRITE_CACHE_Reset_Tier_Capacities_To_Defaults();
-#endif
+#else
+		/* PC: copy the scaled view back. On ST this would read planar pen
+		** numbers into the chunky page and dither the map a second time.
+		*/
 		PseudoSeenBuff->Blit(SysMemPage);
+#endif
 		Print_Statistics(20, 160, house == HOUSE_GOOD ? 0 : 160);
 	}
 
 	Theme.Queue_Song(THEME_NONE);
 	Fade_Palette_To(BlackPalette, FADE_PALETTE_MEDIUM, NULL);
-#ifndef ATARI_ST
 	delete europe;
-#endif
 	delete progresspalette;
 	delete grey2palette;
 #ifndef ATARI_ST

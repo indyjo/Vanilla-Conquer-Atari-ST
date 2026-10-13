@@ -1,5 +1,6 @@
 #include "json_export.h"
 #include "palette_color.h"
+#include "palette_focus.h"
 #include "ply_dump.h"
 #include "subset_fix.h"
 #include "subset_opt.h"
@@ -110,6 +111,14 @@ static void print_help(FILE *out, const char *prog)
 		"                Initial subset from a .W16 bundle (subset bytes after magic).\n"
 		"  --fix PEN,IDX   Fix pen PEN to palette index IDX (repeatable).\n"
 		"  --fix=PEN,IDX   Same; multiple pairs: --fix=0,0,5,217\n"
+		"  --focus=SRC_LO-SRC_HI:PEN_LO-PEN_HI\n"
+		"                Exclusive mix: those VGA indices may use only those pens,\n"
+		"                and those pens are off-limits to every other index.\n"
+		"                Repeatable. Pen ranges may overlap (source indices union).\n"
+		"                Single values work: --focus=241:6-7. Combine with --fix so\n"
+		"                the reserved pens are the indices the hardware palette animates.\n"
+		"  --forbid=LO-HI  Never place these VGA indices in the subset (repeatable).\n"
+		"                They still dither onto whatever pens --focus leaves open.\n"
 		"  --lambda=L    Blend (1-L)*e1 + L*e2 per index (default 0.6).\n"
 		"  --hist FILE   Sparse histogram: lines \"index count\".\n"
 		"  --bayer=2|4   Weight granularity: 2 -> step 4 (2x2 tile, default), 4 -> step 1.\n"
@@ -414,6 +423,7 @@ int main(int argc, const char **argv)
 	float lambda = 0.6f;
 	PaletteSubsetOptParams sa_params;
 	PaletteSubsetFix subset_fix;
+	PaletteFocus focus;
 	PaletteOptColorParams color_params;
 	PaletteOptJsonExport *json_export = NULL;
 	FILE *outf = NULL;
@@ -421,6 +431,7 @@ int main(int argc, const char **argv)
 	int target;
 
 	palette_subset_fix_clear(&subset_fix);
+	palette_focus_clear(&focus);
 	palette_subset_opt_params_default(&sa_params);
 	palette_opt_color_params_default(&color_params);
 	palette_hist_uniform(alpha);
@@ -572,6 +583,34 @@ int main(int argc, const char **argv)
 				fprintf(stderr, "error: invalid --fix= value: %s\n", argv[argi] + 6);
 				return 1;
 			}
+		} else if (!strncmp(argv[argi], "--focus=", 8)) {
+			if (palette_focus_parse(&focus, argv[argi] + 8) != 0) {
+				fprintf(stderr, "error: invalid --focus= value: %s\n", argv[argi] + 8);
+				return 1;
+			}
+		} else if (!strcmp(argv[argi], "--focus")) {
+			if (argi + 1 >= argc) {
+				print_usage(argv[0]);
+				return 1;
+			}
+			if (palette_focus_parse(&focus, argv[++argi]) != 0) {
+				fprintf(stderr, "error: invalid --focus value: %s\n", argv[argi]);
+				return 1;
+			}
+		} else if (!strncmp(argv[argi], "--forbid=", 9)) {
+			if (palette_focus_parse_forbid(&focus, argv[argi] + 9) != 0) {
+				fprintf(stderr, "error: invalid --forbid= value: %s\n", argv[argi] + 9);
+				return 1;
+			}
+		} else if (!strcmp(argv[argi], "--forbid")) {
+			if (argi + 1 >= argc) {
+				print_usage(argv[0]);
+				return 1;
+			}
+			if (palette_focus_parse_forbid(&focus, argv[++argi]) != 0) {
+				fprintf(stderr, "error: invalid --forbid value: %s\n", argv[argi]);
+				return 1;
+			}
 		} else if (!strcmp(argv[argi], "--fix")) {
 			if (argi + 1 >= argc) {
 				print_usage(argv[0]);
@@ -631,6 +670,13 @@ int main(int argc, const char **argv)
 		}
 		palette_subset_fix_log(&subset_fix, stderr);
 	}
+	if (palette_focus_active(&focus)) {
+		if (palette_focus_validate(&focus,
+				palette_subset_fix_count(&subset_fix) > 0 ? &subset_fix : NULL, subset_n) != 0)
+			return 1;
+		palette_focus_log(&focus, stderr);
+	}
+	palette_focus_install(palette_focus_active(&focus) ? &focus : NULL);
 
 	if (!load_palette_file(palette_path, loaded_pal))
 		return 1;
@@ -698,6 +744,19 @@ int main(int argc, const char **argv)
 				json_export, alpha, lambda))
 			return 1;
 		fprintf(stderr, "subset init: farthest-point spread\n");
+	}
+
+	if (palette_focus_active(&focus)) {
+		int pen;
+		for (pen = 0; pen < subset_n; pen++) {
+			if (!palette_focus_pen_may_hold(&focus, pen, (int)subset[pen])) {
+				fprintf(stderr,
+					"error: subset pen %d index %u is outside its --focus/--forbid range\n",
+					pen, (unsigned)subset[pen]);
+				palette_opt_json_free(json_export);
+				return 1;
+			}
+		}
 	}
 
 	{

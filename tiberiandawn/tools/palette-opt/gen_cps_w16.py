@@ -11,7 +11,9 @@ palette-opt -p tmp.pal -o NAME.W16 --sa-iter=0 (spread init, no SA).
 External palette (SATSEL.PAL): same with spread init only (--sa-iter=0).
 
 Map CLICK_* overlays use WSA context weights (EUROPE.W16, …). Those palettes are
-extracted with tools/paltool first, then passed to palette-opt as raw .PAL files.
+extracted with tools/paltool first, then passed to palette-opt with --focus/--fix
+so the pulse, text, and country highlight own exclusive pens and the land pens
+are samples of the terrain ramp.
 """
 from __future__ import annotations
 
@@ -77,9 +79,103 @@ def cps_embedded_palette(cps: bytes) -> bytes | None:
     return cps[10 : 10 + 768]
 
 
-def run_palette_opt(po: Path, palette: Path, out_w16: Path, *, sa_iter: int = 0) -> None:
+def run_palette_opt(po: Path, palette: Path, out_w16: Path, *, sa_iter: int = 0,
+                    extra: list[str] | None = None) -> None:
     cmd = [str(po), "-p", str(palette), "-o", str(out_w16), f"--sa-iter={sa_iter}"]
+    if extra:
+        cmd.extend(extra)
+    if out_w16.exists():
+        out_w16.unlink()
     subprocess.run(cmd, check=True)
+
+
+# Pen budget (all 16 fixed, spread never picks):
+#   0 black, 1 white, 2-3 highlight, 4-5 text, 6-8 pulse, 9-15 land.
+# Land pens are samples of the indices the final map actually uses, so the
+# terrain dithers between neighbors instead of neon/gold/brown outliers.
+# EUROPE/AFRICA: COUNTRYE/A.SHP uses 209-212 (white, same pen as 15) and
+# 218-239. DARK_E darkens 33-36, 42-63, 74-127 and the pulse, and keeps
+# 65-68, 97-100, 209-212, 218-239. Blacks 0/64/96 are exclusive to pen 0
+# so the land cannot stipple with black or white.
+# BOSNIA/S_AFRICA: the staying-bright ramp is 16-31. 33-36 are the text
+# greens. Land ramps differ, so the two files do not share land fixes.
+_MAP_TEXT_PULSE = [
+    "--fix=0,0",
+    "--fix=1,15",
+    "--focus=65-68:4-5",
+    "--focus=241-241:4-5",
+    "--fix=4,65",
+    "--fix=5,68",
+    "--focus=249-254:6-8",
+    "--fix=6,249",
+    "--fix=7,251",
+    "--fix=8,254",
+    "--forbid=129-155",
+    "--forbid=156-159",
+    "--forbid=160-207",
+]
+_MAP_LAND_EUROPE = [
+    "--fix=9,34",
+    "--fix=10,46",
+    "--fix=11,52",
+    "--fix=12,58",
+    "--fix=13,63",
+    "--fix=14,74",
+    "--fix=15,114",
+]
+MAP_FOCUS_EUROPE = _MAP_TEXT_PULSE + [
+    "--focus=0-0:0-0",
+    "--focus=64-64:0-0",
+    "--focus=96-96:0-0",
+    "--focus=15-15:1-1",
+    "--focus=128-128:1-1",
+    "--focus=255-255:1-1",
+    "--focus=209-212:1-1",
+    "--focus=218-239:2-3",
+    "--fix=2,218",
+    "--fix=3,239",
+    "--focus=97-100:4-5",
+    "--forbid=13-14",
+    "--forbid=16-31",
+    "--forbid=240-240",
+    "--forbid=242-248",
+] + _MAP_LAND_EUROPE
+_MAP_LAST_SHARED = _MAP_TEXT_PULSE + [
+    "--focus=15-15:1-1",
+    "--focus=128-128:1-1",
+    "--focus=255-255:1-1",
+    "--focus=16-31:2-3",
+    "--fix=2,16",
+    "--fix=3,31",
+    "--focus=33-36:4-5",
+]
+MAP_FOCUS_BOSNIA = _MAP_LAST_SHARED + [
+    "--focus=0-0:0-0",
+    "--fix=9,77",
+    "--fix=10,83",
+    "--fix=11,87",
+    "--fix=12,89",
+    "--fix=13,92",
+    "--fix=14,94",
+    "--fix=15,96",
+]
+MAP_FOCUS_SAFRICA = _MAP_LAST_SHARED + [
+    "--focus=0-0:0-0",
+    "--focus=96-96:0-0",
+    "--fix=9,106",
+    "--fix=10,112",
+    "--fix=11,116",
+    "--fix=12,122",
+    "--fix=13,98",
+    "--fix=14,218",
+    "--fix=15,244",
+]
+MAP_FOCUS_FOR = {
+    "EUROPE.WSA": MAP_FOCUS_EUROPE,
+    "AFRICA.WSA": MAP_FOCUS_EUROPE,
+    "BOSNIA.WSA": MAP_FOCUS_BOSNIA,
+    "S_AFRICA.WSA": MAP_FOCUS_SAFRICA,
+}
 
 
 def extract_palette_with_paltool(pt: Path, in_path: Path, out_pal: Path) -> None:
@@ -101,6 +197,12 @@ def main() -> int:
         type=Path,
         default=td / "atari-assets",
         help="Output directory for .W16 files",
+    )
+    ap.add_argument(
+        "--wsa-dir",
+        type=Path,
+        default=td / "tools" / "palette-opt" / "wsa_tmp",
+        help="Directory of loose map WSA files (fallback: next to --mix)",
     )
     args = ap.parse_args()
 
@@ -150,11 +252,12 @@ def main() -> int:
         "AFRICA.WSA",
         "S_AFRICA.WSA",
     )
-    wsa_dir = args.mix.parent
     for wsa_name in wsa_context:
-        wsa_path = wsa_dir / wsa_name
+        wsa_path = args.wsa_dir / wsa_name
         if not wsa_path.is_file():
-            print(f"skip {wsa_name}: loose file not beside MIX", file=sys.stderr)
+            wsa_path = args.mix.parent / wsa_name
+        if not wsa_path.is_file():
+            print(f"skip {wsa_name}: loose file not in --wsa-dir or beside MIX", file=sys.stderr)
             continue
         if not pt.is_file():
             print("error: build paltool first for WSA palette extraction: make -C tools/paltool",
@@ -164,8 +267,8 @@ def main() -> int:
         pal_path = tmp / f"{stem}.PAL"
         w16_path = args.out / f"{stem}.W16"
         extract_palette_with_paltool(pt, wsa_path, pal_path)
-        run_palette_opt(po, pal_path, w16_path, sa_iter=0)
-        print(f"wrote {w16_path.relative_to(td)} (CLICK_* context)")
+        run_palette_opt(po, pal_path, w16_path, sa_iter=0, extra=MAP_FOCUS_FOR[wsa_name])
+        print(f"wrote {w16_path.relative_to(td)} (map focus pens)")
 
     return 0
 

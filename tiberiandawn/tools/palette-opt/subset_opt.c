@@ -4,6 +4,7 @@
 
 #include "subset_opt.h"
 #include "json_export.h"
+#include "palette_focus.h"
 #include "subset_spread.h"
 #include "weight_opt.h"
 
@@ -163,15 +164,22 @@ static unsigned int xorshift32(unsigned int *state)
 	return x;
 }
 
-static int pick_random_outside(const unsigned char *subset, int subset_n, unsigned int *rng)
+static int pick_random_outside(const unsigned char *subset, int subset_n, int pen, unsigned int *rng)
 {
-	int v;
+	const PaletteFocus *focus = palette_focus_current();
+	int v = -1;
 	int guard = 0;
+
 	do {
 		v = (int)(xorshift32(rng) % 256u);
 		guard++;
-	} while (subset_has_index(subset, subset_n, v) && guard < 512);
-	return v;
+		if (subset_has_index(subset, subset_n, v))
+			continue;
+		if (focus && !palette_focus_pen_may_hold(focus, pen, v))
+			continue;
+		return v;
+	} while (guard < 4096);
+	return -1;
 }
 
 static int pick_random_free_pen(const PaletteSubsetFix *fix, int subset_n, unsigned int *rng)
@@ -324,7 +332,9 @@ int palette_subset_opt_anneal(const float *target_colors, const float *pen_color
 			slot = pick_random_free_pen(fix, subset_n, &rng);
 			if (slot < 0)
 				break;
-			out_idx = pick_random_outside(trial, subset_n, &rng);
+			out_idx = pick_random_outside(trial, subset_n, slot, &rng);
+			if (out_idx < 0)
+				break;
 			trial[slot] = (unsigned char)out_idx;
 			subset_enforce_fixes(fix, trial, subset_n);
 			if (palette_subset_evaluate(target_colors, pen_colors, dist_sq, trial, subset_n, alpha, lambda, NULL,
@@ -371,7 +381,12 @@ int palette_subset_opt_anneal(const float *target_colors, const float *pen_color
 		if (slot < 0)
 			break;
 		in_idx = (int)trial[slot];
-		out_idx = pick_random_outside(trial, subset_n, &rng);
+		out_idx = pick_random_outside(trial, subset_n, slot, &rng);
+		if (out_idx < 0) {
+			rejected++;
+			T *= (double)cool;
+			continue;
+		}
 		trial[slot] = (unsigned char)out_idx;
 		subset_enforce_fixes(fix, trial, subset_n);
 

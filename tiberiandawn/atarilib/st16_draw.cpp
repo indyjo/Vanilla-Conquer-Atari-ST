@@ -15,6 +15,45 @@
 #include "st_blit.h"
 
 #include <stdint.h>
+#include <string.h>
+
+ST16_Stamp24_Set ST16_Stamp24_Templates[TEMPLATE_COUNT];
+
+void ST16_Stamp24_Reset(void)
+{
+	memset(ST16_Stamp24_Templates, 0, sizeof(ST16_Stamp24_Templates));
+}
+
+void ST16_Stamp24_Bind(int template_index, const void *icondata)
+{
+	ST16_Stamp24_Set *set;
+	const IControl_Type *iconset;
+	const uint8_t *base;
+
+	if (template_index < 0 || template_index >= TEMPLATE_COUNT) {
+		return;
+	}
+	set = &ST16_Stamp24_Templates[template_index];
+	set->icons = NULL;
+	set->map = NULL;
+	set->count = 0;
+	iconset = (const IControl_Type *)icondata;
+	if (!iconset || !ST16_Has_Native_Chunk(iconset)) {
+		return;
+	}
+	if (iconset->Width != ST16_TILE_W || iconset->Height != ST16_TILE_H) {
+		return;
+	}
+	if ((ST16_Chunk(iconset)->flags & ST16_FLAG_HAS_MASK) != 0) {
+		return;
+	}
+	base = (const uint8_t *)iconset;
+	set->count = iconset->Count;
+	set->icons = base + iconset->Icons;
+	if (iconset->Map != 0) {
+		set->map = base + iconset->Map;
+	}
+}
 
 const uint8_t *ST16_Stamp24_Unmasked_Planar(const void *icondata, int logical_icon)
 {

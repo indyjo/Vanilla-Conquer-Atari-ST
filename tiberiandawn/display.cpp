@@ -2930,8 +2930,14 @@ enum {
 	REDRAW_RECT_GROW_MAX = REDRAW_RECT_MAX - 1, /* greedy-packer cap; last slot is leftover */
 	REDRAW_RECT_VIEW_W_MAX = 16,    /* dirty-mask width in view cells */
 	REDRAW_RECT_VIEW_H_MAX = 12,    /* dirty-mask height in view cells */
-	REDRAW_RECT_OBJ_CAP = 64        /* Layer objects binned per redraw rect */
+	REDRAW_RECT_OBJ_CAP = 64,       /* Layer objects binned per redraw rect */
+	/* Byte length of one olists row. A tail offset with this bit set is full. */
+	REDRAW_RECT_ROW_BYTES = REDRAW_RECT_OBJ_CAP * (int)sizeof(ObjectClass*)
 };
+static_assert((REDRAW_RECT_OBJ_CAP & (REDRAW_RECT_OBJ_CAP - 1)) == 0,
+	"Redraw object rows must be a power-of-two count");
+static_assert((REDRAW_RECT_ROW_BYTES & (REDRAW_RECT_ROW_BYTES - 1)) == 0,
+	"Redraw object row bytes must be a power of two");
 
 #ifdef ATARI_ST
 typedef short Rect_Cover_Idx;
@@ -2939,24 +2945,36 @@ typedef short Rect_Cover_Idx;
 typedef int Rect_Cover_Idx;
 #endif
 
+/*
+**	One dirty block of the tactical view. All three boxes are half-open
+**	([start, end)). Cell indices are offsets from the view's top-left cell
+**	and stay inside the 16×12 dirty mask. Pixel coords are tactical-window
+**	pixels, clipped to that window (at most a few hundred). Leptons are
+**	absolute map coordinates of those cell edges, in the same space as
+**	ObjectClass::Get_AABB. reserved[] keeps the record 32 bytes so rects[i]
+**	is a shift.
+*/
 struct Redraw_Rect {
-	int c0, r0, c1, r1;
-	int vx0, vy0, vx1, vy1;
-	short lx0, ly0, lx1, ly1;
+	short c0, r0;           /* first view column and row */
+	short c1, r1;           /* one past the last view column and row */
+	short vx0, vy0;         /* clipped tactical-window pixel origin */
+	short vx1, vy1;         /* one past the clipped pixel extent */
+	short lx0, ly0;         /* map lepton origin of cell (c0, r0) */
+	short lx1, ly1;         /* map lepton of the cell past (c1, r1) */
+	unsigned char reserved[8];
 };
+static_assert(sizeof(Redraw_Rect) == 32, "Redraw_Rect must be power-of-two sized");
 
-static bool Redraw_Rect_Fill_Clip(Redraw_Rect& rc, int origin_px, int origin_py)
+static bool Redraw_Rect_Fill_Clip(Redraw_Rect& rc, short origin_px, short origin_py)
 {
-	int const tac_w = Lepton_To_Pixel(Map.TacLeptonWidth);
-	int const tac_h = Lepton_To_Pixel(Map.TacLeptonHeight);
-	int const raw_x0 = origin_px + rc.c0 * CELL_PIXEL_W;
-	int const raw_y0 = origin_py + rc.r0 * CELL_PIXEL_H;
-	int const raw_x1 = origin_px + rc.c1 * CELL_PIXEL_W;
-	int const raw_y1 = origin_py + rc.r1 * CELL_PIXEL_H;
-	int vx0 = raw_x0;
-	int vy0 = raw_y0;
-	int vx1 = raw_x1;
-	int vy1 = raw_y1;
+	short const tac_w = (short)Lepton_To_Pixel(Map.TacLeptonWidth);
+	short const tac_h = (short)Lepton_To_Pixel(Map.TacLeptonHeight);
+	short const cell_w = (short)CELL_PIXEL_W;
+	short const cell_h = (short)CELL_PIXEL_H;
+	short vx0 = (short)(origin_px + rc.c0 * cell_w);
+	short vy0 = (short)(origin_py + rc.r0 * cell_h);
+	short vx1 = (short)(origin_px + rc.c1 * cell_w);
+	short vy1 = (short)(origin_py + rc.r1 * cell_h);
 	if (vx0 < 0) {
 		vx0 = 0;
 	}
@@ -3100,20 +3118,17 @@ static void ST_Ccr_Draw_Terrain_Unclipped(Redraw_Rect const& rc, int origin_cx, 
 					continue;
 				}
 
-				TemplateTypeClass const* ttype;
+				int tt = cellptr->TType;
 				int icon;
-
-				if (cellptr->TType != TEMPLATE_NONE) {
-					ttype = &TemplateTypeClass::As_Reference(cellptr->TType);
+				if (tt != TEMPLATE_NONE) {
 					icon = cellptr->TIcon;
 				} else {
-					ttype = &TemplateTypeClass::As_Reference(TEMPLATE_CLEAR1);
+					tt = TEMPLATE_CLEAR1;
 					icon = cellptr->Clear_Icon();
 				}
-
-				void const* const image = ttype->Get_Image_Data();
-				uint8_t const* const planar =
-					image ? ST16_Stamp24_Unmasked_Planar(image, icon) : NULL;
+				void const* const image =
+					TemplateTypeClass::As_Reference((TemplateType)tt).Get_Image_Data();
+				uint8_t const* const planar = ST16_Stamp24_Planar(tt, icon);
 				if (planar) {
 					if (!col_open) {
 						if (!ST_Blit_Stamp24_Column_Begin(
@@ -3290,12 +3305,12 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	Redraw_Rect rects[REDRAW_RECT_MAX];
 	int nrect = 0;
 	for (Rect_Cover_Idx i = 0; i < nbox; i++) {
-		Redraw_Rect rc;
+		Redraw_Rect rc = {};
 		rc.c0 = boxes[i].c0;
 		rc.r0 = boxes[i].r0;
 		rc.c1 = boxes[i].c1;
 		rc.r1 = boxes[i].r1;
-		if (Redraw_Rect_Fill_Clip(rc, origin_px, origin_py)) {
+		if (Redraw_Rect_Fill_Clip(rc, (short)origin_px, (short)origin_py)) {
 			Redraw_Rect_Fill_Leptons(rc, origin_cx, origin_cy);
 			rects[nrect++] = rc;
 		}
@@ -3316,9 +3331,10 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 	}
 #endif
 
-	/* Sort rects by lepton X; bin Layer[] objects whose AABB hits a rect. */
+	/* Sort rects by lepton X; bin Layer[] objects whose AABB hits a rect.
+	** nobj is the tail's byte offset in that row. */
 	ObjectClass* olists[REDRAW_RECT_MAX][REDRAW_RECT_OBJ_CAP];
-	int nobj[REDRAW_RECT_MAX];
+	unsigned short nobj[REDRAW_RECT_MAX];
 	int rorder[REDRAW_RECT_MAX];
 	short ulx0 = rects[0].lx0;
 	short uly0 = rects[0].ly0;
@@ -3367,22 +3383,27 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 			for (int oi = 0; oi < nrect; oi++) {
 				int const ri = rorder[oi];
 				Redraw_Rect const& rc = rects[ri];
-				if (ox0 >= rc.lx1) {
+				short const lx0 = rc.lx0;
+				short const ly0 = rc.ly0;
+				short const lx1 = rc.lx1;
+				short const ly1 = rc.ly1;
+				if (ox0 >= lx1) {
 					continue;
 				}
-				if (oy0 >= rc.ly1) {
+				if (oy0 >= ly1) {
 					continue;
 				}
-				if (oy1 < rc.ly0) {
+				if (oy1 < ly0) {
 					continue;
 				}
-				if (ox1 < rc.lx0) {
+				if (ox1 < lx0) {
 					break;
 				}
-				if (nobj[ri] >= REDRAW_RECT_OBJ_CAP) {
+				if (nobj[ri] & (unsigned short)REDRAW_RECT_ROW_BYTES) {
 					continue;
 				}
-				olists[ri][nobj[ri]++] = obj;
+				*(ObjectClass**)((unsigned char*)olists[ri] + nobj[ri]) = obj;
+				nobj[ri] = (unsigned short)(nobj[ri] + sizeof(ObjectClass*));
 			}
 		}
 	}
@@ -3429,8 +3450,10 @@ void ST_Redraw_Coalesced_Clipped(int draw_flags, void const* shadow_shapes,
 		                          rc.vx1 - rc.vx0,
 		                          rc.vy1 - rc.vy0);
 		Set_Logic_Page(clip);
-		for (int ui = 0; ui < nobj[ri]; ui++) {
-			ObjectClass* obj = olists[ri][ui];
+		ObjectClass** const oend =
+			(ObjectClass**)((unsigned char*)olists[ri] + nobj[ri]);
+		for (ObjectClass** op = olists[ri]; op != oend; ++op) {
+			ObjectClass* obj = *op;
 			if (obj == NULL || !obj->IsDown || obj->IsInLimbo) {
 				continue;
 			}

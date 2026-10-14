@@ -46,6 +46,7 @@
 
 #ifdef ATARI_ST
 #include "st16_convert.h"
+#include "st16_draw.h"
 #endif
 
 static char const _slope00000001[] = {7, -1};
@@ -1827,6 +1828,9 @@ void TemplateTypeClass::Init(TheaterType theater)
     char fullname[_MAX_FNAME + _MAX_EXT]; // Fully constructed iconset name.
     void const* ptr;                      // Working loaded iconset pointer.
 
+#ifdef ATARI_ST
+    ST16_Stamp24_Reset();
+#endif
     for (TemplateType index = TEMPLATE_FIRST; index < TEMPLATE_COUNT; index++) {
         TemplateTypeClass const& tplate = As_Reference(index);
 
@@ -1838,6 +1842,7 @@ void TemplateTypeClass::Init(TheaterType theater)
 #ifdef ATARI_ST
             if (ptr) {
                 ST16_Prewarm_Iconset(ptr);
+                ST16_Stamp24_Bind((int)index, ptr);
             }
 #endif
             // No need for icon caching now. ST - 12/19/2018 11:48AM

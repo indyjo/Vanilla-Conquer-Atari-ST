@@ -335,6 +335,13 @@ static void ST_Blit_Run_4_Planes(
 static ST_Blitter g_stamp24_col_plan;
 static bool g_stamp24_col_open;
 
+/* 24×24 columns land on phase 0 or 8. Masks and increments depend on that phase,
+** the pitch, and write-through, not on the column's word address. */
+static ST_Blitter g_stamp24_cache[2][2];
+static short g_stamp24_cache_src = -1;
+static short g_stamp24_cache_dst = -1;
+static unsigned char g_stamp24_cache_valid;
+
 BOOL ST_Blit_Stamp24_Column_Begin(
 	int src_row_bytes,
 	int dst_row_bytes,
@@ -350,28 +357,52 @@ BOOL ST_Blit_Stamp24_Column_Begin(
 		return FALSE;
 	}
 
-	static uint8_t dummy;
-	ST_Blit_Job job;
-	ST_Blit_Backend &backend = ST_Blit_Active_Backend();
-	if (!ST_Blit_Prepare_88(
-			&g_stamp24_col_plan,
-			&job,
-			&dummy,
-			&dummy,
-			(short)src_row_bytes,
-			(short)dst_row_bytes,
-			0,
-			dx_abs,
-			24,
-			24)) {
-		return FALSE;
+	int const phase = dx_abs & 15;
+	int pi = -1;
+	if (phase == 0) {
+		pi = 0;
+	} else if (phase == 8) {
+		pi = 1;
 	}
-	g_stamp24_col_plan.hop = 2;
-	g_stamp24_col_plan.op = 3;
-	if (write_through_last && g_stamp24_col_plan.x_count > 1) {
-		g_stamp24_col_plan.endmask3 = 0xFFFFu;
+	int const wt = write_through_last ? 1 : 0;
+	int const slot = pi * 2 + wt;
+	bool const pitch_match = g_stamp24_cache_src == (short)src_row_bytes
+		&& g_stamp24_cache_dst == (short)dst_row_bytes;
+
+	if (pi >= 0 && pitch_match && (g_stamp24_cache_valid & (1u << slot)) != 0) {
+		g_stamp24_col_plan = g_stamp24_cache[pi][wt];
+	} else {
+		static uint8_t dummy;
+		ST_Blit_Job job;
+		if (!ST_Blit_Prepare_88(
+				&g_stamp24_col_plan,
+				&job,
+				&dummy,
+				&dummy,
+				(short)src_row_bytes,
+				(short)dst_row_bytes,
+				0,
+				dx_abs,
+				24,
+				24)) {
+			return FALSE;
+		}
+		g_stamp24_col_plan.hop = 2;
+		g_stamp24_col_plan.op = 3;
+		if (write_through_last && g_stamp24_col_plan.x_count > 1) {
+			g_stamp24_col_plan.endmask3 = 0xFFFFu;
+		}
+		if (pi >= 0) {
+			if (!pitch_match) {
+				g_stamp24_cache_src = (short)src_row_bytes;
+				g_stamp24_cache_dst = (short)dst_row_bytes;
+				g_stamp24_cache_valid = 0;
+			}
+			g_stamp24_cache[pi][wt] = g_stamp24_col_plan;
+			g_stamp24_cache_valid |= (unsigned char)(1u << slot);
+		}
 	}
-	backend.Program(g_stamp24_col_plan);
+	ST_Blit_Active_Backend().Program(g_stamp24_col_plan);
 	g_stamp24_col_open = true;
 	return TRUE;
 }

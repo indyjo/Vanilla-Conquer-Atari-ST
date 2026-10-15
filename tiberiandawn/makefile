@@ -1304,10 +1304,13 @@ itch-release:
 	printf '%s\r\n' \
 		"Command & Conquer for Atari ST" \
 		"" \
-		"Extract these files to a folder on your Atari ST hard drive (emulated or real)." \
+		"This ZIP is the game engine and conversion data. Game data comes from your own Command & Conquer DOS discs." \
 		"" \
-		"To play the game, copy the MIX files from an official Command & Conquer DOS CD into the same folder as the executable." \
-		"Prepare MIX files for Atari ST with remix-web (see source tree) before running cnc.tos." \
+		"Prepare a playable copy with the web-based remix tool:" \
+		"https://indyjo.itch.io/remix-web" \
+		"" \
+		"Give it both install discs (GDI and NOD) and this ZIP. It repacks the MIX files in your browser and downloads a combined ZIP." \
+		"Extract that ZIP to a folder on your Atari ST hard drive (emulated or real) and run cnc.tos." \
 		"" \
 		"Playback benchmark: record.bin is included. Run cnc.tos -XY (or -XYQ for mostly silent audio)." \
 		"For the longer NOD 1 / AI-heavy run, copy record2.bin over RECORD.BIN first." \

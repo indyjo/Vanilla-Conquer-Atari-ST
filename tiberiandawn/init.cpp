@@ -2244,6 +2244,87 @@ void Parse_INI_File(void)
 }
 #endif
 
+/*
+** Read one dotted numeric field. Returns -1 when the field is missing or too long.
+*/
+static int Parse_Version_Component(const char** text)
+{
+    const char* p = *text;
+    int value = 0;
+    int digits = 0;
+
+    if (*p < '0' || *p > '9') {
+        return -1;
+    }
+    while (*p >= '0' && *p <= '9') {
+        if (digits >= 6) {
+            return -1;
+        }
+        value = value * 10 + (*p - '0');
+        p++;
+        digits++;
+    }
+    *text = p;
+    return value;
+}
+
+/*
+** vX.Y.0 (X >= 1) displays as X.Y. vX.Y.0-rcN displays as X.Y-rcN.
+** Any other tag is returned unchanged.
+*/
+static const char* Display_Git_Tag(const char* tag)
+{
+    static char label[64];
+    const char* p;
+    const char* rc;
+    int major;
+    int minor;
+    int patch;
+
+    if (tag == NULL || *tag != 'v') {
+        return tag;
+    }
+
+    p = tag + 1;
+    major = Parse_Version_Component(&p);
+    if (major < 1 || *p != '.') {
+        return tag;
+    }
+    p++;
+    minor = Parse_Version_Component(&p);
+    if (minor < 0 || *p != '.') {
+        return tag;
+    }
+    p++;
+    patch = Parse_Version_Component(&p);
+    if (patch != 0) {
+        return tag;
+    }
+
+    if (*p == '\0') {
+        snprintf(label, sizeof(label), "%d.%d", major, minor);
+        return label;
+    }
+
+    if (p[0] != '-' || p[1] != 'r' || p[2] != 'c') {
+        return tag;
+    }
+    rc = p + 3;
+    if (*rc < '0' || *rc > '9') {
+        return tag;
+    }
+    p = rc;
+    while (*p >= '0' && *p <= '9') {
+        p++;
+    }
+    if (*p != '\0') {
+        return tag;
+    }
+
+    snprintf(label, sizeof(label), "%d.%d-rc%s", major, minor, rc);
+    return label;
+}
+
 /***********************************************************************************************
  * Version_Number -- Determines the version number.                                            *
  *                                                                                             *
@@ -2264,7 +2345,8 @@ int Version_Number(void)
 {
     const char* demo_text = Is_Demo() ? "DEMO " : "";
 
-            // Tagged official builds (GitTag starts with 'v', clean tree): version only, no SHA.
+    // Tagged official builds (GitTag starts with 'v', clean tree): version only, no SHA.
+    // vX.Y.0 (X >= 1) shows as X.Y; vX.Y.0-rcN shows as X.Y-rcN. Other tags stay as stored.
     // Untagged or dirty trees: rN plus optional '~' and short SHA.
     if (*GitTag == '\0' || GitUncommittedChanges || *GitTag != 'v') {
         snprintf(VersionText,
@@ -2275,7 +2357,7 @@ int Version_Number(void)
                  (GitUncommittedChanges ? "~" : ""),
                  GitShortSHA1);
     } else {
-        snprintf(VersionText, sizeof(VersionText), "%s%s", demo_text, GitTag);
+        snprintf(VersionText, sizeof(VersionText), "%s%s", demo_text, Display_Git_Tag(GitTag));
     }
 
     return (1);

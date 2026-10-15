@@ -1286,8 +1286,16 @@ itch-release:
 		exit 1; \
 	fi; \
 	echo "Stripped cnc.tos: $$TOS_SIZE bytes"; \
-	for f in atari-assets/*.w16; do \
-		if [ -f "$$f" ]; then cp "$$f" "$(ITCH_STAGE_DIR)/"; fi; \
+	find atari-assets -maxdepth 1 -iname '*.w16' -type f -print | while IFS= read -r f; do \
+		base=$$(basename "$$f"); \
+		lower=$$(printf '%s' "$$base" | tr '[:upper:]' '[:lower:]'); \
+		cp "$$f" "$(ITCH_STAGE_DIR)/$$lower"; \
+	done; \
+	for req in europe.w16 bosnia.w16 africa.w16 s_africa.w16; do \
+		if [ ! -f "$(ITCH_STAGE_DIR)/$$req" ]; then \
+			echo "error: staged release is missing $$req" >&2; \
+			exit 1; \
+		fi; \
 	done; \
 	mkdir -p "$(ITCH_STAGE_DIR)/video"; \
 	for f in atari-assets/video/*.w16; do \

@@ -231,7 +231,7 @@ def main() -> int:
             continue
         stem = cps_name.rsplit(".", 1)[0]
         pal_path = tmp / f"{stem}.PAL"
-        w16_path = args.out / f"{stem}.W16"
+        w16_path = args.out / f"{stem.lower()}.w16"
         pal_path.write_bytes(pal)
         run_palette_opt(po, pal_path, w16_path, sa_iter=0)
         print(f"wrote {w16_path.relative_to(td)}")
@@ -239,7 +239,7 @@ def main() -> int:
     pal_raw = mix_extract(args.mix, "SATSEL.PAL")
     if pal_raw and len(pal_raw) == 768:
         pal_path = tmp / "SATSEL.PAL"
-        w16_path = args.out / "SATSEL.W16"
+        w16_path = args.out / "satsel.w16"
         pal_path.write_bytes(pal_raw)
         run_palette_opt(po, pal_path, w16_path, sa_iter=0)
         print(f"wrote {w16_path.relative_to(td)}")
@@ -265,7 +265,7 @@ def main() -> int:
             return 1
         stem = wsa_name.rsplit(".", 1)[0]
         pal_path = tmp / f"{stem}.PAL"
-        w16_path = args.out / f"{stem}.W16"
+        w16_path = args.out / f"{stem.lower()}.w16"
         extract_palette_with_paltool(pt, wsa_path, pal_path)
         run_palette_opt(po, pal_path, w16_path, sa_iter=0, extra=MAP_FOCUS_FOR[wsa_name])
         print(f"wrote {w16_path.relative_to(td)} (map focus pens)")

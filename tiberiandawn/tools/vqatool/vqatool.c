@@ -61,7 +61,7 @@ static void usage(const char *argv0)
 	    "    --dct-chroma-weight F chroma SSE weight (default %.2g; 0=luma-only)\n"
 	    "    -o, --output FILE     output .stv path\n"
 	    "    --dry-run             print segment/sidecar plan only\n"
-	    "  preview <file.stv>      decode STVQ and pipe A/V into ffmpeg\n"
+	    "  preview <file>           decode .stv or .vqa into ffmpeg (FORM type)\n"
 	    "    --ffmpeg PATH         ffmpeg binary (default: $FFMPEG or ffmpeg)\n"
 	    "    -o, --output FILE     output .mkv path\n"
 	    "    --palette             stack 16-color palette strip under video\n"
@@ -473,10 +473,10 @@ static int cmd_preview(int argc, char **argv, int argi)
 		}
 	}
 	if (argi >= argc) {
-		fprintf(stderr, "error: preview requires an .stv file\n");
+		fprintf(stderr, "error: preview requires an .stv or .vqa file\n");
 		return 1;
 	}
-	opts.stv_path = argv[argi];
+	opts.path = argv[argi];
 	return stvq_preview(&opts) != 0;
 }
 

@@ -1,12 +1,13 @@
 /*
- * stvq_preview.c - Decode .stv and pipe RGB24 + s8 PCM into ffmpeg via /dev/fd/N.
+ * stvq_preview.c - Decode .stv or .vqa and pipe RGB24 + PCM into ffmpeg via /dev/fd/N.
  *
- * Optional stacked compose: video / palette strip / codebook matrix.
+ * STVQ may stack a palette strip and codebook matrix. VQA is the picture and audio only.
  */
 #include "stvq_preview.h"
 
 #include "stvq_c2p.h"
 #include "stvq_play.h"
+#include "vqa_decode.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -320,7 +321,7 @@ static void highlight_tick(uint8_t *hl_age, unsigned n, const uint16_t *stcr_idx
 	}
 }
 
-int stvq_preview(const StvqPreviewOpts *opts)
+static int preview_stvq(const StvqPreviewOpts *opts)
 {
 	StvqPlayer player;
 	ComposeGeom geom;
@@ -344,7 +345,7 @@ int stvq_preview(const StvqPreviewOpts *opts)
 	size_t frame_bytes = 0;
 
 	memset(&player, 0, sizeof(player));
-	if (!opts || !opts->stv_path) {
+	if (!opts || !opts->path) {
 		fprintf(stderr, "error: preview requires an .stv path\n");
 		return -1;
 	}
@@ -357,11 +358,11 @@ int stvq_preview(const StvqPreviewOpts *opts)
 	ffmpeg = resolve_ffmpeg(opts->ffmpeg);
 	outp = opts->out_path;
 	if (!outp) {
-		default_out(opts->stv_path, out_path, sizeof(out_path));
+		default_out(opts->path, out_path, sizeof(out_path));
 		outp = out_path;
 	}
 
-	if (stvq_player_open(&player, opts->stv_path) != 0)
+	if (stvq_player_open(&player, opts->path) != 0)
 		return -1;
 
 	compose_geom(opts, &player, &geom);
@@ -535,4 +536,260 @@ done:
 
 	stvq_player_close(&player);
 	return rc;
+}
+
+static uint8_t vga6_to_8(uint8_t c)
+{
+	c &= 63u;
+	return (uint8_t)((c << 2) | (c >> 4));
+}
+
+static void vqa_indices_to_rgb24(const uint8_t *idx, unsigned n, const uint8_t pal[768], uint8_t *rgb)
+{
+	unsigned i;
+	for (i = 0; i < n; i++) {
+		unsigned c = idx[i];
+		rgb[i * 3u + 0u] = vga6_to_8(pal[c * 3u + 0u]);
+		rgb[i * 3u + 1u] = vga6_to_8(pal[c * 3u + 1u]);
+		rgb[i * 3u + 2u] = vga6_to_8(pal[c * 3u + 2u]);
+	}
+}
+
+/* 1 = STVQ, 2 = VQA, -1 = not either, -2 = unreadable. */
+static int preview_kind(const char *path)
+{
+	FILE *fp;
+	unsigned char hdr[12];
+	uint32_t form, type;
+
+	fp = fopen(path, "rb");
+	if (!fp)
+		return -2;
+	if (fread(hdr, 1, 12, fp) != 12) {
+		fclose(fp);
+		return -1;
+	}
+	fclose(fp);
+	form = (uint32_t)hdr[0] | ((uint32_t)hdr[1] << 8) | ((uint32_t)hdr[2] << 16) | ((uint32_t)hdr[3] << 24);
+	type = (uint32_t)hdr[8] | ((uint32_t)hdr[9] << 8) | ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
+	if (form != STVQ_CHUNK_FORM)
+		return -1;
+	if (type == STVQ_CHUNK_STVQ)
+		return 1;
+	if (type == VQA_CHUNK_WVQA)
+		return 2;
+	return -1;
+}
+
+static int preview_vqa(const StvqPreviewOpts *opts)
+{
+	VqaStream *st = NULL;
+	VqaDecodedFrame fr;
+	int vpipe[2] = {-1, -1};
+	int apipe[2] = {-1, -1};
+	pid_t pid = -1;
+	posix_spawn_file_actions_t actions;
+	char *argv[48];
+	int argc = 0;
+	char geom_s[64], rate_s[32], ar[32], ac[16], vfd[64], afd[64];
+	const char *ffmpeg;
+	char out_path[1024];
+	const char *outp;
+	int rc = -1;
+	int status;
+	int actions_inited = 0;
+	unsigned frame_i = 0;
+	unsigned width, height, fps, sample_rate, channels;
+	uint8_t *rgb = NULL;
+	size_t rgb_n;
+	uint8_t zero_pal[768];
+
+	memset(&fr, 0, sizeof(fr));
+	memset(zero_pal, 0, sizeof(zero_pal));
+	if (opts->show_palette || opts->show_codebook || !opts->show_video) {
+		fprintf(stderr, "error: --palette, --codebook, and --no-video apply to STVQ only\n");
+		return -1;
+	}
+	ffmpeg = resolve_ffmpeg(opts->ffmpeg);
+	outp = opts->out_path;
+	if (!outp) {
+		default_out(opts->path, out_path, sizeof(out_path));
+		outp = out_path;
+	}
+	if (vqa_stream_open(opts->path, &st) != 0) {
+		fprintf(stderr, "error: VQA decode failed (open)\n");
+		return -1;
+	}
+	width = vqa_stream_width(st);
+	height = vqa_stream_height(st);
+	fps = vqa_stream_header(st)->fps ? vqa_stream_header(st)->fps : 15;
+	sample_rate = vqa_stream_sample_rate(st);
+	channels = vqa_stream_header(st)->channels ? vqa_stream_header(st)->channels : 1;
+	if (!sample_rate)
+		sample_rate = 22050;
+	rgb_n = (size_t)width * height * 3u;
+	rgb = (uint8_t *)malloc(rgb_n ? rgb_n : 1u);
+	if (!rgb)
+		goto done;
+
+	if (pipe(vpipe) != 0 || pipe(apipe) != 0) {
+		fprintf(stderr, "error: pipe: %s\n", strerror(errno));
+		goto done;
+	}
+	fcntl(vpipe[0], F_SETFD, 0);
+	fcntl(apipe[0], F_SETFD, 0);
+
+	snprintf(geom_s, sizeof(geom_s), "%ux%u", width, height);
+	snprintf(rate_s, sizeof(rate_s), "%u", fps);
+	snprintf(ar, sizeof(ar), "%u", sample_rate);
+	snprintf(ac, sizeof(ac), "%u", channels);
+	snprintf(vfd, sizeof(vfd), "/dev/fd/%d", vpipe[0]);
+	snprintf(afd, sizeof(afd), "/dev/fd/%d", apipe[0]);
+
+	argv[argc++] = (char *)ffmpeg;
+	argv[argc++] = "-hide_banner";
+	argv[argc++] = "-loglevel";
+	argv[argc++] = "error";
+	argv[argc++] = "-y";
+	argv[argc++] = "-fflags";
+	argv[argc++] = "+genpts";
+	argv[argc++] = "-f";
+	argv[argc++] = "rawvideo";
+	argv[argc++] = "-pix_fmt";
+	argv[argc++] = "rgb24";
+	argv[argc++] = "-s";
+	argv[argc++] = geom_s;
+	argv[argc++] = "-r";
+	argv[argc++] = rate_s;
+	argv[argc++] = "-i";
+	argv[argc++] = vfd;
+	argv[argc++] = "-f";
+	argv[argc++] = "s16le";
+	argv[argc++] = "-ar";
+	argv[argc++] = ar;
+	argv[argc++] = "-ac";
+	argv[argc++] = ac;
+	argv[argc++] = "-i";
+	argv[argc++] = afd;
+	argv[argc++] = "-c:v";
+	argv[argc++] = "libx264";
+	argv[argc++] = "-preset";
+	argv[argc++] = "veryfast";
+	argv[argc++] = "-crf";
+	argv[argc++] = "18";
+	argv[argc++] = "-pix_fmt";
+	argv[argc++] = "yuv420p";
+	argv[argc++] = "-g";
+	argv[argc++] = rate_s;
+	argv[argc++] = "-c:a";
+	argv[argc++] = "aac";
+	argv[argc++] = "-b:a";
+	argv[argc++] = "128k";
+	argv[argc++] = "-movflags";
+	argv[argc++] = "+faststart";
+	argv[argc++] = (char *)outp;
+	argv[argc] = NULL;
+
+	if (posix_spawn_file_actions_init(&actions) != 0)
+		goto done;
+	actions_inited = 1;
+	posix_spawn_file_actions_addclose(&actions, vpipe[1]);
+	posix_spawn_file_actions_addclose(&actions, apipe[1]);
+
+	fprintf(stderr, "ffmpeg: %s → %s (%s @ %s fps, %s Hz, h264/aac)\n", ffmpeg, outp, geom_s, rate_s, ar);
+	if (posix_spawnp(&pid, ffmpeg, &actions, NULL, argv, environ) != 0) {
+		fprintf(stderr, "error: posix_spawnp %s: %s\n", ffmpeg, strerror(errno));
+		pid = -1;
+		goto done;
+	}
+	close(vpipe[0]);
+	vpipe[0] = -1;
+	close(apipe[0]);
+	apipe[0] = -1;
+
+	for (;;) {
+		unsigned nseg = 0;
+		const VqaPalSegment *segs;
+		const uint8_t *pal;
+		unsigned expect, got;
+		int pr = vqa_stream_next(st, &fr);
+		if (pr == 0)
+			break;
+		if (pr < 0)
+			goto done;
+		segs = vqa_stream_segments(st, &nseg);
+		pal = zero_pal;
+		if (fr.segment >= 0 && (unsigned)fr.segment < nseg)
+			pal = segs[fr.segment].pal;
+		vqa_indices_to_rgb24(fr.pixels, width * height, pal, rgb);
+		expect = frame_audio_samples(sample_rate, fps, frame_i) * channels;
+		got = (unsigned)fr.pcm16_count;
+		if (got > expect)
+			got = expect;
+		if (got && write_all(apipe[1], fr.pcm16, (size_t)got * sizeof(int16_t)) != 0) {
+			fprintf(stderr, "error: audio pipe write failed\n");
+			goto done;
+		}
+		if (got < expect && write_silence_s16(apipe[1], expect - got) != 0) {
+			fprintf(stderr, "error: audio pad write failed\n");
+			goto done;
+		}
+		if (write_all(vpipe[1], rgb, rgb_n) != 0) {
+			fprintf(stderr, "error: video pipe write failed\n");
+			goto done;
+		}
+		vqa_decoded_frame_clear(&fr);
+		frame_i++;
+		if ((frame_i % 50) == 0)
+			fprintf(stderr, "  frame %u\n", frame_i);
+	}
+	rc = 0;
+
+done:
+	vqa_decoded_frame_clear(&fr);
+	free(rgb);
+	if (vpipe[1] >= 0)
+		close(vpipe[1]);
+	if (apipe[1] >= 0)
+		close(apipe[1]);
+	if (vpipe[0] >= 0)
+		close(vpipe[0]);
+	if (apipe[0] >= 0)
+		close(apipe[0]);
+	if (actions_inited)
+		posix_spawn_file_actions_destroy(&actions);
+	if (pid > 0) {
+		if (waitpid(pid, &status, 0) < 0) {
+			rc = -1;
+		} else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+			fprintf(stderr, "error: ffmpeg exited with status %d\n",
+			    WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+			rc = -1;
+		} else if (rc == 0) {
+			fprintf(stderr, "wrote %s (%u frames)\n", outp, frame_i);
+		}
+	}
+	vqa_stream_close(st);
+	return rc;
+}
+
+int stvq_preview(const StvqPreviewOpts *opts)
+{
+	int kind;
+
+	if (!opts || !opts->path) {
+		fprintf(stderr, "error: preview requires an .stv or .vqa path\n");
+		return -1;
+	}
+	kind = preview_kind(opts->path);
+	if (kind == -2) {
+		fprintf(stderr, "error: cannot read %s\n", opts->path);
+		return -1;
+	}
+	if (kind == 1)
+		return preview_stvq(opts);
+	if (kind == 2)
+		return preview_vqa(opts);
+	fprintf(stderr, "error: %s is not an STVQ or VQA file\n", opts->path);
+	return -1;
 }

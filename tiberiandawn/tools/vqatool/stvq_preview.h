@@ -1,5 +1,5 @@
 /*
- * stvq_preview.h - Pipe STVQ decode into ffmpeg (A/V, no fifos).
+ * stvq_preview.h - Pipe STVQ or VQA decode into ffmpeg (A/V, no fifos).
  */
 #ifndef STVQ_PREVIEW_H
 #define STVQ_PREVIEW_H
@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 typedef struct StvqPreviewOpts {
-	const char *stv_path;
+	const char *path;       /* .stv or .vqa; kind detected from the FORM type */
 	const char *out_path;
 	const char *ffmpeg; /* NULL → FFMPEG env → "ffmpeg" */
 	int show_video;     /* default 1; cleared by --no-video */

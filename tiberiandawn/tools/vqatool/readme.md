@@ -148,16 +148,18 @@ frame.
 
 ### preview
 
-Decode a `.stv` and pipe RGB24 + signed 8-bit PCM into ffmpeg (`pipe()` + `/dev/fd/N`,
-no FIFOs):
+Decode an `.stv` or `.vqa` and pipe RGB24 + PCM into ffmpeg (`pipe()` + `/dev/fd/N`,
+no FIFOs). The FORM type selects the decoder: `STVQ` or `WVQA`.
 
 ```sh
 ./vqatool preview [--ffmpeg PATH] [-o out.mkv] \
   [--palette] [--codebook] [--cb-border N] [--no-video] name.stv
+./vqatool preview [-o out.mkv] name.vqa
 ```
 
 Defaults: `$FFMPEG` or `ffmpeg` on `PATH`; output `name.mkv`. Video: H.264
-(`libx264`, ~1s keyframes). Audio: STVQ `s8` → AAC.
+(`libx264`, ~1s keyframes). Audio: STVQ `s8` or VQA `s16` → AAC.
+`--palette`, `--codebook`, and `--no-video` apply to STVQ only.
 
 Optional stacked compose (width = video width; height grows; leftover space centered;
 black chrome/borders):

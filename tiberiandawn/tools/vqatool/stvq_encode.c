@@ -350,7 +350,9 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	uint8_t **pal_copy = NULL;
 	const uint8_t **seg_pal768 = NULL;
 	const uint8_t **seg_subset = NULL;
-	unsigned seg_ready = 0, seg_cap = 0;
+	/* Segments whose palette copy, W16, and subset pointer are loaded.
+	 * Grows when lookahead first reaches a segment; cleanup frees that many palettes. */
+	unsigned seg_ready = 0;
 	VqaPalSegment dummy_seg;
 	uint8_t *recon[2] = {NULL, NULL};
 	uint8_t *recon_work = NULL;
@@ -600,7 +602,9 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			pal_copy = npc;
 			seg_pal768 = n768;
 			seg_subset = nsub;
-			seg_cap = ns;
+			/* seg_subset[i] points into segpal[i]. realloc may have moved segpal. */
+			for (ns = 0; ns < seg_ready; ns++)
+				seg_subset[ns] = segpal[ns].w16.subset;
 			for (; seg_ready < nseg; seg_ready++) {
 				int load_rc;
 				pal_copy[seg_ready] = (uint8_t *)malloc(VQA_PALETTE_BYTES);
@@ -838,7 +842,6 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		fprintf(stderr, "profile (one-time setup):\n");
 		fprintf(stderr, "  rasterize            %6.2f s\n", prof_ns_raster / 1e9);
 		(void)prof_ns_frame_misc;
-		(void)seg_cap;
 	}
 	rc = 0;
 	g_stvq_encode_error[0] = '\0';

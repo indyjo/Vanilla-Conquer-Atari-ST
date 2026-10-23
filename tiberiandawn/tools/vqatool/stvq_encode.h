@@ -26,7 +26,8 @@ typedef struct StvqEncodeOpts {
 	float dct_alpha;        /* w(u,v)=1/(1+alpha*(u^2+v^2)); <0 → default */
 	unsigned dct_coeffs;    /* Y zig-zag DCT coeffs; 0 → default */
 	unsigned dct_chroma_coeffs; /* U and V each; use have_dct_chroma */
-	int have_dct_chroma;    /* 1 if dct_chroma_coeffs was set (incl. 0 = Y-only) */
+	int have_dct_chroma;    /* 1 if dct_chroma_coeffs was set (incl. 0 = no kept chroma coeffs) */
+	float dct_chroma_weight; /* U/V SSE weight; <0 → default; 0 = luma-only */
 	float gamma;            /* palette-opt YUV gamma; <0 → default */
 	int dry_run;
 	/*

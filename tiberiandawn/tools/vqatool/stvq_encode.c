@@ -396,7 +396,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		unsigned nc = opts->dct_coeffs ? opts->dct_coeffs : STVQ_DEFAULT_DCT_COEFFS;
 		unsigned nch = opts->have_dct_chroma ? opts->dct_chroma_coeffs : STVQ_DEFAULT_DCT_CHROMA_COEFFS;
 		float gamma = opts->gamma >= 0.0f ? opts->gamma : STVQ_DEFAULT_GAMMA;
-		stvq_metric_set_dct(alpha, nc, nch);
+		stvq_metric_set_dct(alpha, nc, nch, opts->dct_chroma_weight);
 		stvq_metric_set_gamma(gamma);
 	}
 
@@ -429,11 +429,12 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	}
 
 	fprintf(stderr, "frames=%u size=%ux%u tiles=%ux%u cb=%u R=%u shortlist=%u*%u random=%u%% "
-	                "lookahead=%u cand=f_end gamma=%.3g dct-alpha=%.3g dct-coeffs=%u+%u+%u (feat=%u)\n",
+	                "lookahead=%u cand=f_end gamma=%.3g dct-alpha=%.3g dct-chroma-weight=%.3g "
+	                "dct-coeffs=%u+%u+%u (feat=%u)\n",
 	    frame_count, width, height, tiles_x, tiles_y, opts->cb_size, opts->cb_per_frame, 2u,
 	    opts->cb_per_frame, opts->cb_random_pct, opts->cb_lookahead, stvq_metric_gamma(),
-	    stvq_metric_dct_alpha(), stvq_metric_dct_coeffs(), stvq_metric_dct_chroma_coeffs(),
-	    stvq_metric_dct_chroma_coeffs(), stvq_metric_feat_len());
+	    stvq_metric_dct_alpha(), stvq_metric_dct_chroma_weight(), stvq_metric_dct_coeffs(),
+	    stvq_metric_dct_chroma_coeffs(), stvq_metric_dct_chroma_coeffs(), stvq_metric_feat_len());
 
 	if (opts->dry_run) {
 		VqaDecodedFrame fr;

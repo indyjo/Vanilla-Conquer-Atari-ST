@@ -20,21 +20,29 @@ extern "C" {
 #define STVQ_DEFAULT_DCT_ALPHA 0.2f
 #define STVQ_DEFAULT_DCT_COEFFS 15        /* Y zig-zag count */
 #define STVQ_DEFAULT_DCT_CHROMA_COEFFS 7  /* U and V each (≈ half of Y) */
+/* U/V SSE scale. 0.25 matches palette-opt y_scale 2 (squared). 0 = luma-only. */
+#define STVQ_DEFAULT_DCT_CHROMA_WEIGHT 0.25f
 #define STVQ_DEFAULT_GAMMA 0.77f
 
 /*
  * DCT coeff weight: w(u,v) = 1 / (1 + alpha*(u^2+v^2)).
- * Features store sqrt(w)*coeff so L2 matches weighted SSE.
- * Layout: [Y₀..Y_{ny-1} | U₀..U_{nu-1} | V₀..V_{nv-1}],
- * feat_len = ny + 2*nu (each plane count clamped to 0..64).
- * Fewer chroma coeffs underweight U/V vs Y (chroma is smoother;
- * U/V magnitudes are already smaller than Y).
+ * Kept coeffs store sqrt(w)*C so their L2 is weighted SSE. U and V are also
+ * multiplied by sqrt(chroma_weight); chroma_weight 0 zeros every U/V term.
+ * Layout: [Y×ny | U×nc | V×nc | E_y? | E_u? | E_v?].
+ * A plane truncated below 64 stores one tail energy
+ *   E = scale * sum_{i>=n} w_i * C_i^2
+ * (scale is 1 for Y and chroma_weight for U/V). A full plane stores nothing
+ * (E = 0), so feat_len <= 64*3.
+ * Distance is SSE of the kept coeffs plus (E_a + E_b) per tail: the expected
+ * squared error when discarded coefficients are uncorrelated. Tail slots are
+ * not square-differenced.
  */
-void stvq_metric_set_dct(float alpha, unsigned y_coeffs, unsigned chroma_coeffs);
+void stvq_metric_set_dct(float alpha, unsigned y_coeffs, unsigned chroma_coeffs, float chroma_weight);
 float stvq_metric_dct_alpha(void);
 unsigned stvq_metric_dct_coeffs(void);        /* Y count */
 unsigned stvq_metric_dct_chroma_coeffs(void); /* U and V each */
-unsigned stvq_metric_feat_len(void);          /* ny + 2*nu */
+float stvq_metric_dct_chroma_weight(void);    /* U/V SSE weight; 0 = luma-only */
+unsigned stvq_metric_feat_len(void);          /* kept coeffs + tail energies */
 
 /* Palette-opt YUV gamma (applied on next set_palette). Y scale is fixed at 1. */
 void stvq_metric_set_gamma(float gamma);
@@ -52,7 +60,7 @@ void stvq_metric_feat_from_indices(const uint8_t idx[64], float *out_feat);
 void stvq_metric_feat_from_pens(const uint8_t pens[64], float *out_feat);
 void stvq_metric_feat_from_tile32(const uint8_t tile32[32], float *out_feat);
 
-/* SSE of features, scaled. */
+/* Scaled SSE of kept coeffs, plus E_a+E_b for each stored tail. */
 unsigned stvq_metric_feat_dist(const float *a, const float *b);
 unsigned stvq_metric_feat_dist_lim(const float *a, const float *b, unsigned max_d);
 

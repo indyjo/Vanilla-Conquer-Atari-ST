@@ -110,11 +110,13 @@ Requires existing `name.<N>.w16` sidecars; aborts if any are missing.
 ./vqatool encode \
   [--cb-size 2048] [--cb-per-frame 32] [--cb-random-pct 25] [--cb-lookahead 1] \
   [--gamma 0.77] [--dct-alpha 0.2] [--dct-coeffs 15] [--dct-chroma-coeffs 7] \
+  [--dct-chroma-weight 0.25] \
   [-o out.stv] [--dry-run] name.vqa
 ```
 
 Defaults: `--cb-size 2048`, `--cb-per-frame 32`, `--cb-random-pct 25`, `--cb-lookahead 1`,
-`--gamma 0.77`, `--dct-alpha 0.2`, `--dct-coeffs 15`, `--dct-chroma-coeffs 7`.
+`--gamma 0.77`, `--dct-alpha 0.2`, `--dct-coeffs 15`, `--dct-chroma-coeffs 7`,
+`--dct-chroma-weight 0.25`.
 No initial `STCB`: the codebook starts empty and is filled only via `STCR`. STCR
 candidates come from the farthest lookahead frame (`f_end`); on encode frame 0 they
 come from every frame in the window. Residual-only shortlist of `2*R` (stay-as-is
@@ -128,9 +130,16 @@ Tiles sampled from post-cut lookahead frames are stamped `pal_epoch+1` so they
 are not drawn until after `STPL` and are not evicted as primes before the cut.
 STVD assignment and N−2 skip never use pre-cut tiles: only current-epoch CB
 entries are referenced, and the cut frame is force-full. Tile error is weighted
-**YUV-DCT** feature L2: source and recon → palette-opt YUV (`--gamma`) → per-plane 8×8
-DCT → zig-zag packs `[Y×Ny | U×Nc | V×Nc]` with `√(1/(1+α(u²+v²)))`. Fewer chroma coeffs
-underweight U/V vs Y (chroma is smoother; U/V magnitudes are already smaller than Y).
+**YUV-DCT**: source and recon → palette-opt YUV (`--gamma`) → per-plane 8×8
+DCT → zig-zag `[Y×Ny | U×Nc | V×Nc | E_y? | E_u? | E_v?]`. Kept coeffs are
+`√(1/(1+α(u²+v²)))·C`; U and V are also multiplied by `√(--dct-chroma-weight)`
+(default 0.25, so each chroma plane’s SSE counts 1/4 of luma; `0` is luma-only).
+A plane kept in full stores no tail. A truncated plane stores the weighted energy
+of the discarded coeffs (`E`, already scaled by the chroma weight on U/V). The
+distance is the SSE of the kept coeffs plus `E_a+E_b` on each tail — the expected
+squared error if those coefficients are uncorrelated — not a difference of
+energies. `--dct-chroma-coeffs 0` keeps no individual chroma coefficients; their
+energy still counts unless the chroma weight is 0.
 
 STCR lookahead spans at most one palette cut: pre-cut frames score under the old palette,
 post-cut under the new; a second cut shrinks the window. Candidates may still come from

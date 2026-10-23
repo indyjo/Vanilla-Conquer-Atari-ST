@@ -54,6 +54,9 @@ static uint8_t pen_to_vga[16];
 static float dct_alpha = STVQ_DEFAULT_DCT_ALPHA;
 static unsigned dct_y_coeffs = STVQ_DEFAULT_DCT_COEFFS;
 static unsigned dct_chroma_coeffs = STVQ_DEFAULT_DCT_CHROMA_COEFFS;
+static float dct_chroma_weight = STVQ_DEFAULT_DCT_CHROMA_WEIGHT;
+/* sqrt(STVQ_DEFAULT_DCT_CHROMA_WEIGHT); kept in sync by set_chroma_weight. */
+static float dct_chroma_coeff_scale = 0.5f;
 static float color_gamma = STVQ_DEFAULT_GAMMA;
 static float sqrt_w[64]; /* zig-zag slot → √w(u,v) */
 static float dct_cos[8][8]; /* cos(π/8*(n+½)*k) */
@@ -75,7 +78,7 @@ static void ensure_dct_tables(void)
 	dct_tables_ready = 1;
 }
 
-/* Clamp each plane to a valid zig-zag count (Y ≥ 1). feat_len = y + 2*c. */
+/* Clamp each plane to a valid zig-zag count (Y ≥ 1). */
 static void clamp_plane_counts(void)
 {
 	unsigned y = dct_y_coeffs;
@@ -104,13 +107,22 @@ static void rebuild_sqrt_w(void)
 	}
 }
 
-void stvq_metric_set_dct(float alpha, unsigned y_coeffs, unsigned chroma_coeffs)
+static void set_chroma_weight(float chroma_weight)
+{
+	if (chroma_weight < 0.0f)
+		chroma_weight = STVQ_DEFAULT_DCT_CHROMA_WEIGHT;
+	dct_chroma_weight = chroma_weight;
+	dct_chroma_coeff_scale = sqrtf(chroma_weight);
+}
+
+void stvq_metric_set_dct(float alpha, unsigned y_coeffs, unsigned chroma_coeffs, float chroma_weight)
 {
 	if (alpha < 0.0f)
 		alpha = 0.0f;
 	dct_alpha = alpha;
 	dct_y_coeffs = y_coeffs ? y_coeffs : 1;
-	dct_chroma_coeffs = chroma_coeffs; /* 0 = Y-only */
+	dct_chroma_coeffs = chroma_coeffs; /* 0 = no kept chroma coeffs; energy still stored */
+	set_chroma_weight(chroma_weight);
 	rebuild_sqrt_w();
 }
 
@@ -129,9 +141,25 @@ unsigned stvq_metric_dct_chroma_coeffs(void)
 	return dct_chroma_coeffs;
 }
 
-unsigned stvq_metric_feat_len(void)
+float stvq_metric_dct_chroma_weight(void)
+{
+	return dct_chroma_weight;
+}
+
+/* One energy slot when the plane is truncated; a full plane contributes only its coeffs. */
+static unsigned plane_slots(unsigned n)
+{
+	return n + (n < STVQ_METRIC_MAX_COEFFS ? 1u : 0u);
+}
+
+static unsigned coeff_len(void)
 {
 	return dct_y_coeffs + 2u * dct_chroma_coeffs;
+}
+
+unsigned stvq_metric_feat_len(void)
+{
+	return plane_slots(dct_y_coeffs) + 2u * plane_slots(dct_chroma_coeffs);
 }
 
 void stvq_metric_set_gamma(float gamma)
@@ -158,7 +186,7 @@ void stvq_metric_set_palette_vga6(const uint8_t pal768[768], const uint8_t subse
 		san[i] = (uint8_t)(pal768[i] & 63u);
 	palette_opt_color_params_default(&params);
 	params.gamma = color_gamma;
-	params.y_scale = 1.0f; /* luma weight via DCT coeff counts, not Y scale */
+	params.y_scale = 1.0f; /* luma vs chroma via dct_chroma_weight, not Y scale */
 	/* Target-style build: full VGA6 (bits_per_channel ignored). */
 	palette_build_opt_colors_params(san, colors, &params);
 	memcpy(yuv, colors, sizeof(yuv));
@@ -195,41 +223,80 @@ static void dct8x8(const float *in, float *out)
 	}
 }
 
-/* Pack first `n` zig-zag weighted DCT coeffs of `plane` into out[0..n). */
-static void pack_plane_feats(const float *plane, unsigned n, float *out)
+/* Orthonormal DCT of one YUV plane (comp 0/1/2) into coeff[u + 8*v]. */
+static void dct_plane(const uint8_t idx[64], int comp, float *coeff)
 {
-	float coeff[64];
+	float plane[64];
 	unsigned i;
 
-	if (!n)
-		return;
+	for (i = 0; i < 64; i++)
+		plane[i] = yuv[idx[i]][comp];
 	dct8x8(plane, coeff);
+}
+
+/* First n zig-zag coeffs, scaled, into out[0..n). */
+static void store_kept(const float *coeff, unsigned n, float scale, float *out)
+{
+	unsigned i;
+
 	for (i = 0; i < n; i++) {
 		unsigned u = zz_u[i], v = zz_v[i];
-		out[i] = sqrt_w[i] * coeff[v * 8 + u];
+		out[i] = scale * sqrt_w[i] * coeff[v * 8 + u];
 	}
+}
+
+/* Weighted energy of coeffs n..63, times energy_scale. 0 when the plane is full. */
+static float tail_energy(const float *coeff, unsigned n, float energy_scale)
+{
+	unsigned i;
+	float tail = 0.0f;
+
+	if (n >= STVQ_METRIC_MAX_COEFFS || energy_scale == 0.0f)
+		return 0.0f;
+	for (i = n; i < STVQ_METRIC_MAX_COEFFS; i++) {
+		unsigned u = zz_u[i], v = zz_v[i];
+		float f = sqrt_w[i] * coeff[v * 8 + u];
+		tail += f * f;
+	}
+	return energy_scale * tail;
 }
 
 void stvq_metric_feat_from_indices(const uint8_t idx[64], float *out_feat)
 {
-	float plane[64];
-	unsigned i, ny = dct_y_coeffs, nc = dct_chroma_coeffs;
+	float coeff[64];
+	unsigned ny = dct_y_coeffs, nc = dct_chroma_coeffs;
+	float ey, eu, ev;
+	float *p;
 
 	if (!metric_ready) {
 		memset(out_feat, 0, stvq_metric_feat_len() * sizeof(float));
 		return;
 	}
-	for (i = 0; i < 64; i++)
-		plane[i] = yuv[idx[i]][0];
-	pack_plane_feats(plane, ny, out_feat);
-	if (!nc)
+	dct_plane(idx, 0, coeff);
+	store_kept(coeff, ny, 1.0f, out_feat);
+	ey = tail_energy(coeff, ny, 1.0f);
+	p = out_feat + ny;
+	if (dct_chroma_weight == 0.0f) {
+		/* Luma-only: same layout, U/V coeffs and tails are zero. Skip both DCTs. */
+		memset(p, 0, (stvq_metric_feat_len() - ny) * sizeof(float));
+		if (ny < STVQ_METRIC_MAX_COEFFS)
+			out_feat[coeff_len()] = ey;
 		return;
-	for (i = 0; i < 64; i++)
-		plane[i] = yuv[idx[i]][1];
-	pack_plane_feats(plane, nc, out_feat + ny);
-	for (i = 0; i < 64; i++)
-		plane[i] = yuv[idx[i]][2];
-	pack_plane_feats(plane, nc, out_feat + ny + nc);
+	}
+	dct_plane(idx, 1, coeff);
+	store_kept(coeff, nc, dct_chroma_coeff_scale, p);
+	eu = tail_energy(coeff, nc, dct_chroma_weight);
+	p += nc;
+	dct_plane(idx, 2, coeff);
+	store_kept(coeff, nc, dct_chroma_coeff_scale, p);
+	ev = tail_energy(coeff, nc, dct_chroma_weight);
+	p += nc;
+	if (ny < STVQ_METRIC_MAX_COEFFS)
+		*p++ = ey;
+	if (nc < STVQ_METRIC_MAX_COEFFS) {
+		*p++ = eu;
+		*p++ = ev;
+	}
 }
 
 void stvq_metric_feat_from_pens(const uint8_t pens[64], float *out_feat)
@@ -255,12 +322,18 @@ unsigned stvq_metric_feat_dist(const float *a, const float *b)
 
 unsigned stvq_metric_feat_dist_lim(const float *a, const float *b, unsigned max_d)
 {
-	unsigned i, n = stvq_metric_feat_len();
+	unsigned i, ncoeff = coeff_len(), n = stvq_metric_feat_len();
 	float sum = 0.0f;
 
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < ncoeff; i++) {
 		float d = a[i] - b[i];
 		sum += d * d;
+		if ((unsigned)(sum * STVQ_METRIC_SCALE) >= max_d)
+			return (unsigned)(sum * STVQ_METRIC_SCALE + 0.5f);
+	}
+	/* Tail slots are energies. Uncorrelated discarded coeffs → E_a + E_b. */
+	for (; i < n; i++) {
+		sum += a[i] + b[i];
 		if ((unsigned)(sum * STVQ_METRIC_SCALE) >= max_d)
 			return (unsigned)(sum * STVQ_METRIC_SCALE + 0.5f);
 	}

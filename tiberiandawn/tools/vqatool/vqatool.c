@@ -57,7 +57,8 @@ static void usage(const char *argv0)
 	    "    --gamma F             YUV gamma before DCT (default %.2g)\n"
 	    "    --dct-alpha F         DCT weight alpha in 1/(1+a*(u^2+v^2)) (default %.2g)\n"
 	    "    --dct-coeffs N        Y zig-zag DCT coeffs (default %u)\n"
-	    "    --dct-chroma-coeffs N U and V zig-zag coeffs each (default %u; 0=Y-only)\n"
+	    "    --dct-chroma-coeffs N U and V zig-zag coeffs each (default %u)\n"
+	    "    --dct-chroma-weight F chroma SSE weight (default %.2g; 0=luma-only)\n"
 	    "    -o, --output FILE     output .stv path\n"
 	    "    --dry-run             print segment/sidecar plan only\n"
 	    "  preview <file.stv>      decode STVQ and pipe A/V into ffmpeg\n"
@@ -80,7 +81,8 @@ static void usage(const char *argv0)
 	    (double)STVQ_DEFAULT_GAMMA,
 	    (double)STVQ_DEFAULT_DCT_ALPHA,
 	    (unsigned)STVQ_DEFAULT_DCT_COEFFS,
-	    (unsigned)STVQ_DEFAULT_DCT_CHROMA_COEFFS);
+	    (unsigned)STVQ_DEFAULT_DCT_CHROMA_COEFFS,
+	    (double)STVQ_DEFAULT_DCT_CHROMA_WEIGHT);
 }
 
 static int parse_frame_range(const char *s, int *first, int *last)
@@ -288,6 +290,7 @@ static int cmd_encode(int argc, char **argv, int argi)
 	opts.cb_lookahead = STVQ_DEFAULT_CB_LOOKAHEAD;
 	opts.dct_alpha = -1.0f; /* → default */
 	opts.dct_coeffs = 0;    /* → default */
+	opts.dct_chroma_weight = -1.0f; /* → default; 0 would be luma-only */
 	opts.gamma = -1.0f;     /* → default */
 
 	for (; argi < argc; argi++) {
@@ -371,6 +374,17 @@ static int cmd_encode(int argc, char **argv, int argi)
 				return 1;
 			}
 			opts.have_dct_chroma = 1;
+		} else if (strcmp(a, "--dct-chroma-weight") == 0) {
+			if (++argi >= argc || parse_f(argv[argi], &opts.dct_chroma_weight) != 0 ||
+			    opts.dct_chroma_weight < 0.0f) {
+				fprintf(stderr, "error: bad --dct-chroma-weight\n");
+				return 1;
+			}
+		} else if (!strncmp(a, "--dct-chroma-weight=", 20)) {
+			if (parse_f(a + 20, &opts.dct_chroma_weight) != 0 || opts.dct_chroma_weight < 0.0f) {
+				fprintf(stderr, "error: bad --dct-chroma-weight\n");
+				return 1;
+			}
 		} else if (strcmp(a, "--gamma") == 0) {
 			if (++argi >= argc || parse_f(argv[argi], &opts.gamma) != 0 || opts.gamma < 0.0f) {
 				fprintf(stderr, "error: bad --gamma\n");

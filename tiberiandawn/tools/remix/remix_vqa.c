@@ -63,21 +63,22 @@ static unsigned cb_per_frame_for_quality(RemixVideoQuality q)
 	}
 }
 
+/* Zig-zag counts that finish diagonals u+v <= 4, 5, 6 (15, 21, 28). */
 static void dct_for_effort(RemixVideoEffort e, unsigned *y, unsigned *chroma)
 {
 	switch (e) {
 	case REMIX_VIDEO_EFFORT_FAST:
-		*y = 32u;
-		*chroma = 16u;
+		*y = 15u;
+		*chroma = 15u;
 		break;
 	case REMIX_VIDEO_EFFORT_THOROUGH:
-		*y = 64u;
-		*chroma = 64u;
+		*y = 28u;
+		*chroma = 28u;
 		break;
 	case REMIX_VIDEO_EFFORT_NORMAL:
 	default:
-		*y = 48u;
-		*chroma = 40u;
+		*y = 21u;
+		*chroma = 21u;
 		break;
 	}
 }
@@ -87,12 +88,12 @@ static unsigned lookahead_for_effort(RemixVideoEffort e)
 {
 	switch (e) {
 	case REMIX_VIDEO_EFFORT_FAST:
-		return 0u;
+		return 1u;
 	case REMIX_VIDEO_EFFORT_THOROUGH:
-		return 3u;
+		return 7u;
 	case REMIX_VIDEO_EFFORT_NORMAL:
 	default:
-		return 1u;
+		return 3u;
 	}
 }
 
@@ -256,6 +257,7 @@ static int encode_vqa_file(
 	opts.cb_random_pct = STVQ_DEFAULT_CB_RANDOM_PCT;
 	opts.cb_lookahead = lookahead_for_effort(cfg->video_effort);
 	opts.dct_alpha = -1.0f;
+	opts.dct_chroma_weight = -1.0f; /* 0 would be luma-only */
 	opts.gamma = -1.0f;
 	dct_for_effort(cfg->video_effort, &dct_y, &dct_c);
 	opts.dct_coeffs = dct_y;

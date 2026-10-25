@@ -68,6 +68,8 @@ unsigned stvq_metric_feat_dist_lim(const float *a, const float *b, unsigned max_
 unsigned stvq_src_pens_error(const uint8_t src_vga[64], const uint8_t pens[64]);
 unsigned stvq_src_pens_error_lim(const uint8_t src_vga[64], const uint8_t pens[64], unsigned max_d);
 unsigned stvq_src_tile_error(const uint8_t src_vga[64], const uint8_t tile32[32]);
+/* Both sides are dithered 4bpp tiles (pens mapped through the current subset). */
+unsigned stvq_tile_error(const uint8_t a[32], const uint8_t b[32]);
 
 #ifdef __cplusplus
 }

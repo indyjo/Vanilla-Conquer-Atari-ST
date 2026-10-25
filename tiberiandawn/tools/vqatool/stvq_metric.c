@@ -363,3 +363,13 @@ unsigned stvq_src_tile_error(const uint8_t src_vga[64], const uint8_t tile32[32]
 	stvq_unpack_tile_32(tile32, pens);
 	return stvq_src_pens_error(src_vga, pens);
 }
+
+unsigned stvq_tile_error(const uint8_t a[32], const uint8_t b[32])
+{
+	float fa[STVQ_METRIC_MAX_FEAT_LEN], fb[STVQ_METRIC_MAX_FEAT_LEN];
+	if (!metric_ready)
+		return 0;
+	stvq_metric_feat_from_tile32(a, fa);
+	stvq_metric_feat_from_tile32(b, fb);
+	return stvq_metric_feat_dist(fa, fb);
+}

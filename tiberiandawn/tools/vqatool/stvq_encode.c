@@ -94,12 +94,13 @@ static int write_stcr_chunk(StvqWriter *w, const StvqReplace *reps, unsigned n)
 
 /*
  * N−2 skip: keep recon_n2 only if a codebook nearest would be a regression
- * (error(src,n2) <= error(src,cb)) and recon_n2 matches recon_n1 (field sync;
- * otherwise even/odd chains diverge and the block flickers at fps/2).
- * cb_idx / dist_cb come from STCR refresh (or a fallback assign).
+ * (error(dithered,n2) <= error(dithered,cb)) and recon_n2 matches recon_n1
+ * (field sync; otherwise even/odd chains diverge and the block flickers at
+ * fps/2). Both errors are after the 16-color dither. cb_idx / dist_cb come
+ * from STCR refresh (or a fallback assign).
  * Always writes the codebook index to *out_cb_idx.
  */
-static int tile_can_skip(const uint8_t *src_vga, const uint8_t *recon_n2, const uint8_t *recon_n1,
+static int tile_can_skip(const uint8_t *tile32, const uint8_t *recon_n2, const uint8_t *recon_n1,
     unsigned cb_idx, unsigned dist_cb, unsigned *out_cb_idx)
 {
 	unsigned dist_n2;
@@ -109,11 +110,11 @@ static int tile_can_skip(const uint8_t *src_vga, const uint8_t *recon_n2, const 
 		return 0;
 	if (recon_n1 && memcmp(recon_n2, recon_n1, 32) != 0)
 		return 0;
-	dist_n2 = stvq_src_tile_error(src_vga, recon_n2);
+	dist_n2 = stvq_tile_error(tile32, recon_n2);
 	return dist_n2 <= dist_cb;
 }
 
-static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t *src_tiles,
+static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t *dithered,
     const unsigned *cb_nearest, const unsigned *cb_dist, const uint8_t *recon_n2, const uint8_t *recon_n1,
     uint8_t *out_recon, unsigned tiles_x, unsigned tiles_y, int force_full, unsigned *out_bytes)
 {
@@ -136,7 +137,7 @@ static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t
 	}
 
 	for (col = 0; col < tiles_x; col++) {
-		const uint8_t *col_src = src_tiles + (size_t)col * tiles_y * 64u;
+		const uint8_t *col_tiles = dithered + (size_t)col * tiles_y * 32u;
 		const uint8_t *n2_col = recon_n2 ? recon_n2 + (size_t)col * tiles_y * 32u : NULL;
 		const uint8_t *n1_col = recon_n1 ? recon_n1 + (size_t)col * tiles_y * 32u : NULL;
 		uint8_t *out_col = out_recon + (size_t)col * tiles_y * 32u;
@@ -145,11 +146,11 @@ static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t
 		memset(skip, 0, tiles_y);
 		for (row = 0; row < tiles_y; row++) {
 			unsigned ti = col * tiles_y + row;
-			const uint8_t *src_vga = col_src + row * 64u;
+			const uint8_t *tile32 = col_tiles + row * 32u;
 			unsigned idx = 0;
 			const uint8_t *n2 = (!force_full && n2_col) ? n2_col + row * 32u : NULL;
 			const uint8_t *n1 = n1_col ? n1_col + row * 32u : NULL;
-			if (tile_can_skip(src_vga, n2, n1, cb_nearest[ti], cb_dist[ti], &idx)) {
+			if (tile_can_skip(tile32, n2, n1, cb_nearest[ti], cb_dist[ti], &idx)) {
 				skip[row] = 1;
 				/* bit 31 = row 0, bit 30 = row 1, … (MSB-first for add/addx walk) */
 				mask |= (1u << (31u - row));
@@ -537,7 +538,6 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		unsigned max_rep;
 		uint64_t frame_t0 = enc_ns_now(), t0, t1;
 		const uint8_t **win_tiles = NULL;
-		const uint8_t **win_src = NULL;
 		int *win_seg = NULL;
 		unsigned wi;
 		unsigned nseg = 0;
@@ -683,13 +683,11 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			max_rep = cb.entries;
 
 		win_tiles = (const uint8_t **)malloc(win_n * sizeof(*win_tiles));
-		win_src = (const uint8_t **)malloc(win_n * sizeof(*win_src));
 		win_seg = (int *)malloc(win_n * sizeof(*win_seg));
-		if (!win_tiles || !win_src || !win_seg)
+		if (!win_tiles || !win_seg)
 			goto done;
 		for (wi = 0; wi < win_n; wi++) {
 			win_tiles[wi] = win[wi].tiles;
-			win_src[wi] = win[wi].src64;
 			win_seg[wi] = win[wi].fr.segment;
 		}
 
@@ -702,13 +700,12 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			reps = (StvqReplace *)malloc(max_rep * sizeof(*reps));
 			if (!reps)
 				goto done;
-			nrep = stvq_codebook_select_replaces(&cb, win_tiles, win_src, sel_n, 0, tiles_n, max_rep,
+			nrep = stvq_codebook_select_replaces(&cb, win_tiles, sel_n, 0, tiles_n, max_rep,
 			    opts->cb_random_pct, sel_n ? sel_n - 1u : 0u, recon_n2, recon_n1, win_seg, seg_pal768,
 			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist);
 			if (write_stcr_chunk(&w, reps, nrep) != 0) {
 				free(reps);
 				free((void *)win_tiles);
-				free((void *)win_src);
 				free(win_seg);
 				goto done;
 			}
@@ -717,18 +714,16 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		} else {
 			unsigned ti;
 			for (ti = 0; ti < tiles_n; ti++)
-				cb_nearest[ti] = stvq_codebook_nearest(&cb, win[0].src64 + ti * 64u, &cb_dist[ti]);
+				cb_nearest[ti] = stvq_codebook_nearest(&cb, win[0].tiles + ti * 32u, &cb_dist[ti]);
 		}
 		}
 		free((void *)win_tiles);
-		free((void *)win_src);
 		free(win_seg);
 		win_tiles = NULL;
-		win_src = NULL;
 		win_seg = NULL;
 
 		t0 = enc_ns_now();
-		if (write_stvd_chunk(&w, &cb, win[0].src64, cb_nearest, cb_dist, recon_n2, recon_n1, recon_work,
+		if (write_stvd_chunk(&w, &cb, win[0].tiles, cb_nearest, cb_dist, recon_n2, recon_n1, recon_work,
 		        tiles_x, tiles_y, force_full, &stvd_bytes) != 0)
 			goto done;
 		t1 = enc_ns_now();

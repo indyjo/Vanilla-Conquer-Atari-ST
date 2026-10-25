@@ -102,12 +102,12 @@ void stvq_codebook_on_palette_change(StvqCodebook *cb)
 	cb->pal_epoch++;
 }
 
-unsigned stvq_codebook_nearest(const StvqCodebook *cb, const uint8_t src_vga[64], unsigned *out_dist)
+unsigned stvq_codebook_nearest(const StvqCodebook *cb, const uint8_t tile32[32], unsigned *out_dist)
 {
 	float q[STVQ_METRIC_MAX_FEAT_LEN];
 	unsigned best = 0, best_d = ~0u, i;
 	int have = 0;
-	stvq_metric_feat_from_indices(src_vga, q);
+	stvq_metric_feat_from_tile32(tile32, q);
 	for (i = 0; i < cb->entries; i++) {
 		unsigned d;
 		if (cb->tile_epoch[i] != cb->pal_epoch)
@@ -160,7 +160,7 @@ typedef struct UtilCand {
 } UtilCand;
 
 typedef struct WinTile {
-	const uint8_t *src; /* 64 VGA indices */
+	const uint8_t *tile; /* dithered 32B */
 	float *feat;        /* points into win_feats pool */
 	const float *cb_feats; /* codebook feat bank for this tile's palette */
 	unsigned nearest;
@@ -498,7 +498,7 @@ static unsigned cap_lookahead_one_cut(const int *frame_seg, unsigned frame_index
 }
 
 unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *frame_tiles,
-    const uint8_t *const *frame_src, unsigned nframes, unsigned frame_index, unsigned tiles_n,
+    unsigned nframes, unsigned frame_index, unsigned tiles_n,
     unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
     const uint8_t *recon_n1, const int *frame_seg, const uint8_t *const *seg_pal768,
     const uint8_t *const *seg_subset, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,
@@ -522,21 +522,19 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	unsigned win_n = 0, f_end, shortlist_cap, n_sl = 0, n_rand, n_util, cut_at = 0;
 	unsigned pool_lo, pool_n, pool_base, feat_stride;
 	uint32_t rng;
-	const uint8_t *cur_src;
 	const uint8_t *cur_pal = NULL;
 	const uint8_t *cur_subset = NULL;
 	const uint8_t *post_pal = NULL;
 	const uint8_t *post_subset = NULL;
 	uint64_t t0, t1;
 
-	if (!max_replaces || !tiles_n || !frame_tiles || !frame_src || frame_index >= nframes)
+	if (!max_replaces || !tiles_n || !frame_tiles || frame_index >= nframes)
 		return 0;
 	if (random_pct > 100u)
 		random_pct = 100u;
 
 	n_rand = (max_replaces * random_pct) / 100u;
 	n_util = max_replaces - n_rand;
-	cur_src = frame_src[frame_index];
 
 	for (i = 0; i < cb->entries; i++)
 		cb->use_count[i] >>= 1;
@@ -614,10 +612,10 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		else if (cut_at)
 			stvq_metric_set_palette_vga6(cur_pal, cur_subset);
 		for (t = 0; t < tiles_n; t++) {
-			win[win_n].src = frame_src[f] + t * 64u;
+			win[win_n].tile = frame_tiles[f] + t * 32u;
 			win[win_n].feat = win_feats + (size_t)win_n * feat_stride;
 			win[win_n].cb_feats = post ? feats_post : cb->feats;
-			stvq_metric_feat_from_indices(win[win_n].src, win[win_n].feat);
+			stvq_metric_feat_from_tile32(win[win_n].tile, win[win_n].feat);
 			nearest_two_feat_bank(win[win_n].cb_feats, cb->entries, feat_stride, win[win_n].feat,
 			    &win[win_n].nearest, &win[win_n].dist, &win[win_n].second, &win[win_n].second_dist);
 			win_n++;
@@ -642,7 +640,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 					const uint8_t *n2 = recon_n2 + t * 32u;
 					const uint8_t *n1 = recon_n1 + t * 32u;
 					if (memcmp(n2, n1, 32) == 0) {
-						unsigned dist_n2 = stvq_src_tile_error(cur_src + t * 64u, n2);
+						unsigned dist_n2 = stvq_tile_error(win[wi].tile, n2);
 						if (dist_n2 < dist)
 							dist = dist_n2;
 					}

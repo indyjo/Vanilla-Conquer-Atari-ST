@@ -38,9 +38,9 @@ void stvq_codebook_recompute_feats(StvqCodebook *cb);
  * pre-buffered tiles (pal_epoch+1 before the bump) become current. */
 void stvq_codebook_on_palette_change(StvqCodebook *cb);
 
-/* Nearest current-palette CB entry to original VGA src tile (64 indices).
+/* Nearest current-palette CB entry to a dithered 32-byte tile.
  * Entries from a prior palette epoch are ignored. */
-unsigned stvq_codebook_nearest(const StvqCodebook *cb, const uint8_t src_vga[64], unsigned *out_dist);
+unsigned stvq_codebook_nearest(const StvqCodebook *cb, const uint8_t tile32[32], unsigned *out_dist);
 
 typedef struct StvqReplace {
 	uint16_t index;
@@ -74,8 +74,8 @@ typedef struct StvqSelectProf {
  *    remains. Pair top utilities with those victims.
  * 3) Accept random_pct% random tiles from the same candidate pool (same victim
  *    policy).
- * Error = weighted YUV-DCT feature L2 (see stvq_metric).
- * frame_tiles = dithered 32B (installed into CB); frame_src = VGA 64B (metric).
+ * Error = weighted YUV-DCT of the dithered 16-color tile (see stvq_metric).
+ * frame_tiles = dithered 32B, both installed into the codebook and scored.
  * recon_n2 / recon_n1 may be NULL (no stay-as-is).
  * prof may be NULL.
  * out_nearest / out_dist may be NULL; if non-NULL, filled with post-STCR
@@ -88,7 +88,7 @@ typedef struct StvqSelectProf {
  * Post-cut candidate installs are stamped pal_epoch+1 (not drawn until STPL).
  */
 unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *frame_tiles,
-    const uint8_t *const *frame_src, unsigned nframes, unsigned frame_index, unsigned tiles_n,
+    unsigned nframes, unsigned frame_index, unsigned tiles_n,
     unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
     const uint8_t *recon_n1, const int *frame_seg, const uint8_t *const *seg_pal768,
     const uint8_t *const *seg_subset, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,

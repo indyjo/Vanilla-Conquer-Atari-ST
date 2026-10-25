@@ -35,7 +35,8 @@ extern "C" {
  * (E = 0), so feat_len <= 64*3.
  * Distance is SSE of the kept coeffs plus (E_a + E_b) per tail: the expected
  * squared error when discarded coefficients are uncorrelated. Tail slots are
- * not square-differenced.
+ * not square-differenced. A matching color hash skips that sum and returns 0,
+ * so two tiles with the same colors do not pay 2E for identical tails.
  */
 void stvq_metric_set_dct(float alpha, unsigned y_coeffs, unsigned chroma_coeffs, float chroma_weight);
 float stvq_metric_dct_alpha(void);
@@ -60,9 +61,19 @@ void stvq_metric_feat_from_indices(const uint8_t idx[64], float *out_feat);
 void stvq_metric_feat_from_pens(const uint8_t pens[64], float *out_feat);
 void stvq_metric_feat_from_tile32(const uint8_t tile32[32], float *out_feat);
 
-/* Scaled SSE of kept coeffs, plus E_a+E_b for each stored tail. */
+/* FNV-1a of the 64 color indices the DCT sees. pens/tile32 use the palette
+ * currently set on the metric. Equal hashes are treated as the same tile. */
+uint32_t stvq_metric_color_hash(const uint8_t idx[64]);
+uint32_t stvq_metric_color_hash_pens(const uint8_t pens[64]);
+uint32_t stvq_metric_color_hash_tile32(const uint8_t tile32[32]);
+
+/* Scaled SSE of kept coeffs, plus E_a+E_b for each stored tail.
+ * The hash variants return 0 when hash_a == hash_b. */
 unsigned stvq_metric_feat_dist(const float *a, const float *b);
 unsigned stvq_metric_feat_dist_lim(const float *a, const float *b, unsigned max_d);
+unsigned stvq_metric_feat_dist_hash(const float *a, uint32_t hash_a, const float *b, uint32_t hash_b);
+unsigned stvq_metric_feat_dist_hash_lim(const float *a, uint32_t hash_a, const float *b, uint32_t hash_b,
+    unsigned max_d);
 
 /* Convenience: build feats and compare (src VGA indices vs pens / planar tile). */
 unsigned stvq_src_pens_error(const uint8_t src_vga[64], const uint8_t pens[64]);

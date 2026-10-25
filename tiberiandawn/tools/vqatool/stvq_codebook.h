@@ -17,6 +17,7 @@ typedef struct StvqCodebook {
 	uint8_t *tiles; /* entries * 32 */
 	uint8_t *pens;  /* entries * 64 unpacked pens (cache for metric) */
 	float *feats;   /* entries * feat_stride DCT features */
+	uint32_t *color_hash; /* FNV-1a of the 64 DCT color indices; equal → distance 0 */
 	uint32_t *use_count;
 	uint32_t *last_used;
 	/*

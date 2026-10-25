@@ -27,11 +27,13 @@ int stvq_codebook_alloc(StvqCodebook *cb, unsigned entries)
 	cb->tiles = (uint8_t *)calloc(entries, 32u);
 	cb->pens = (uint8_t *)calloc(entries, 64u);
 	cb->feats = (float *)calloc(entries, cb->feat_stride * sizeof(float));
+	cb->color_hash = (uint32_t *)calloc(entries, sizeof(uint32_t));
 	cb->use_count = (uint32_t *)calloc(entries, sizeof(uint32_t));
 	cb->last_used = (uint32_t *)calloc(entries, sizeof(uint32_t));
 	cb->tile_epoch = (uint32_t *)calloc(entries, sizeof(uint32_t));
 	cb->pal_epoch = 0;
-	if (!cb->tiles || !cb->pens || !cb->feats || !cb->use_count || !cb->last_used || !cb->tile_epoch) {
+	if (!cb->tiles || !cb->pens || !cb->feats || !cb->color_hash || !cb->use_count || !cb->last_used ||
+	    !cb->tile_epoch) {
 		stvq_codebook_free(cb);
 		return -1;
 	}
@@ -43,6 +45,7 @@ void stvq_codebook_free(StvqCodebook *cb)
 	free(cb->tiles);
 	free(cb->pens);
 	free(cb->feats);
+	free(cb->color_hash);
 	free(cb->use_count);
 	free(cb->last_used);
 	free(cb->tile_epoch);
@@ -81,6 +84,7 @@ static void cb_set_tile(StvqCodebook *cb, unsigned i, const uint8_t tile[32], ui
 	memcpy(cb->tiles + i * 32u, tile, 32);
 	stvq_unpack_tile_32(tile, cb->pens + i * 64u);
 	stvq_metric_feat_from_pens(cb->pens + i * 64u, cb_feat(cb, i));
+	cb->color_hash[i] = stvq_metric_color_hash_pens(cb->pens + i * 64u);
 	cb->tile_epoch[i] = epoch;
 }
 
@@ -91,8 +95,10 @@ void stvq_codebook_recompute_feats(StvqCodebook *cb)
 		return;
 	if (cb_ensure_feat_stride(cb) != 0)
 		return;
-	for (i = 0; i < cb->entries; i++)
+	for (i = 0; i < cb->entries; i++) {
 		stvq_metric_feat_from_pens(cb->pens + i * 64u, cb_feat(cb, i));
+		cb->color_hash[i] = stvq_metric_color_hash_pens(cb->pens + i * 64u);
+	}
 }
 
 void stvq_codebook_on_palette_change(StvqCodebook *cb)
@@ -107,12 +113,14 @@ unsigned stvq_codebook_nearest(const StvqCodebook *cb, const uint8_t tile32[32],
 	float q[STVQ_METRIC_MAX_FEAT_LEN];
 	unsigned best = 0, best_d = ~0u, i;
 	int have = 0;
+	uint32_t qh;
 	stvq_metric_feat_from_tile32(tile32, q);
+	qh = stvq_metric_color_hash_tile32(tile32);
 	for (i = 0; i < cb->entries; i++) {
 		unsigned d;
 		if (cb->tile_epoch[i] != cb->pal_epoch)
 			continue; /* wrong-palette tiles must not be drawn */
-		d = stvq_metric_feat_dist_lim(q, cb_feat_c(cb, i), best_d);
+		d = stvq_metric_feat_dist_hash_lim(q, qh, cb_feat_c(cb, i), cb->color_hash[i], best_d);
 		if (!have || d < best_d) {
 			best_d = d;
 			best = i;
@@ -127,7 +135,7 @@ unsigned stvq_codebook_nearest(const StvqCodebook *cb, const uint8_t tile32[32],
 }
 
 /* Nearest current-palette CB entry to a precomputed feature vector. */
-static unsigned nearest_current_feat(const StvqCodebook *cb, const float *qfeat, unsigned *out_dist)
+static unsigned nearest_current_feat(const StvqCodebook *cb, const float *qfeat, uint32_t qhash, unsigned *out_dist)
 {
 	unsigned best = 0, best_d = ~0u, i;
 	int have = 0;
@@ -135,7 +143,7 @@ static unsigned nearest_current_feat(const StvqCodebook *cb, const float *qfeat,
 		unsigned d;
 		if (cb->tile_epoch[i] != cb->pal_epoch)
 			continue;
-		d = stvq_metric_feat_dist_lim(qfeat, cb_feat_c(cb, i), best_d);
+		d = stvq_metric_feat_dist_hash_lim(qfeat, qhash, cb_feat_c(cb, i), cb->color_hash[i], best_d);
 		if (!have || d < best_d) {
 			best_d = d;
 			best = i;
@@ -160,9 +168,11 @@ typedef struct UtilCand {
 } UtilCand;
 
 typedef struct WinTile {
-	const uint8_t *tile; /* dithered 32B */
-	float *feat;        /* points into win_feats pool */
+	const uint8_t *tile; /* dithered 32B tile, the metric reference */
+	float *feat;         /* points into win_feats pool */
+	uint32_t color_hash; /* hash of the colors feat was built from */
 	const float *cb_feats; /* codebook feat bank for this tile's palette */
+	const uint32_t *cb_hash; /* color hashes parallel to cb_feats */
 	unsigned nearest;
 	unsigned dist;
 	unsigned second;
@@ -209,8 +219,9 @@ static uint32_t xorshift32(uint32_t *state)
 	return *state;
 }
 
-static void nearest_two_feat_bank(const float *cb_feats, unsigned entries, unsigned feat_stride,
-    const float *qfeat, unsigned *best_i, unsigned *best_d, unsigned *second_i, unsigned *second_d)
+static void nearest_two_feat_bank(const float *cb_feats, const uint32_t *cb_hash, unsigned entries,
+    unsigned feat_stride, const float *qfeat, uint32_t qhash, unsigned *best_i, unsigned *best_d,
+    unsigned *second_i, unsigned *second_d)
 {
 	unsigned i;
 	*best_i = 0;
@@ -218,7 +229,8 @@ static void nearest_two_feat_bank(const float *cb_feats, unsigned entries, unsig
 	*second_i = 0;
 	*second_d = ~0u;
 	for (i = 0; i < entries; i++) {
-		unsigned d = stvq_metric_feat_dist_lim(qfeat, cb_feats + (size_t)i * feat_stride, *second_d);
+		unsigned d = stvq_metric_feat_dist_hash_lim(qfeat, qhash, cb_feats + (size_t)i * feat_stride, cb_hash[i],
+		    *second_d);
 		if (d < *best_d) {
 			*second_d = *best_d;
 			*second_i = *best_i;
@@ -232,8 +244,8 @@ static void nearest_two_feat_bank(const float *cb_feats, unsigned entries, unsig
 }
 
 /* Nearest two among tiles stamped with exactly `epoch` (current-palette bank). */
-static void nearest_two_epoch(const StvqCodebook *cb, uint32_t epoch, const float *qfeat, unsigned *best_i,
-    unsigned *best_d, unsigned *second_i, unsigned *second_d)
+static void nearest_two_epoch(const StvqCodebook *cb, uint32_t epoch, const float *qfeat, uint32_t qhash,
+    unsigned *best_i, unsigned *best_d, unsigned *second_i, unsigned *second_d)
 {
 	unsigned i;
 	*best_i = 0;
@@ -244,7 +256,7 @@ static void nearest_two_epoch(const StvqCodebook *cb, uint32_t epoch, const floa
 		unsigned d;
 		if (cb->tile_epoch[i] != epoch)
 			continue;
-		d = stvq_metric_feat_dist_lim(qfeat, cb_feat_c(cb, i), *second_d);
+		d = stvq_metric_feat_dist_hash_lim(qfeat, qhash, cb_feat_c(cb, i), cb->color_hash[i], *second_d);
 		if (d < *best_d) {
 			*second_d = *best_d;
 			*second_i = *best_i;
@@ -266,13 +278,13 @@ static void update_window_after_replace(const StvqCodebook *cb, WinTile *win, un
 		if (next_epoch && win[i].cb_feats == feats_cur) {
 			/* Next-epoch slot is not drawable yet; keep current-palette NN. */
 			if (win[i].nearest == victim || win[i].second == victim)
-				nearest_two_epoch(cb, cb->pal_epoch, win[i].feat, &win[i].nearest, &win[i].dist,
-				    &win[i].second, &win[i].second_dist);
+				nearest_two_epoch(cb, cb->pal_epoch, win[i].feat, win[i].color_hash, &win[i].nearest,
+				    &win[i].dist, &win[i].second, &win[i].second_dist);
 			continue;
 		}
 		if (win[i].nearest == victim || win[i].second == victim) {
-			nearest_two_feat_bank(win[i].cb_feats, cb->entries, cb->feat_stride, win[i].feat,
-			    &win[i].nearest, &win[i].dist, &win[i].second, &win[i].second_dist);
+			nearest_two_feat_bank(win[i].cb_feats, win[i].cb_hash, cb->entries, cb->feat_stride, win[i].feat,
+			    win[i].color_hash, &win[i].nearest, &win[i].dist, &win[i].second, &win[i].second_dist);
 			continue;
 		}
 		if (dT < win[i].dist) {
@@ -293,7 +305,8 @@ static void update_window_after_replace(const StvqCodebook *cb, WinTile *win, un
  * matching feature vector.
  */
 static long long add_utility(const WinTile *win, unsigned win_n, const float *feat_cur, const float *feat_post,
-    const float *feats_cur, unsigned *d_new, int next_epoch, StvqSelectProf *prof)
+    uint32_t hash_cur, uint32_t hash_post, const float *feats_cur, unsigned *d_new, int next_epoch,
+    StvqSelectProf *prof)
 {
 	unsigned i;
 	long long util = 0;
@@ -301,6 +314,7 @@ static long long add_utility(const WinTile *win, unsigned win_n, const float *fe
 
 	for (i = 0; i < win_n; i++) {
 		const float *nf;
+		uint32_t nh;
 		unsigned d;
 		if (next_epoch) {
 			/* Pre-buffer: only post-cut window tiles can use this slot after STPL. */
@@ -309,10 +323,15 @@ static long long add_utility(const WinTile *win, unsigned win_n, const float *fe
 				continue;
 			}
 			nf = feat_post ? feat_post : feat_cur;
+			nh = hash_post;
+		} else if (win[i].cb_feats == feats_cur || !feat_post) {
+			nf = feat_cur;
+			nh = hash_cur;
 		} else {
-			nf = (win[i].cb_feats == feats_cur || !feat_post) ? feat_cur : feat_post;
+			nf = feat_post;
+			nh = hash_post;
 		}
-		d = stvq_metric_feat_dist(win[i].feat, nf);
+		d = stvq_metric_feat_dist_hash(win[i].feat, win[i].color_hash, nf, nh);
 		d_new[i] = d;
 		if (d < win[i].dist)
 			util += (long long)(win[i].dist - d);
@@ -400,9 +419,9 @@ static unsigned pick_least_damage_victim(const StvqCodebook *cb, const unsigned 
 
 static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned wi, unsigned victim,
     unsigned frame_index, WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken,
-    const unsigned *d_new, float *feats_post, const uint8_t *post_pal, const uint8_t *post_subset,
-    const uint8_t *cur_pal, const uint8_t *cur_subset, uint32_t epoch, int next_epoch, StvqReplace *out,
-    unsigned *n)
+    const unsigned *d_new, float *feats_post, uint32_t *hash_post, const uint8_t *post_pal,
+    const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset, uint32_t epoch, int next_epoch,
+    StvqReplace *out, unsigned *n)
 {
 	if (tile_taken[wi] || slot_taken[victim])
 		return 0;
@@ -412,6 +431,8 @@ static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned w
 	if (feats_post && post_pal && post_subset) {
 		stvq_metric_set_palette_vga6(post_pal, post_subset);
 		stvq_metric_feat_from_pens(cb->pens + victim * 64u, feats_post + (size_t)victim * cb->feat_stride);
+		if (hash_post)
+			hash_post[victim] = stvq_metric_color_hash_pens(cb->pens + victim * 64u);
 		stvq_metric_set_palette_vga6(cur_pal, cur_subset);
 	}
 	cb->use_count[victim] = 1;
@@ -423,29 +444,33 @@ static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned w
 	return 1;
 }
 
-static void tile_feats_cur_post(const uint8_t *tile32, float *feat_cur, float *feat_post, float *feats_post,
-    const uint8_t *post_pal, const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset)
+static void tile_feats_cur_post(const uint8_t *tile32, float *feat_cur, float *feat_post, uint32_t *hash_cur,
+    uint32_t *hash_post, float *feats_post, const uint8_t *post_pal, const uint8_t *post_subset,
+    const uint8_t *cur_pal, const uint8_t *cur_subset)
 {
 	stvq_metric_feat_from_tile32(tile32, feat_cur);
+	*hash_cur = stvq_metric_color_hash_tile32(tile32);
 	if (!feats_post || !post_pal || !post_subset) {
 		if (feat_post)
 			memcpy(feat_post, feat_cur, stvq_metric_feat_len() * sizeof(float));
+		*hash_post = *hash_cur;
 		return;
 	}
 	stvq_metric_set_palette_vga6(post_pal, post_subset);
 	stvq_metric_feat_from_tile32(tile32, feat_post);
+	*hash_post = stvq_metric_color_hash_tile32(tile32);
 	stvq_metric_set_palette_vga6(cur_pal, cur_subset);
 }
 
 /* Random accept: damage-only victim, then d_new for window update. wi indexes win[]. */
 static int install_replace(StvqCodebook *cb, const uint8_t *const *frame_tiles, unsigned tiles_n, unsigned wi,
     unsigned frame_index, unsigned cut_at, WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken,
-    unsigned *d_new_scratch, unsigned long long *damage, float *feats_post, const uint8_t *post_pal,
-    const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset, StvqReplace *out, unsigned *n,
-    StvqSelectProf *prof)
+    unsigned *d_new_scratch, unsigned long long *damage, float *feats_post, uint32_t *hash_post,
+    const uint8_t *post_pal, const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset,
+    StvqReplace *out, unsigned *n, StvqSelectProf *prof)
 {
 	unsigned victim, src_frame, tile;
-	uint32_t epoch;
+	uint32_t epoch, hash_cur, hash_new_post;
 	int next_epoch;
 	const uint8_t *tile32;
 	float feat_cur[STVQ_METRIC_MAX_FEAT_LEN], feat_post[STVQ_METRIC_MAX_FEAT_LEN];
@@ -462,11 +487,13 @@ static int install_replace(StvqCodebook *cb, const uint8_t *const *frame_tiles, 
 	if (prof)
 		prof->ns_victim_scan += stvq_ns_now() - t0;
 	victim = pick_least_damage_victim(cb, damage, slot_taken, frame_index, prof);
-	tile_feats_cur_post(tile32, feat_cur, feat_post, feats_post, post_pal, post_subset, cur_pal, cur_subset);
-	(void)add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, cb->feats, d_new_scratch, next_epoch,
-	    prof);
+	tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_new_post, feats_post, post_pal, post_subset,
+	    cur_pal, cur_subset);
+	(void)add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur, hash_new_post, cb->feats,
+	    d_new_scratch, next_epoch, prof);
 	return install_at_victim(cb, tile32, wi, victim, frame_index, win, win_n, slot_taken, tile_taken,
-	    d_new_scratch, feats_post, post_pal, post_subset, cur_pal, cur_subset, epoch, next_epoch, out, n);
+	    d_new_scratch, feats_post, hash_post, post_pal, post_subset, cur_pal, cur_subset, epoch, next_epoch, out,
+	    n);
 }
 
 /*
@@ -519,6 +546,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	unsigned *eff_dist = NULL;
 	unsigned long long *damage = NULL;
 	float *feats_post = NULL;
+	uint32_t *hash_post = NULL;
 	unsigned win_n = 0, f_end, shortlist_cap, n_sl = 0, n_rand, n_util, cut_at = 0;
 	unsigned pool_lo, pool_n, pool_base, feat_stride;
 	uint32_t rng;
@@ -575,10 +603,12 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	d_new = (unsigned *)malloc((size_t)win_n * sizeof(unsigned));
 	eff_dist = (unsigned *)malloc((size_t)win_n * sizeof(unsigned));
 	damage = (unsigned long long *)malloc((size_t)cb->entries * sizeof(*damage));
-	if (cut_at)
+	if (cut_at) {
 		feats_post = (float *)malloc((size_t)cb->entries * feat_stride * sizeof(float));
+		hash_post = (uint32_t *)malloc((size_t)cb->entries * sizeof(uint32_t));
+	}
 	if (!res || !ucand || !slot_taken || !tile_taken || !in_shortlist || !shortlist || !victims || !win ||
-	    !win_feats || !d_new || !eff_dist || !damage || (cut_at && !feats_post)) {
+	    !win_feats || !d_new || !eff_dist || !damage || (cut_at && (!feats_post || !hash_post))) {
 		free(res);
 		free(ucand);
 		free(slot_taken);
@@ -592,14 +622,17 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		free(eff_dist);
 		free(damage);
 		free(feats_post);
+		free(hash_post);
 		return 0;
 	}
 
 	if (cut_at) {
 		/* CB feats under post-cut palette; leave metric on current palette afterward. */
 		stvq_metric_set_palette_vga6(post_pal, post_subset);
-		for (i = 0; i < cb->entries; i++)
+		for (i = 0; i < cb->entries; i++) {
 			stvq_metric_feat_from_pens(cb->pens + i * 64u, feats_post + (size_t)i * feat_stride);
+			hash_post[i] = stvq_metric_color_hash_pens(cb->pens + i * 64u);
+		}
 		stvq_metric_set_palette_vga6(cur_pal, cur_subset);
 	}
 
@@ -615,9 +648,12 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 			win[win_n].tile = frame_tiles[f] + t * 32u;
 			win[win_n].feat = win_feats + (size_t)win_n * feat_stride;
 			win[win_n].cb_feats = post ? feats_post : cb->feats;
+			win[win_n].cb_hash = post ? hash_post : cb->color_hash;
 			stvq_metric_feat_from_tile32(win[win_n].tile, win[win_n].feat);
-			nearest_two_feat_bank(win[win_n].cb_feats, cb->entries, feat_stride, win[win_n].feat,
-			    &win[win_n].nearest, &win[win_n].dist, &win[win_n].second, &win[win_n].second_dist);
+			win[win_n].color_hash = stvq_metric_color_hash_tile32(win[win_n].tile);
+			nearest_two_feat_bank(win[win_n].cb_feats, win[win_n].cb_hash, cb->entries, feat_stride,
+			    win[win_n].feat, win[win_n].color_hash, &win[win_n].nearest, &win[win_n].dist,
+			    &win[win_n].second, &win[win_n].second_dist);
 			win_n++;
 		}
 	}
@@ -695,6 +731,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		unsigned n_cand = 0, n_accept, vi;
 		uint64_t ts, te;
 		float feat_cur[STVQ_METRIC_MAX_FEAT_LEN], feat_post[STVQ_METRIC_MAX_FEAT_LEN];
+		uint32_t hash_cur, hash_new_post;
 
 		ts = stvq_ns_now();
 		for (i = 0; i < n_sl; i++) {
@@ -704,10 +741,10 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 			int next_epoch = (cut_at && src_frame >= cut_at);
 			long long util;
 			const uint8_t *tile32 = frame_tiles[src_frame] + tile * 32u;
-			tile_feats_cur_post(tile32, feat_cur, feat_post, feats_post, post_pal, post_subset, cur_pal,
-			    cur_subset);
-			util = add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, cb->feats, d_new,
-			    next_epoch, prof);
+			tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_new_post, feats_post, post_pal,
+			    post_subset, cur_pal, cur_subset);
+			util = add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur, hash_new_post,
+			    cb->feats, d_new, next_epoch, prof);
 			if (util <= 0)
 				continue;
 			ucand[n_cand].tile = wi;
@@ -743,13 +780,13 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 			int next_epoch = (cut_at && src_frame >= cut_at);
 			uint32_t epoch = cb->pal_epoch + (next_epoch ? 1u : 0u);
 			const uint8_t *tile32 = frame_tiles[src_frame] + tile * 32u;
-			tile_feats_cur_post(tile32, feat_cur, feat_post, feats_post, post_pal, post_subset, cur_pal,
-			    cur_subset);
-			(void)add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, cb->feats, d_new,
-			    next_epoch, prof);
+			tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_new_post, feats_post, post_pal,
+			    post_subset, cur_pal, cur_subset);
+			(void)add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur, hash_new_post,
+			    cb->feats, d_new, next_epoch, prof);
 			if (!install_at_victim(cb, tile32, wi, victims[vi], frame_index, win, win_n, slot_taken,
-			        tile_taken, d_new, feats_post, post_pal, post_subset, cur_pal, cur_subset, epoch,
-			        next_epoch, out, &n))
+			        tile_taken, d_new, feats_post, hash_post, post_pal, post_subset, cur_pal, cur_subset,
+			        epoch, next_epoch, out, &n))
 				break;
 		}
 		te = stvq_ns_now();
@@ -768,8 +805,8 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		for (tries = 0; tries < pool_n; tries++) {
 			unsigned wi = pool_base + (xorshift32(&rng) % pool_n);
 			if (install_replace(cb, frame_tiles, tiles_n, wi, frame_index, cut_at, win, win_n, slot_taken,
-			        tile_taken, d_new, damage, feats_post, post_pal, post_subset, cur_pal, cur_subset, out,
-			        &n, prof))
+			        tile_taken, d_new, damage, feats_post, hash_post, post_pal, post_subset, cur_pal,
+			        cur_subset, out, &n, prof))
 				break;
 		}
 	}
@@ -780,7 +817,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	for (t = 0; t < tiles_n; t++) {
 		unsigned ni, nd;
 		/* STVD may only reference current-palette CB entries. */
-		ni = nearest_current_feat(cb, win[t].feat, &nd);
+		ni = nearest_current_feat(cb, win[t].feat, win[t].color_hash, &nd);
 		cb->use_count[ni]++;
 		cb->last_used[ni] = frame_index;
 		if (out_nearest)
@@ -805,5 +842,6 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	free(eff_dist);
 	free(damage);
 	free(feats_post);
+	free(hash_post);
 	return n;
 }

@@ -299,6 +299,36 @@ void stvq_metric_feat_from_indices(const uint8_t idx[64], float *out_feat)
 	}
 }
 
+uint32_t stvq_metric_color_hash(const uint8_t idx[64])
+{
+	uint32_t h = 2166136261u;
+	int i;
+
+	for (i = 0; i < 64; i++) {
+		h ^= idx[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
+uint32_t stvq_metric_color_hash_pens(const uint8_t pens[64])
+{
+	uint8_t idx[64];
+	int i;
+
+	for (i = 0; i < 64; i++)
+		idx[i] = pen_to_vga[pens[i] & 15];
+	return stvq_metric_color_hash(idx);
+}
+
+uint32_t stvq_metric_color_hash_tile32(const uint8_t tile32[32])
+{
+	uint8_t pens[64];
+
+	stvq_unpack_tile_32(tile32, pens);
+	return stvq_metric_color_hash_pens(pens);
+}
+
 void stvq_metric_feat_from_pens(const uint8_t pens[64], float *out_feat)
 {
 	uint8_t idx[64];
@@ -313,6 +343,19 @@ void stvq_metric_feat_from_tile32(const uint8_t tile32[32], float *out_feat)
 	uint8_t pens[64];
 	stvq_unpack_tile_32(tile32, pens);
 	stvq_metric_feat_from_pens(pens, out_feat);
+}
+
+unsigned stvq_metric_feat_dist_hash_lim(const float *a, uint32_t hash_a, const float *b, uint32_t hash_b,
+    unsigned max_d)
+{
+	if (hash_a == hash_b)
+		return 0;
+	return stvq_metric_feat_dist_lim(a, b, max_d);
+}
+
+unsigned stvq_metric_feat_dist_hash(const float *a, uint32_t hash_a, const float *b, uint32_t hash_b)
+{
+	return stvq_metric_feat_dist_hash_lim(a, hash_a, b, hash_b, ~0u);
 }
 
 unsigned stvq_metric_feat_dist(const float *a, const float *b)
@@ -352,7 +395,8 @@ unsigned stvq_src_pens_error_lim(const uint8_t src_vga[64], const uint8_t pens[6
 		return 0;
 	stvq_metric_feat_from_indices(src_vga, fa);
 	stvq_metric_feat_from_pens(pens, fb);
-	return stvq_metric_feat_dist_lim(fa, fb, max_d);
+	return stvq_metric_feat_dist_hash_lim(fa, stvq_metric_color_hash(src_vga), fb,
+	    stvq_metric_color_hash_pens(pens), max_d);
 }
 
 unsigned stvq_src_tile_error(const uint8_t src_vga[64], const uint8_t tile32[32])
@@ -368,6 +412,8 @@ unsigned stvq_tile_error(const uint8_t a[32], const uint8_t b[32])
 {
 	float fa[STVQ_METRIC_MAX_FEAT_LEN], fb[STVQ_METRIC_MAX_FEAT_LEN];
 	if (!metric_ready)
+		return 0;
+	if (stvq_metric_color_hash_tile32(a) == stvq_metric_color_hash_tile32(b))
 		return 0;
 	stvq_metric_feat_from_tile32(a, fa);
 	stvq_metric_feat_from_tile32(b, fb);

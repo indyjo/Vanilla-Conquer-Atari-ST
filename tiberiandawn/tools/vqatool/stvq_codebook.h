@@ -66,7 +66,10 @@ typedef struct StvqSelectProf {
  * frame in the window. Stay-as-is residual applies only to current-frame
  * candidates. Utility and eviction still score the full [frame, f_end] window.
  * 1) Residual-only shortlist of min(2*R, pool); residual considers stay-as-is
- *    on the current frame only.
+ *    on the current frame only. The shortlist keeps one copy of each color
+ *    hash: the worst residual stays, later copies are left for distinct tiles.
+ *    Random accepts skip a hash already stored for that palette epoch. A hash
+ *    of 0 is a vacant slot (calloc), not a stored tile.
  * 2) Score shortlist by add-utility only (ignore eviction); pick victims by
  *    eviction-damage only (ignore install), except: after a palette change,
  *    entries with tile_epoch < pal_epoch are prime eviction candidates —

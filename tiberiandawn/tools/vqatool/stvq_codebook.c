@@ -462,6 +462,40 @@ static void tile_feats_cur_post(const uint8_t *tile32, float *feat_cur, float *f
 	stvq_metric_set_palette_vga6(cur_pal, cur_subset);
 }
 
+/* True if the shortlist already holds a window tile with this color hash. */
+static int shortlist_has_hash(const WinTile *win, const unsigned *shortlist, unsigned n_sl, uint32_t h)
+{
+	unsigned i;
+
+	for (i = 0; i < n_sl; i++) {
+		if (win[shortlist[i]].color_hash == h)
+			return 1;
+	}
+	return 0;
+}
+
+/*
+ * True if this epoch already stores h. Hash 0 is vacant: cb->color_hash is
+ * calloc'd, and cb_set_tile writes a real FNV-1a. Empty hash_post entries are
+ * the hash of blank pens, so only slots whose tile_epoch matches are compared.
+ */
+static int epoch_has_hash(const StvqCodebook *cb, const uint32_t *hash_post, uint32_t epoch, uint32_t h)
+{
+	unsigned i;
+
+	if (h == 0)
+		return 0;
+	for (i = 0; i < cb->entries; i++) {
+		uint32_t slot_h;
+		if (cb->tile_epoch[i] != epoch)
+			continue;
+		slot_h = (hash_post && epoch != cb->pal_epoch) ? hash_post[i] : cb->color_hash[i];
+		if (slot_h != 0 && slot_h == h)
+			return 1;
+	}
+	return 0;
+}
+
 /* Random accept: damage-only victim, then d_new for window update. wi indexes win[]. */
 static int install_replace(StvqCodebook *cb, const uint8_t *const *frame_tiles, unsigned tiles_n, unsigned wi,
     unsigned frame_index, unsigned now, unsigned cut_at, WinTile *win, unsigned win_n, uint8_t *slot_taken,
@@ -693,6 +727,10 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 			t = res[i].tile;
 			if (res[i].dist <= thresh)
 				break;
+			if (shortlist_has_hash(win, shortlist, n_sl, win[t].color_hash)) {
+				in_shortlist[t] = 1;
+				continue;
+			}
 			in_shortlist[t] = 1;
 			shortlist[n_sl++] = t;
 		}
@@ -712,6 +750,10 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 			qsort(res, n_cand, sizeof(Residual), residual_cmp_desc);
 			for (i = 0; i < n_cand && n_sl < shortlist_cap; i++) {
 				t = res[i].tile;
+				if (shortlist_has_hash(win, shortlist, n_sl, win[t].color_hash)) {
+					in_shortlist[t] = 1;
+					continue;
+				}
 				in_shortlist[t] = 1;
 				shortlist[n_sl++] = t;
 			}
@@ -805,6 +847,11 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		unsigned tries;
 		for (tries = 0; tries < pool_n; tries++) {
 			unsigned wi = pool_base + (xorshift32(&rng) % pool_n);
+			unsigned src_frame = frame_index + wi / tiles_n;
+			int next_epoch = (cut_at && src_frame >= cut_at);
+			uint32_t epoch = cb->pal_epoch + (next_epoch ? 1u : 0u);
+			if (epoch_has_hash(cb, hash_post, epoch, win[wi].color_hash))
+				continue;
 			if (install_replace(cb, frame_tiles, tiles_n, wi, frame_index, now, cut_at, win, win_n, slot_taken,
 			        tile_taken, d_new, damage, feats_post, hash_post, post_pal, post_subset, cur_pal,
 			        cur_subset, out, &n, prof))

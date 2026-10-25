@@ -564,7 +564,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
     unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
     const uint8_t *recon_n1, const int *frame_seg, const uint8_t *const *seg_pal768,
     const uint8_t *const *seg_subset, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,
-    unsigned *out_dist)
+    unsigned *out_dist, unsigned *out_win_dist, uint8_t *out_win_pool)
 {
 	unsigned n = 0, t, i, f;
 	const unsigned thresh = (unsigned)(0.05f * STVQ_METRIC_SCALE + 0.5f);
@@ -762,6 +762,28 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	t1 = stvq_ns_now();
 	if (prof)
 		prof->ns_residual += t1 - t0;
+
+	/* Pre-install residual. Stage 2 mutates win[].dist as tiles are installed. */
+	if (out_win_dist || out_win_pool) {
+		unsigned wi;
+		if (out_win_dist) {
+			for (wi = 0; wi < nframes * tiles_n; wi++)
+				out_win_dist[wi] = ~0u;
+			for (wi = 0; wi < win_n; wi++) {
+				unsigned fr = frame_index + wi / tiles_n;
+				unsigned tile = wi % tiles_n;
+				unsigned dist = win[wi].dist;
+				if (fr >= pool_lo && fr <= f_end)
+					dist = eff_dist[wi];
+				out_win_dist[fr * tiles_n + tile] = dist;
+			}
+		}
+		if (out_win_pool) {
+			memset(out_win_pool, 0, nframes);
+			for (f = pool_lo; f <= f_end; f++)
+				out_win_pool[f] = 1;
+		}
+	}
 
 	/*
 	 * Stage 2 (decoupled):

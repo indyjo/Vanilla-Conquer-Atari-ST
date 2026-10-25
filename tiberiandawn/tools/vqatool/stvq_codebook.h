@@ -84,6 +84,11 @@ typedef struct StvqSelectProf {
  * prof may be NULL.
  * out_nearest / out_dist may be NULL; if non-NULL, filled with post-STCR
  * nearest CB index and YUV error for each current-frame tile (tiles_n).
+ * out_win_dist / out_win_pool may be NULL. When set, out_win_dist has
+ * nframes * tiles_n entries and out_win_pool has nframes bytes. They record
+ * the pre-install candidate residual (effective nearest distance, stay-as-is
+ * applied on the current frame only). ~0u and pool 0 mean that frame was
+ * outside the candidate pool (past a palette-cut cap).
  *
  * Lookahead vs palette: frame_seg[f] = segment id for frame f. If non-NULL with
  * seg_pal768 / seg_subset, the lookahead window is capped to at most one segment
@@ -101,7 +106,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
     unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
     const uint8_t *recon_n1, const int *frame_seg, const uint8_t *const *seg_pal768,
     const uint8_t *const *seg_subset, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,
-    unsigned *out_dist);
+    unsigned *out_dist, unsigned *out_win_dist, uint8_t *out_win_pool);
 
 #ifdef __cplusplus
 }

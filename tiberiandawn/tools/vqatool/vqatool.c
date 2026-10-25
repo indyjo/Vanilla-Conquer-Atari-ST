@@ -60,6 +60,7 @@ static void usage(const char *argv0)
 	    "    --dct-chroma-coeffs N U and V zig-zag coeffs each (default %u)\n"
 	    "    --dct-chroma-weight F chroma SSE weight (default %.2g; 0=luma-only)\n"
 	    "    -o, --output FILE     output .stv path\n"
+	    "    --trace FILE          write an STVI decision trace for stvqinspect\n"
 	    "    --dry-run             print segment/sidecar plan only\n"
 	    "  preview <file>           decode .stv or .vqa into ffmpeg (FORM type)\n"
 	    "    --ffmpeg PATH         ffmpeg binary (default: $FFMPEG or ffmpeg)\n"
@@ -403,6 +404,18 @@ static int cmd_encode(int argc, char **argv, int argi)
 			opts.out_path = argv[argi];
 		} else if (!strncmp(a, "--output=", 9)) {
 			opts.out_path = a + 9;
+		} else if (strcmp(a, "--trace") == 0) {
+			if (++argi >= argc || !argv[argi][0]) {
+				fprintf(stderr, "error: --trace needs FILE\n");
+				return 1;
+			}
+			opts.trace_path = argv[argi];
+		} else if (!strncmp(a, "--trace=", 8)) {
+			if (!a[8]) {
+				fprintf(stderr, "error: --trace needs FILE\n");
+				return 1;
+			}
+			opts.trace_path = a + 8;
 		} else if (strcmp(a, "--dry-run") == 0) {
 			opts.dry_run = 1;
 		} else if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {

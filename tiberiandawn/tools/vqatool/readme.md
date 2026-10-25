@@ -111,15 +111,18 @@ Requires existing `name.<N>.w16` sidecars; aborts if any are missing.
   [--cb-size 2048] [--cb-per-frame 32] [--cb-random-pct 25] [--cb-lookahead 1] \
   [--gamma 0.77] [--dct-alpha 0.2] [--dct-coeffs 15] [--dct-chroma-coeffs 7] \
   [--dct-chroma-weight 0.25] \
-  [-o out.stv] [--dry-run] name.vqa
+  [-o out.stv] [--trace decisions.stvi] [--dry-run] name.vqa
 ```
 
 Defaults: `--cb-size 2048`, `--cb-per-frame 32`, `--cb-random-pct 25`, `--cb-lookahead 1`,
 `--gamma 0.77`, `--dct-alpha 0.2`, `--dct-coeffs 15`, `--dct-chroma-coeffs 7`,
 `--dct-chroma-weight 0.25`.
-No initial `STCB`: the codebook starts empty and is filled only via `STCR`. STCR
-candidates come from the farthest lookahead frame (`f_end`); on encode frame 0 they
-come from every frame in the window. Residual-only shortlist of `2*R` (stay-as-is
+`--trace` writes an `.stvi` decision log (frames, lookahead, codebook, per-tile
+skip/draw) for [`../stvqinspect`](../stvqinspect). It is skipped on `--dry-run`.
+No initial `STCB`: the codebook starts empty and is filled only via `STCR`. The
+encoder calls selection with window slot 0, so STCR candidates come from every
+frame in the lookahead window, capped at one palette change. Residual-only shortlist
+of `2*R` (stay-as-is
 on the current frame only); accept `(100-random)%` by add-utility over the full
 window (ignore eviction) paired with least-damage victims (ignore install); then
 accept `random%` tiles from the same candidate pool. On palette/segment changes,

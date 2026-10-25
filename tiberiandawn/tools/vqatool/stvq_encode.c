@@ -8,6 +8,7 @@
 #include "stvq_format.h"
 #include "stvq_metric.h"
 #include "stvq_palette.h"
+#include "stvq_trace.h"
 #include "stvq_write.h"
 #include "vqa_decode.h"
 #include "vqa_format.h"
@@ -101,22 +102,27 @@ static int write_stcr_chunk(StvqWriter *w, const StvqReplace *reps, unsigned n)
  * Always writes the codebook index to *out_cb_idx.
  */
 static int tile_can_skip(const uint8_t *tile32, const uint8_t *recon_n2, const uint8_t *recon_n1,
-    unsigned cb_idx, unsigned dist_cb, unsigned *out_cb_idx)
+    unsigned cb_idx, unsigned dist_cb, unsigned *out_cb_idx, unsigned *out_dist_n2)
 {
-	unsigned dist_n2;
+	unsigned dist_n2 = ~0u;
 	if (out_cb_idx)
 		*out_cb_idx = cb_idx;
+	if (out_dist_n2)
+		*out_dist_n2 = ~0u;
 	if (!recon_n2)
 		return 0;
 	if (recon_n1 && memcmp(recon_n2, recon_n1, 32) != 0)
 		return 0;
 	dist_n2 = stvq_tile_error(tile32, recon_n2);
+	if (out_dist_n2)
+		*out_dist_n2 = dist_n2;
 	return dist_n2 <= dist_cb;
 }
 
 static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t *dithered,
     const unsigned *cb_nearest, const unsigned *cb_dist, const uint8_t *recon_n2, const uint8_t *recon_n1,
-    uint8_t *out_recon, unsigned tiles_x, unsigned tiles_y, int force_full, unsigned *out_bytes)
+    uint8_t *out_recon, unsigned tiles_x, unsigned tiles_y, int force_full, unsigned *out_bytes,
+    uint8_t *out_skip, unsigned *out_dist_n2)
 {
 	long size_pos;
 	unsigned col, row;
@@ -148,15 +154,20 @@ static int write_stvd_chunk(StvqWriter *w, const StvqCodebook *cb, const uint8_t
 			unsigned ti = col * tiles_y + row;
 			const uint8_t *tile32 = col_tiles + row * 32u;
 			unsigned idx = 0;
+			unsigned dist_n2 = ~0u;
 			const uint8_t *n2 = (!force_full && n2_col) ? n2_col + row * 32u : NULL;
 			const uint8_t *n1 = n1_col ? n1_col + row * 32u : NULL;
-			if (tile_can_skip(tile32, n2, n1, cb_nearest[ti], cb_dist[ti], &idx)) {
+			if (tile_can_skip(tile32, n2, n1, cb_nearest[ti], cb_dist[ti], &idx, &dist_n2)) {
 				skip[row] = 1;
 				/* bit 31 = row 0, bit 30 = row 1, … (MSB-first for add/addx walk) */
 				mask |= (1u << (31u - row));
 			} else {
 				idxs[row] = (uint16_t)idx;
 			}
+			if (out_skip)
+				out_skip[ti] = skip[row];
+			if (out_dist_n2)
+				out_dist_n2[ti] = dist_n2;
 		}
 
 		stvq_write_be32(tmp, mask);
@@ -377,6 +388,16 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	int have_audio_src = 0;
 	PcmFifo pcm_fifo;
 	int last_seg = -1;
+	StviTrace *trace = NULL;
+	StviWinImage *tr_wins = NULL;
+	StviReplaceRec *tr_reps = NULL;
+	uint8_t *tr_skip = NULL;
+	unsigned *tr_dist_n2 = NULL;
+	float *tr_tile_feat = NULL;
+	uint8_t *tr_valid = NULL;
+	unsigned *tr_win_dist = NULL;
+	uint8_t *tr_win_pool = NULL;
+	uint8_t tr_ste_rgb[48];
 
 	memset(&cb, 0, sizeof(cb));
 	memset(&w, 0, sizeof(w));
@@ -517,6 +538,43 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		stvq_header_pack(raw, &hdr);
 		if (stvq_write_chunk_raw(&w, STVQ_CHUNK_STHD, raw, STVQ_STHD_SIZE) != 0)
 			goto done;
+	}
+
+	if (opts->trace_path && opts->trace_path[0]) {
+		StviTraceInfo ti;
+		memset(&ti, 0, sizeof(ti));
+		ti.width = width;
+		ti.height = height;
+		ti.tiles_x = tiles_x;
+		ti.tiles_y = tiles_y;
+		ti.cb_entries = cb.entries;
+		ti.feat_len = stvq_metric_feat_len();
+		ti.y_coeffs = stvq_metric_dct_coeffs();
+		ti.chroma_coeffs = stvq_metric_dct_chroma_coeffs();
+		ti.fps = fps;
+		ti.frame_count = frame_count;
+		ti.alpha = stvq_metric_dct_alpha();
+		ti.chroma_weight = stvq_metric_dct_chroma_weight();
+		ti.gamma = stvq_metric_gamma();
+		fprintf(stderr, "tracing %s\n", opts->trace_path);
+		trace = stvi_trace_open(opts->trace_path, &ti);
+		if (!trace) {
+			stvq_encode_set_error("could not open trace %s", opts->trace_path);
+			goto done;
+		}
+		tr_wins = (StviWinImage *)calloc(win_cap, sizeof(*tr_wins));
+		tr_reps = (StviReplaceRec *)malloc((opts->cb_per_frame ? opts->cb_per_frame : 1u) * sizeof(*tr_reps));
+		tr_skip = (uint8_t *)calloc(tiles_n, 1);
+		tr_dist_n2 = (unsigned *)malloc((size_t)tiles_n * sizeof(*tr_dist_n2));
+		tr_tile_feat = (float *)malloc((size_t)tiles_n * ti.feat_len * sizeof(float));
+		tr_valid = (uint8_t *)malloc(cb.entries ? cb.entries : 1u);
+		tr_win_dist = (unsigned *)malloc((size_t)win_cap * tiles_n * sizeof(unsigned));
+		tr_win_pool = (uint8_t *)malloc(win_cap ? win_cap : 1u);
+		if (!tr_wins || !tr_reps || !tr_skip || !tr_dist_n2 || !tr_tile_feat || !tr_valid || !tr_win_dist ||
+		    !tr_win_pool) {
+			stvq_encode_set_error("out of memory (trace)");
+			goto done;
+		}
 	}
 
 	if (opts->progress)
@@ -700,17 +758,21 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			reps = (StvqReplace *)malloc(max_rep * sizeof(*reps));
 			if (!reps)
 				goto done;
+			if (trace) {
+				memset(tr_win_pool, 0, win_n);
+				for (wi = 0; wi < win_n * tiles_n; wi++)
+					tr_win_dist[wi] = ~0u;
+			}
 			nrep = stvq_codebook_select_replaces(&cb, win_tiles, sel_n, 0, f, tiles_n, max_rep,
 			    opts->cb_random_pct, sel_n ? sel_n - 1u : 0u, recon_n2, recon_n1, win_seg, seg_pal768,
-			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist);
+			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist, trace ? tr_win_dist : NULL,
+			    trace ? tr_win_pool : NULL);
 			if (write_stcr_chunk(&w, reps, nrep) != 0) {
 				free(reps);
 				free((void *)win_tiles);
 				free(win_seg);
 				goto done;
 			}
-			free(reps);
-			reps = NULL;
 		} else {
 			unsigned ti;
 			for (ti = 0; ti < tiles_n; ti++)
@@ -724,10 +786,73 @@ int stvq_encode(const StvqEncodeOpts *opts)
 
 		t0 = enc_ns_now();
 		if (write_stvd_chunk(&w, &cb, win[0].tiles, cb_nearest, cb_dist, recon_n2, recon_n1, recon_work,
-		        tiles_x, tiles_y, force_full, &stvd_bytes) != 0)
+		        tiles_x, tiles_y, force_full, &stvd_bytes, trace ? tr_skip : NULL,
+		        trace ? tr_dist_n2 : NULL) != 0) {
+			free(reps);
 			goto done;
+		}
 		t1 = enc_ns_now();
 		prof_ns_stvd += t1 - t0;
+
+		if (trace) {
+			StviFrameIn fin;
+			unsigned ti;
+			int full = (f == 0 || emit_stpl);
+			int c;
+			memset(&fin, 0, sizeof(fin));
+			for (c = 0; c < 16; c++)
+				stvq_ste_to_rgb24(segpal[seg].stpl[c], &tr_ste_rgb[c * 3], &tr_ste_rgb[c * 3 + 1],
+				    &tr_ste_rgb[c * 3 + 2]);
+			for (wi = 0; wi < win_n; wi++) {
+				int sgi = win[wi].fr.segment;
+				tr_wins[wi].seg = (uint16_t)sgi;
+				tr_wins[wi].pal768 = seg_pal768[sgi];
+				tr_wins[wi].src64 = win[wi].src64;
+			}
+			if (full) {
+				for (ti = 0; ti < cb.entries; ti++)
+					tr_valid[ti] = (uint8_t)(cb.tile_epoch[ti] == cb.pal_epoch);
+			}
+			for (ti = 0; ti < nrep; ti++) {
+				unsigned ix = reps[ti].index;
+				tr_reps[ti].index = (uint16_t)ix;
+				tr_reps[ti].drawable = (uint8_t)(cb.tile_epoch[ix] == cb.pal_epoch);
+				tr_reps[ti].tile = reps[ti].tile;
+				tr_reps[ti].feat = cb.feats + (size_t)ix * cb.feat_stride;
+			}
+			for (ti = 0; ti < tiles_n; ti++)
+				stvq_metric_feat_from_tile32(win[0].tiles + (size_t)ti * 32u,
+				    tr_tile_feat + (size_t)ti * stvq_metric_feat_len());
+			fin.frame_index = f;
+			fin.segment = (unsigned)seg;
+			fin.ste_rgb = tr_ste_rgb;
+			fin.wins = tr_wins;
+			fin.nwin = win_n;
+			fin.recon = recon_work;
+			fin.full = full;
+			fin.cb_valid = tr_valid;
+			fin.cb_tiles = cb.tiles;
+			fin.cb_feats = cb.feats;
+			fin.feat_stride = cb.feat_stride;
+			fin.reps = tr_reps;
+			fin.nrep = nrep;
+			fin.cb_index = cb_nearest;
+			fin.skip = tr_skip;
+			fin.dist = cb_dist;
+			fin.dist_n2 = tr_dist_n2;
+			fin.tile_feats = tr_tile_feat;
+			if (max_rep) {
+				fin.win_pool = tr_win_pool;
+				fin.win_dist = tr_win_dist;
+			}
+			if (stvi_trace_frame(trace, &fin) != 0) {
+				free(reps);
+				stvq_encode_set_error("trace write failed at frame %u/%u", f, frame_count);
+				goto done;
+			}
+		}
+		free(reps);
+		reps = NULL;
 
 		memcpy(recon[1], recon[0], (size_t)tiles_n * 32u);
 		memcpy(recon[0], recon_work, (size_t)tiles_n * 32u);
@@ -847,6 +972,19 @@ done:
 		stvq_encode_set_error("encode aborted (out of memory or I/O) at frame %u/%u", f, frame_count);
 	if (w.fp)
 		stvq_writer_close(&w);
+	if (trace && stvi_trace_close(trace, rc == 0) != 0 && rc == 0) {
+		stvq_encode_set_error("trace finalize failed for %s", opts->trace_path ? opts->trace_path : "");
+		rc = -1;
+	}
+	trace = NULL;
+	free(tr_wins);
+	free(tr_reps);
+	free(tr_skip);
+	free(tr_dist_n2);
+	free(tr_tile_feat);
+	free(tr_valid);
+	free(tr_win_dist);
+	free(tr_win_pool);
 	stvq_codebook_free(&cb);
 	st_host_src_close(&asrc);
 	pcm_fifo_free(&pcm_fifo);

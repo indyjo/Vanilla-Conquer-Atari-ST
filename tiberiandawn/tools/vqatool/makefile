@@ -25,6 +25,7 @@ C_SRCS = \
 	stvq_metric.c \
 	stvq_codebook.c \
 	stvq_encode.c \
+	stvq_trace.c \
 	stvq_play.c \
 	stvq_preview.c \
 	stvq_init_w16.c \

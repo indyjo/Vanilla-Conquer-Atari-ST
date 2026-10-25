@@ -30,6 +30,7 @@ typedef struct StvqEncodeOpts {
 	float dct_chroma_weight; /* U/V SSE weight; <0 → default; 0 = luma-only */
 	float gamma;            /* palette-opt YUV gamma; <0 → default */
 	int dry_run;
+	const char *trace_path; /* optional STVI decision trace; NULL = off */
 	/*
 	 * Optional CRC-named W16 root. When set with w16_crc, load
 	 * {w16_dir}/video/{crc:08x}.{seg}.w16 instead of stem-next-to-VQA.

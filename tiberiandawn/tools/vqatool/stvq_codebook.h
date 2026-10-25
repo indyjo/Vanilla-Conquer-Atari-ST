@@ -88,8 +88,13 @@ typedef struct StvqSelectProf {
  * tiles at/after the cut use that next segment's palette for source + CB feats.
  * Post-cut candidate installs are stamped pal_epoch+1 (not drawn until STPL).
  */
+/*
+ * frame_index is the current frame's slot in frame_tiles. now is the movie
+ * frame number written to last_used. Equal damage and equal use_count prefer
+ * the oldest last_used.
+ */
 unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *frame_tiles,
-    unsigned nframes, unsigned frame_index, unsigned tiles_n,
+    unsigned nframes, unsigned frame_index, unsigned now, unsigned tiles_n,
     unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
     const uint8_t *recon_n1, const int *frame_seg, const uint8_t *const *seg_pal768,
     const uint8_t *const *seg_subset, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,

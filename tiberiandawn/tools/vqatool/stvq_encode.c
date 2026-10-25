@@ -700,7 +700,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			reps = (StvqReplace *)malloc(max_rep * sizeof(*reps));
 			if (!reps)
 				goto done;
-			nrep = stvq_codebook_select_replaces(&cb, win_tiles, sel_n, 0, tiles_n, max_rep,
+			nrep = stvq_codebook_select_replaces(&cb, win_tiles, sel_n, 0, f, tiles_n, max_rep,
 			    opts->cb_random_pct, sel_n ? sel_n - 1u : 0u, recon_n2, recon_n1, win_seg, seg_pal768,
 			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist);
 			if (write_stcr_chunk(&w, reps, nrep) != 0) {

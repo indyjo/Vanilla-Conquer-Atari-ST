@@ -361,7 +361,7 @@ static void accumulate_evict_damage(const WinTile *win, unsigned win_n, unsigned
  * among current-epoch slots. Next-epoch (pre-buffered) slots are last resort.
  */
 static unsigned pick_least_damage_victim(const StvqCodebook *cb, const unsigned long long *damage,
-    const uint8_t *slot_taken, unsigned frame_index, StvqSelectProf *prof)
+    const uint8_t *slot_taken, unsigned now, StvqSelectProf *prof)
 {
 	unsigned v, best_v = 0, pass;
 	unsigned long long best_d = ~0ull;
@@ -396,7 +396,7 @@ static unsigned pick_least_damage_victim(const StvqCodebook *cb, const unsigned 
 				continue;
 			d = damage[v];
 			use = cb->use_count[v];
-			age = frame_index - cb->last_used[v];
+			age = now - cb->last_used[v];
 			if (!have || d < best_d ||
 			    (d == best_d && (use < best_use || (use == best_use && age > best_age)))) {
 				best_d = d;
@@ -418,7 +418,7 @@ static unsigned pick_least_damage_victim(const StvqCodebook *cb, const unsigned 
 }
 
 static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned wi, unsigned victim,
-    unsigned frame_index, WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken,
+    unsigned now, WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken,
     const unsigned *d_new, float *feats_post, uint32_t *hash_post, const uint8_t *post_pal,
     const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset, uint32_t epoch, int next_epoch,
     StvqReplace *out, unsigned *n)
@@ -436,7 +436,7 @@ static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned w
 		stvq_metric_set_palette_vga6(cur_pal, cur_subset);
 	}
 	cb->use_count[victim] = 1;
-	cb->last_used[victim] = frame_index;
+	cb->last_used[victim] = now;
 	out[*n].index = (uint16_t)victim;
 	memcpy(out[*n].tile, tile32, 32);
 	(*n)++;
@@ -464,7 +464,8 @@ static void tile_feats_cur_post(const uint8_t *tile32, float *feat_cur, float *f
 
 /* Random accept: damage-only victim, then d_new for window update. wi indexes win[]. */
 static int install_replace(StvqCodebook *cb, const uint8_t *const *frame_tiles, unsigned tiles_n, unsigned wi,
-    unsigned frame_index, unsigned cut_at, WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken,
+    unsigned frame_index, unsigned now, unsigned cut_at, WinTile *win, unsigned win_n, uint8_t *slot_taken,
+    uint8_t *tile_taken,
     unsigned *d_new_scratch, unsigned long long *damage, float *feats_post, uint32_t *hash_post,
     const uint8_t *post_pal, const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset,
     StvqReplace *out, unsigned *n, StvqSelectProf *prof)
@@ -486,12 +487,12 @@ static int install_replace(StvqCodebook *cb, const uint8_t *const *frame_tiles, 
 	accumulate_evict_damage(win, win_n, damage, cb->entries);
 	if (prof)
 		prof->ns_victim_scan += stvq_ns_now() - t0;
-	victim = pick_least_damage_victim(cb, damage, slot_taken, frame_index, prof);
+	victim = pick_least_damage_victim(cb, damage, slot_taken, now, prof);
 	tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_new_post, feats_post, post_pal, post_subset,
 	    cur_pal, cur_subset);
 	(void)add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur, hash_new_post, cb->feats,
 	    d_new_scratch, next_epoch, prof);
-	return install_at_victim(cb, tile32, wi, victim, frame_index, win, win_n, slot_taken, tile_taken,
+	return install_at_victim(cb, tile32, wi, victim, now, win, win_n, slot_taken, tile_taken,
 	    d_new_scratch, feats_post, hash_post, post_pal, post_subset, cur_pal, cur_subset, epoch, next_epoch, out,
 	    n);
 }
@@ -525,7 +526,7 @@ static unsigned cap_lookahead_one_cut(const int *frame_seg, unsigned frame_index
 }
 
 unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *frame_tiles,
-    unsigned nframes, unsigned frame_index, unsigned tiles_n,
+    unsigned nframes, unsigned frame_index, unsigned now, unsigned tiles_n,
     unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
     const uint8_t *recon_n1, const int *frame_seg, const uint8_t *const *seg_pal768,
     const uint8_t *const *seg_subset, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,
@@ -765,7 +766,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 			prof->ns_victim_scan += stvq_ns_now() - ts;
 
 		for (vi = 0; vi < n_accept; vi++) {
-			victims[vi] = pick_least_damage_victim(cb, damage, slot_taken, frame_index, prof);
+			victims[vi] = pick_least_damage_victim(cb, damage, slot_taken, now, prof);
 			slot_taken[victims[vi]] = 1;
 		}
 
@@ -784,7 +785,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 			    post_subset, cur_pal, cur_subset);
 			(void)add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur, hash_new_post,
 			    cb->feats, d_new, next_epoch, prof);
-			if (!install_at_victim(cb, tile32, wi, victims[vi], frame_index, win, win_n, slot_taken,
+			if (!install_at_victim(cb, tile32, wi, victims[vi], now, win, win_n, slot_taken,
 			        tile_taken, d_new, feats_post, hash_post, post_pal, post_subset, cur_pal, cur_subset,
 			        epoch, next_epoch, out, &n))
 				break;
@@ -804,7 +805,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		unsigned tries;
 		for (tries = 0; tries < pool_n; tries++) {
 			unsigned wi = pool_base + (xorshift32(&rng) % pool_n);
-			if (install_replace(cb, frame_tiles, tiles_n, wi, frame_index, cut_at, win, win_n, slot_taken,
+			if (install_replace(cb, frame_tiles, tiles_n, wi, frame_index, now, cut_at, win, win_n, slot_taken,
 			        tile_taken, d_new, damage, feats_post, hash_post, post_pal, post_subset, cur_pal,
 			        cur_subset, out, &n, prof))
 				break;
@@ -819,7 +820,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		/* STVD may only reference current-palette CB entries. */
 		ni = nearest_current_feat(cb, win[t].feat, win[t].color_hash, &nd);
 		cb->use_count[ni]++;
-		cb->last_used[ni] = frame_index;
+		cb->last_used[ni] = now;
 		if (out_nearest)
 			out_nearest[t] = ni;
 		if (out_dist)

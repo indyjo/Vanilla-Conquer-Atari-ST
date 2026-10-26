@@ -43,6 +43,11 @@ static int write_u64(FILE *fp, uint64_t v)
 	return fwrite(b, 1, 8, fp) == 8 ? 0 : -1;
 }
 
+static int write_i64(FILE *fp, int64_t v)
+{
+	return write_u64(fp, (uint64_t)v);
+}
+
 static int write_f32(FILE *fp, float x)
 {
 	uint32_t u;
@@ -201,6 +206,8 @@ int stvi_trace_frame(StviTrace *tr, const StviFrameIn *in)
 			flags |= STVI_F_FULL;
 		if (in->win_pool && in->win_dist)
 			flags |= STVI_F_WIN_RESIDUAL;
+		if (in->util_events)
+			flags |= STVI_F_UTIL;
 		if ((in->win_pool == NULL) != (in->win_dist == NULL)) {
 			tr->err = 1;
 			return -1;
@@ -283,6 +290,25 @@ int stvi_trace_frame(StviTrace *tr, const StviFrameIn *in)
 		}
 		for (ti = 0; ti < in->nwin * tr->tiles_n; ti++) {
 			if (write_u32(tr->fp, in->win_dist[ti]) != 0) {
+				tr->err = 1;
+				return -1;
+			}
+		}
+	}
+	if (in->util_events) {
+		if (in->nscore > 0xffffu || in->n_util_events > 0xffffu) {
+			tr->err = 1;
+			return -1;
+		}
+		if (write_u16(tr->fp, in->nscore) != 0 || write_u16(tr->fp, in->n_util_events) != 0) {
+			tr->err = 1;
+			return -1;
+		}
+		for (i = 0; i < in->n_util_events; i++) {
+			const StviUtilEvent *e = &in->util_events[i];
+			if (write_u16(tr->fp, e->pass) != 0 || write_u16(tr->fp, e->cb_index) != 0 ||
+			    write_u32(tr->fp, e->wi) != 0 || write_i64(tr->fp, e->predicted) != 0 ||
+			    write_i64(tr->fp, e->actual) != 0) {
 				tr->err = 1;
 				return -1;
 			}

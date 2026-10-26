@@ -4,6 +4,8 @@
 #ifndef STVQ_CODEBOOK_H
 #define STVQ_CODEBOOK_H
 
+#include "stvq_trace.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -57,27 +59,44 @@ typedef struct StvqSelectProf {
 	uint64_t ns_util_install; /* pair + install */
 	uint64_t ns_victim_dnew;  /* d_new vs window (for add-util / install update) */
 	uint64_t ns_victim_scan;  /* eviction-damage accumulate / pick */
-	uint64_t ns_random;       /* stage-3 direct random installs */
+	uint64_t ns_random;       /* random blocks drawn into the shortlist */
+	/* Per call, not accumulated. util_events may be NULL. */
+	unsigned nscore;
+	StviUtilEvent *util_events;
+	unsigned util_event_cap;
+	unsigned n_util_events;
 } StvqSelectProf;
 
 /*
- * Two-stage STCR selection (+ direct random), accept/evict decoupled:
+ * Two-stage STCR selection, accept/evict decoupled:
  * Candidate tiles: farthest lookahead frame (f_end). On encode frame 0, every
  * frame in the window. Stay-as-is residual applies only to current-frame
  * candidates. Utility and eviction still score the full [frame, f_end] window.
- * 1) Residual-only shortlist of min(2*R, pool); residual considers stay-as-is
- *    on the current frame only. The shortlist keeps one copy of each color
- *    hash: the worst residual stays, later copies are left for distinct tiles.
- *    Random accepts skip a hash already stored for that palette epoch. A hash
- *    of 0 is a vacant slot (calloc), not a stored tile.
- * 2) Score shortlist by add-utility only (ignore eviction); pick victims by
- *    eviction-damage only (ignore install), except: after a palette change,
- *    entries with tile_epoch < pal_epoch are prime eviction candidates —
- *    always prefer a free stale prime (lowest index) over damage-based victims.
- *    Next-epoch (pre-buffered) slots are evicted only if no current-epoch slot
- *    remains. Pair top utilities with those victims.
- * 3) Accept random_pct% random tiles from the same candidate pool (same victim
- *    policy).
+ * A block's residual is the distance to the nearest slot stamped with the
+ * epoch that will draw it: pal_epoch, or pal_epoch+1 past a palette cut.
+ * Slots from any other epoch are ignored. An epoch that has no slot yet
+ * receives one flat pen-0 tile before that search; the install consumes one
+ * replace, and the remaining replaces follow the steps below. That pen-0
+ * slot can be evicted on a later frame.
+ * 1) Shortlist from the candidate pool. By default that is the min(2*R, pool)
+ *    worst residuals (stay-as-is on the current frame only). shortlist_all
+ *    instead admits every pool block, so the accepts below are chosen only by
+ *    add-utility. Then draw up to random_pct% of R extra pool blocks that are
+ *    not already shortlisted and whose color hash is not already stored for
+ *    that palette epoch. Either way the shortlist keeps one copy of each
+ *    color hash. A hash of 0 is a vacant slot (calloc), not a stored tile.
+ * 2) Score the whole shortlist by predicted add-utility only (ignore eviction).
+ *    A candidate only helps blocks that will be allowed to draw it.
+ *    Walk that ranking and install while each tile's realized utility, measured
+ *    after earlier installs in the run, is at least half its prediction. The
+ *    first tile below half is left uninstalled and the shortlist is scored
+ *    again, until the replace quota is filled or nothing left has positive
+ *    utility. A random shortlist entry therefore installs only when it still
+ *    clears that bar. Each install picks a victim by eviction damage only
+ *    (ignore which tile installs), except: after a palette change, entries
+ *    with tile_epoch < pal_epoch are prime eviction candidates — always prefer
+ *    a free stale prime (lowest index) over damage-based victims. Next-epoch
+ *    (pre-buffered) slots are evicted only if no current-epoch slot remains.
  * Error = weighted YUV-DCT of the dithered 16-color tile (see stvq_metric).
  * frame_tiles = dithered 32B, both installed into the codebook and scored.
  * recon_n2 / recon_n1 may be NULL (no stay-as-is).
@@ -86,8 +105,9 @@ typedef struct StvqSelectProf {
  * nearest CB index and YUV error for each current-frame tile (tiles_n).
  * out_win_dist / out_win_pool may be NULL. When set, out_win_dist has
  * nframes * tiles_n entries and out_win_pool has nframes bytes. They record
- * the pre-install candidate residual (effective nearest distance, stay-as-is
- * applied on the current frame only). ~0u and pool 0 mean that frame was
+ * the candidate residual after a pen-0 seed and before the utility installs
+ * (effective nearest distance, stay-as-is applied on the current frame only).
+ * ~0u and pool 0 mean that frame was
  * outside the candidate pool (past a palette-cut cap).
  *
  * Lookahead vs palette: frame_seg[f] = segment id for frame f. If non-NULL with
@@ -106,7 +126,7 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
     unsigned max_replaces, unsigned random_pct, unsigned lookahead, const uint8_t *recon_n2,
     const uint8_t *recon_n1, const int *frame_seg, const uint8_t *const *seg_pal768,
     const uint8_t *const *seg_subset, StvqReplace *out, StvqSelectProf *prof, unsigned *out_nearest,
-    unsigned *out_dist, unsigned *out_win_dist, uint8_t *out_win_pool);
+    unsigned *out_dist, unsigned *out_win_dist, uint8_t *out_win_pool, int shortlist_all);
 
 #ifdef __cplusplus
 }

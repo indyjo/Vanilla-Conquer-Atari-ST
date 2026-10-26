@@ -53,6 +53,7 @@ THUMB_H = 72
 LEFT_W = 780
 MID_W = 150
 PANE_H = 560
+UTIL_H = 132
 FILM_H = THUMB_H + 44
 PANE_GAP = 4  # item spacing; keeps the film strip flush with the middle pane
 MAIN_H = PANE_H - FILM_H - PANE_GAP
@@ -263,6 +264,17 @@ class App:
         assert win.src64 is not None
         return indices_image(win.src64, tr.tiles_x, tr.tiles_y, win.pal768)
 
+    def _image_feats(self) -> np.ndarray:
+        """Features of the picture on screen. Lookahead uses that frame, not the current one."""
+        assert self.fr is not None
+        if self.view_win > 0:
+            return self._window_feats(self.view_win)
+        return self.fr.feats
+
+    def _cb_feats(self) -> np.ndarray:
+        assert self.fr is not None
+        return self.book.display_feats(self.fr.segment)
+
     def _window_feats(self, win_index: int) -> np.ndarray:
         """DCT features of one lookahead frame's own blocks."""
         cached = self._win_feats.get(win_index)
@@ -287,7 +299,7 @@ class App:
     def _similarity_heat(self, img: np.ndarray, feats: np.ndarray) -> np.ndarray:
         """Tint tiles that match the selected codebook entry. Others stay as they are."""
         assert self.fr is not None and self.sel_cb is not None
-        dist = feat_dist(self.book.feats[self.sel_cb], feats, self.tr.ncoeff)
+        dist = feat_dist(self._cb_feats()[self.sel_cb], feats, self.tr.ncoeff)
         d = dist.astype(np.float64)
         if d.size == 0:
             return img
@@ -457,10 +469,7 @@ class App:
         self._atlas_cols = cols
         atlas = np.zeros((rows * TILE, cols * TILE, 3), dtype=np.uint8)
         atlas[:] = (22, 22, 22)
-        pens = unpack_pens(self.book.tiles)
-        rgb = self.fr.ste_rgb[pens]
-        dim = self.book.valid == 0
-        rgb[dim] = (rgb[dim].astype(np.uint16) * 40 // 100).astype(np.uint8)
+        rgb = self.book.color_tiles()
         top = set(self._top_cb())
         replaced = {rep.index for rep in self.fr.reps}
         for i in range(n):
@@ -482,7 +491,7 @@ class App:
         valid = self.book.valid.astype(bool)
         if not np.any(valid):
             return []
-        dist = feat_dist(self.fr.feats[self.sel_tile], self.book.feats[valid], self.tr.ncoeff)
+        dist = feat_dist(self._image_feats()[self.sel_tile], self._cb_feats()[valid], self.tr.ncoeff)
         take = min(TOP_K, int(dist.shape[0]))
         order = np.argpartition(dist, take - 1)[:take]
         order = order[np.argsort(dist[order])]
@@ -498,8 +507,10 @@ class App:
         if shown is not None:
             tile_img = _nn(shown, 12)
         if self.sel_cb is not None:
-            pen = unpack_pens(self.book.tiles[self.sel_cb : self.sel_cb + 1])[0]
-            cb_img = _nn(self.fr.ste_rgb[pen], 12)
+            pal = self.book.palette_of(self.sel_cb)
+            if pal is not None:
+                pen = unpack_pens(self.book.tiles[self.sel_cb : self.sel_cb + 1])[0]
+                cb_img = _nn(pal[pen], 12)
         self._set_tex("zoom_tile_tex", "zoom_tile", tile_img)
         self._set_tex("zoom_cb_tex", "zoom_cb", cb_img)
 
@@ -517,6 +528,69 @@ class App:
         block = win.src64[self.sel_tile].reshape(8, 8)
         return vga6_palette(win.pal768)[block]
 
+    def _palette_note(self, cb_index: int) -> str:
+        seg = int(self.book.owner[cb_index])
+        if seg < 0:
+            return ""
+        return f"   segment {seg} palette"
+
+    def _ranking_count(self) -> str:
+        fr = self.fr
+        if fr is None or fr.nscore is None:
+            return ""
+        again = max(0, fr.nscore - 1)
+        return f"rankings {fr.nscore} (re-scores {again})   "
+
+    def _util_for_cb(self, cb_index: int) -> list:
+        fr = self.fr
+        if fr is None:
+            return []
+        return [ev for ev in fr.util_events if ev.cb_index == cb_index]
+
+    def _util_pct(self, ev) -> str:
+        if ev.predicted <= 0:
+            return "0% of predicted"
+        return f"{ev.actual * 100 // ev.predicted}% of predicted"
+
+    def _util_share(self, ev) -> str:
+        pct = 0 if ev.predicted <= 0 else ev.actual * 100 // ev.predicted
+        return f"{pct}% of {ev.predicted}"
+
+    def _util_log(self) -> str:
+        fr = self.fr
+        tr = self.tr
+        if fr is None or fr.nscore is None:
+            return "This trace does not record utility rankings."
+        lines: list[str] = []
+        if not fr.util_events:
+            lines.append("No utility candidates were scored.")
+        installed = 0
+        stopped = 0
+        rescores = 0
+        prev_pass = None
+        for i, ev in enumerate(fr.util_events, start=1):
+            if prev_pass is not None and ev.pass_index != prev_pass:
+                rescores += 1
+                lines.append(f"--- re-score {rescores} ---")
+            prev_pass = ev.pass_index
+            frame = ev.wi // tr.tiles_n
+            col, row = divmod_tile(ev.wi % tr.tiles_n, tr.tiles_y)
+            where = "frame" if frame == 0 else f"lookahead +{frame}"
+            mark = "> " if ev.cb_index is not None and ev.cb_index == self.sel_cb else "  "
+            spot = f"{where} ({col},{row})"
+            share = self._util_share(ev)
+            if ev.cb_index is None:
+                stopped += 1
+                lines.append(f"{mark}{i:3d}  {spot}  stopped  {share}")
+            else:
+                installed += 1
+                lines.append(f"{mark}{i:3d}  {spot}  cb {ev.cb_index}  {share}")
+        lines.append(
+            f"{installed} installed, {stopped} stopped, {rescores} re-score"
+            + ("" if rescores == 1 else "s")
+        )
+        return "\n".join(lines)
+
     def _draw_text(self) -> None:
         fr = self.fr
         tr = self.tr
@@ -525,7 +599,7 @@ class App:
             "frame_meta",
             f"frame {fr.index}/{tr.frame_count - 1}   seg {fr.segment}   "
             f"window {len(fr.wins)} (lookahead {len(fr.wins) - 1})   "
-            f"STCR {fr.nrep}   tiles {tr.tiles_x}x{tr.tiles_y}   cb {tr.cb_entries}   "
+            f"STCR {fr.nrep}   {self._ranking_count()}tiles {tr.tiles_x}x{tr.tiles_y}   cb {tr.cb_entries}   "
             f"Y {tr.y_coeffs}   chroma {tr.chroma_coeffs}x2   "
             f"alpha {tr.alpha:g}   weight {tr.chroma_weight:g}   gamma {tr.gamma:g}",
         )
@@ -544,12 +618,25 @@ class App:
             decision = f"tile ({col},{row})  {how}   dist {int(fr.dist[ti])}   N−2 dist {n2s}"
         dpg.set_value("decision", decision)
         if self.sel_tile is not None and self.sel_cb is not None:
-            dist = float(feat_dist(self.fr.feats[self.sel_tile], self.book.feats[self.sel_cb : self.sel_cb + 1], tr.ncoeff)[0])
+            image = self._image_feats()
+            dist = float(feat_dist(image[self.sel_tile], self._cb_feats()[self.sel_cb : self.sel_cb + 1], tr.ncoeff)[0])
             drawable = "drawable" if self.book.valid[self.sel_cb] else "not drawable this frame"
-            pair = f"distance(image tile, cb {self.sel_cb}) = {int(dist)}   cb {self.sel_cb} is {drawable}"
+            pair = (
+                f"distance(image tile, cb {self.sel_cb}) = {int(dist)}   "
+                f"cb {self.sel_cb} is {drawable}{self._palette_note(self.sel_cb)}"
+            )
+            installed = self._util_for_cb(self.sel_cb)
+            if installed:
+                ev = installed[-1]
+                pair += (
+                    f"   score {ev.pass_index + 1}   actual {ev.actual}   "
+                    f"predicted {ev.predicted}   {self._util_pct(ev)}"
+                )
         else:
             pair = "Select an image tile and a codebook tile to compare coefficients."
         dpg.set_value("pair", pair)
+        dpg.configure_item("util_log", wrap=self._content_width("util_scroll", 420))
+        dpg.set_value("util_log", self._util_log())
         if self.sel_tile is None:
             dpg.configure_item("use_encoded", enabled=False, label="Select encoded")
         else:
@@ -569,8 +656,9 @@ class App:
             return
         assert self.fr is not None
         tr = self.tr
-        yi, ui, vi, ti = split_planes(self.fr.feats[self.sel_tile], tr.y_coeffs, tr.chroma_coeffs)
-        yb, ub, vb, tb = split_planes(self.book.feats[self.sel_cb], tr.y_coeffs, tr.chroma_coeffs)
+        image = self._image_feats()
+        yi, ui, vi, ti = split_planes(image[self.sel_tile], tr.y_coeffs, tr.chroma_coeffs)
+        yb, ub, vb, tb = split_planes(self._cb_feats()[self.sel_cb], tr.y_coeffs, tr.chroma_coeffs)
         self._set_tex("mat_y_tex", "mat_y", _plane_matrix(yi, yb))
         self._set_tex("mat_u_tex", "mat_u", _plane_matrix(ui, ub))
         self._set_tex("mat_v_tex", "mat_v", _plane_matrix(vi, vb))
@@ -624,8 +712,9 @@ class App:
         if pane_h == self._pane_h:
             return
         self._pane_h = pane_h
-        for tag in ("left", "mid", "right", "atlas_scroll"):
+        for tag in ("left", "mid", "right"):
             dpg.configure_item(tag, height=pane_h)
+        dpg.configure_item("atlas_scroll", height=max(64, pane_h - UTIL_H))
         dpg.configure_item("main_scroll", height=max(1, pane_h - FILM_H - PANE_GAP))
         self._refit_queued = True
         self._schedule_tick()
@@ -861,7 +950,7 @@ def build(app: App) -> None:
                 label="",
                 format="falloff: %.2f",
                 min_value=1.0,
-                max_value=36.0,
+                max_value=108.0,
                 default_value=app.sim_falloff,
                 width=180,
                 callback=app.on_falloff,
@@ -895,9 +984,15 @@ def build(app: App) -> None:
                     callback=app.on_use_encoded,
                 )
             with dpg.child_window(width=-1, height=PANE_H, tag="right", no_scrollbar=True, border=False):
-                with dpg.child_window(width=-1, height=PANE_H, tag="atlas_scroll", border=True):
+                with dpg.child_window(width=-1, height=UTIL_H, tag="util_scroll", border=True):
+                    dpg.add_text("", tag="util_log", wrap=420)
+                with dpg.child_window(width=-1, height=PANE_H - UTIL_H, tag="atlas_scroll", border=True):
                     dpg.add_image("dummy_tex", tag="atlas_image")
-                    dpg.add_text("Dim: not drawable this frame.", tag="leg_dim", wrap=420)
+                    dpg.add_text(
+                        "Dim: not drawable this frame. Colors are the tile's own segment palette.",
+                        tag="leg_dim",
+                        wrap=420,
+                    )
                     dpg.add_text("Green edge: installed this frame.", tag="leg_green", wrap=420)
                     dpg.add_text("Amber edge: closest to the selected image tile.", tag="leg_amber", wrap=420)
                     dpg.add_text("White edge: selected codebook tile.", tag="leg_white", wrap=420)

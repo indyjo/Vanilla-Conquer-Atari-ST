@@ -397,6 +397,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 	uint8_t *tr_valid = NULL;
 	unsigned *tr_win_dist = NULL;
 	uint8_t *tr_win_pool = NULL;
+	StviUtilEvent *tr_util = NULL;
 	uint8_t tr_ste_rgb[48];
 
 	memset(&cb, 0, sizeof(cb));
@@ -450,11 +451,12 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		goto done;
 	}
 
-	fprintf(stderr, "frames=%u size=%ux%u tiles=%ux%u cb=%u R=%u shortlist=%u*%u random=%u%% "
+	fprintf(stderr, "frames=%u size=%ux%u tiles=%ux%u cb=%u R=%u shortlist=%s random=%u%% "
 	                "lookahead=%u cand=f_end gamma=%.3g dct-alpha=%.3g dct-chroma-weight=%.3g "
 	                "dct-coeffs=%u+%u+%u (feat=%u)\n",
-	    frame_count, width, height, tiles_x, tiles_y, opts->cb_size, opts->cb_per_frame, 2u,
-	    opts->cb_per_frame, opts->cb_random_pct, opts->cb_lookahead, stvq_metric_gamma(),
+	    frame_count, width, height, tiles_x, tiles_y, opts->cb_size, opts->cb_per_frame,
+	    opts->cb_shortlist_all ? "all" : "2*R", opts->cb_random_pct, opts->cb_lookahead,
+	    stvq_metric_gamma(),
 	    stvq_metric_dct_alpha(), stvq_metric_dct_chroma_weight(), stvq_metric_dct_coeffs(),
 	    stvq_metric_dct_chroma_coeffs(), stvq_metric_dct_chroma_coeffs(), stvq_metric_feat_len());
 
@@ -570,8 +572,14 @@ int stvq_encode(const StvqEncodeOpts *opts)
 		tr_valid = (uint8_t *)malloc(cb.entries ? cb.entries : 1u);
 		tr_win_dist = (unsigned *)malloc((size_t)win_cap * tiles_n * sizeof(unsigned));
 		tr_win_pool = (uint8_t *)malloc(win_cap ? win_cap : 1u);
+		{
+			unsigned ev_cap = opts->cb_per_frame ? opts->cb_per_frame * 2u : 1u;
+			tr_util = (StviUtilEvent *)malloc((size_t)ev_cap * sizeof(*tr_util));
+			sel_prof.util_events = tr_util;
+			sel_prof.util_event_cap = ev_cap;
+		}
 		if (!tr_wins || !tr_reps || !tr_skip || !tr_dist_n2 || !tr_tile_feat || !tr_valid || !tr_win_dist ||
-		    !tr_win_pool) {
+		    !tr_win_pool || !tr_util) {
 			stvq_encode_set_error("out of memory (trace)");
 			goto done;
 		}
@@ -766,7 +774,7 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			nrep = stvq_codebook_select_replaces(&cb, win_tiles, sel_n, 0, f, tiles_n, max_rep,
 			    opts->cb_random_pct, sel_n ? sel_n - 1u : 0u, recon_n2, recon_n1, win_seg, seg_pal768,
 			    seg_subset, reps, &sel_prof, cb_nearest, cb_dist, trace ? tr_win_dist : NULL,
-			    trace ? tr_win_pool : NULL);
+			    trace ? tr_win_pool : NULL, opts->cb_shortlist_all);
 			if (write_stcr_chunk(&w, reps, nrep) != 0) {
 				free(reps);
 				free((void *)win_tiles);
@@ -775,6 +783,8 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			}
 		} else {
 			unsigned ti;
+			sel_prof.nscore = 0;
+			sel_prof.n_util_events = 0;
 			for (ti = 0; ti < tiles_n; ti++)
 				cb_nearest[ti] = stvq_codebook_nearest(&cb, win[0].tiles + ti * 32u, &cb_dist[ti]);
 		}
@@ -836,6 +846,9 @@ int stvq_encode(const StvqEncodeOpts *opts)
 			fin.feat_stride = cb.feat_stride;
 			fin.reps = tr_reps;
 			fin.nrep = nrep;
+			fin.nscore = sel_prof.nscore;
+			fin.util_events = tr_util;
+			fin.n_util_events = sel_prof.n_util_events;
 			fin.cb_index = cb_nearest;
 			fin.skip = tr_skip;
 			fin.dist = cb_dist;
@@ -985,6 +998,7 @@ done:
 	free(tr_valid);
 	free(tr_win_dist);
 	free(tr_win_pool);
+	free(tr_util);
 	stvq_codebook_free(&cb);
 	st_host_src_close(&asrc);
 	pcm_fifo_free(&pcm_fifo);

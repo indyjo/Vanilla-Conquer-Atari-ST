@@ -15,7 +15,9 @@ import numpy as np
 STVI_VERSION = 1
 STVI_F_FULL = 1
 STVI_F_WIN_RESIDUAL = 2
+STVI_F_UTIL = 4
 STVI_DIST_NONE = 0xFFFFFFFF
+STVI_CB_NONE = 0xFFFF
 STVI_SCALE = 65536.0
 
 _HDR = struct.Struct("<4s10H I 3f Q 16s")
@@ -198,6 +200,30 @@ def feats_from_indices(
     return out
 
 
+def vga6_to_ste_rgb(rgb6: np.ndarray) -> np.ndarray:
+    """STE RGB8 of VGA6 colors. Same pack/unpack as ``stvq_vga6_to_ste``."""
+    c4 = ((np.asarray(rgb6, dtype=np.int32) & 63) * 15 + 31) // 63
+    nib = ((c4 >> 1) & 7) | ((c4 & 1) << 3)
+    c4b = ((nib & 7) << 1) | ((nib >> 3) & 1)
+    return ((c4b << 4) | c4b).astype(np.uint8)
+
+
+def subset_from_ste(ste_rgb: np.ndarray, pal768: np.ndarray) -> np.ndarray:
+    """Pen → VGA index whose STE color matches ``ste_rgb``.
+
+    Several VGA entries can share one STE color. The first match is kept.
+    """
+    pal = np.bitwise_and(np.asarray(pal768, dtype=np.uint8).reshape(256, 3), 63)
+    ste = vga6_to_ste_rgb(pal)
+    want = np.asarray(ste_rgb, dtype=np.uint8).reshape(16, 3)
+    subset = np.zeros(16, dtype=np.uint8)
+    for pen in range(16):
+        hits = np.flatnonzero(np.all(ste == want[pen], axis=1))
+        if hits.size:
+            subset[pen] = np.uint8(hits[0])
+    return subset
+
+
 def vga6_palette(pal768: np.ndarray) -> np.ndarray:
     """VGA6 palette (256×3, channels 0..63) to RGB8."""
     p = np.asarray(pal768, dtype=np.uint16).reshape(256, 3)
@@ -242,6 +268,17 @@ class WinImage:
 
 
 @dataclass
+class UtilEvent:
+    """One stage-2 decision. cb_index is None when the tile stopped the run."""
+
+    pass_index: int
+    cb_index: int | None
+    wi: int
+    predicted: int
+    actual: int
+
+
+@dataclass
 class Replace:
     index: int
     drawable: int
@@ -264,6 +301,8 @@ class Frame:
     dist: np.ndarray
     dist_n2: np.ndarray
     feats: np.ndarray
+    nscore: int | None = None
+    util_events: list[UtilEvent] = field(default_factory=list)
     nrep: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -320,9 +359,70 @@ class Trace:
         self.snapshots = list(struct.unpack(f"<{nsnap}I", snap_raw)) if nsnap else []
         if self.frame_count and (not self.snapshots or self.snapshots[0] != 0):
             raise TraceError("trace is missing the frame-0 codebook snapshot")
+        self._seg_pal: dict[int, np.ndarray] | None = None
+        self._seg_vga: dict[int, np.ndarray] = {}
+        self._subset: dict[int, np.ndarray] = {}
+        self.next_segment: dict[int, int] = {}
 
     def close(self) -> None:
         self.fp.close()
+
+    def ensure_segments(self) -> None:
+        """Map each segment to its 16-color palette, and each segment to the next one."""
+        if self._seg_pal is not None:
+            return
+        pal: dict[int, np.ndarray] = {}
+        vga: dict[int, np.ndarray] = {}
+        nxt: dict[int, int] = {}
+        prev: int | None = None
+        for i in range(self.frame_count):
+            self.fp.seek(self.offsets[i])
+            _frame, segment, nwin, _nrep, _flags = struct.unpack("<I4H", self._read(12))
+            ste = np.frombuffer(self._read(48), dtype=np.uint8).reshape(16, 3).copy()
+            segment = int(segment)
+            if segment not in pal:
+                pal[segment] = ste
+            if nwin and segment not in vga:
+                self.fp.seek(4, 1)
+                vga[segment] = np.frombuffer(self._read(768), dtype=np.uint8).copy()
+            if prev is not None and segment != prev and prev not in nxt:
+                nxt[prev] = segment
+            prev = segment
+        self._seg_pal = pal
+        self._seg_vga = vga
+        self._subset = {seg: subset_from_ste(pal[seg], vga[seg]) for seg in vga}
+        self.next_segment = nxt
+
+    def segment_palette(self, segment: int) -> np.ndarray:
+        """(16, 3) RGB8 of one segment's STE palette."""
+        self.ensure_segments()
+        assert self._seg_pal is not None
+        return self._seg_pal[segment]
+
+    def feats_for_pens(self, pens64: np.ndarray, segment: int) -> np.ndarray:
+        """Features of dithered pens under that segment's VGA palette.
+
+        A next-epoch install is stored with features from the palette that was
+        current at install time. The pens themselves belong to ``segment``.
+        """
+        self.ensure_segments()
+        subset = self._subset[segment]
+        idx = subset[np.asarray(pens64, dtype=np.uint8)]
+        feat = feats_from_indices(
+            idx,
+            self._seg_vga[segment],
+            y_coeffs=self.y_coeffs,
+            chroma_coeffs=self.chroma_coeffs,
+            alpha=self.alpha,
+            chroma_weight=self.chroma_weight,
+            gamma=self.gamma,
+        )
+        if feat.shape[1] == self.feat_len:
+            return feat
+        out = np.zeros((feat.shape[0], self.feat_len), dtype=np.float32)
+        n = min(self.feat_len, feat.shape[1])
+        out[:, :n] = feat[:, :n]
+        return out
 
     def read_frame(self, index: int, pixels: bool = True) -> Frame:
         if index < 0 or index >= self.frame_count:
@@ -376,9 +476,19 @@ class Trace:
             for i, win in enumerate(wins):
                 win.pool = int(pool[i])
                 win.residual = None if residual is None else residual[i]
+        nscore = None
+        util_events: list[UtilEvent] = []
+        if flags & STVI_F_UTIL:
+            nscore, nevent = struct.unpack("<HH", self._read(4))
+            for _ in range(nevent):
+                pass_i, cb, wi = struct.unpack("<HHI", self._read(8))
+                predicted, actual = struct.unpack("<qq", self._read(16))
+                util_events.append(
+                    UtilEvent(pass_i, None if cb == STVI_CB_NONE else cb, wi, predicted, actual)
+                )
         return Frame(
             frame_index, segment, flags, ste, wins, recon, full, reps,
-            cb_index, skip, dist, dist_n2, tile_feats,
+            cb_index, skip, dist, dist_n2, tile_feats, nscore, util_events,
         )
 
     def _read(self, n: int) -> bytes:
@@ -407,17 +517,26 @@ class Codebook:
         self.tiles = np.zeros((n, 32), dtype=np.uint8)
         self.feats = np.zeros((n, trace.feat_len), dtype=np.float32)
         self.valid = np.zeros(n, dtype=np.uint8)
+        # Segment that owns each slot's pens. -1 until the first install.
+        self.owner = np.full(n, -1, dtype=np.int32)
         self.frame: int | None = None
+        self._owner_frame: int | None = None
+        self._owner_ckpt: dict[int, np.ndarray] = {}
+        self._disp: np.ndarray | None = None
+        self._disp_key: tuple[int, int] | None = None
 
     def at(self, frame: int) -> None:
         if self.frame == frame:
             return
+        self.trace.ensure_segments()
         snaps = [s for s in self.trace.snapshots if s <= frame]
         if not snaps:
             raise TraceError(f"no codebook snapshot at or before frame {frame}")
         snap = snaps[-1]
         if self.frame is not None and frame == self.frame + 1 and snap <= self.frame:
-            self._apply(self.trace.read_frame(frame, pixels=False).reps)
+            fr = self.trace.read_frame(frame, pixels=False)
+            self._apply(fr)
+            self._checkpoint_owner(frame)
             self.frame = frame
             return
         full = self.trace.read_frame(snap, pixels=False).full
@@ -425,11 +544,94 @@ class Codebook:
             raise TraceError(f"frame {snap} is indexed as a snapshot but has no codebook")
         self.valid, self.tiles, self.feats = full
         for f in range(snap + 1, frame + 1):
-            self._apply(self.trace.read_frame(f, pixels=False).reps)
+            self._apply(self.trace.read_frame(f, pixels=False))
         self.frame = frame
+        self._sync_owner(frame)
 
-    def _apply(self, reps: list[Replace]) -> None:
-        for rep in reps:
+    def display_feats(self, segment: int) -> np.ndarray:
+        """Features matched to the colors on screen.
+
+        Slots owned by ``segment`` keep the stored features. A slot harvested
+        for another segment is measured again under that segment's palette,
+        because the trace recorded it under the palette that was current then.
+        """
+        self.trace.ensure_segments()
+        key = (self.frame if self.frame is not None else -1, int(segment))
+        if self._disp_key == key and self._disp is not None:
+            return self._disp
+        out = np.array(self.feats, copy=True)
+        wrong = (self.owner >= 0) & (self.owner != int(segment))
+        if np.any(wrong):
+            pens = unpack_pens(self.tiles[wrong]).reshape(-1, 64)
+            owners = self.owner[wrong]
+            rows = np.flatnonzero(wrong)
+            for seg in np.unique(owners):
+                seg = int(seg)
+                if seg not in self.trace._subset:
+                    continue
+                take = owners == seg
+                out[rows[take]] = self.trace.feats_for_pens(pens[take], seg)
+        self._disp = out
+        self._disp_key = key
+        return out
+
+    def palette_of(self, index: int) -> np.ndarray | None:
+        """(16, 3) RGB8 for one slot, or None if that slot was never installed."""
+        seg = int(self.owner[index])
+        if seg < 0:
+            return None
+        return self.trace.segment_palette(seg)
+
+    def color_tiles(self) -> np.ndarray:
+        """(N, 8, 8, 3) RGB. Each slot uses its segment palette. Stale slots are dimmed."""
+        pens = unpack_pens(self.tiles)
+        rgb = np.full(pens.shape + (3,), 22, dtype=np.uint8)
+        owned = self.owner >= 0
+        for seg in np.unique(self.owner[owned]):
+            pal = self.trace.segment_palette(int(seg))
+            mask = self.owner == seg
+            rgb[mask] = pal[pens[mask]]
+        dim = owned & (self.valid == 0)
+        if np.any(dim):
+            rgb[dim] = (rgb[dim].astype(np.uint16) * 40 // 100).astype(np.uint8)
+        return rgb
+
+    def _apply(self, fr: Frame) -> None:
+        seg = fr.segment
+        nxt = self.trace.next_segment.get(seg, -1)
+        for rep in fr.reps:
             self.tiles[rep.index] = rep.tile
             self.feats[rep.index] = rep.feat
             self.valid[rep.index] = np.uint8(rep.drawable)
+            self.owner[rep.index] = seg if rep.drawable else nxt
+
+    def _checkpoint_owner(self, frame: int) -> None:
+        self._owner_frame = frame
+        if frame in self.trace.snapshots:
+            self._owner_ckpt[frame] = self.owner.copy()
+
+    def _sync_owner(self, frame: int) -> None:
+        """Replay installs so each slot remembers the segment whose palette it uses."""
+        if self._owner_frame == frame:
+            return
+        if self._owner_frame is not None and frame > self._owner_frame:
+            start = self._owner_frame + 1
+        else:
+            ckpt = max((s for s in self._owner_ckpt if s <= frame), default=None)
+            if ckpt is None:
+                self.owner.fill(-1)
+                start = 0
+            else:
+                self.owner[:] = self._owner_ckpt[ckpt]
+                start = ckpt + 1
+        for f in range(start, frame + 1):
+            self._stamp_owner(self.trace.read_frame(f, pixels=False))
+            if f in self.trace.snapshots:
+                self._owner_ckpt[f] = self.owner.copy()
+        self._owner_frame = frame
+
+    def _stamp_owner(self, fr: Frame) -> None:
+        seg = fr.segment
+        nxt = self.trace.next_segment.get(seg, -1)
+        for rep in fr.reps:
+            self.owner[rep.index] = seg if rep.drawable else nxt

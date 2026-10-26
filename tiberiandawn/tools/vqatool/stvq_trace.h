@@ -20,7 +20,8 @@
  *
  * Each frame record (post-STCR, post-STVD):
  *   u32 frame_index
- *   u16 segment, nwin, nrep, flags     // bit0 = STVI_F_FULL, bit1 = STVI_F_WIN_RESIDUAL
+ *   u16 segment, nwin, nrep, flags     // bit0 = STVI_F_FULL, bit1 = STVI_F_WIN_RESIDUAL,
+ *                                      // bit2 = STVI_F_UTIL
  *   u8  ste_rgb[48]                    // 16 encoded pens, RGB8
  *   nwin times:
  *     u16 seg, pad
@@ -45,6 +46,14 @@
  *     u8  pool[nwin]                   // 1 = this frame supplies codebook candidates
  *     u32 residual[nwin * tiles_n]     // ~0u if that frame is outside the pool
  *                                      // higher = more likely to be shortlisted
+ *   if STVI_F_UTIL (stage-2 rankings; absent on older traces):
+ *     u16 nscore                       // times the shortlist was ranked
+ *     u16 nevent
+ *     nevent times:
+ *       u16 pass                       // 0 = first ranking
+ *       u16 cb_index                   // STVI_CB_NONE if this tile stopped the run
+ *       u32 wi                         // window block (frame * tiles_n + tile)
+ *       i64 predicted, actual          // add-utility before the run, and at install
  *
  * Feature layout matches stvq_metric: [Y | U | V | tail energies].
  * Distance is SSE of the first (y_coeffs + 2*chroma_coeffs) lanes, plus the
@@ -62,7 +71,18 @@ extern "C" {
 #define STVI_VERSION 1u
 #define STVI_F_FULL 1u
 #define STVI_F_WIN_RESIDUAL 2u
+#define STVI_F_UTIL 4u
 #define STVI_DIST_NONE 0xffffffffu
+#define STVI_CB_NONE 0xffffu
+
+/* One stage-2 decision. cb_index == STVI_CB_NONE means the run stopped here. */
+typedef struct StviUtilEvent {
+	uint16_t pass;
+	uint16_t cb_index;
+	uint32_t wi;
+	int64_t predicted;
+	int64_t actual;
+} StviUtilEvent;
 
 typedef struct StviTrace StviTrace;
 
@@ -108,6 +128,10 @@ typedef struct StviFrameIn {
 	/* Optional. Both set → STVI_F_WIN_RESIDUAL. Lengths are nwin and nwin*tiles_n. */
 	const uint8_t *win_pool;
 	const unsigned *win_dist;
+	/* Optional. Non-NULL → STVI_F_UTIL. nscore is the ranking-pass count. */
+	unsigned nscore;
+	const StviUtilEvent *util_events;
+	unsigned n_util_events;
 } StviFrameIn;
 
 StviTrace *stvi_trace_open(const char *path, const StviTraceInfo *info);

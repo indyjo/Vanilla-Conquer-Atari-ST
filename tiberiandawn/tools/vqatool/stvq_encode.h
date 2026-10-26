@@ -21,8 +21,9 @@ typedef struct StvqEncodeOpts {
 	const char *out_path;
 	unsigned cb_size;
 	unsigned cb_per_frame;
-	unsigned cb_random_pct; /* % of STCR slots accepted as uniform random (rest: utility) */
+	unsigned cb_random_pct; /* % of R: random blocks added to the shortlist (utility still accepts) */
 	unsigned cb_lookahead;  /* extra frames after current: utility/eviction + STCR cand source */
+	int cb_shortlist_all;  /* 1: every eligible-frame block is a utility candidate */
 	float dct_alpha;        /* w(u,v)=1/(1+alpha*(u^2+v^2)); <0 → default */
 	unsigned dct_coeffs;    /* Y zig-zag DCT coeffs; 0 → default */
 	unsigned dct_chroma_coeffs; /* U and V each; use have_dct_chroma */

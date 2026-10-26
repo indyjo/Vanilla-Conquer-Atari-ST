@@ -110,7 +110,7 @@ Requires existing `name.<N>.w16` sidecars; aborts if any are missing.
 ./vqatool encode \
   [--cb-size 2048] [--cb-per-frame 32] [--cb-random-pct 25] [--cb-lookahead 1] \
   [--gamma 0.77] [--dct-alpha 0.2] [--dct-coeffs 15] [--dct-chroma-coeffs 7] \
-  [--dct-chroma-weight 0.25] \
+  [--dct-chroma-weight 0.25] [--cb-shortlist-all] \
   [-o out.stv] [--trace decisions.stvi] [--dry-run] name.vqa
 ```
 
@@ -118,14 +118,25 @@ Defaults: `--cb-size 2048`, `--cb-per-frame 32`, `--cb-random-pct 25`, `--cb-loo
 `--gamma 0.77`, `--dct-alpha 0.2`, `--dct-coeffs 15`, `--dct-chroma-coeffs 7`,
 `--dct-chroma-weight 0.25`.
 `--trace` writes an `.stvi` decision log (frames, lookahead, codebook, per-tile
-skip/draw) for [`../stvqinspect`](../stvqinspect). It is skipped on `--dry-run`.
+skip/draw, and for each frame how many times the shortlist was ranked and the
+marginal utility of each candidate) for [`../stvqinspect`](../stvqinspect). It is skipped on `--dry-run`.
 No initial `STCB`: the codebook starts empty and is filled only via `STCR`. The
 encoder calls selection with window slot 0, so STCR candidates come from every
-frame in the lookahead window, capped at one palette change. Residual-only shortlist
-of `2*R` (stay-as-is
-on the current frame only); accept `(100-random)%` by add-utility over the full
-window (ignore eviction) paired with least-damage victims (ignore install); then
-accept `random%` tiles from the same candidate pool. On palette/segment changes,
+frame in the lookahead window, capped at one palette change. The shortlist is the
+`2*R` worst residuals (stay-as-is on the current frame only), or with
+`--cb-shortlist-all` every block of those frames. Either way one copy of each
+color hash is kept. A block's residual counts only codebook slots stamped for
+the epoch that will draw it. An epoch with no such slot is given one flat
+pen-0 tile first; that install uses one replace, and the rest of the frame's
+replaces are chosen as below. Up to `--cb-random-pct` percent of `R` further blocks are
+drawn into that shortlist, skipping a hash already shortlisted or already stored
+for that palette epoch. With `--cb-shortlist-all` those blocks are already
+present. Every replace, including a random shortlist entry, is accepted by
+add-utility over the full window. A ranking is walked while each tile's realized
+utility, measured after earlier installs in that run, stays at least half what
+the ranking predicted. The first tile below half is left out and the remaining
+shortlist is scored again. Victims are least-damage (ignore which tile installs),
+chosen for each install. On palette/segment changes,
 codebook DCT features are recomputed under the new W16 and every **prior-palette**
 CB entry (`tile_epoch < pal_epoch`) becomes a **prime eviction candidate**; STCR
 always replaces the lowest-index free stale prime before damage-based victims.

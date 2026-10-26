@@ -52,8 +52,9 @@ static void usage(const char *argv0)
 	    "  encode <file.vqa>       encode to FORM 'STVQ' (.stv); requires .w16 sidecars\n"
 	    "    --cb-size N           codebook entries (default %u)\n"
 	    "    --cb-per-frame N      max STCR replaces/frame (default %u; 0=none)\n"
-	    "    --cb-random-pct N     %% of STCR slots accepted at random (default %u)\n"
+	    "    --cb-random-pct N     %% of R: random blocks added to the shortlist (default %u)\n"
 	    "    --cb-lookahead N      frames ahead for STCR candidates/utility (default %u)\n"
+	    "    --cb-shortlist-all    utility-rank every block of the eligible frames\n"
 	    "    --gamma F             YUV gamma before DCT (default %.2g)\n"
 	    "    --dct-alpha F         DCT weight alpha in 1/(1+a*(u^2+v^2)) (default %.2g)\n"
 	    "    --dct-coeffs N        Y zig-zag DCT coeffs (default %u)\n"
@@ -337,6 +338,8 @@ static int cmd_encode(int argc, char **argv, int argi)
 				fprintf(stderr, "error: bad --cb-lookahead\n");
 				return 1;
 			}
+		} else if (strcmp(a, "--cb-shortlist-all") == 0) {
+			opts.cb_shortlist_all = 1;
 		} else if (strcmp(a, "--dct-alpha") == 0) {
 			if (++argi >= argc || parse_f(argv[argi], &opts.dct_alpha) != 0 || opts.dct_alpha < 0.0f) {
 				fprintf(stderr, "error: bad --dct-alpha\n");

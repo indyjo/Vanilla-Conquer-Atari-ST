@@ -585,10 +585,11 @@ class App:
             else:
                 installed += 1
                 lines.append(f"{mark}{i:3d}  {spot}  cb {ev.cb_index}  {share}")
-        lines.append(
-            f"{installed} installed, {stopped} stopped, {rescores} re-score"
-            + ("" if rescores == 1 else "s")
-        )
+        tail = f"{installed} installed"
+        if stopped:
+            tail += f", {stopped} stopped"
+        tail += f", {rescores} re-score" + ("" if rescores == 1 else "s")
+        lines.append(tail)
         return "\n".join(lines)
 
     def _draw_text(self) -> None:

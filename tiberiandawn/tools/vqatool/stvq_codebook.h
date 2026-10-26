@@ -85,14 +85,14 @@ typedef struct StvqSelectProf {
  *    not already shortlisted and whose color hash is not already stored for
  *    that palette epoch. Either way the shortlist keeps one copy of each
  *    color hash. A hash of 0 is a vacant slot (calloc), not a stored tile.
- * 2) Score the whole shortlist by predicted add-utility only (ignore eviction).
- *    A candidate only helps blocks that will be allowed to draw it.
- *    Walk that ranking and install while each tile's realized utility, measured
- *    after earlier installs in the run, is at least half its prediction. The
- *    first tile below half is left uninstalled and the shortlist is scored
- *    again, until the replace quota is filled or nothing left has positive
- *    utility. A random shortlist entry therefore installs only when it still
- *    clears that bar. Each install picks a victim by eviction damage only
+ * 2) Score the shortlist by add-utility only (ignore eviction). A candidate
+ *    only helps blocks that will be allowed to draw it. Minoux lazy greedy
+ *    then installs the best marginal tile: stored utilities are upper bounds,
+ *    and only the current best is recomputed. If it is still the best, it is
+ *    installed. An install that raises some block's distance invalidates the
+ *    bounds, and the shortlist is scored again. A random shortlist entry
+ *    installs only when its recomputed utility is the best and still positive.
+ *    Each install picks a victim by eviction damage only
  *    (ignore which tile installs), except: after a palette change, entries
  *    with tile_epoch < pal_epoch are prime eviction candidates — always prefer
  *    a free stale prime (lowest index) over damage-based victims. Next-epoch

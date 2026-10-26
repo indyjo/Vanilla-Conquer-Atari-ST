@@ -162,11 +162,6 @@ typedef struct Residual {
 	unsigned dist;
 } Residual;
 
-typedef struct UtilCand {
-	unsigned tile;
-	long long util;
-} UtilCand;
-
 typedef struct WinTile {
 	const uint8_t *tile; /* dithered 32B tile, the metric reference */
 	float *feat;         /* points into win_feats pool */
@@ -191,21 +186,6 @@ static int residual_cmp_desc(const void *a, const void *b)
 	if (ra->tile < rb->tile)
 		return 1;
 	if (ra->tile > rb->tile)
-		return -1;
-	return 0;
-}
-
-static int util_cand_cmp_desc(const void *a, const void *b)
-{
-	const UtilCand *ua = (const UtilCand *)a;
-	const UtilCand *ub = (const UtilCand *)b;
-	if (ua->util < ub->util)
-		return 1;
-	if (ua->util > ub->util)
-		return -1;
-	if (ua->tile < ub->tile)
-		return 1;
-	if (ua->tile > ub->tile)
 		return -1;
 	return 0;
 }
@@ -257,21 +237,31 @@ static void refresh_win_nearest(const StvqCodebook *cb, WinTile *w)
 	    cb->feat_stride, w->feat, w->color_hash, &w->nearest, &w->dist, &w->second, &w->second_dist);
 }
 
-static void update_window_after_replace(const StvqCodebook *cb, WinTile *win, unsigned win_n, unsigned victim,
+/* 1 if any window distance rose. A rise breaks lazy-greedy upper bounds. */
+static int update_window_after_replace(const StvqCodebook *cb, WinTile *win, unsigned win_n, unsigned victim,
     const unsigned *d_new, int next_epoch)
 {
 	unsigned i;
+	int rose = 0;
 	for (i = 0; i < win_n; i++) {
 		unsigned dT = d_new[i];
+		unsigned prev;
 		uint32_t installed = cb->pal_epoch + (next_epoch ? 1u : 0u);
 		if (win[i].legal_epoch != installed) {
 			/* This slot is not drawable for the window tile. */
-			if (win[i].nearest == victim || win[i].second == victim)
+			if (win[i].nearest == victim || win[i].second == victim) {
+				prev = win[i].dist;
 				refresh_win_nearest(cb, &win[i]);
+				if (win[i].dist > prev)
+					rose = 1;
+			}
 			continue;
 		}
 		if (win[i].nearest == victim || win[i].second == victim) {
+			prev = win[i].dist;
 			refresh_win_nearest(cb, &win[i]);
+			if (win[i].dist > prev)
+				rose = 1;
 			continue;
 		}
 		if (dT < win[i].dist) {
@@ -284,6 +274,7 @@ static void update_window_after_replace(const StvqCodebook *cb, WinTile *win, un
 			win[i].second_dist = dT;
 		}
 	}
+	return rose;
 }
 
 /*
@@ -327,6 +318,74 @@ static long long add_utility(const WinTile *win, unsigned win_n, const float *fe
 	if (prof)
 		prof->ns_victim_dnew += stvq_ns_now() - t0;
 	return util;
+}
+
+/* Sum of how far a cached distance row beats each window tile's current nearest. */
+static long long utility_from_row(const WinTile *win, unsigned win_n, const unsigned *row, unsigned *d_new)
+{
+	unsigned i;
+	long long util = 0;
+
+	for (i = 0; i < win_n; i++) {
+		unsigned d = row[i];
+		d_new[i] = d;
+		if (d < win[i].dist)
+			util += (long long)(win[i].dist - d);
+	}
+	return util;
+}
+
+static void tile_feats_cur_post(const uint8_t *tile32, float *feat_cur, float *feat_post, uint32_t *hash_cur,
+    uint32_t *hash_post, float *feats_post, const uint8_t *post_pal, const uint8_t *post_subset,
+    const uint8_t *cur_pal, const uint8_t *cur_subset);
+
+/*
+ * Distance from each shortlist tile to each window tile. Installs change
+ * win[].dist only, so later rankings reuse this table.
+ */
+static void cache_shortlist_dist(const WinTile *win, unsigned win_n, const unsigned *shortlist, unsigned n_sl,
+    const uint8_t *const *frame_tiles, unsigned frame_index, unsigned tiles_n, unsigned cut_at, float *feats_post,
+    const uint8_t *post_pal, const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset,
+    const float *feats_cur, unsigned *sl_dist, StvqSelectProf *prof)
+{
+	unsigned s;
+	float feat_cur[STVQ_METRIC_MAX_FEAT_LEN], feat_post[STVQ_METRIC_MAX_FEAT_LEN];
+	uint32_t hash_cur, hash_post;
+	uint64_t t0 = stvq_ns_now();
+
+	for (s = 0; s < n_sl; s++) {
+		unsigned wi = shortlist[s];
+		unsigned src_frame = frame_index + wi / tiles_n;
+		unsigned tile = wi % tiles_n;
+		int next_epoch = (cut_at && src_frame >= cut_at);
+		const uint8_t *tile32 = frame_tiles[src_frame] + tile * 32u;
+		unsigned *row = sl_dist + (size_t)s * win_n;
+		unsigned i;
+
+		tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_post, feats_post, post_pal, post_subset,
+		    cur_pal, cur_subset);
+		for (i = 0; i < win_n; i++) {
+			const float *nf;
+			uint32_t nh;
+			if (next_epoch) {
+				if (win[i].cb_feats == feats_cur) {
+					row[i] = ~0u;
+					continue;
+				}
+				nf = feats_post ? feat_post : feat_cur;
+				nh = hash_post;
+			} else if (feats_post && win[i].cb_feats != feats_cur) {
+				row[i] = ~0u;
+				continue;
+			} else {
+				nf = feat_cur;
+				nh = hash_cur;
+			}
+			row[i] = stvq_metric_feat_dist_hash(win[i].feat, win[i].color_hash, nf, nh);
+		}
+	}
+	if (prof)
+		prof->ns_victim_dnew += stvq_ns_now() - t0;
 }
 
 static void note_util(StvqSelectProf *prof, unsigned pass, unsigned cb_index, unsigned wi, long long predicted,
@@ -423,8 +482,8 @@ static unsigned pick_least_damage_victim(const StvqCodebook *cb, const unsigned 
 static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned wi, unsigned victim,
     unsigned now, WinTile *win, unsigned win_n, uint8_t *slot_taken, uint8_t *tile_taken,
     const unsigned *d_new, float *feats_post, uint32_t *hash_post, const uint8_t *post_pal,
-    const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset, uint32_t epoch, int next_epoch,
-    StvqReplace *out, unsigned *n)
+    const uint8_t *post_subset,     const uint8_t *cur_pal, const uint8_t *cur_subset, uint32_t epoch, int next_epoch,
+    StvqReplace *out, unsigned *n, int *dist_rose)
 {
 	if (tile_taken[wi] || slot_taken[victim])
 		return 0;
@@ -443,7 +502,8 @@ static int install_at_victim(StvqCodebook *cb, const uint8_t *tile32, unsigned w
 	out[*n].index = (uint16_t)victim;
 	memcpy(out[*n].tile, tile32, 32);
 	(*n)++;
-	update_window_after_replace(cb, win, win_n, victim, d_new, next_epoch);
+	if (update_window_after_replace(cb, win, win_n, victim, d_new, next_epoch) && dist_rose)
+		*dist_rose = 1;
 	return 1;
 }
 
@@ -463,6 +523,126 @@ static void tile_feats_cur_post(const uint8_t *tile32, float *feat_cur, float *f
 	stvq_metric_feat_from_tile32(tile32, feat_post);
 	*hash_post = stvq_metric_color_hash_tile32(tile32);
 	stvq_metric_set_palette_vga6(cur_pal, cur_subset);
+}
+
+/* Lazy-greedy heap entry. bound is an upper bound from generation gen. */
+typedef struct LazyCand {
+	unsigned sl;
+	unsigned wi;
+	long long bound;
+	unsigned gen;
+} LazyCand;
+
+static int lazy_better(const LazyCand *a, const LazyCand *b)
+{
+	if (a->bound != b->bound)
+		return a->bound > b->bound;
+	return a->wi > b->wi;
+}
+
+static void lazy_sift_up(LazyCand *h, unsigned i)
+{
+	while (i > 0) {
+		unsigned p = (i - 1u) / 2u;
+		LazyCand t;
+		if (!lazy_better(&h[i], &h[p]))
+			break;
+		t = h[i];
+		h[i] = h[p];
+		h[p] = t;
+		i = p;
+	}
+}
+
+static void lazy_sift_down(LazyCand *h, unsigned n, unsigned i)
+{
+	for (;;) {
+		unsigned l = i * 2u + 1u;
+		unsigned r = l + 1u;
+		unsigned b = i;
+		LazyCand t;
+		if (l < n && lazy_better(&h[l], &h[b]))
+			b = l;
+		if (r < n && lazy_better(&h[r], &h[b]))
+			b = r;
+		if (b == i)
+			break;
+		t = h[i];
+		h[i] = h[b];
+		h[b] = t;
+		i = b;
+	}
+}
+
+static void lazy_push(LazyCand *h, unsigned *n, LazyCand c)
+{
+	h[*n] = c;
+	lazy_sift_up(h, *n);
+	(*n)++;
+}
+
+static LazyCand lazy_pop(LazyCand *h, unsigned *n)
+{
+	LazyCand c = h[0];
+	(*n)--;
+	if (*n) {
+		h[0] = h[*n];
+		lazy_sift_down(h, *n, 0);
+	}
+	return c;
+}
+
+/* Marginal utility of shortlist entry sl. Fills d_new for an install of that tile. */
+static long long eval_sl(const WinTile *win, unsigned win_n, const unsigned *shortlist, unsigned sl,
+    const unsigned *sl_dist, const uint8_t *const *frame_tiles, unsigned frame_index, unsigned tiles_n,
+    unsigned cut_at, float *feats_post, const uint8_t *post_pal, const uint8_t *post_subset,
+    const uint8_t *cur_pal, const uint8_t *cur_subset, const float *feats_cur, unsigned *d_new, StvqSelectProf *prof)
+{
+	unsigned wi = shortlist[sl];
+	unsigned src_frame = frame_index + wi / tiles_n;
+	unsigned tile = wi % tiles_n;
+	int next_epoch = (cut_at && src_frame >= cut_at);
+	float feat_cur[STVQ_METRIC_MAX_FEAT_LEN], feat_post[STVQ_METRIC_MAX_FEAT_LEN];
+	uint32_t hash_cur, hash_post;
+	const uint8_t *tile32;
+
+	if (sl_dist)
+		return utility_from_row(win, win_n, sl_dist + (size_t)sl * win_n, d_new);
+	tile32 = frame_tiles[src_frame] + tile * 32u;
+	tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_post, feats_post, post_pal, post_subset,
+	    cur_pal, cur_subset);
+	return add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur, hash_post, feats_cur, d_new,
+	    next_epoch, prof);
+}
+
+/* Push every remaining shortlist tile whose utility is still positive. */
+static unsigned lazy_load(LazyCand *heap, const uint8_t *tile_taken, const unsigned *shortlist, unsigned n_sl,
+    unsigned gen, const WinTile *win, unsigned win_n, const unsigned *sl_dist, const uint8_t *const *frame_tiles,
+    unsigned frame_index, unsigned tiles_n, unsigned cut_at, float *feats_post, const uint8_t *post_pal,
+    const uint8_t *post_subset, const uint8_t *cur_pal, const uint8_t *cur_subset, const float *feats_cur,
+    unsigned *d_new, StvqSelectProf *prof)
+{
+	unsigned n = 0, s;
+	uint64_t ts = stvq_ns_now();
+
+	for (s = 0; s < n_sl; s++) {
+		long long util;
+		LazyCand c;
+		if (tile_taken[shortlist[s]])
+			continue;
+		util = eval_sl(win, win_n, shortlist, s, sl_dist, frame_tiles, frame_index, tiles_n, cut_at, feats_post,
+		    post_pal, post_subset, cur_pal, cur_subset, feats_cur, d_new, prof);
+		if (util <= 0)
+			continue;
+		c.sl = s;
+		c.wi = shortlist[s];
+		c.bound = util;
+		c.gen = gen;
+		lazy_push(heap, &n, c);
+	}
+	if (prof)
+		prof->ns_util_score += stvq_ns_now() - ts;
+	return n;
 }
 
 /* True if the shortlist already holds a window tile with this color hash. */
@@ -602,7 +782,6 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	unsigned n = 0, t, i, f;
 	const unsigned thresh = (unsigned)(0.05f * STVQ_METRIC_SCALE + 0.5f);
 	Residual *res = NULL;
-	UtilCand *ucand = NULL;
 	uint8_t *slot_taken = NULL;
 	uint8_t *tile_taken = NULL;
 	uint8_t *in_shortlist = NULL;
@@ -671,7 +850,6 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		feat_stride = 1u;
 
 	res = (Residual *)malloc((size_t)pool_n * sizeof(Residual));
-	ucand = (UtilCand *)malloc((size_t)shortlist_cap * sizeof(UtilCand));
 	slot_taken = (uint8_t *)calloc(cb->entries, 1);
 	tile_taken = (uint8_t *)calloc(win_n, 1);
 	in_shortlist = (uint8_t *)calloc(win_n, 1);
@@ -685,10 +863,9 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		feats_post = (float *)malloc((size_t)cb->entries * feat_stride * sizeof(float));
 		hash_post = (uint32_t *)malloc((size_t)cb->entries * sizeof(uint32_t));
 	}
-	if (!res || !ucand || !slot_taken || !tile_taken || !in_shortlist || !shortlist || !win ||
+	if (!res || !slot_taken || !tile_taken || !in_shortlist || !shortlist || !win ||
 	    !win_feats || !d_new || !eff_dist || !damage || (cut_at && (!feats_post || !hash_post))) {
 		free(res);
-		free(ucand);
 		free(slot_taken);
 		free(tile_taken);
 		free(in_shortlist);
@@ -876,96 +1053,113 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 	}
 
 	/*
-	 * Stage 2 (decoupled):
-	 * - Score the remaining shortlist by predicted add-utility (ignore eviction).
-	 * - Walk that ranking. Install a tile while its realized utility, measured
-	 *   on the book after earlier installs in this run, is at least half what
-	 *   this ranking predicted. The first tile always qualifies.
-	 * - The first tile below half is left uninstalled and the shortlist is
-	 *   scored again. Each install picks a fresh least-damage victim.
+	 * Stage 2 (Minoux lazy greedy):
+	 * - Distances from shortlist tiles to window tiles are computed once.
+	 * - The heap holds an upper bound on each tile's add-utility.
+	 * - Pop the best. Recompute it if the bound is older than the last install.
+	 *   If it is still the best, install it. Otherwise put the new bound back.
+	 * - An install that raises some block's distance invalidates every bound,
+	 *   so the shortlist is scored again. Each install picks a fresh victim.
 	 */
 	t0 = stvq_ns_now();
 	{
 		unsigned quota = n_util;
 		unsigned pass = 0;
+		unsigned scores = 0;
+		unsigned gen = 0;
+		unsigned n_heap = 0;
 		int stop = 0;
-		uint64_t ts, te;
-		float feat_cur[STVQ_METRIC_MAX_FEAT_LEN], feat_post[STVQ_METRIC_MAX_FEAT_LEN];
-		uint32_t hash_cur, hash_new_post;
+		uint64_t ts, load_ns = 0;
+		unsigned *sl_dist = NULL;
+		LazyCand *heap = NULL;
 
-		while (quota > 0 && !stop) {
-			unsigned n_cand = 0, vi;
-
+		if (n_sl && win_n)
+			sl_dist = (unsigned *)malloc((size_t)n_sl * win_n * sizeof(unsigned));
+		if (n_sl)
+			heap = (LazyCand *)malloc((size_t)n_sl * sizeof(LazyCand));
+		if (sl_dist) {
 			ts = stvq_ns_now();
-			for (i = 0; i < n_sl; i++) {
-				unsigned wi = shortlist[i];
-				unsigned src_frame = frame_index + wi / tiles_n;
-				unsigned tile = wi % tiles_n;
-				int next_epoch = (cut_at && src_frame >= cut_at);
-				long long util;
-				const uint8_t *tile32 = frame_tiles[src_frame] + tile * 32u;
-				if (tile_taken[wi])
-					continue;
-				tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_new_post, feats_post,
-				    post_pal, post_subset, cur_pal, cur_subset);
-				util = add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur,
-				    hash_new_post, cb->feats, d_new, next_epoch, prof);
-				if (util <= 0)
-					continue;
-				ucand[n_cand].tile = wi;
-				ucand[n_cand].util = util;
-				n_cand++;
-			}
-			te = stvq_ns_now();
+			cache_shortlist_dist(win, win_n, shortlist, n_sl, frame_tiles, frame_index, tiles_n, cut_at, feats_post,
+			    post_pal, post_subset, cur_pal, cur_subset, cb->feats, sl_dist, prof);
 			if (prof)
-				prof->ns_util_score += te - ts;
-			if (n_cand == 0)
-				break;
-			qsort(ucand, n_cand, sizeof(UtilCand), util_cand_cmp_desc);
-
-			ts = stvq_ns_now();
-			for (vi = 0; vi < n_cand && quota > 0; vi++) {
-				unsigned wi = ucand[vi].tile;
-				unsigned src_frame = frame_index + wi / tiles_n;
-				unsigned tile = wi % tiles_n;
-				int next_epoch = (cut_at && src_frame >= cut_at);
-				uint32_t epoch = cb->pal_epoch + (next_epoch ? 1u : 0u);
-				long long actual;
-				unsigned victim;
-				uint64_t tv;
-				const uint8_t *tile32 = frame_tiles[src_frame] + tile * 32u;
-				tile_feats_cur_post(tile32, feat_cur, feat_post, &hash_cur, &hash_new_post, feats_post,
-				    post_pal, post_subset, cur_pal, cur_subset);
-				actual = add_utility(win, win_n, feat_cur, feats_post ? feat_post : NULL, hash_cur,
-				    hash_new_post, cb->feats, d_new, next_epoch, prof);
-				if (actual * 2 < ucand[vi].util) {
-					/* Predicted ranking is stale. Re-score; do not install. */
-					note_util(prof, pass, STVI_CB_NONE, wi, ucand[vi].util, actual);
-					if (vi == 0)
-						stop = 1;
-					break;
-				}
-				tv = stvq_ns_now();
-				accumulate_evict_damage(win, win_n, damage, cb->entries);
-				if (prof)
-					prof->ns_victim_scan += stvq_ns_now() - tv;
-				victim = pick_least_damage_victim(cb, damage, slot_taken, now, prof);
-				if (!install_at_victim(cb, tile32, wi, victim, now, win, win_n, slot_taken, tile_taken, d_new,
-				        feats_post, hash_post, post_pal, post_subset, cur_pal, cur_subset, epoch, next_epoch,
-				        out, &n)) {
-					stop = 1;
-					break;
-				}
-				note_util(prof, pass, victim, wi, ucand[vi].util, actual);
-				quota--;
-			}
-			te = stvq_ns_now();
-			if (prof)
-				prof->ns_util_install += te - ts;
-			pass++;
+				prof->ns_util_score += stvq_ns_now() - ts;
 		}
-		if (prof)
-			prof->nscore = pass;
+		if (heap) {
+			n_heap = lazy_load(heap, tile_taken, shortlist, n_sl, gen, win, win_n, sl_dist, frame_tiles,
+			    frame_index, tiles_n, cut_at, feats_post, post_pal, post_subset, cur_pal, cur_subset, cb->feats,
+			    d_new, prof);
+			scores = 1;
+		}
+
+		ts = stvq_ns_now();
+		while (quota > 0 && n_heap > 0 && !stop) {
+			LazyCand top = lazy_pop(heap, &n_heap);
+			unsigned wi = top.wi;
+			unsigned src_frame = frame_index + wi / tiles_n;
+			unsigned tile = wi % tiles_n;
+			int next_epoch = (cut_at && src_frame >= cut_at);
+			uint32_t epoch = cb->pal_epoch + (next_epoch ? 1u : 0u);
+			long long actual;
+			long long predicted = top.bound;
+			unsigned victim;
+			int rose = 0;
+			uint64_t tv;
+			const uint8_t *tile32 = frame_tiles[src_frame] + tile * 32u;
+
+			if (tile_taken[wi])
+				continue;
+			if (top.gen != gen) {
+				LazyCand refreshed;
+				actual = eval_sl(win, win_n, shortlist, top.sl, sl_dist, frame_tiles, frame_index, tiles_n,
+				    cut_at, feats_post, post_pal, post_subset, cur_pal, cur_subset, cb->feats, d_new, prof);
+				if (actual <= 0)
+					continue;
+				refreshed = top;
+				refreshed.bound = actual;
+				refreshed.gen = gen;
+				/* A strictly better stored bound is still ahead. This one waits. */
+				if (n_heap > 0 && lazy_better(&heap[0], &refreshed)) {
+					lazy_push(heap, &n_heap, refreshed);
+					continue;
+				}
+			} else {
+				/* Bound is current. Evaluate once more so d_new matches this tile. */
+				actual = eval_sl(win, win_n, shortlist, top.sl, sl_dist, frame_tiles, frame_index, tiles_n,
+				    cut_at, feats_post, post_pal, post_subset, cur_pal, cur_subset, cb->feats, d_new, prof);
+				if (actual <= 0)
+					continue;
+			}
+			tv = stvq_ns_now();
+			accumulate_evict_damage(win, win_n, damage, cb->entries);
+			if (prof)
+				prof->ns_victim_scan += stvq_ns_now() - tv;
+			victim = pick_least_damage_victim(cb, damage, slot_taken, now, prof);
+			if (!install_at_victim(cb, tile32, wi, victim, now, win, win_n, slot_taken, tile_taken, d_new,
+			        feats_post, hash_post, post_pal, post_subset, cur_pal, cur_subset, epoch, next_epoch, out,
+			        &n, &rose)) {
+				stop = 1;
+				break;
+			}
+			note_util(prof, pass, victim, wi, predicted, actual);
+			quota--;
+			gen++;
+			if (rose) {
+				uint64_t t_load = stvq_ns_now();
+				pass++;
+				n_heap = lazy_load(heap, tile_taken, shortlist, n_sl, gen, win, win_n, sl_dist, frame_tiles,
+				    frame_index, tiles_n, cut_at, feats_post, post_pal, post_subset, cur_pal, cur_subset,
+				    cb->feats, d_new, prof);
+				load_ns += stvq_ns_now() - t_load;
+				scores++;
+			}
+		}
+		if (prof) {
+			uint64_t elapsed = stvq_ns_now() - ts;
+			prof->ns_util_install += elapsed > load_ns ? elapsed - load_ns : 0;
+			prof->nscore = scores;
+		}
+		free(heap);
+		free(sl_dist);
 	}
 	t1 = stvq_ns_now();
 	if (prof)
@@ -987,7 +1181,6 @@ unsigned stvq_codebook_select_replaces(StvqCodebook *cb, const uint8_t *const *f
 		stvq_metric_set_palette_vga6(cur_pal, cur_subset);
 
 	free(res);
-	free(ucand);
 	free(slot_taken);
 	free(tile_taken);
 	free(in_shortlist);

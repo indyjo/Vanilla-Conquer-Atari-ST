@@ -132,10 +132,10 @@ replaces are chosen as below. Up to `--cb-random-pct` percent of `R` further blo
 drawn into that shortlist, skipping a hash already shortlisted or already stored
 for that palette epoch. With `--cb-shortlist-all` those blocks are already
 present. Every replace, including a random shortlist entry, is accepted by
-add-utility over the full window. A ranking is walked while each tile's realized
-utility, measured after earlier installs in that run, stays at least half what
-the ranking predicted. The first tile below half is left out and the remaining
-shortlist is scored again. Victims are least-damage (ignore which tile installs),
+add-utility over the full window. Minoux lazy greedy installs the best tile:
+stored utilities are upper bounds, and only the current best is recomputed.
+If it is still the best, it is installed. An install that raises some block's
+distance scores the shortlist again. Victims are least-damage (ignore which tile installs),
 chosen for each install. On palette/segment changes,
 codebook DCT features are recomputed under the new W16 and every **prior-palette**
 CB entry (`tile_epoch < pal_epoch`) becomes a **prime eviction candidate**; STCR

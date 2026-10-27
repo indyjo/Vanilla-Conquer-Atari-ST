@@ -299,7 +299,12 @@ static int load_vptz(DecodeCtx *d, uint32_t size)
 		free(comp);
 		return -1;
 	}
-	memset(d->vpt, 0, d->max_vpt);
+	/*
+	 * Version 1 vector chunks are applied on top of the previous map.
+	 * Format80 absolute copies read bytes this chunk does not rewrite.
+	 */
+	if (d->hdr.version != 1)
+		memset(d->vpt, 0, d->max_vpt);
 	if (vqa_lcw_uncompress(comp, d->vpt, d->max_vpt) <= 0) {
 		free(comp);
 		return -1;
@@ -313,10 +318,171 @@ static int load_vpt0(DecodeCtx *d, uint32_t size)
 	unsigned pad = vqa_iff_data_padded(size);
 	if (pad > d->max_vpt)
 		return -1;
-	memset(d->vpt, 0, d->max_vpt);
+	if (d->hdr.version != 1)
+		memset(d->vpt, 0, d->max_vpt);
 	if (vqa_reader_read(&d->r, d->vpt, pad) != 0)
 		return -1;
 	return 0;
+}
+
+/*
+ * VQA version 1 (Kyrandia 3): one little-endian uint16 per block, raster order.
+ * High byte 0xFF is a solid color, stored inverted. Otherwise the word is
+ * (codebook_index << 3) + 4.
+ */
+static void unvq_4x2_v1(const uint8_t *codebook, unsigned cb_len, const uint8_t *pointers,
+    uint8_t *buffer, unsigned blocks_per_row, unsigned num_rows, unsigned buff_width)
+{
+	unsigned n = blocks_per_row * num_rows;
+	unsigned i;
+
+	for (i = 0; i < n; i++) {
+		unsigned x = (i % blocks_per_row) * 4u;
+		unsigned y = (i / blocks_per_row) * 2u;
+		uint8_t *dst = buffer + (size_t)y * buff_width + x;
+		unsigned lo = pointers[i * 2u];
+		unsigned hi = pointers[i * 2u + 1u];
+		unsigned val = lo | (hi << 8);
+		if (hi == 0xFFu) {
+			uint8_t col = (uint8_t)(255u - lo);
+			dst[0] = dst[1] = dst[2] = dst[3] = col;
+			dst[buff_width] = dst[buff_width + 1] = dst[buff_width + 2] = dst[buff_width + 3] = col;
+		} else {
+			unsigned off = (val >> 3) * 8u;
+			if (off + 8u <= cb_len) {
+				memcpy(dst, codebook + off, 4);
+				memcpy(dst + buff_width, codebook + off + 4, 4);
+			}
+		}
+	}
+}
+
+/* Westwood SND1 (AUD). Matches ffmpeg ws-snd1. Output is unsigned 8-bit. */
+static const int8_t ws_adpcm_4bit[16] = {
+	-9, -8, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 8
+};
+
+static int clip_u8(int s)
+{
+	if (s < 0)
+		return 0;
+	if (s > 255)
+		return 255;
+	return s;
+}
+
+static int16_t u8_to_s16(unsigned s)
+{
+	return (int16_t)(((int)s - 128) << 8);
+}
+
+static int append_u8_as_s16(DecodeCtx *d, const uint8_t *src, unsigned n)
+{
+	int16_t *pcm;
+	unsigned i;
+	if (!n)
+		return 0;
+	pcm = (int16_t *)malloc((size_t)n * sizeof(int16_t));
+	if (!pcm)
+		return -1;
+	for (i = 0; i < n; i++)
+		pcm[i] = u8_to_s16(src[i]);
+	if (pcm_pending_append(d, pcm, n) != 0) {
+		free(pcm);
+		return -1;
+	}
+	free(pcm);
+	return 0;
+}
+
+static int load_snd1_v1(DecodeCtx *d, const uint8_t *buf, unsigned size)
+{
+	unsigned out_size, in_size;
+	const uint8_t *src;
+	const uint8_t *src_end;
+	uint8_t *samples;
+	uint8_t *sp;
+	uint8_t *sp_end;
+	int sample = 128;
+	int rc;
+
+	if (size < 4)
+		return -1;
+	out_size = (unsigned)buf[0] | ((unsigned)buf[1] << 8);
+	in_size = (unsigned)buf[2] | ((unsigned)buf[3] << 8);
+	if (in_size > size - 4u)
+		return -1;
+	src = buf + 4;
+	src_end = src + in_size;
+	samples = (uint8_t *)calloc(out_size ? out_size : 1u, 1);
+	if (!samples)
+		return -1;
+	if (in_size == out_size) {
+		memcpy(samples, src, out_size);
+		rc = append_u8_as_s16(d, samples, out_size);
+		free(samples);
+		return rc;
+	}
+	sp = samples;
+	sp_end = samples + out_size;
+	while (sp < sp_end && src < src_end) {
+		unsigned code = *src >> 6;
+		unsigned count = *src & 0x3Fu;
+		unsigned smp, nbytes, k;
+		src++;
+		if (code == 0)
+			smp = 4u * (count + 1u);
+		else if (code == 1)
+			smp = 2u * (count + 1u);
+		else if (code == 2)
+			smp = (count & 0x20u) ? 1u : count + 1u;
+		else
+			smp = count + 1u;
+		if ((unsigned)(sp_end - sp) < smp)
+			break;
+		nbytes = ((code == 2 && (count & 0x20u)) || code == 3) ? 0u : count + 1u;
+		if ((unsigned)(src_end - src) < nbytes)
+			break;
+		if (code == 0) {
+			for (k = count + 1u; k > 0u; k--) {
+				unsigned c = *src++;
+				sample = clip_u8(sample + (int)(c & 3u) - 2);
+				*sp++ = (uint8_t)sample;
+				sample = clip_u8(sample + (int)((c >> 2) & 3u) - 2);
+				*sp++ = (uint8_t)sample;
+				sample = clip_u8(sample + (int)((c >> 4) & 3u) - 2);
+				*sp++ = (uint8_t)sample;
+				sample = clip_u8(sample + (int)(c >> 6) - 2);
+				*sp++ = (uint8_t)sample;
+			}
+		} else if (code == 1) {
+			for (k = count + 1u; k > 0u; k--) {
+				unsigned c = *src++;
+				sample = clip_u8(sample + ws_adpcm_4bit[c & 0xFu]);
+				*sp++ = (uint8_t)sample;
+				sample = clip_u8(sample + ws_adpcm_4bit[c >> 4]);
+				*sp++ = (uint8_t)sample;
+			}
+		} else if (code == 2) {
+			if (count & 0x20u) {
+				int8_t t = (int8_t)count;
+				t = (int8_t)(t << 3);
+				sample = clip_u8(sample + (t >> 3));
+				*sp++ = (uint8_t)sample;
+			} else {
+				memcpy(sp, src, smp);
+				sp += smp;
+				src += smp;
+				sample = src[-1];
+			}
+		} else {
+			memset(sp, sample, smp);
+			sp += smp;
+		}
+	}
+	rc = append_u8_as_s16(d, samples, (unsigned)(sp - samples));
+	free(samples);
+	return rc;
 }
 
 static int load_snd(DecodeCtx *d, uint32_t id, uint32_t size)
@@ -330,6 +496,15 @@ static int load_snd(DecodeCtx *d, uint32_t id, uint32_t size)
 	if (vqa_reader_read(&d->r, buf, pad) != 0) {
 		free(buf);
 		return -1;
+	}
+	if (d->hdr.version == 1 && (id == VQA_CHUNK_SND0 || id == VQA_CHUNK_SND1)) {
+		int rc = 0;
+		if (id == VQA_CHUNK_SND0)
+			rc = append_u8_as_s16(d, buf, size);
+		else
+			rc = load_snd1_v1(d, buf, size);
+		free(buf);
+		return rc;
 	}
 	if (id == VQA_CHUNK_SND0) {
 		/* 16-bit PCM LE typically */
@@ -455,16 +630,35 @@ void vqa_decode_free(VqaDecode *dec)
 	memset(dec, 0, sizeof(*dec));
 }
 
+/* Same rounding as preview, so a version-1 lead-in chunk stays queued. */
+static unsigned frame_pcm_quota(const DecodeCtx *d)
+{
+	unsigned fps = d->hdr.fps ? d->hdr.fps : 15;
+	uint64_t t0, t1;
+	t0 = ((uint64_t)d->fi * d->sample_rate + fps / 2u) / fps;
+	t1 = ((uint64_t)(d->fi + 1u) * d->sample_rate + fps / 2u) / fps;
+	return (unsigned)(t1 - t0);
+}
+
 static int take_pending_pcm(DecodeCtx *d, VqaDecodedFrame *fr)
 {
-	if (!d->pending_n)
+	size_t n = d->pending_n;
+	if (!n)
 		return 0;
-	fr->pcm16 = (int16_t *)malloc(d->pending_n * sizeof(int16_t));
+	/* Version 1 delivers a large first SND chunk ahead of the picture. */
+	if (d->hdr.version == 1 && d->sample_rate) {
+		size_t quota = frame_pcm_quota(d);
+		if (n > quota)
+			n = quota;
+	}
+	fr->pcm16 = (int16_t *)malloc(n * sizeof(int16_t));
 	if (!fr->pcm16)
 		return -1;
-	memcpy(fr->pcm16, d->pending_pcm, d->pending_n * sizeof(int16_t));
-	fr->pcm16_count = d->pending_n;
-	d->pending_n = 0;
+	memcpy(fr->pcm16, d->pending_pcm, n * sizeof(int16_t));
+	fr->pcm16_count = n;
+	d->pending_n -= n;
+	if (d->pending_n)
+		memmove(d->pending_pcm, d->pending_pcm + n, d->pending_n * sizeof(int16_t));
 	return 0;
 }
 
@@ -565,6 +759,15 @@ int vqa_stream_open(const char *path, VqaStream **out)
 	d->sample_rate = d->hdr.sample_rate;
 	d->channels = d->hdr.channels ? d->hdr.channels : 1;
 	d->bits_per_sample = d->hdr.bits_per_sample ? d->hdr.bits_per_sample : 16;
+	/* Version 1 leaves rate/channels/bits at 0. Kyrandia 3 is 22050 Hz mono 8-bit. */
+	if (d->hdr.version == 1) {
+		if (!d->sample_rate)
+			d->sample_rate = 22050;
+		if (!d->hdr.channels)
+			d->channels = 1;
+		if (!d->hdr.bits_per_sample)
+			d->bits_per_sample = 8;
+	}
 	d->frame_count = d->hdr.frames;
 	d->max_cb = (unsigned)d->hdr.cb_entries * 8u + 4096u;
 	if (d->max_cb < 32768u)
@@ -669,7 +872,18 @@ int vqa_stream_next(VqaStream *s, VqaDecodedFrame *fr)
 				vqa_decoded_frame_clear(fr);
 				return -1;
 			}
-			vqa_unvq_4x2(d->cur_cb, d->vpt, fr->pixels, d->blocks_w, d->blocks_h, d->width);
+			if (d->hdr.version == 1) {
+				if (d->hdr.block_width != 4 || d->hdr.block_height != 2) {
+					fprintf(stderr, "error: VQA version 1 block %ux%u is not 4x2\n",
+					    (unsigned)d->hdr.block_width, (unsigned)d->hdr.block_height);
+					vqa_decoded_frame_clear(fr);
+					return -1;
+				}
+				unvq_4x2_v1(d->cur_cb, d->max_cb, d->vpt, fr->pixels, d->blocks_w, d->blocks_h,
+				    d->width);
+			} else {
+				vqa_unvq_4x2(d->cur_cb, d->vpt, fr->pixels, d->blocks_w, d->blocks_h, d->width);
+			}
 			if (got_pal) {
 				if (note_palette(d, fr) != 0) {
 					vqa_decoded_frame_clear(fr);
@@ -723,6 +937,8 @@ int vqa_decode_file(const char *path, VqaDecode *out)
 	out->sample_rate = vqa_stream_sample_rate(st);
 	out->channels = out->hdr.channels ? out->hdr.channels : 1;
 	out->bits_per_sample = out->hdr.bits_per_sample ? out->hdr.bits_per_sample : 16;
+	if (out->hdr.version == 1 && !out->hdr.bits_per_sample)
+		out->bits_per_sample = 8;
 	out->frame_count = vqa_stream_frame_count(st);
 	out->frames = (VqaDecodedFrame *)calloc(out->frame_count, sizeof(VqaDecodedFrame));
 	if (!out->frames)

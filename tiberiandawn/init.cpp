@@ -55,6 +55,7 @@
 #include "audx/audx_page_cache.h"
 #include "st_sprite_cache.h"
 #include "page_region_cache.h"
+#include "farewell.h"
 #endif
 
 /****************************************
@@ -1391,6 +1392,11 @@ bool Select_Game(bool fade)
             **	Exit to DOS.
             */
             case SEL_EXIT:
+#ifdef ATARI_ST
+                Hide_Mouse();
+                Theme.Fade_Out();
+                ST_Farewell();
+#else
 #ifdef JAPANESE
                 Hide_Mouse();
 #endif
@@ -1398,6 +1404,7 @@ bool Select_Game(bool fade)
                 Fade_Palette_To(BlackPalette, FADE_PALETTE_SLOW, NULL);
 #ifdef JAPANESE
                 VisiblePage.Clear();
+#endif
 #endif
                 return (false);
 

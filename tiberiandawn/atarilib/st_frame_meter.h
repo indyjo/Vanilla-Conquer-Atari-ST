@@ -9,6 +9,8 @@ class GraphicViewPortClass;
 
 #ifdef ST_FRAME_BAR_PROFILE
 
+/* On-screen bars and FPS. Alt-F toggles this; the readings keep updating while hidden. */
+extern bool StFrameMeterVisible;
 extern bool StFrameMeterPendingRedraw;
 
 void StFrameMeter_FrameBegin(void);

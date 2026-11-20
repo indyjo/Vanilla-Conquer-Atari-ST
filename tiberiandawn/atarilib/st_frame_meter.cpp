@@ -73,6 +73,7 @@ static unsigned long s_disp_c2p_avg;
 static unsigned long s_disp_blit_avg;
 static unsigned long s_disp_map_phase_avg[ST_FM_MAP_PHASE_COUNT];
 static unsigned long s_disp_fps_x100;
+bool StFrameMeterVisible = false;
 bool StFrameMeterPendingRedraw;
 
 enum {
@@ -296,7 +297,9 @@ static void St_FrameMeter_MaybeRollPeriod(unsigned long hz_now)
 		for (int pi = 0; pi < (int)ST_FM_MAP_PHASE_COUNT; ++pi) {
 			s_disp_map_phase_avg[pi] = s_period_sum_map_phase[pi] / s_period_frames;
 		}
-		StFrameMeterPendingRedraw = true;
+		if (StFrameMeterVisible) {
+			StFrameMeterPendingRedraw = true;
+		}
 	}
 
 	s_period_sum_frame = 0;
@@ -450,7 +453,7 @@ void StFrameMeter_BlitEnd(void)
 
 void StFrameMeter_Draw(GraphicViewPortClass *page, int width_factor)
 {
-	if (page == nullptr) {
+	if (page == nullptr || !StFrameMeterVisible) {
 		return;
 	}
 

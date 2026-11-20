@@ -188,5 +188,6 @@ void StFrameMeter_BlitEnd(void) {}
 void StFrameMeter_MapPhaseBegin(StFrameMeterMapPhase) {}
 void StFrameMeter_MapPhaseEnd(StFrameMeterMapPhase) {}
 void StFrameMeter_Draw(GraphicViewPortClass *, int) {}
+bool StFrameMeterVisible;
 #endif
 

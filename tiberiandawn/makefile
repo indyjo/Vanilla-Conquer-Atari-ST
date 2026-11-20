@@ -136,7 +136,7 @@ DEFINES = TRUE_FALSE_DEFINED
 # Platform-specific definitions
 ifeq ($(PLATFORM_LIB),ATARILIB)
 DEFINES += POSIX BIG_ENDIAN ATARI_ST
-# PROFILE_FRAME_BAR defines ST_FRAME_BAR_PROFILE (Hz200 frame/render/logic/theme bars in tab strip)
+# PROFILE_FRAME_BAR defines ST_FRAME_BAR_PROFILE (Hz200 frame/render/logic/theme bars in tab strip; Alt-F, default hidden)
 PROFILE_FRAME_BAR ?= 1
 ifeq ($(PROFILE_FRAME_BAR),1)
 DEFINES += ST_FRAME_BAR_PROFILE
@@ -980,7 +980,7 @@ endif
 	@echo "Configuration Variables:"
 	@echo "  CONFIG=Debug   - Build debug version (default: Release)"
 	@echo "  CONFIG=Release - Build release version (defaults: CXX_OPT_REL=-O3, WITH_SYMBOLS=1)"
-	@echo "  PROFILE_FRAME_BAR=0 - Atari-only: disable Hz200 profiler (default: 1, -DST_FRAME_BAR_PROFILE)"
+	@echo "  PROFILE_FRAME_BAR=0 - Atari-only: disable Hz200 profiler (default: 1, -DST_FRAME_BAR_PROFILE; Alt-F shows it)"
 	@echo "  PROFILE_BORDER=0    - Atari-only: disable audio pen-0 border timing (default: 0)"
 	@echo "  WITH_GITINFO=1  - Atari-only: generate gitinfo.cpp from common/gitinfo.cpp.in"
 	@echo "  WITH_SYMBOLS=1   - Release only: add -g, omit strip (-s); default: 1"

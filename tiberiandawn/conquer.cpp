@@ -472,6 +472,26 @@ void Keyboard_Process(KeyNumType& input)
         return;
     }
 
+#if defined(ATARI_ST) && defined(ST_FRAME_BAR_PROFILE)
+    /*
+    **	Alt-F shows or hides the frame-bar / FPS overlay.
+    **	The IKBD driver reports the F key as 'F' with WWKEY_ALT_BIT and no
+    **	VK bit. That is not the editor's waypoint chord (KN_F | KN_ALT_BIT),
+    **	and it is not the formation key.
+    */
+    if ((input & WWKEY_RLS_BIT) == 0 && (input & WWKEY_ALT_BIT) != 0
+        && (input & (WWKEY_SHIFT_BIT | WWKEY_CTRL_BIT)) == 0) {
+        unsigned plain = (unsigned)input & 0xFFu;
+        if (plain == (unsigned)'F' || plain == (unsigned)'f') {
+            StFrameMeterVisible = !StFrameMeterVisible;
+            StFrameMeterPendingRedraw = StFrameMeterVisible;
+            Map.Redraw_Tab();
+            input = KN_NONE;
+            return;
+        }
+    }
+#endif
+
 #ifndef DEMO
     /*
     **	For network & modem, process user input for inter-player messages.
